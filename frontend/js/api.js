@@ -34,6 +34,13 @@ const API = {
             body: JSON.stringify(data)
         });
     },
+    async updateRobot(robotId, data) {
+        return this.request(`${API_BASE}/robots/${robotId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+    },
 
     // --- Conversations ---
     async getConversations() {
@@ -44,6 +51,13 @@ const API = {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ robot_id: robotId })
+        });
+    },
+    async updateConversation(convId, title) {
+        return this.request(`${API_BASE}/conversations/${convId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title })
         });
     },
 
@@ -60,7 +74,12 @@ const API = {
         return this.request(`${API_BASE}/messages?conversation_id=${convId}&last_id=${lastId}`);
     },
     // 长轮询：有新消息立即返回，超时返回空
-    async longPollMessages(convId, lastId, timeout = 30) {
-        return this.request(`${API_BASE}/messages/long-poll?conversation_id=${convId}&last_id=${lastId}&timeout=${timeout}`);
+    // timeout: 客户端超时(毫秒), serverTimeout: 服务端超时(秒)
+    async longPollMessages(convId, lastId, timeout = 35000, serverTimeout = 30) {
+        return this.request(
+            `${API_BASE}/messages/long-poll?conversation_id=${convId}&last_id=${lastId}&timeout=${serverTimeout}`,
+            {},
+            timeout
+        );
     }
 };

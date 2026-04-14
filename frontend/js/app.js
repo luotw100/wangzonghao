@@ -14,10 +14,20 @@ createApp({
         const inputText = ref("");
         const errorMessage = ref("");
 
-        // Robot 模态框
+        // Robot 折叠状态
+        const collapsedRobots = ref({});
+
+        // 创建 Robot 模态框
         const showCreateRobotModal = ref(false);
         const newRobotName = ref("");
         const newRobotSystemPrompt = ref("");
+
+        // 编辑 Robot 模态框
+        const showEditRobotModal = ref(false);
+        const editingRobot = ref({ id: null, name: "", system_prompt: "" });
+
+        // 会话标题内联编辑
+        const editingConvTitle = ref(null);
 
         // 轮询控制标志 & 最后一条消息ID
         let isPolling = false;
@@ -40,6 +50,11 @@ createApp({
             }
         };
 
+        // --- Robot 折叠 ---
+        const toggleRobot = (robotId) => {
+            collapsedRobots.value[robotId] = !collapsedRobots.value[robotId];
+        };
+
         // --- 创建 Robot ---
         const createRobot = async () => {
             const name = newRobotName.value.trim();
@@ -53,15 +68,69 @@ createApp({
                     name: name,
                     system_prompt: newRobotSystemPrompt.value.trim() || null
                 });
-                // 成功后重置表单并关闭弹窗
                 newRobotName.value = "";
                 newRobotSystemPrompt.value = "";
                 showCreateRobotModal.value = false;
                 errorMessage.value = "";
-                // 重新加载 Robot 列表
                 await loadRobots();
             } catch (err) {
                 errorMessage.value = "创建 Robot 失败: " + err.message;
+            }
+        };
+
+        // --- 编辑 Robot ---
+        const openEditRobotModal = (robot) => {
+            editingRobot.value = {
+                id: robot.id,
+                name: robot.name,
+                system_prompt: robot.system_prompt || ""
+            };
+            showEditRobotModal.value = true;
+        };
+
+        const saveEditRobot = async () => {
+            const name = editingRobot.value.name.trim();
+            if (!name) {
+                errorMessage.value = "请输入 Robot 名称";
+                return;
+            }
+
+            try {
+                await API.updateRobot(editingRobot.value.id, {
+                    name: name,
+                    system_prompt: editingRobot.value.system_prompt.trim() || null
+                });
+                showEditRobotModal.value = false;
+                errorMessage.value = "";
+                await loadRobots();
+            } catch (err) {
+                errorMessage.value = "更新 Robot 失败: " + err.message;
+            }
+        };
+
+        // --- 编辑会话名称（内联编辑） ---
+        const startEditConvTitle = () => {
+            editingConvTitle.value = activeConvTitle.value;
+        };
+
+        const saveEditConvTitle = async () => {
+            if (editingConvTitle.value === null) return;
+
+            const title = editingConvTitle.value.trim();
+            if (!title) {
+                editingConvTitle.value = null;
+                return;
+            }
+
+            try {
+                await API.updateConversation(activeConvId.value, title);
+                activeConvTitle.value = title;
+                editingConvTitle.value = null;
+                errorMessage.value = "";
+                await loadConversations();
+            } catch (err) {
+                errorMessage.value = "更新会话失败: " + err.message;
+                editingConvTitle.value = null;
             }
         };
 
@@ -70,7 +139,6 @@ createApp({
             try {
                 const conv = await API.createConversation(robotId);
                 await loadConversations();
-                // 自动选中新创建的会话
                 selectConversation(conv.id);
             } catch (err) {
                 errorMessage.value = "创建会话失败: " + err.message;
@@ -79,21 +147,18 @@ createApp({
 
         // --- 选择会话 & 启动长轮询 ---
         const selectConversation = async (convId) => {
-            // 停止之前的长轮询
             stopPolling();
 
             activeConvId.value = convId;
             const conv = conversations.value.find(c => c.id === convId);
             activeConvTitle.value = conv ? conv.title : "聊天";
+            editingConvTitle.value = null;
             errorMessage.value = "";
 
-            // 清空当前消息并重置游标
             currentMessages.value = [];
             lastMsgId = 0;
 
-            // 短轮询立即获取历史消息
             await pollNewMessages();
-            // 开启长轮询持续监听新消息
             startLongPolling();
         };
 
@@ -112,7 +177,7 @@ createApp({
             if (!isPolling || !activeConvId.value) return;
 
             try {
-                const newMsgs = await API.longPollMessages(activeConvId.value, lastMsgId, 30);
+                const newMsgs = await API.longPollMessages(activeConvId.value, lastMsgId, 35000);
                 if (!isPolling || !activeConvId.value) return;
 
                 if (newMsgs.length > 0) {
@@ -121,12 +186,13 @@ createApp({
                     scrollToBottom();
                 }
 
-                // 继续下一次长轮询
                 pollLoop();
             } catch (err) {
                 console.error("长轮询异常", err);
-                errorMessage.value = "消息同步异常: " + err.message;
-                // 异常后等待一下再重试
+                // 只有在真正出错时才显示错误，超时不显示（那是正常行为）
+                if (!err.message.includes('超时')) {
+                    errorMessage.value = "消息同步异常: " + err.message;
+                }
                 if (isPolling && activeConvId.value) {
                     await new Promise(r => setTimeout(r, 1000));
                     pollLoop();
@@ -156,7 +222,6 @@ createApp({
 
             inputText.value = "";
 
-            // 乐观更新：先在本地添加一条临时消息
             const tempId = 'temp-' + Date.now();
             const tempMsg = {
                 id: tempId,
@@ -175,14 +240,10 @@ createApp({
                     msg_type: "text",
                     content: text
                 });
-                // 发送成功后，移除临时消息，用短轮询立即获取真实消息
                 currentMessages.value = currentMessages.value.filter(m => m.id !== tempId);
-                // 更新 lastMsgId
                 lastMsgId = Math.max(lastMsgId, ...currentMessages.value.map(m => m.id || 0));
-                // 短轮询立即获取（不等长轮询）
                 await pollNewMessages();
             } catch (err) {
-                // 发送失败，移除临时消息并显示错误
                 currentMessages.value = currentMessages.value.filter(m => m.id !== tempId);
                 errorMessage.value = "发送消息失败: " + err.message;
             }
@@ -199,7 +260,6 @@ createApp({
                 return;
             }
 
-            // 文件大小检查
             if (file.size > MAX_FILE_SIZE) {
                 errorMessage.value = `文件大小不能超过 ${MAX_FILE_SIZE / 1024 / 1024}MB`;
                 event.target.value = "";
@@ -210,7 +270,6 @@ createApp({
             reader.onload = async (e) => {
                 const base64Data = e.target.result;
 
-                // 乐观更新
                 const tempId = 'temp-' + Date.now();
                 const tempMsg = {
                     id: tempId,
@@ -253,14 +312,12 @@ createApp({
             });
         };
 
-        // 使用相对路径，避免硬编码
         const getFullUrl = (path) => {
             if (!path) return '';
             if (path.startsWith('http')) return path;
             return path;
         };
 
-        // XSS 防护：对文本内容进行转义
         const escapeHtml = (text) => {
             if (!text) return '';
             const div = document.createElement('div');
@@ -268,24 +325,24 @@ createApp({
             return div.innerHTML;
         };
 
-        // 生命周期挂载
         onMounted(() => {
             loadRobots();
             loadConversations();
         });
 
-        // 页面卸载前清理
         onUnmounted(() => {
             stopPolling();
         });
 
         return {
-            // 状态
             robots, conversations, activeConvId, activeConvTitle, currentMessages, inputText, errorMessage,
+            collapsedRobots, toggleRobot,
             showCreateRobotModal, newRobotName, newRobotSystemPrompt,
-            // 方法
+            showEditRobotModal, editingRobot,
+            editingConvTitle,
             selectConversation, sendTextMessage, handleFileUpload,
-            createRobot, createConversation,
+            createRobot, createConversation, openEditRobotModal, saveEditRobot,
+            startEditConvTitle, saveEditConvTitle,
             formatDate: Utils.formatDate,
             getFullUrl,
             escapeHtml

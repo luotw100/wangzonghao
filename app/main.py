@@ -63,6 +63,10 @@ class RobotCreate(BaseModel):
     name: str
     system_prompt: Optional[str] = None
 
+class RobotUpdate(BaseModel):
+    name: Optional[str] = None
+    system_prompt: Optional[str] = None
+
 class ConversationCreate(BaseModel):
     robot_id: str
     title: Optional[str] = None # 允许前端不传，后端自动生成
@@ -125,6 +129,22 @@ def create_robot(robot_in: RobotCreate, db: Session = Depends(get_db)):
 @app.get("/api/robots")
 def list_robots(db: Session = Depends(get_db)):
     return db.query(Robot).all()
+
+@app.put("/api/robots/{robot_id}")
+def update_robot(robot_id: str, robot_update: RobotUpdate, db: Session = Depends(get_db)):
+    db_robot = db.query(Robot).filter(Robot.id == robot_id).first()
+    if not db_robot:
+        raise HTTPException(status_code=404, detail="Robot 不存在")
+
+    if robot_update.name is not None:
+        db_robot.name = robot_update.name
+    if robot_update.system_prompt is not None:
+        db_robot.system_prompt = robot_update.system_prompt
+    db_robot.updated_at = datetime.now(timezone.utc)
+
+    db.commit()
+    db.refresh(db_robot)
+    return db_robot
 
 # --- 会话 API ---
 @app.post("/api/conversations")

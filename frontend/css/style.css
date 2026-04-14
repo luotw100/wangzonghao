@@ -11,16 +11,16 @@
 }
 
 ::-webkit-scrollbar-track {
-    background: #f1f1f1;
+    background: #f1f5f9;
 }
 
 ::-webkit-scrollbar-thumb {
-    background: #c1c1c1;
+    background: #cbd5e1;
     border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-    background: #a1a1a1;
+    background: #94a3b8;
 }
 
 /* 消息气泡动画 */
@@ -56,7 +56,8 @@
     left: 0;
     right: 0;
     bottom: 0;
-    background: rgba(0, 0, 0, 0.5);
+    background: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(4px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -65,23 +66,17 @@
 
 .modal-content {
     background: white;
-    border-radius: 12px;
+    border-radius: 16px;
     padding: 24px;
     min-width: 400px;
     max-width: 90%;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
-}
-
-/* 按钮悬停效果 */
-.btn-hover:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
 }
 
 /* 输入框聚焦效果 */
 input:focus, textarea:focus {
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
 }
 
 /* 音频播放器样式 */
@@ -94,4 +89,9 @@ audio {
 video {
     max-width: 100%;
     border-radius: 8px;
+}
+
+/* 按钮过渡效果 */
+button {
+    transition: all 0.2s ease;
 }

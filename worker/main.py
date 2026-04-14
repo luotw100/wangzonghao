@@ -15,7 +15,8 @@ from config import (
     REQUEST_TIMEOUT,
     POLL_INTERVAL,
     MAX_RETRIES,
-    API_BASE_URL
+    API_BASE_URL,
+    ECHO_MODE
 )
 
 # 日志配置
@@ -196,34 +197,43 @@ class Worker:
             messages = data["messages"]
             robot = data["robot"]
 
-            # 3. 构建消息列表
-            chat_messages = []
+            # 3. 获取用户最后一条消息
+            user_messages = [m for m in messages if m["role"] == "user"]
+            last_user_message = user_messages[-1]["content"] if user_messages else ""
 
-            # 添加 system prompt
-            if robot and robot.get("system_prompt"):
-                chat_messages.append({
-                    "role": "system",
-                    "content": robot["system_prompt"]
-                })
+            # ECHO_MODE: 复读机模式，直接回复用户消息
+            if ECHO_MODE:
+                logger.info(f"[ECHO MODE] Task {task_id}: echoing '{last_user_message}'")
+                reply = f"[复读] {last_user_message}"
+            else:
+                # 4. 构建消息列表
+                chat_messages = []
 
-            # 添加历史消息
-            for msg in messages:
-                if msg["role"] in ["user", "robot"]:
-                    role = "user" if msg["role"] == "user" else "assistant"
+                # 添加 system prompt
+                if robot and robot.get("system_prompt"):
                     chat_messages.append({
-                        "role": role,
-                        "content": msg["content"]
+                        "role": "system",
+                        "content": robot["system_prompt"]
                     })
 
-            logger.info(f"Sending {len(chat_messages)} messages to LLM")
+                # 添加历史消息
+                for msg in messages:
+                    if msg["role"] in ["user", "robot"]:
+                        role = "user" if msg["role"] == "user" else "assistant"
+                        chat_messages.append({
+                            "role": role,
+                            "content": msg["content"]
+                        })
 
-            # 4. 调用 LLM
-            reply = self.llm.chat(chat_messages)
+                logger.info(f"Sending {len(chat_messages)} messages to LLM")
 
-            # 5. 发送回复
+                # 5. 调用 LLM
+                reply = self.llm.chat(chat_messages)
+
+            # 6. 发送回复
             self.send_robot_message(conversation_id, reply)
 
-            # 6. 标记完成
+            # 7. 标记完成
             self.update_task_status(task_id, "done")
             logger.info(f"Task {task_id} completed")
             return True

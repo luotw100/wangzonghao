@@ -41,8 +41,8 @@ class Robot(Base):
 class Conversation(Base):
     __tablename__ = "conversations"
     id = Column(String, primary_key=True, index=True)
-    robot_id = Column(String, index=True) # 关联到 Robot
-    title = Column(String, nullable=False) # 会话标题
+    robot_id = Column(String, index=True)
+    title = Column(String, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -50,10 +50,21 @@ class Message(Base):
     __tablename__ = "messages"
     id = Column(Integer, primary_key=True, autoincrement=True)
     conversation_id = Column(String, index=True)
-    role = Column(String, nullable=False)     # 核心变更：只能是 'user' 或 'robot'
-    msg_type = Column(String, nullable=False) # text, image, audio, video
+    role = Column(String, nullable=False)
+    msg_type = Column(String, nullable=False)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class Task(Base):
+    __tablename__ = "tasks"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    conversation_id = Column(String, index=True)
+    user_message_id = Column(Integer, nullable=False)
+    status = Column(String, default="pending")  # pending / processing / done / failed
+    retry_count = Column(Integer, default=0)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 # 创建所有表
 Base.metadata.create_all(bind=engine)
@@ -69,26 +80,28 @@ class RobotUpdate(BaseModel):
 
 class ConversationCreate(BaseModel):
     robot_id: str
-    title: Optional[str] = None # 允许前端不传，后端自动生成
+    title: Optional[str] = None
 
 class ConversationUpdate(BaseModel):
     title: str
 
 class MessageCreate(BaseModel):
     conversation_id: str
-    role: str # 'user' 或 'robot'
+    role: str
     msg_type: str
     content: str
 
+class TaskUpdate(BaseModel):
+    status: str
+    error_message: Optional[str] = None
+
 # --- 4. 工具函数：处理 Base64 落盘 ---
 def save_base64_file(content: str, msg_type: str) -> str:
-    # 检查是否是 Data URI 格式
     if not content.startswith("data:"):
-        return content # 如果不是，说明可能是普通文本或已处理路径
+        return content
 
     try:
         header, encoded = content.split(",", 1)
-        # 提取后缀，例如从 "data:image/jpeg;base64" 中提取 "jpeg"
         match = re.search(r'/(.*?);', header)
         ext = match.group(1) if match else "bin"
 
@@ -105,10 +118,8 @@ def save_base64_file(content: str, msg_type: str) -> str:
 # --- 5. FastAPI 实例与路由 ---
 app = FastAPI(title="FakeWeChat API")
 
-# 挂载静态文件目录，前端可以直接访问 /storage/xxx.jpg
 app.mount("/storage", StaticFiles(directory=str(STORAGE_DIR)), name="storage")
 
-# 获取 DB 会话
 def get_db():
     db = SessionLocal()
     try:
@@ -116,7 +127,7 @@ def get_db():
     finally:
         db.close()
 
-# --- Robot API (原 User API) ---
+# --- Robot API ---
 @app.post("/api/robots")
 def create_robot(robot_in: RobotCreate, db: Session = Depends(get_db)):
     robot_id = f"bot_{uuid.uuid4().hex[:8]}"
@@ -149,12 +160,10 @@ def update_robot(robot_id: str, robot_update: RobotUpdate, db: Session = Depends
 # --- 会话 API ---
 @app.post("/api/conversations")
 def create_conversation(conv_in: ConversationCreate, db: Session = Depends(get_db)):
-    # 1. 强校验：判断 Robot 是否存在
     robot = db.query(Robot).filter(Robot.id == conv_in.robot_id).first()
     if not robot:
         raise HTTPException(status_code=404, detail=f"Robot '{conv_in.robot_id}' 不存在")
 
-    # 2. 生成默认 Title：Robot名字 + 当前日期时间 (例如: 物理老师_1024_1530)
     now_str = datetime.now(timezone.utc).strftime("%m%d_%H%M")
     final_title = conv_in.title if conv_in.title else f"{robot.name}_{now_str}"
 
@@ -167,7 +176,6 @@ def create_conversation(conv_in: ConversationCreate, db: Session = Depends(get_d
 
 @app.get("/api/conversations")
 def list_conversations(db: Session = Depends(get_db)):
-    # 按照最后活跃时间降序排列，类似微信首页
     return db.query(Conversation).order_by(Conversation.updated_at.desc()).all()
 
 @app.put("/api/conversations/{conv_id}")
@@ -184,7 +192,6 @@ def update_conversation_title(conv_id: str, conv_update: ConversationUpdate, db:
 # --- 消息 API ---
 @app.post("/api/messages")
 def send_message(msg_in: MessageCreate, db: Session = Depends(get_db)):
-    # 校验角色
     if msg_in.role not in ["user", "robot"]:
         raise HTTPException(status_code=400, detail="角色 role 只能是 'user' 或 'robot'")
 
@@ -207,6 +214,17 @@ def send_message(msg_in: MessageCreate, db: Session = Depends(get_db)):
 
     db.commit()
     db.refresh(db_msg)
+
+    # 如果是用户消息，创建 Task
+    if msg_in.role == "user":
+        db_task = Task(
+            conversation_id=msg_in.conversation_id,
+            user_message_id=db_msg.id,
+            status="pending"
+        )
+        db.add(db_task)
+        db.commit()
+
     return {"status": "success", "id": db_msg.id}
 
 @app.get("/api/messages")
@@ -215,9 +233,6 @@ def sync_messages(
     last_id: int = Query(0),
     db: Session = Depends(get_db)
 ):
-    """
-    短轮询：立即返回现有消息，不等待
-    """
     return db.query(Message).filter(
         and_(
             Message.conversation_id == conversation_id,
@@ -233,9 +248,6 @@ def long_poll_messages(
     timeout: int = Query(30, description="超时时间（秒）"),
     db: Session = Depends(get_db)
 ):
-    """
-    长轮询接口：有新消息立即返回，超时则返回空列表
-    """
     start_time = time.time()
 
     while True:
@@ -249,18 +261,70 @@ def long_poll_messages(
         if msgs:
             return msgs
 
-        # 检查是否超时
         if time.time() - start_time >= timeout:
             return []
 
-        # 休息一下再查，避免 CPU 空转
         time.sleep(0.5)
+
+
+# --- Task API (供 Worker 使用) ---
+@app.get("/api/tasks")
+def list_tasks(
+    status: str = Query(None, description="过滤状态: pending/processing/done/failed"),
+    limit: int = Query(10, description="返回数量限制"),
+    db: Session = Depends(get_db)
+):
+    query = db.query(Task)
+    if status:
+        query = query.filter(Task.status == status)
+    return query.order_by(Task.created_at.asc()).limit(limit).all()
+
+@app.put("/api/tasks/{task_id}")
+def update_task(task_id: int, task_update: TaskUpdate, db: Session = Depends(get_db)):
+    db_task = db.query(Task).filter(Task.id == task_id).first()
+    if not db_task:
+        raise HTTPException(status_code=404, detail="Task 不存在")
+
+    if task_update.status:
+        db_task.status = task_update.status
+    if task_update.error_message is not None:
+        db_task.error_message = task_update.error_message
+
+    if task_update.status == "processing":
+        db_task.retry_count += 1
+
+    db_task.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(db_task)
+    return db_task
+
+# --- 获取会话历史消息（供 Worker 使用） ---
+@app.get("/api/conversations/{conversation_id}/messages")
+def get_conversation_messages(
+    conversation_id: str,
+    db: Session = Depends(get_db)
+):
+    """获取会话的所有历史消息，按时间顺序返回"""
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        raise HTTPException(status_code=404, detail="会话不存在")
+
+    robot = db.query(Robot).filter(Robot.id == conv.robot_id).first()
+
+    messages = db.query(Message).filter(
+        Message.conversation_id == conversation_id
+    ).order_by(Message.id.asc()).all()
+
+    return {
+        "conversation": conv,
+        "robot": robot,
+        "messages": messages
+    }
 
 
 # --- 6. 优雅托管前端页面 ---
 FRONTEND_DIR = BASE_DIR / "frontend"
 
-# 优先拦截根目录 /，直接返回 index.html
 @app.get("/")
 def serve_index():
     return FileResponse(FRONTEND_DIR / "index.html")

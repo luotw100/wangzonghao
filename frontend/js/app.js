@@ -32,6 +32,7 @@ createApp({
         // 轮询控制标志 & 最后一条消息ID
         let isPolling = false;
         let lastMsgId = 0;
+        let pendingSend = false; // 发送中，pollLoop 跳过 push
 
         // --- 初始化加载 ---
         const loadRobots = async () => {
@@ -180,6 +181,12 @@ createApp({
                 const newMsgs = await API.getMessages(activeConvId.value, lastMsgId, 30);
                 if (!isPolling || !activeConvId.value) return;
 
+                if (pendingSend) {
+                    // 发送中，跳过本次 push，pollNewMessages 会处理
+                    pollLoop();
+                    return;
+                }
+
                 if (newMsgs.length > 0) {
                     currentMessages.value.push(...newMsgs);
                     lastMsgId = newMsgs[newMsgs.length - 1].id;
@@ -233,6 +240,7 @@ createApp({
             currentMessages.value.push(tempMsg);
             scrollToBottom();
 
+            pendingSend = true;
             try {
                 const result = await API.sendMessage({
                     conversation_id: activeConvId.value,
@@ -246,6 +254,8 @@ createApp({
             } catch (err) {
                 currentMessages.value = currentMessages.value.filter(m => m.id !== tempId);
                 errorMessage.value = "发送消息失败: " + err.message;
+            } finally {
+                pendingSend = false;
             }
         };
 
@@ -281,6 +291,7 @@ createApp({
                 currentMessages.value.push(tempMsg);
                 scrollToBottom();
 
+                pendingSend = true;
                 try {
                     const result = await API.sendMessage({
                         conversation_id: activeConvId.value,
@@ -294,6 +305,8 @@ createApp({
                 } catch (err) {
                     currentMessages.value = currentMessages.value.filter(m => m.id !== tempId);
                     errorMessage.value = "发送文件失败: " + err.message;
+                } finally {
+                    pendingSend = false;
                 }
             };
             reader.readAsDataURL(file);

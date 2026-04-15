@@ -18,4 +18,4 @@ MAX_RETRIES = 3
 API_BASE_URL = "http://localhost:23456/api"
 
 # 测试模式：True = 复读机模式，False = 调用真实 LLM
-ECHO_MODE = False
+ECHO_MODE = True

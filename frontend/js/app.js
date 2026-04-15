@@ -177,7 +177,7 @@ createApp({
             if (!isPolling || !activeConvId.value) return;
 
             try {
-                const newMsgs = await API.longPollMessages(activeConvId.value, lastMsgId, 35000);
+                const newMsgs = await API.getMessages(activeConvId.value, lastMsgId, 30);
                 if (!isPolling || !activeConvId.value) return;
 
                 if (newMsgs.length > 0) {
@@ -204,7 +204,7 @@ createApp({
         const pollNewMessages = async () => {
             if (!activeConvId.value) return;
             try {
-                const newMsgs = await API.syncMessages(activeConvId.value, lastMsgId);
+                const newMsgs = await API.getMessages(activeConvId.value, lastMsgId, 0);
                 if (newMsgs.length > 0) {
                     currentMessages.value.push(...newMsgs);
                     lastMsgId = newMsgs[newMsgs.length - 1].id;

@@ -69,17 +69,13 @@ const API = {
             body: JSON.stringify(payload)
         });
     },
-    // 短轮询：立即返回现有消息
-    async syncMessages(convId, lastId) {
-        return this.request(`${API_BASE}/messages?conversation_id=${convId}&last_id=${lastId}`);
-    },
-    // 长轮询：有新消息立即返回，超时返回空
-    // timeout: 客户端超时(毫秒), serverTimeout: 服务端超时(秒)
-    async longPollMessages(convId, lastId, timeout = 35000, serverTimeout = 30) {
+    // 消息同步（长轮询）
+    // serverTimeout=0 时立即返回（短轮询），serverTimeout>0 时等待新消息
+    async getMessages(convId, lastId, serverTimeout = 30) {
         return this.request(
-            `${API_BASE}/messages/long-poll?conversation_id=${convId}&last_id=${lastId}&timeout=${serverTimeout}`,
+            `${API_BASE}/messages?conversation_id=${convId}&last_id=${lastId}&timeout=${serverTimeout}`,
             {},
-            timeout
+            serverTimeout > 0 ? 35000 : 10000
         );
     }
 };

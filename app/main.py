@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import uuid
 import re
@@ -228,24 +229,10 @@ def send_message(msg_in: MessageCreate, db: Session = Depends(get_db)):
     return {"status": "success", "id": db_msg.id}
 
 @app.get("/api/messages")
-def sync_messages(
+async def get_messages(
     conversation_id: str,
     last_id: int = Query(0),
-    db: Session = Depends(get_db)
-):
-    return db.query(Message).filter(
-        and_(
-            Message.conversation_id == conversation_id,
-            Message.id > last_id
-        )
-    ).order_by(Message.id.asc()).all()
-
-
-@app.get("/api/messages/long-poll")
-def long_poll_messages(
-    conversation_id: str,
-    last_id: int = Query(0),
-    timeout: int = Query(30, description="超时时间（秒）"),
+    timeout: int = Query(30, description="超时时间（秒），0 表示立即返回"),
     db: Session = Depends(get_db)
 ):
     start_time = time.time()
@@ -261,10 +248,12 @@ def long_poll_messages(
         if msgs:
             return msgs
 
-        if time.time() - start_time >= timeout:
+        elapsed = time.time() - start_time
+        if elapsed >= timeout:
             return []
 
-        time.sleep(0.5)
+        sleep_time = min(0.5, timeout - elapsed)
+        await asyncio.sleep(sleep_time)
 
 
 # --- Task API (供 Worker 使用) ---

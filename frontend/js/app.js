@@ -32,7 +32,6 @@ createApp({
         // 轮询控制标志 & 最后一条消息ID
         let isPolling = false;
         let lastMsgId = 0;
-        let pendingSend = false; // 发送中，pollLoop 跳过 push
 
         // --- 初始化加载 ---
         const loadRobots = async () => {
@@ -159,7 +158,6 @@ createApp({
             currentMessages.value = [];
             lastMsgId = 0;
 
-            await pollNewMessages();
             startLongPolling();
         };
 
@@ -181,12 +179,6 @@ createApp({
                 const newMsgs = await API.getMessages(activeConvId.value, lastMsgId, 30);
                 if (!isPolling || !activeConvId.value) return;
 
-                if (pendingSend) {
-                    // 发送中，跳过本次 push，pollNewMessages 会处理
-                    pollLoop();
-                    return;
-                }
-
                 if (newMsgs.length > 0) {
                     currentMessages.value.push(...newMsgs);
                     lastMsgId = newMsgs[newMsgs.length - 1].id;
@@ -207,21 +199,6 @@ createApp({
             }
         };
 
-        // --- 短轮询：立即获取现有消息 ---
-        const pollNewMessages = async () => {
-            if (!activeConvId.value) return;
-            try {
-                const newMsgs = await API.getMessages(activeConvId.value, lastMsgId, 0);
-                if (newMsgs.length > 0) {
-                    currentMessages.value.push(...newMsgs);
-                    lastMsgId = newMsgs[newMsgs.length - 1].id;
-                    scrollToBottom();
-                }
-            } catch (err) {
-                console.error("拉取消息失败", err);
-            }
-        };
-
         // --- 发送文本 ---
         const sendTextMessage = async () => {
             const text = inputText.value.trim();
@@ -229,33 +206,15 @@ createApp({
 
             inputText.value = "";
 
-            const tempId = 'temp-' + Date.now();
-            const tempMsg = {
-                id: tempId,
-                role: 'user',
-                msg_type: 'text',
-                content: text,
-                created_at: new Date().toISOString()
-            };
-            currentMessages.value.push(tempMsg);
-            scrollToBottom();
-
-            pendingSend = true;
             try {
-                const result = await API.sendMessage({
+                await API.sendMessage({
                     conversation_id: activeConvId.value,
                     role: "user",
                     msg_type: "text",
                     content: text
                 });
-                currentMessages.value = currentMessages.value.filter(m => m.id !== tempId);
-                lastMsgId = result.id;
-                await pollNewMessages();
             } catch (err) {
-                currentMessages.value = currentMessages.value.filter(m => m.id !== tempId);
                 errorMessage.value = "发送消息失败: " + err.message;
-            } finally {
-                pendingSend = false;
             }
         };
 
@@ -280,33 +239,15 @@ createApp({
             reader.onload = async (e) => {
                 const base64Data = e.target.result;
 
-                const tempId = 'temp-' + Date.now();
-                const tempMsg = {
-                    id: tempId,
-                    role: 'user',
-                    msg_type: Utils.getFileType(file.name),
-                    content: base64Data,
-                    created_at: new Date().toISOString()
-                };
-                currentMessages.value.push(tempMsg);
-                scrollToBottom();
-
-                pendingSend = true;
                 try {
-                    const result = await API.sendMessage({
+                    await API.sendMessage({
                         conversation_id: activeConvId.value,
                         role: "user",
                         msg_type: Utils.getFileType(file.name),
                         content: base64Data
                     });
-                    currentMessages.value = currentMessages.value.filter(m => m.id !== tempId);
-                    lastMsgId = result.id;
-                    await pollNewMessages();
                 } catch (err) {
-                    currentMessages.value = currentMessages.value.filter(m => m.id !== tempId);
                     errorMessage.value = "发送文件失败: " + err.message;
-                } finally {
-                    pendingSend = false;
                 }
             };
             reader.readAsDataURL(file);

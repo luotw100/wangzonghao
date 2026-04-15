@@ -71,11 +71,29 @@ const API = {
     },
     // 消息同步（长轮询）
     // serverTimeout=0 时立即返回（短轮询），serverTimeout>0 时等待新消息
-    async getMessages(convId, lastId, serverTimeout = 30) {
-        return this.request(
-            `${API_BASE}/messages?conversation_id=${convId}&last_id=${lastId}&timeout=${serverTimeout}`,
-            {},
-            serverTimeout > 0 ? 35000 : 10000
-        );
+    // signal 可选，用于外部中止请求（如切换会话时取消正在进行的请求）
+    async getMessages(convId, lastId, serverTimeout = 30, signal) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), serverTimeout > 0 ? 35000 : 10000);
+
+        if (signal) {
+            signal.addEventListener('abort', () => controller.abort());
+        }
+
+        try {
+            const res = await fetch(
+                `${API_BASE}/messages?conversation_id=${convId}&last_id=${lastId}&timeout=${serverTimeout}`,
+                { signal: controller.signal }
+            );
+            clearTimeout(timeoutId);
+            if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+            return await res.json();
+        } catch (err) {
+            clearTimeout(timeoutId);
+            if (err.name === 'AbortError') {
+                throw new Error('请求超时，请检查网络连接');
+            }
+            throw err;
+        }
     }
 };

@@ -30,7 +30,7 @@ createApp({
         const editingConvTitle = ref(null);
 
         // 轮询控制标志 & 最后一条消息ID
-        let isPolling = false;
+        let pollAbortController = null;
         let lastMsgId = 0;
 
         // --- 初始化加载 ---
@@ -162,39 +162,43 @@ createApp({
         };
 
         // --- 长轮询控制 ---
-        const startLongPolling = () => {
-            isPolling = true;
-            pollLoop();
-        };
-
         const stopPolling = () => {
-            isPolling = false;
+            if (pollAbortController) {
+                pollAbortController.abort();
+                pollAbortController = null;
+            }
         };
 
-        // --- 长轮询循环 ---
-        const pollLoop = async () => {
-            if (!isPolling || !activeConvId.value) return;
+        const startLongPolling = () => {
+            stopPolling(); // ensure no existing loop before starting
+            pollAbortController = new AbortController();
+            pollLoop(pollAbortController.signal, activeConvId.value);
+        };
 
-            try {
-                const newMsgs = await API.getMessages(activeConvId.value, lastMsgId, 30);
-                if (!isPolling || !activeConvId.value) return;
+        const pollLoop = async (signal, convId) => {
+            const renderedIds = new Set(currentMessages.value.map(m => m.id));
 
-                if (newMsgs.length > 0) {
-                    currentMessages.value.push(...newMsgs);
-                    lastMsgId = newMsgs[newMsgs.length - 1].id;
-                    scrollToBottom();
-                }
+            while (!signal.aborted && activeConvId.value === convId) {
+                try {
+                    const newMsgs = await API.getMessages(convId, lastMsgId, 30, signal);
 
-                pollLoop();
-            } catch (err) {
-                console.error("长轮询异常", err);
-                // 只有在真正出错时才显示错误，超时不显示（那是正常行为）
-                if (!err.message.includes('超时')) {
-                    errorMessage.value = "消息同步异常: " + err.message;
-                }
-                if (isPolling && activeConvId.value) {
-                    await new Promise(r => setTimeout(r, 1000));
-                    pollLoop();
+                    if (signal.aborted || activeConvId.value !== convId) return;
+
+                    const dedupedMsgs = newMsgs.filter(m => !renderedIds.has(m.id));
+                    if (dedupedMsgs.length > 0) {
+                        dedupedMsgs.forEach(m => renderedIds.add(m.id));
+                        currentMessages.value.push(...dedupedMsgs);
+                        lastMsgId = dedupedMsgs[dedupedMsgs.length - 1].id;
+                        scrollToBottom();
+                    }
+                } catch (err) {
+                    if (signal.aborted) return;
+                    console.error("长轮询异常", err);
+                    if (!err.message.includes('超时') && !err.message.includes('abort')) {
+                        errorMessage.value = "消息同步异常: " + err.message;
+                    }
+                    // back-off before retry
+                    await new Promise(r => setTimeout(r, 1500));
                 }
             }
         };

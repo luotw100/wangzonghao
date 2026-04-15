@@ -234,14 +234,14 @@ createApp({
             scrollToBottom();
 
             try {
-                await API.sendMessage({
+                const result = await API.sendMessage({
                     conversation_id: activeConvId.value,
                     role: "user",
                     msg_type: "text",
                     content: text
                 });
                 currentMessages.value = currentMessages.value.filter(m => m.id !== tempId);
-                lastMsgId = Math.max(lastMsgId, ...currentMessages.value.map(m => m.id || 0));
+                lastMsgId = result.id;
                 await pollNewMessages();
             } catch (err) {
                 currentMessages.value = currentMessages.value.filter(m => m.id !== tempId);
@@ -282,14 +282,14 @@ createApp({
                 scrollToBottom();
 
                 try {
-                    await API.sendMessage({
+                    const result = await API.sendMessage({
                         conversation_id: activeConvId.value,
                         role: "user",
                         msg_type: Utils.getFileType(file.name),
                         content: base64Data
                     });
                     currentMessages.value = currentMessages.value.filter(m => m.id !== tempId);
-                    lastMsgId = Math.max(lastMsgId, ...currentMessages.value.map(m => m.id || 0));
+                    lastMsgId = result.id;
                     await pollNewMessages();
                 } catch (err) {
                     currentMessages.value = currentMessages.value.filter(m => m.id !== tempId);

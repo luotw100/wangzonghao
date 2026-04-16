@@ -81,12 +81,13 @@ Base.metadata.create_all(bind=engine)
 
 # --- 数据库迁移：补充新增字段 ---
 def _run_migrations():
+    from sqlalchemy.exc import OperationalError
     with engine.connect() as conn:
         try:
             conn.execute(text("ALTER TABLE conversations ADD COLUMN user_profile TEXT"))
             conn.commit()
-        except Exception:
-            pass  # 列已存在
+        except OperationalError:
+            pass  # 列已存在，忽略
 
 _run_migrations()
 
@@ -361,10 +362,15 @@ def get_conversation_messages(
 def create_planned_replies(batch: PlannedRepliesBatch, db: Session = Depends(get_db)):
     """Worker 批量提交计划回复"""
     for r in batch.replies:
+        # send_at 统一存储为 UTC naive datetime（SQLite 不支持带时区的列）
+        if r.send_at.tzinfo is not None:
+            send_at_utc = r.send_at.astimezone(timezone.utc).replace(tzinfo=None)
+        else:
+            send_at_utc = r.send_at
         db_reply = PlannedReply(
             conversation_id=r.conversation_id,
             content=r.content,
-            send_at=r.send_at.replace(tzinfo=None) if r.send_at.tzinfo else r.send_at
+            send_at=send_at_utc
         )
         db.add(db_reply)
     db.commit()

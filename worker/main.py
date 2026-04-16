@@ -88,8 +88,10 @@ def parse_llm_response(text: str) -> List[Dict]:
         cleaned = text.strip()
         if cleaned.startswith("```"):
             lines = cleaned.split("\n")
-            # 去掉首行 ```json 和末行 ```
-            cleaned = "\n".join(lines[1:-1]) if lines[-1].strip() == "```" else "\n".join(lines[1:])
+            # 去掉首行（可能是 ```json 或 ```），末行若是 ``` 也去掉
+            start = 1
+            end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
+            cleaned = "\n".join(lines[start:end])
 
         data = json.loads(cleaned)
         if "messages" in data and isinstance(data["messages"], list):

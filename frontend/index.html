@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>AI Agent 调试工作台</title>
+    <title>Laborster</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600&family=Google+Sans+Text:wght@400;500&display=swap" rel="stylesheet">
@@ -34,12 +34,19 @@
             <!-- 侧边栏头部 -->
             <div class="flex items-center justify-between px-5 h-14 border-b border-[#e5e5e5] dark:border-[#3d3d3d]">
                 <div class="flex items-center gap-3">
-                    <!-- Gemini logo -->
-                    <svg width="28" height="28" viewBox="0 0 120 120" fill="none">
-                        <path d="M60 10L90 30V60L60 90L30 60V30L60 10Z" fill="#8AB4F8"/>
-                        <path d="M60 20L80 35V55L60 75L40 55V35L60 20Z" fill="white"/>
+                    <svg width="28" height="28" viewBox="0 0 28 28" fill="none" class="laborster-logo">
+                        <rect x="2" y="2" width="24" height="24" rx="8" fill="url(#laborsterGradient)"/>
+                        <path d="M9 8.5V19.5H19" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+                        <circle cx="19" cy="19.5" r="2" fill="#58F7FF"/>
+                        <defs>
+                            <linearGradient id="laborsterGradient" x1="2" y1="2" x2="26" y2="26" gradientUnits="userSpaceOnUse">
+                                <stop stop-color="#7C4DFF"/>
+                                <stop offset="0.48" stop-color="#FF4DB8"/>
+                                <stop offset="1" stop-color="#2EE6FF"/>
+                            </linearGradient>
+                        </defs>
                     </svg>
-                    <span class="font-medium text-[#1f1f1f] dark:text-white">Gemini</span>
+                    <span class="font-medium text-[#1f1f1f] dark:text-white">Laborster</span>
                 </div>
                 <button @click="sidebarOpen = false" class="md:hidden w-10 h-10 flex items-center justify-center rounded-full hover:bg-[#e8eaed] dark:hover:bg-[#3d3d3d]">
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -131,10 +138,18 @@
 
                     <!-- 空状态 -->
                     <div v-if="!activeConvId" class="flex flex-col items-center justify-center h-full min-h-[60vh] text-center">
-                        <div class="w-16 h-16 mb-6 rounded-full bg-[#f1f3f4] dark:bg-[#3d3d3d] flex items-center justify-center">
-                            <svg width="32" height="32" viewBox="0 0 120 120" fill="none">
-                                <path d="M60 10L90 30V60L60 90L30 60V30L60 10Z" fill="#8AB4F8"/>
-                                <path d="M60 20L80 35V55L60 75L40 55V35L60 20Z" fill="white"/>
+                        <div class="laborster-empty-logo w-16 h-16 mb-6 rounded-full bg-[#f1f3f4] dark:bg-[#3d3d3d] flex items-center justify-center">
+                            <svg width="32" height="32" viewBox="0 0 28 28" fill="none" class="laborster-logo">
+                                <rect x="2" y="2" width="24" height="24" rx="8" fill="url(#laborsterEmptyGradient)"/>
+                                <path d="M9 8.5V19.5H19" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+                                <circle cx="19" cy="19.5" r="2" fill="#58F7FF"/>
+                                <defs>
+                                    <linearGradient id="laborsterEmptyGradient" x1="2" y1="2" x2="26" y2="26" gradientUnits="userSpaceOnUse">
+                                        <stop stop-color="#7C4DFF"/>
+                                        <stop offset="0.48" stop-color="#FF4DB8"/>
+                                        <stop offset="1" stop-color="#2EE6FF"/>
+                                    </linearGradient>
+                                </defs>
                             </svg>
                         </div>
                         <h3 class="text-xl font-medium mb-2 text-[#202124] dark:text-white">有什么可以帮你的？</h3>
@@ -147,9 +162,18 @@
 
                             <!-- AI 消息 -->
                             <div v-if="msg.role === 'robot'" class="flex gap-3 max-w-[85%] md:max-w-[80%]">
-                                <div class="w-8 h-8 shrink-0 rounded-full bg-[#8AB4F8] flex items-center justify-center">
-                                    <svg width="16" height="16" viewBox="0 0 120 120" fill="none">
-                                        <path d="M60 10L90 30V60L60 90L30 60V30L60 10Z" fill="white"/>
+                                <div class="laborster-avatar w-8 h-8 shrink-0 rounded-full bg-[#8AB4F8] flex items-center justify-center">
+                                    <svg width="16" height="16" viewBox="0 0 28 28" fill="none">
+                                        <rect x="2.5" y="2.5" width="23" height="23" rx="7" fill="url(#laborsterAvatarGradient)"/>
+                                        <path d="M10 8.8V18.7H18.4" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        <circle cx="18.5" cy="18.8" r="1.7" fill="#58F7FF"/>
+                                        <defs>
+                                            <linearGradient id="laborsterAvatarGradient" x1="2.5" y1="2.5" x2="25.5" y2="25.5" gradientUnits="userSpaceOnUse">
+                                                <stop stop-color="#7C4DFF"/>
+                                                <stop offset="0.48" stop-color="#FF4DB8"/>
+                                                <stop offset="1" stop-color="#2EE6FF"/>
+                                            </linearGradient>
+                                        </defs>
                                     </svg>
                                 </div>
                                 <div class="pt-1">
@@ -169,9 +193,18 @@
                         <div v-if="plannedReplies.length > 0" class="flex flex-col gap-3 mt-2">
                             <div v-for="reply in plannedReplies" :key="reply.id" class="flex justify-start">
                                 <div class="flex gap-3 max-w-[85%] md:max-w-[80%] opacity-40">
-                                    <div class="w-8 h-8 shrink-0 rounded-full bg-[#8AB4F8] flex items-center justify-center">
-                                        <svg width="16" height="16" viewBox="0 0 120 120" fill="none">
-                                            <path d="M60 10L90 30V60L60 90L30 60V30L60 10Z" fill="white"/>
+                                    <div class="laborster-avatar w-8 h-8 shrink-0 rounded-full bg-[#8AB4F8] flex items-center justify-center">
+                                        <svg width="16" height="16" viewBox="0 0 28 28" fill="none">
+                                            <rect x="2.5" y="2.5" width="23" height="23" rx="7" fill="url(#laborsterPlannedGradient)"/>
+                                            <path d="M10 8.8V18.7H18.4" stroke="white" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+                                            <circle cx="18.5" cy="18.8" r="1.7" fill="#58F7FF"/>
+                                            <defs>
+                                                <linearGradient id="laborsterPlannedGradient" x1="2.5" y1="2.5" x2="25.5" y2="25.5" gradientUnits="userSpaceOnUse">
+                                                    <stop stop-color="#7C4DFF"/>
+                                                    <stop offset="0.48" stop-color="#FF4DB8"/>
+                                                    <stop offset="1" stop-color="#2EE6FF"/>
+                                                </linearGradient>
+                                            </defs>
                                         </svg>
                                     </div>
                                     <div class="pt-1">

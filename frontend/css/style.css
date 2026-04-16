@@ -135,6 +135,19 @@ button, a {
     transition: background-color 0.15s ease, color 0.15s ease;
 }
 
+.laborster-logo {
+    filter: drop-shadow(0 0 8px rgba(124, 77, 255, 0.35)) drop-shadow(0 0 14px rgba(255, 77, 184, 0.22));
+}
+
+.laborster-empty-logo {
+    box-shadow: inset 0 0 16px rgba(124, 77, 255, 0.15), 0 0 24px rgba(255, 77, 184, 0.12);
+}
+
+.laborster-avatar {
+    background: linear-gradient(135deg, #7c4dff 0%, #ff4db8 52%, #2ee6ff 100%) !important;
+    box-shadow: 0 0 12px rgba(124, 77, 255, 0.28);
+}
+
 /* ============================================
    深色模式适配
    ============================================ */

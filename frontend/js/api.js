@@ -46,18 +46,18 @@ const API = {
     async getConversations() {
         return this.request(`${API_BASE}/conversations`);
     },
-    async createConversation(robotId) {
+    async createConversation(robotId, title, userProfile) {
         return this.request(`${API_BASE}/conversations`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ robot_id: robotId })
+            body: JSON.stringify({ robot_id: robotId, title: title || null, user_profile: userProfile || null })
         });
     },
-    async updateConversation(convId, title) {
+    async updateConversation(convId, data) {
         return this.request(`${API_BASE}/conversations/${convId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title })
+            body: JSON.stringify(data)
         });
     },
 
@@ -95,5 +95,10 @@ const API = {
             }
             throw err;
         }
+    }
+    ,
+    // --- PlannedReplies ---
+    async getPlannedReplies(convId) {
+        return this.request(`${API_BASE}/planned_replies?conversation_id=${convId}`, {}, 5000);
     }
 };

@@ -11,7 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy import Column, String, Integer, DateTime, Text, create_engine, and_
+from sqlalchemy import Column, String, Integer, DateTime, Text, create_engine, and_, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
 
 # --- 1. 环境与路径配置 ---
@@ -44,6 +44,7 @@ class Conversation(Base):
     id = Column(String, primary_key=True, index=True)
     robot_id = Column(String, index=True)
     title = Column(String, nullable=False)
+    user_profile = Column(Text, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
@@ -67,8 +68,27 @@ class Task(Base):
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
+class PlannedReply(Base):
+    __tablename__ = "planned_replies"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    conversation_id = Column(String, index=True)
+    content = Column(Text, nullable=False)
+    send_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
 # 创建所有表
 Base.metadata.create_all(bind=engine)
+
+# --- 数据库迁移：补充新增字段 ---
+def _run_migrations():
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE conversations ADD COLUMN user_profile TEXT"))
+            conn.commit()
+        except Exception:
+            pass  # 列已存在
+
+_run_migrations()
 
 # --- 3. Pydantic 响应/请求模型 (Schemas) ---
 class RobotCreate(BaseModel):
@@ -82,9 +102,11 @@ class RobotUpdate(BaseModel):
 class ConversationCreate(BaseModel):
     robot_id: str
     title: Optional[str] = None
+    user_profile: Optional[str] = None
 
 class ConversationUpdate(BaseModel):
-    title: str
+    title: Optional[str] = None
+    user_profile: Optional[str] = None
 
 class MessageCreate(BaseModel):
     conversation_id: str
@@ -95,6 +117,14 @@ class MessageCreate(BaseModel):
 class TaskUpdate(BaseModel):
     status: str
     error_message: Optional[str] = None
+
+class PlannedReplyCreate(BaseModel):
+    conversation_id: str
+    content: str
+    send_at: datetime
+
+class PlannedRepliesBatch(BaseModel):
+    replies: List[PlannedReplyCreate]
 
 # --- 4. 工具函数：处理 Base64 落盘 ---
 def save_base64_file(content: str, msg_type: str) -> str:
@@ -169,7 +199,12 @@ def create_conversation(conv_in: ConversationCreate, db: Session = Depends(get_d
     final_title = conv_in.title if conv_in.title else f"{robot.name}_{now_str}"
 
     conv_id = f"c_{uuid.uuid4().hex[:12]}"
-    db_conv = Conversation(id=conv_id, robot_id=conv_in.robot_id, title=final_title)
+    db_conv = Conversation(
+        id=conv_id,
+        robot_id=conv_in.robot_id,
+        title=final_title,
+        user_profile=conv_in.user_profile
+    )
     db.add(db_conv)
     db.commit()
     db.refresh(db_conv)
@@ -185,7 +220,10 @@ def update_conversation_title(conv_id: str, conv_update: ConversationUpdate, db:
     if not db_conv:
         raise HTTPException(status_code=404, detail="会话不存在")
 
-    db_conv.title = conv_update.title
+    if conv_update.title is not None:
+        db_conv.title = conv_update.title
+    if conv_update.user_profile is not None:
+        db_conv.user_profile = conv_update.user_profile
     db_conv.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(db_conv)
@@ -217,8 +255,11 @@ def send_message(msg_in: MessageCreate, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(db_msg)
 
-    # 如果是用户消息，创建 Task
+    # 如果是用户消息：取消该会话所有计划回复，并创建新 Task（全双工中断）
     if msg_in.role == "user":
+        db.query(PlannedReply).filter(
+            PlannedReply.conversation_id == msg_in.conversation_id
+        ).delete(synchronize_session=False)
         db_task = Task(
             conversation_id=msg_in.conversation_id,
             user_message_id=db_msg.id,
@@ -313,6 +354,45 @@ def get_conversation_messages(
         "robot": robot,
         "messages": messages
     }
+
+
+# --- PlannedReply API ---
+@app.post("/api/planned_replies")
+def create_planned_replies(batch: PlannedRepliesBatch, db: Session = Depends(get_db)):
+    """Worker 批量提交计划回复"""
+    for r in batch.replies:
+        db_reply = PlannedReply(
+            conversation_id=r.conversation_id,
+            content=r.content,
+            send_at=r.send_at.replace(tzinfo=None) if r.send_at.tzinfo else r.send_at
+        )
+        db.add(db_reply)
+    db.commit()
+    return {"status": "ok", "count": len(batch.replies)}
+
+@app.get("/api/planned_replies/due")
+def get_due_planned_replies(db: Session = Depends(get_db)):
+    """Worker 获取所有到期（send_at <= now）的计划回复"""
+    now = datetime.utcnow()
+    replies = db.query(PlannedReply).filter(
+        PlannedReply.send_at <= now
+    ).order_by(PlannedReply.send_at.asc()).all()
+    return replies
+
+@app.get("/api/planned_replies")
+def get_planned_replies(conversation_id: str = Query(...), db: Session = Depends(get_db)):
+    """前端获取指定会话的所有计划回复（用于显示半透明气泡）"""
+    replies = db.query(PlannedReply).filter(
+        PlannedReply.conversation_id == conversation_id
+    ).order_by(PlannedReply.send_at.asc()).all()
+    return replies
+
+@app.delete("/api/planned_replies/{reply_id}")
+def delete_planned_reply(reply_id: int, db: Session = Depends(get_db)):
+    """Worker 发送完毕后删除计划回复"""
+    db.query(PlannedReply).filter(PlannedReply.id == reply_id).delete(synchronize_session=False)
+    db.commit()
+    return {"status": "ok"}
 
 
 # --- 6. 托管前端页面 ---

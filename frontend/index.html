@@ -57,7 +57,6 @@
                 </svg>
                 <span class="text-sm font-medium">新建 Robot</span>
             </button>
-
             <!-- Robot 列表 -->
             <div class="flex-1 overflow-y-auto mt-4 px-2 scrollbar-hide">
                 <div v-for="robot in robots" :key="robot.id" class="mb-2">
@@ -165,6 +164,23 @@
                                 </div>
                             </div>
                         </div>
+
+                        <!-- 计划回复预览（半透明气泡） -->
+                        <div v-if="plannedReplies.length > 0" class="flex flex-col gap-3 mt-2">
+                            <div v-for="reply in plannedReplies" :key="reply.id" class="flex justify-start">
+                                <div class="flex gap-3 max-w-[85%] md:max-w-[80%] opacity-40">
+                                    <div class="w-8 h-8 shrink-0 rounded-full bg-[#8AB4F8] flex items-center justify-center">
+                                        <svg width="16" height="16" viewBox="0 0 120 120" fill="none">
+                                            <path d="M60 10L90 30V60L60 90L30 60V30L60 10Z" fill="white"/>
+                                        </svg>
+                                    </div>
+                                    <div class="pt-1">
+                                        <p class="whitespace-pre-wrap break-words leading-relaxed text-[15px]">{{ reply.content }}</p>
+                                        <p class="text-xs text-[#9aa0a6] mt-1">{{ formatCountdown(reply.send_at) }}</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </template>
                 </div>
             </div>
@@ -206,21 +222,50 @@
         <!-- 创建 Robot 弹窗 -->
         <div v-if="showCreateRobotModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div @click="showCreateRobotModal = false" class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
-            <div class="relative bg-white dark:bg-[#2f2f2f] rounded-2xl p-6 w-full max-w-md shadow-xl">
-                <h3 class="text-lg font-medium mb-4">新建 Robot</h3>
-                <div class="space-y-4">
+            <div class="relative bg-white dark:bg-[#2f2f2f] rounded-2xl p-6 w-full max-w-2xl shadow-xl max-h-[90vh] flex flex-col">
+                <h3 class="text-lg font-medium mb-4 shrink-0">新建 Robot</h3>
+                <div class="space-y-4 overflow-y-auto flex-1">
                     <div>
                         <label class="block text-sm font-medium mb-2 text-[#5f6368] dark:text-[#9aa0a6]">名称</label>
                         <input v-model="newRobotName" type="text" class="w-full px-4 py-2.5 bg-[#f1f3f4] dark:bg-[#3d3d3d] rounded-lg outline-none focus:ring-2 focus:ring-[#1a73e8]" placeholder="输入 Robot 名称" @keyup.enter="createRobot">
                     </div>
                     <div>
-                        <label class="block text-sm font-medium mb-2 text-[#5f6368] dark:text-[#9aa0a6]">系统提示词（可选）</label>
-                        <textarea v-model="newRobotSystemPrompt" class="w-full px-4 py-2.5 bg-[#f1f3f4] dark:bg-[#3d3d3d] rounded-lg outline-none focus:ring-2 focus:ring-[#1a73e8]" rows="3" placeholder="定义 Robot 的行为和角色"></textarea>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-sm font-medium text-[#5f6368] dark:text-[#9aa0a6]">系统提示词（System Prompt）</label>
+                            <button @click="newRobotSystemPrompt = TEMPLATE_SYSTEM_PROMPT" class="text-xs px-2 py-1 rounded bg-[#e8f0fe] text-[#1a73e8] hover:bg-[#d2e3fc] transition">使用晚晚模板</button>
+                        </div>
+                        <textarea v-model="newRobotSystemPrompt" class="w-full px-4 py-2.5 bg-[#f1f3f4] dark:bg-[#3d3d3d] rounded-lg outline-none focus:ring-2 focus:ring-[#1a73e8] font-mono text-xs" rows="12" placeholder="定义 Robot 的角色、背景和行为规则（支持大段 System Prompt）"></textarea>
                     </div>
                 </div>
-                <div class="flex justify-end gap-3 mt-6">
+                <div class="flex justify-end gap-3 mt-6 shrink-0">
                     <button @click="showCreateRobotModal = false" class="px-4 py-2 text-[#5f6368] hover:bg-[#f1f3f4] dark:hover:bg-[#3d3d3d] rounded-lg transition">取消</button>
                     <button @click="createRobot" class="px-4 py-2 bg-[#1a73e8] text-white rounded-lg hover:bg-[#1557b0] transition">创建</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 新建会话弹窗 -->
+        <div v-if="showCreateConvModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div @click="showCreateConvModal = false" class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
+            <div class="relative bg-white dark:bg-[#2f2f2f] rounded-2xl p-6 w-full max-w-lg shadow-xl max-h-[90vh] flex flex-col">
+                <h3 class="text-lg font-medium mb-4 shrink-0">新建会话</h3>
+                <div class="space-y-4 overflow-y-auto flex-1">
+                    <div>
+                        <label class="block text-sm font-medium mb-2 text-[#5f6368] dark:text-[#9aa0a6]">会话标题（可选）</label>
+                        <input v-model="newConvTitle" type="text" class="w-full px-4 py-2.5 bg-[#f1f3f4] dark:bg-[#3d3d3d] rounded-lg outline-none focus:ring-2 focus:ring-[#1a73e8]" placeholder="留空则自动生成">
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-sm font-medium text-[#5f6368] dark:text-[#9aa0a6]">粉丝档案（User Profile）</label>
+                            <button @click="newConvUserProfile = TEMPLATE_USER_PROFILE" class="text-xs px-2 py-1 rounded bg-[#e8f0fe] text-[#1a73e8] hover:bg-[#d2e3fc] transition">使用示例模板</button>
+                        </div>
+                        <textarea v-model="newConvUserProfile" class="w-full px-4 py-2.5 bg-[#f1f3f4] dark:bg-[#3d3d3d] rounded-lg outline-none focus:ring-2 focus:ring-[#1a73e8] text-sm" rows="6" placeholder="- 备注名：XXX&#10;- 累计打赏金额：XXX RMB&#10;- 关注时长：X个月&#10;- 历史标签：XXX"></textarea>
+                        <p class="text-xs text-[#9aa0a6] mt-1">该信息会附加到 System Prompt 末尾，帮助机器人了解对话对象</p>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 mt-6 shrink-0">
+                    <button @click="showCreateConvModal = false" class="px-4 py-2 text-[#5f6368] hover:bg-[#f1f3f4] dark:hover:bg-[#3d3d3d] rounded-lg transition">取消</button>
+                    <button @click="createConversation" class="px-4 py-2 bg-[#1a73e8] text-white rounded-lg hover:bg-[#1557b0] transition">创建</button>
                 </div>
             </div>
         </div>

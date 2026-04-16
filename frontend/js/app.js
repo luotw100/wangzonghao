@@ -171,8 +171,12 @@ createApp({
         const saveEditRobot = async () => {
             const robotId = editingRobotId.value;
             const name = editingRobotName.value.trim();
-            if (!robotId || !name) {
+            if (!robotId) {
                 closeEditRobotModal();
+                return;
+            }
+            if (!name) {
+                errorMessage.value = "Robot 名称不能为空";
                 return;
             }
 
@@ -381,8 +385,12 @@ createApp({
         const saveEditConversation = async () => {
             const title = editingConvTitle.value ? editingConvTitle.value.trim() : "";
             const convId = editingConvId.value;
-            if (!title || !convId) {
+            if (!convId) {
                 closeEditConversationModal();
+                return;
+            }
+            if (!title) {
+                errorMessage.value = "会话标题不能为空";
                 return;
             }
 

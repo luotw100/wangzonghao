@@ -181,7 +181,7 @@ def update_robot(robot_id: str, robot_update: RobotUpdate, db: Session = Depends
 
     if robot_update.name is not None:
         db_robot.name = robot_update.name
-    if robot_update.system_prompt is not None:
+    if "system_prompt" in robot_update.model_fields_set:
         db_robot.system_prompt = robot_update.system_prompt
     db_robot.updated_at = datetime.now(timezone.utc)
 
@@ -223,7 +223,7 @@ def update_conversation_title(conv_id: str, conv_update: ConversationUpdate, db:
 
     if conv_update.title is not None:
         db_conv.title = conv_update.title
-    if conv_update.user_profile is not None:
+    if "user_profile" in conv_update.model_fields_set:
         db_conv.user_profile = conv_update.user_profile
     db_conv.updated_at = datetime.now(timezone.utc)
     db.commit()

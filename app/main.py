@@ -11,9 +11,8 @@ from fastapi.responses import FileResponse
 from fastapi import FastAPI, HTTPException, Query, Depends
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy import Column, String, Integer, DateTime, Text, ForeignKey, create_engine, or_, and_
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy import Column, String, Integer, DateTime, Text, create_engine, and_
+from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
 
 # --- 1. 环境与路径配置 ---
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -28,7 +27,8 @@ DATABASE_URL = f"sqlite:///{DB_PATH}"
 
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
 
 # --- 2. 数据库模型 (ORM) ---
 class Robot(Base):
@@ -186,6 +186,7 @@ def update_conversation_title(conv_id: str, conv_update: ConversationUpdate, db:
         raise HTTPException(status_code=404, detail="会话不存在")
 
     db_conv.title = conv_update.title
+    db_conv.updated_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(db_conv)
     return db_conv
@@ -233,20 +234,23 @@ async def get_messages(
     conversation_id: str,
     last_id: int = Query(0),
     timeout: int = Query(30, description="超时时间（秒），0 表示立即返回"),
-    db: Session = Depends(get_db)
 ):
     start_time = time.time()
 
     while True:
-        msgs = db.query(Message).filter(
-            and_(
-                Message.conversation_id == conversation_id,
-                Message.id > last_id
-            )
-        ).order_by(Message.id.asc()).all()
+        db = SessionLocal()
+        try:
+            msgs = db.query(Message).filter(
+                and_(
+                    Message.conversation_id == conversation_id,
+                    Message.id > last_id
+                )
+            ).order_by(Message.id.asc()).all()
 
-        if msgs:
-            return msgs
+            if msgs:
+                return msgs
+        finally:
+            db.close()
 
         elapsed = time.time() - start_time
         if elapsed >= timeout:
@@ -311,11 +315,11 @@ def get_conversation_messages(
     }
 
 
-# --- 6. 优雅托管前端页面 ---
+# --- 6. 托管前端页面 ---
 FRONTEND_DIR = BASE_DIR / "frontend"
+
+app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend_static")
 
 @app.get("/")
 def serve_index():
     return FileResponse(FRONTEND_DIR / "index.html")
-
-app.mount("/", StaticFiles(directory=str(FRONTEND_DIR)), name="frontend_static")

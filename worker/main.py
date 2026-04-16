@@ -2,9 +2,8 @@
 LLM Worker - 轮询待处理任务，调用大模型生成回复
 """
 import time
-import json
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict
 
 import httpx
 
@@ -38,7 +37,7 @@ class LLMClient:
 
     def chat(self, messages: List[Dict[str, str]]) -> str:
         """
-        调用大模型聊天接口
+        调用大模型聊天接口（OpenAI 兼容格式）
 
         Args:
             messages: [{"role": "user"/"assistant"/"system", "content": "..."}]
@@ -56,8 +55,7 @@ class LLMClient:
             "messages": messages
         }
 
-        # 兼容不同 API 格式
-        # OpenAI 格式
+        # 尝试 /chat/completions 端点
         try:
             response = self.client.post(
                 f"{self.base_url}/chat/completions",
@@ -68,34 +66,11 @@ class LLMClient:
             data = response.json()
             return data["choices"][0]["message"]["content"]
         except Exception as e:
-            logger.debug(f"OpenAI format failed: {e}")
+            logger.debug(f"OpenAI /chat/completions failed: {e}")
 
-        # Claude 格式 (Claude API 使用不同的端点)
+        # 尝试 /v1/chat/completions 端点（兼容本地模型）
         try:
-            anthropic_messages = self._to_anthropic_format(messages)
-            payload = {
-                "model": self.model,
-                "messages": anthropic_messages,
-                "max_tokens": 4096
-            }
-            response = self.client.post(
-                f"{self.base_url}/v1/messages",
-                headers={**headers, "x-api-key": self.api_key, "anthropic-version": "2023-06-01"},
-                json=payload
-            )
-            response.raise_for_status()
-            data = response.json()
-            return data["content"][0]["text"]
-        except Exception as e:
-            logger.debug(f"Anthropic format failed: {e}")
-
-        # 通用格式 (如 local AI)
-        try:
-            payload = {
-                "model": self.model,
-                "messages": messages,
-                "stream": False
-            }
+            payload["stream"] = False
             response = self.client.post(
                 f"{self.base_url}/v1/chat/completions",
                 headers=headers,
@@ -108,20 +83,9 @@ class LLMClient:
             elif "response" in data:
                 return data["response"]
         except Exception as e:
-            logger.debug(f"Generic format failed: {e}")
+            logger.debug(f"OpenAI /v1/chat/completions failed: {e}")
 
-        raise Exception(f"Failed to call LLM API with any known format")
-
-    def _to_anthropic_format(self, messages: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        """将消息转换为 Anthropic 格式"""
-        result = []
-        for msg in messages:
-            if msg["role"] == "system":
-                result.insert(0, {"role": "user", "content": msg["content"]})
-            else:
-                role = "assistant" if msg["role"] == "assistant" else msg["role"]
-                result.append({"role": role, "content": msg["content"]})
-        return result
+        raise Exception("Failed to call LLM API with OpenAI-compatible format")
 
     def close(self):
         self.client.close()
@@ -134,6 +98,10 @@ class Worker:
         self.api_base = api_base.rstrip("/")
         self.llm = llm_client
         self.client = httpx.Client(timeout=30)
+
+    def close(self):
+        """关闭 HTTP 客户端"""
+        self.client.close()
 
     def get_pending_tasks(self) -> List[Dict]:
         """获取待处理任务"""
@@ -284,6 +252,7 @@ def main():
         logger.info("Worker stopped")
     finally:
         llm_client.close()
+        worker.close()
 
 
 if __name__ == "__main__":

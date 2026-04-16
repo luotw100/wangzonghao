@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600&family=Google+Sans+Text:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="static/css/style.css">
 </head>
 <body class="bg-white dark:bg-[#1f1f1f] text-[#1f1f1f] dark:text-white">
 
@@ -147,7 +147,7 @@
                              :class="['flex', msg.role === 'user' ? 'justify-end' : 'justify-start']">
 
                             <!-- AI 消息 -->
-                            <div v-if="msg.role === 'assistant'" class="flex gap-3 max-w-[85%] md:max-w-[80%]">
+                            <div v-if="msg.role === 'robot'" class="flex gap-3 max-w-[85%] md:max-w-[80%]">
                                 <div class="w-8 h-8 shrink-0 rounded-full bg-[#8AB4F8] flex items-center justify-center">
                                     <svg width="16" height="16" viewBox="0 0 120 120" fill="none">
                                         <path d="M60 10L90 30V60L60 90L30 60V30L60 10Z" fill="white"/>
@@ -240,8 +240,8 @@
     </div>
 
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script src="js/utils.js"></script>
-    <script src="js/api.js"></script>
-    <script src="js/app.js"></script>
+    <script src="static/js/utils.js"></script>
+    <script src="static/js/api.js"></script>
+    <script src="static/js/app.js"></script>
 </body>
 </html>

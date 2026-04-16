@@ -1,9 +1,11 @@
 # Worker 配置
 # 请根据你的 LLM API 进行配置
 
-LLM_BASE_URL = "https://api.deepseek.com"  # 或其他大模型 API 地址
-LLM_API_KEY = "sk-3898e65a9f9b486b8ecf0eff724d32e2"           # 你的 API Key
-LLM_MODEL = "deepseek-chat"                   # 使用的模型
+import os
+
+LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "https://api.deepseek.com")
+LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
+LLM_MODEL = os.environ.get("LLM_MODEL", "deepseek-chat")
 
 # 请求超时（秒）
 REQUEST_TIMEOUT = 120

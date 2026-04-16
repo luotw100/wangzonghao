@@ -77,28 +77,22 @@ createApp({
 
         // --- 会话 ---
         const openCreateConversationModal = (robotId) => {
-            console.log('[DEBUG] openCreateConversationModal called', robotId);
             createConversation(robotId);
         };
 
         const createConversation = async (robotId) => {
-            console.log('[DEBUG] createConversation called', robotId);
             try {
                 const conv = await API.createConversation(robotId);
-                console.log('[DEBUG] conv created', conv);
                 await loadConversations();
                 selectConversation(conv.id);
             } catch (err) {
-                console.error('[DEBUG] createConversation error', err);
                 errorMessage.value = "创建会话失败: " + err.message;
             }
         };
 
         const openEditConversationModal = (conv) => {
-            console.log('[DEBUG] openEditConversationModal called', conv);
             editingConvId.value = conv.id;
             editingConvTitle.value = conv.title || "";
-            console.log('[DEBUG] set editingConvTitle to', editingConvTitle.value);
         };
 
         const selectConversation = async (convId) => {
@@ -221,7 +215,6 @@ createApp({
 
         // --- 标题编辑 ---
         const saveEditConvTitle = async () => {
-            console.log('[DEBUG] saveEditConvTitle', editingConvTitle.value, editingConvId.value);
             const title = editingConvTitle.value ? editingConvTitle.value.trim() : "";
             const convId = editingConvId.value;
             if (!title || !convId) {
@@ -231,7 +224,6 @@ createApp({
             }
 
             try {
-                console.log('[DEBUG] API.updateConversation', convId, title);
                 await API.updateConversation(convId, title);
                 errorMessage.value = "";
                 editingConvTitle.value = "";
@@ -241,7 +233,6 @@ createApp({
                     activeConvTitle.value = title;
                 }
             } catch (err) {
-                console.error('[DEBUG] saveEditConvTitle error', err);
                 editingConvTitle.value = "";
                 editingConvId.value = null;
                 errorMessage.value = "更新会话失败: " + err.message;

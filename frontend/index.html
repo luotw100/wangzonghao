@@ -72,6 +72,12 @@
                             <polyline points="9 18 15 12 9 6"></polyline>
                         </svg>
                         <span class="font-medium text-sm flex-1">{{ robot.name }}</span>
+                        <button @click.stop="openEditRobotModal(robot)" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-[#e8eaed] dark:hover:bg-[#3d3d3d] shrink-0 touch-target" title="编辑 Robot">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                            </svg>
+                        </button>
                         <button @click.stop="openCreateConversationModal(robot.id)" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-[#e8eaed] dark:hover:bg-[#3d3d3d] shrink-0 touch-target" title="新建会话">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -277,6 +283,31 @@
             </div>
         </div>
 
+        <!-- 编辑 Robot 弹窗 -->
+        <div v-if="showEditRobotModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div @click="closeEditRobotModal" class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
+            <div class="relative bg-white dark:bg-[#2f2f2f] rounded-2xl p-6 w-full max-w-2xl shadow-xl max-h-[90vh] flex flex-col">
+                <h3 class="text-lg font-medium mb-4 shrink-0">编辑 Robot</h3>
+                <div class="space-y-4 overflow-y-auto flex-1">
+                    <div>
+                        <label class="block text-sm font-medium mb-2 text-[#5f6368] dark:text-[#9aa0a6]">名称</label>
+                        <input v-model="editingRobotName" type="text" class="w-full px-4 py-2.5 bg-[#f1f3f4] dark:bg-[#3d3d3d] rounded-lg outline-none focus:ring-2 focus:ring-[#1a73e8]" placeholder="输入 Robot 名称" @keyup.enter="saveEditRobot">
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-sm font-medium text-[#5f6368] dark:text-[#9aa0a6]">系统提示词（System Prompt）</label>
+                            <button @click="editingRobotSystemPrompt = TEMPLATE_SYSTEM_PROMPT" class="text-xs px-2 py-1 rounded bg-[#e8f0fe] text-[#1a73e8] hover:bg-[#d2e3fc] transition">使用晚晚模板</button>
+                        </div>
+                        <textarea v-model="editingRobotSystemPrompt" class="w-full px-4 py-2.5 bg-[#f1f3f4] dark:bg-[#3d3d3d] rounded-lg outline-none focus:ring-2 focus:ring-[#1a73e8] font-mono text-xs" rows="12" placeholder="定义 Robot 的角色、背景和行为规则（支持大段 System Prompt）"></textarea>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 mt-6 shrink-0">
+                    <button @click="closeEditRobotModal" class="px-4 py-2 text-[#5f6368] hover:bg-[#f1f3f4] dark:hover:bg-[#3d3d3d] rounded-lg transition">取消</button>
+                    <button @click="saveEditRobot" class="px-4 py-2 bg-[#1a73e8] text-white rounded-lg hover:bg-[#1557b0] transition">保存</button>
+                </div>
+            </div>
+        </div>
+
         <!-- 新建会话弹窗 -->
         <div v-if="showCreateConvModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div @click="showCreateConvModal = false" class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
@@ -305,13 +336,25 @@
 
         <!-- 编辑会话弹窗 -->
         <div v-if="isEditingConv" class="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div @click="editingConvTitle = ''; editingConvId = null" class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
-            <div class="relative bg-white dark:bg-[#2f2f2f] rounded-2xl p-6 w-full max-w-md shadow-xl">
-                <h3 class="text-lg font-medium mb-4">重命名会话</h3>
-                <input v-model="editingConvTitle" type="text" class="w-full px-4 py-2.5 bg-[#f1f3f4] dark:bg-[#3d3d3d] rounded-lg outline-none focus:ring-2 focus:ring-[#1a73e8]" @keyup.enter="saveEditConvTitle">
-                <div class="flex justify-end gap-3 mt-5">
-                    <button @click="editingConvTitle = ''; editingConvId = null" class="px-4 py-2 text-[#5f6368] hover:bg-[#f1f3f4] dark:hover:bg-[#3d3d3d] rounded-lg transition">取消</button>
-                    <button @click="saveEditConvTitle" class="px-4 py-2 bg-[#1a73e8] text-white rounded-lg hover:bg-[#1557b0] transition">保存</button>
+            <div @click="closeEditConversationModal" class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
+            <div class="relative bg-white dark:bg-[#2f2f2f] rounded-2xl p-6 w-full max-w-lg shadow-xl max-h-[90vh] flex flex-col">
+                <h3 class="text-lg font-medium mb-4 shrink-0">编辑会话</h3>
+                <div class="space-y-4 overflow-y-auto flex-1">
+                    <div>
+                        <label class="block text-sm font-medium mb-2 text-[#5f6368] dark:text-[#9aa0a6]">会话标题</label>
+                        <input v-model="editingConvTitle" type="text" class="w-full px-4 py-2.5 bg-[#f1f3f4] dark:bg-[#3d3d3d] rounded-lg outline-none focus:ring-2 focus:ring-[#1a73e8]" @keyup.enter="saveEditConversation">
+                    </div>
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-sm font-medium text-[#5f6368] dark:text-[#9aa0a6]">粉丝档案（User Profile）</label>
+                            <button @click="editingConvUserProfile = TEMPLATE_USER_PROFILE" class="text-xs px-2 py-1 rounded bg-[#e8f0fe] text-[#1a73e8] hover:bg-[#d2e3fc] transition">使用示例模板</button>
+                        </div>
+                        <textarea v-model="editingConvUserProfile" class="w-full px-4 py-2.5 bg-[#f1f3f4] dark:bg-[#3d3d3d] rounded-lg outline-none focus:ring-2 focus:ring-[#1a73e8] text-sm" rows="6" placeholder="- 备注名：XXX&#10;- 累计打赏金额：XXX RMB&#10;- 关注时长：X个月&#10;- 历史标签：XXX"></textarea>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 mt-5 shrink-0">
+                    <button @click="closeEditConversationModal" class="px-4 py-2 text-[#5f6368] hover:bg-[#f1f3f4] dark:hover:bg-[#3d3d3d] rounded-lg transition">取消</button>
+                    <button @click="saveEditConversation" class="px-4 py-2 bg-[#1a73e8] text-white rounded-lg hover:bg-[#1557b0] transition">保存</button>
                 </div>
             </div>
         </div>

@@ -75,6 +75,10 @@ createApp({
         const showCreateRobotModal = ref(false);
         const newRobotName = ref("");
         const newRobotSystemPrompt = ref("");
+        const showEditRobotModal = ref(false);
+        const editingRobotId = ref(null);
+        const editingRobotName = ref("");
+        const editingRobotSystemPrompt = ref("");
 
         // 新建会话弹窗
         const showCreateConvModal = ref(false);
@@ -84,6 +88,7 @@ createApp({
 
         // 编辑会话弹窗
         const editingConvTitle = ref("");
+        const editingConvUserProfile = ref("");
         const editingConvId = ref(null);
         const isEditingConv = computed(() => editingConvId.value !== null);
 
@@ -149,6 +154,41 @@ createApp({
             }
         };
 
+        const openEditRobotModal = (robot) => {
+            editingRobotId.value = robot.id;
+            editingRobotName.value = robot.name || "";
+            editingRobotSystemPrompt.value = robot.system_prompt || "";
+            showEditRobotModal.value = true;
+        };
+
+        const closeEditRobotModal = () => {
+            editingRobotId.value = null;
+            editingRobotName.value = "";
+            editingRobotSystemPrompt.value = "";
+            showEditRobotModal.value = false;
+        };
+
+        const saveEditRobot = async () => {
+            const robotId = editingRobotId.value;
+            const name = editingRobotName.value.trim();
+            if (!robotId || !name) {
+                closeEditRobotModal();
+                return;
+            }
+
+            try {
+                await API.updateRobot(robotId, {
+                    name,
+                    system_prompt: editingRobotSystemPrompt.value.trim() || null
+                });
+                errorMessage.value = "";
+                closeEditRobotModal();
+                await loadRobots();
+            } catch (err) {
+                errorMessage.value = "更新 Robot 失败: " + err.message;
+            }
+        };
+
         // --- 会话 ---
         const openCreateConversationModal = (robotId) => {
             newConvRobotId.value = robotId;
@@ -180,6 +220,13 @@ createApp({
         const openEditConversationModal = (conv) => {
             editingConvId.value = conv.id;
             editingConvTitle.value = conv.title || "";
+            editingConvUserProfile.value = conv.user_profile || "";
+        };
+
+        const closeEditConversationModal = () => {
+            editingConvTitle.value = "";
+            editingConvUserProfile.value = "";
+            editingConvId.value = null;
         };
 
         const selectConversation = async (convId) => {
@@ -189,8 +236,7 @@ createApp({
             activeConvId.value = convId;
             const conv = conversations.value.find(c => c.id === convId);
             activeConvTitle.value = conv ? conv.title : "新对话";
-            editingConvTitle.value = "";
-            editingConvId.value = null;
+            closeEditConversationModal();
             errorMessage.value = "";
 
             currentMessages.value = [];
@@ -332,27 +378,26 @@ createApp({
         };
 
         // --- 标题编辑 ---
-        const saveEditConvTitle = async () => {
+        const saveEditConversation = async () => {
             const title = editingConvTitle.value ? editingConvTitle.value.trim() : "";
             const convId = editingConvId.value;
             if (!title || !convId) {
-                editingConvTitle.value = "";
-                editingConvId.value = null;
+                closeEditConversationModal();
                 return;
             }
 
             try {
-                await API.updateConversation(convId, { title });
+                await API.updateConversation(convId, {
+                    title,
+                    user_profile: editingConvUserProfile.value.trim() || null
+                });
                 errorMessage.value = "";
-                editingConvTitle.value = "";
-                editingConvId.value = null;
+                closeEditConversationModal();
                 await loadConversations();
                 if (activeConvId.value === convId) {
                     activeConvTitle.value = title;
                 }
             } catch (err) {
-                editingConvTitle.value = "";
-                editingConvId.value = null;
                 errorMessage.value = "更新会话失败: " + err.message;
             }
         };
@@ -390,13 +435,16 @@ createApp({
             sidebarOpen,
             collapsedRobots, toggleRobot,
             showCreateRobotModal, newRobotName, newRobotSystemPrompt, createRobot,
+            showEditRobotModal, editingRobotName, editingRobotSystemPrompt,
+            openEditRobotModal, closeEditRobotModal, saveEditRobot,
             TEMPLATE_SYSTEM_PROMPT, TEMPLATE_USER_PROFILE,
             showCreateConvModal, newConvRobotId, newConvTitle, newConvUserProfile, createConversation,
             openCreateConversationModal,
             openEditConversationModal,
             selectConversation,
             sendTextMessage, handleAttachment, handleFileUpload,
-            editingConvTitle, editingConvId, isEditingConv, saveEditConvTitle,
+            editingConvTitle, editingConvUserProfile, editingConvId, isEditingConv,
+            closeEditConversationModal, saveEditConversation,
             formatDate: Utils.formatDate,
             formatCountdown,
             autoResizeTextarea

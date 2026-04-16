@@ -24,8 +24,9 @@ const API = {
     },
 
     // --- Robots ---
-    async getRobots() {
-        return this.request(`${API_BASE}/robots`);
+    async getRobots(includeDeleted = false) {
+        const query = includeDeleted ? '?include_deleted=true' : '';
+        return this.request(`${API_BASE}/robots${query}`);
     },
     async createRobot(data) {
         return this.request(`${API_BASE}/robots`, {
@@ -41,10 +42,21 @@ const API = {
             body: JSON.stringify(data)
         });
     },
+    async deleteRobot(robotId) {
+        return this.request(`${API_BASE}/robots/${robotId}`, {
+            method: 'DELETE'
+        });
+    },
+    async restoreRobot(robotId) {
+        return this.request(`${API_BASE}/robots/${robotId}/restore`, {
+            method: 'POST'
+        });
+    },
 
     // --- Conversations ---
-    async getConversations() {
-        return this.request(`${API_BASE}/conversations`);
+    async getConversations(includeDeleted = false) {
+        const query = includeDeleted ? '?include_deleted=true' : '';
+        return this.request(`${API_BASE}/conversations${query}`);
     },
     async createConversation(robotId, title, userProfile) {
         return this.request(`${API_BASE}/conversations`, {
@@ -58,6 +70,16 @@ const API = {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
+        });
+    },
+    async deleteConversation(convId) {
+        return this.request(`${API_BASE}/conversations/${convId}`, {
+            method: 'DELETE'
+        });
+    },
+    async restoreConversation(convId) {
+        return this.request(`${API_BASE}/conversations/${convId}/restore`, {
+            method: 'POST'
         });
     },
 

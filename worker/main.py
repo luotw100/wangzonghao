@@ -122,6 +122,10 @@ class Worker:
     async def close(self):
         await self.client.aclose()
 
+    @staticmethod
+    def is_not_found_error(err: Exception) -> bool:
+        return isinstance(err, httpx.HTTPStatusError) and err.response is not None and err.response.status_code == 404
+
     # --- API 调用封装 ---
 
     async def get_pending_tasks(self) -> List[Dict]:
@@ -247,7 +251,10 @@ class Worker:
 
         except Exception as e:
             logger.error(f"Task {task_id} failed: {e}")
-            if task.get("retry_count", 0) >= MAX_RETRIES:
+            if self.is_not_found_error(e):
+                await self.update_task_status(task_id, "failed", str(e))
+                logger.info(f"Task {task_id} stopped because conversation is unavailable")
+            elif task.get("retry_count", 0) >= MAX_RETRIES:
                 await self.update_task_status(task_id, "failed", str(e))
                 logger.error(f"Task {task_id} exhausted retries")
             else:
@@ -284,6 +291,8 @@ class Worker:
                             f"Sent planned reply {reply['id']} to conv {reply['conversation_id']}"
                         )
                     except Exception as e:
+                        if self.is_not_found_error(e):
+                            await self.delete_planned_reply(reply["id"])
                         logger.error(f"Failed to send planned reply {reply['id']}: {e}")
             except Exception as e:
                 logger.error(f"Reply sender error: {e}")

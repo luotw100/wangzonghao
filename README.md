@@ -125,6 +125,8 @@ http://localhost:23456
 
 容器重建后，这些数据会继续保留。
 
+应用启动时会对 SQLite 执行**增量补列**式迁移。像 Robot / Conversation 软删除这类新增字段，会直接在现有 `storage/chat.db` 上补齐，已有 Docker volume 可以直接复用，不需要重建数据库。
+
 ## 本地直接运行
 
 ```bash

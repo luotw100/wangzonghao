@@ -1,4 +1,4 @@
-const { createApp, ref, computed, onMounted, onUnmounted, nextTick } = Vue;
+const { createApp, ref, computed, watch, onMounted, onUnmounted, nextTick } = Vue;
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
@@ -66,6 +66,7 @@ createApp({
         const inputText = ref("");
         const errorMessage = ref("");
         const currentTime = ref(Date.now());
+        const showDeletedItems = ref(false);
 
         // 侧边栏
         const sidebarOpen = ref(false);
@@ -91,6 +92,13 @@ createApp({
         const editingConvUserProfile = ref("");
         const editingConvId = ref(null);
         const isEditingConv = computed(() => editingConvId.value !== null);
+        const editingRobot = computed(() => robots.value.find(r => r.id === editingRobotId.value) || null);
+        const editingConversation = computed(() => conversations.value.find(c => c.id === editingConvId.value) || null);
+        const isEditingRobotDeleted = computed(() => Boolean(editingRobot.value && editingRobot.value.is_deleted));
+        const isEditingConvDeleted = computed(() => Boolean(editingConversation.value && editingConversation.value.is_deleted));
+        const activeConversation = computed(() => conversations.value.find(c => c.id === activeConvId.value) || null);
+        const isActiveConversationDeleted = computed(() => Boolean(activeConversation.value && activeConversation.value.is_deleted));
+        const isActiveConversationReadOnly = computed(() => Boolean(activeConversation.value && activeConversation.value.is_deleted));
 
         // 轮询
         let pollAbortController = null;
@@ -112,10 +120,36 @@ createApp({
             return s > 0 ? m + "分" + s + "秒后" : m + "分后";
         };
 
+        const formatConversationTitle = (conv) => {
+            if (!conv) return "新对话";
+            return conv.is_deleted ? `${conv.title || "新对话"}（已删除）` : (conv.title || "新对话");
+        };
+
+        const clearActiveConversation = () => {
+            stopPolling();
+            stopPlannedReplyPolling();
+            activeConvId.value = null;
+            activeConvTitle.value = "";
+            currentMessages.value = [];
+            plannedReplies.value = [];
+            lastMsgId = 0;
+            closeEditConversationModal();
+        };
+
+        const syncActiveConversation = () => {
+            if (!activeConvId.value) return;
+            const conv = conversations.value.find(c => c.id === activeConvId.value);
+            if (!conv) {
+                clearActiveConversation();
+                return;
+            }
+            activeConvTitle.value = formatConversationTitle(conv);
+        };
+
         // --- 加载数据 ---
         const loadRobots = async () => {
             try {
-                robots.value = await API.getRobots();
+                robots.value = await API.getRobots(showDeletedItems.value);
             } catch (err) {
                 errorMessage.value = "加载 Robot 列表失败: " + err.message;
             }
@@ -123,10 +157,15 @@ createApp({
 
         const loadConversations = async () => {
             try {
-                conversations.value = await API.getConversations();
+                conversations.value = await API.getConversations(showDeletedItems.value);
+                syncActiveConversation();
             } catch (err) {
                 errorMessage.value = "加载会话列表失败: " + err.message;
             }
+        };
+
+        const refreshSidebarData = async () => {
+            await Promise.all([loadRobots(), loadConversations()]);
         };
 
         // --- 侧边栏 ---
@@ -179,6 +218,10 @@ createApp({
                 errorMessage.value = "Robot 名称不能为空";
                 return;
             }
+            if (isEditingRobotDeleted.value) {
+                errorMessage.value = "已删除的 Robot 不能编辑，请先恢复";
+                return;
+            }
 
             try {
                 await API.updateRobot(robotId, {
@@ -193,8 +236,42 @@ createApp({
             }
         };
 
+        const deleteRobot = async () => {
+            const robotId = editingRobotId.value;
+            if (!robotId) return;
+
+            try {
+                await API.deleteRobot(robotId);
+                showDeletedItems.value = true;
+                errorMessage.value = "";
+                closeEditRobotModal();
+                await refreshSidebarData();
+            } catch (err) {
+                errorMessage.value = "删除 Robot 失败: " + err.message;
+            }
+        };
+
+        const restoreRobot = async () => {
+            const robotId = editingRobotId.value;
+            if (!robotId) return;
+
+            try {
+                await API.restoreRobot(robotId);
+                errorMessage.value = "";
+                closeEditRobotModal();
+                await refreshSidebarData();
+            } catch (err) {
+                errorMessage.value = "恢复 Robot 失败: " + err.message;
+            }
+        };
+
         // --- 会话 ---
         const openCreateConversationModal = (robotId) => {
+            const robot = robots.value.find(item => item.id === robotId);
+            if (robot && robot.is_deleted) {
+                errorMessage.value = "已删除的 Robot 不能新建会话";
+                return;
+            }
             newConvRobotId.value = robotId;
             newConvTitle.value = "";
             newConvUserProfile.value = "";
@@ -239,7 +316,7 @@ createApp({
 
             activeConvId.value = convId;
             const conv = conversations.value.find(c => c.id === convId);
-            activeConvTitle.value = conv ? conv.title : "新对话";
+            activeConvTitle.value = formatConversationTitle(conv);
             closeEditConversationModal();
             errorMessage.value = "";
 
@@ -320,6 +397,10 @@ createApp({
         const sendTextMessage = async () => {
             const text = inputText.value.trim();
             if (!text || !activeConvId.value) return;
+            if (isActiveConversationReadOnly.value) {
+                errorMessage.value = "已删除的会话不能继续发消息";
+                return;
+            }
 
             inputText.value = "";
             const textarea = document.querySelector('textarea');
@@ -353,6 +434,11 @@ createApp({
 
             if (!activeConvId.value) {
                 errorMessage.value = "请先选择一个会话";
+                event.target.value = "";
+                return;
+            }
+            if (isActiveConversationReadOnly.value) {
+                errorMessage.value = "已删除的会话不能继续发消息";
                 event.target.value = "";
                 return;
             }
@@ -393,6 +479,10 @@ createApp({
                 errorMessage.value = "会话标题不能为空";
                 return;
             }
+            if (isEditingConvDeleted.value) {
+                errorMessage.value = "已删除的会话不能编辑，请先恢复";
+                return;
+            }
 
             try {
                 await API.updateConversation(convId, {
@@ -407,6 +497,36 @@ createApp({
                 }
             } catch (err) {
                 errorMessage.value = "更新会话失败: " + err.message;
+            }
+        };
+
+        const deleteConversation = async () => {
+            const convId = editingConvId.value;
+            if (!convId) return;
+
+            try {
+                await API.deleteConversation(convId);
+                showDeletedItems.value = true;
+                errorMessage.value = "";
+                closeEditConversationModal();
+                plannedReplies.value = [];
+                await refreshSidebarData();
+            } catch (err) {
+                errorMessage.value = "删除会话失败: " + err.message;
+            }
+        };
+
+        const restoreConversation = async () => {
+            const convId = editingConvId.value;
+            if (!convId) return;
+
+            try {
+                await API.restoreConversation(convId);
+                errorMessage.value = "";
+                closeEditConversationModal();
+                await refreshSidebarData();
+            } catch (err) {
+                errorMessage.value = "恢复会话失败: " + err.message;
             }
         };
 
@@ -431,6 +551,10 @@ createApp({
             clockTimer = setInterval(() => { currentTime.value = Date.now(); }, 1000);
         });
 
+        watch(showDeletedItems, async () => {
+            await refreshSidebarData();
+        });
+
         onUnmounted(() => {
             stopPolling();
             stopPlannedReplyPolling();
@@ -439,12 +563,12 @@ createApp({
 
         return {
             robots, conversations, activeConvId, activeConvTitle, currentMessages,
-            plannedReplies, inputText, errorMessage, currentTime,
+            plannedReplies, inputText, errorMessage, currentTime, showDeletedItems,
             sidebarOpen,
             collapsedRobots, toggleRobot,
             showCreateRobotModal, newRobotName, newRobotSystemPrompt, createRobot,
             showEditRobotModal, editingRobotName, editingRobotSystemPrompt,
-            openEditRobotModal, closeEditRobotModal, saveEditRobot,
+            openEditRobotModal, closeEditRobotModal, saveEditRobot, deleteRobot, restoreRobot,
             TEMPLATE_SYSTEM_PROMPT, TEMPLATE_USER_PROFILE,
             showCreateConvModal, newConvRobotId, newConvTitle, newConvUserProfile, createConversation,
             openCreateConversationModal,
@@ -452,7 +576,9 @@ createApp({
             selectConversation,
             sendTextMessage, handleAttachment, handleFileUpload,
             editingConvTitle, editingConvUserProfile, editingConvId, isEditingConv,
-            closeEditConversationModal, saveEditConversation,
+            closeEditConversationModal, saveEditConversation, deleteConversation, restoreConversation,
+            isEditingRobotDeleted, isEditingConvDeleted,
+            activeConversation, isActiveConversationDeleted, isActiveConversationReadOnly,
             formatDate: Utils.formatDate,
             formatCountdown,
             autoResizeTextarea

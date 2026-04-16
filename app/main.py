@@ -83,27 +83,6 @@ class PlannedReply(Base):
 # 创建所有表
 Base.metadata.create_all(bind=engine)
 
-# --- 数据库迁移：补充新增字段 ---
-def _run_migrations():
-    from sqlalchemy.exc import OperationalError
-    migrations = [
-        ("conversations", "user_profile", "TEXT"),
-        ("robots", "is_deleted", "BOOLEAN NOT NULL DEFAULT 0"),
-        ("robots", "deleted_at", "DATETIME"),
-        ("conversations", "is_deleted", "BOOLEAN NOT NULL DEFAULT 0"),
-        ("conversations", "deleted_at", "DATETIME"),
-    ]
-
-    with engine.connect() as conn:
-        for table_name, column_name, definition in migrations:
-            try:
-                conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"))
-                conn.commit()
-            except OperationalError:
-                pass  # 列已存在，忽略
-
-_run_migrations()
-
 # --- 3. Pydantic 响应/请求模型 (Schemas) ---
 class RobotCreate(BaseModel):
     name: str

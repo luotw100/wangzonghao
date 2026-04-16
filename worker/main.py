@@ -27,6 +27,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+OUTPUT_FORMAT_SYSTEM_PROMPT = """你必须只输出一个合法 JSON 对象，不要输出 Markdown、解释文字或额外前后缀。
+JSON 顶层结构必须严格如下：
+{"messages": [{"delay_seconds": 数字, "content": "微信回复文本"}]}
+messages[*].content 只能包含最终要发送给用户的聊天文本。"""
+
 
 class LLMClient:
     """大模型 API 客户端（异步）"""
@@ -76,39 +81,34 @@ class LLMClient:
         raise Exception("Failed to call LLM API with OpenAI-compatible format")
 
 
+def _extract_messages_from_payload(payload: Dict) -> List[Dict]:
+    messages = payload.get("messages")
+    if not isinstance(messages, list):
+        return []
+
+    result = []
+    for message in messages:
+        if not isinstance(message, dict) or "content" not in message:
+            continue
+        content = str(message["content"])
+
+        result.append({
+            "delay_seconds": int(message.get("delay_seconds", 0)),
+            "content": content
+        })
+
+    return result
+
+
 def parse_llm_response(text: str) -> List[Dict]:
     """
-    解析 LLM 输出的 JSON，提取 messages 列表。
+    严格解析 LLM 输出的 JSON，提取 messages 列表。
     期望格式:
-      {"inner_thoughts": "...", "messages": [{"delay_seconds": N, "content": "..."}]}
-    如果解析失败，回退为单条立即发送。
+      {"messages": [{"delay_seconds": N, "content": "..."}]}
+    如果格式不合法，则不发送任何回复。
     """
-    try:
-        # 去掉可能的 markdown 代码块标记
-        cleaned = text.strip()
-        if cleaned.startswith("```"):
-            lines = cleaned.split("\n")
-            # 去掉首行（可能是 ```json 或 ```），末行若是 ``` 也去掉
-            start = 1
-            end = len(lines) - 1 if lines[-1].strip() == "```" else len(lines)
-            cleaned = "\n".join(lines[start:end])
-
-        data = json.loads(cleaned)
-        if "messages" in data and isinstance(data["messages"], list):
-            result = []
-            for m in data["messages"]:
-                if isinstance(m, dict) and "content" in m:
-                    result.append({
-                        "delay_seconds": int(m.get("delay_seconds", 0)),
-                        "content": str(m["content"])
-                    })
-            if result:
-                return result
-    except Exception as e:
-        logger.warning(f"JSON parse failed, using raw text as fallback: {e}")
-
-    # 回退：单条立即发送
-    return [{"delay_seconds": 0, "content": text}]
+    data = json.loads(text.strip())
+    return _extract_messages_from_payload(data)
 
 
 class Worker:
@@ -207,8 +207,9 @@ class Worker:
 
                 # system prompt = robot.system_prompt + user_profile
                 system_parts = []
+                system_parts.append(OUTPUT_FORMAT_SYSTEM_PROMPT)
                 if robot.get("system_prompt"):
-                    system_parts.append(robot["system_prompt"])
+                    system_parts.append("\n\n" + robot["system_prompt"])
                 if conv.get("user_profile"):
                     system_parts.append("\n\n【当前粉丝档案】\n" + conv["user_profile"])
                 if system_parts:
@@ -232,6 +233,8 @@ class Worker:
 
                 # 解析 JSON，计算 send_at（累计 delay_seconds）
                 msg_list = parse_llm_response(response_text)
+                if not msg_list:
+                    raise ValueError("LLM response contained no sendable messages")
                 now = datetime.now(timezone.utc)
                 cumulative_delay = 0
                 planned = []

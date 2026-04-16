@@ -3,22 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Laborster Control Room</title>
+    <title>AI Agent 调试工作台</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Google+Sans+Text:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;600&family=Google+Sans+Text:wght@400;500&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="static/css/style.css">
 </head>
-<body class="night-body">
-    <div class="neon-orb orb-pink"></div>
-    <div class="neon-orb orb-cyan"></div>
-    <div class="neon-orb orb-violet"></div>
+<body class="bg-white dark:bg-[#1f1f1f] text-[#1f1f1f] dark:text-white">
 
-    <div id="app" class="app-shell" v-cloak>
+    <div id="app" class="w-full h-[100dvh] overflow-hidden flex" v-cloak>
+
+        <!-- 移动端：侧边栏默认隐藏，汉堡菜单触发 -->
         <div class="md:hidden">
-            <button @click="sidebarOpen = true" class="mobile-menu-button touch-target" aria-label="打开菜单">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <!-- 汉堡菜单按钮 -->
+            <button @click="sidebarOpen = true" class="fixed top-4 left-4 z-50 w-11 h-11 flex items-center justify-center rounded-full bg-white/80 backdrop-blur-sm shadow-sm touch-target" aria-label="打开菜单">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="3" y1="6" x2="21" y2="6"></line>
                     <line x1="3" y1="12" x2="21" y2="12"></line>
                     <line x1="3" y1="18" x2="21" y2="18"></line>
@@ -26,324 +26,259 @@
             </button>
         </div>
 
-        <div v-if="sidebarOpen" @click="sidebarOpen = false" class="mobile-overlay md:hidden"></div>
+        <!-- 侧边栏 overlay -->
+        <div v-if="sidebarOpen" @click="sidebarOpen = false" class="fixed inset-0 bg-black/30 z-40 md:hidden backdrop-blur-sm"></div>
 
-        <aside :class="['stage-sidebar', sidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0']">
-            <div class="brand-card">
-                <div class="brand-main">
-                    <div class="brand-mark">
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                            <path d="M12 2L14.9 8.1L21 11L14.9 13.9L12 20L9.1 13.9L3 11L9.1 8.1L12 2Z" fill="url(#laborsterGlow)"/>
-                            <defs>
-                                <linearGradient id="laborsterGlow" x1="3" y1="2" x2="21" y2="20" gradientUnits="userSpaceOnUse">
-                                    <stop stop-color="#58f4ff"/>
-                                    <stop offset="0.5" stop-color="#ff4fd8"/>
-                                    <stop offset="1" stop-color="#845dff"/>
-                                </linearGradient>
-                            </defs>
-                        </svg>
-                    </div>
-                    <div>
-                        <div class="brand-title">Laborster</div>
-                        <div class="brand-subtitle">night shift control room</div>
-                    </div>
+        <!-- 侧边栏 -->
+        <aside :class="['w-72 bg-[#fafafa] dark:bg-[#2f2f2f] flex flex-col fixed md:relative inset-y-0 left-0 z-50 transform transition-transform duration-300 ease-out md:translate-x-0 md:bg-white md:border-r md:border-[#e5e5e5] md:dark:bg-[#1f1f1f] md:dark:border-[#3d3d3d]', sidebarOpen ? 'translate-x-0' : '-translate-x-full']">
+            <!-- 侧边栏头部 -->
+            <div class="flex items-center justify-between px-5 h-14 border-b border-[#e5e5e5] dark:border-[#3d3d3d]">
+                <div class="flex items-center gap-3">
+                    <!-- Gemini logo -->
+                    <svg width="28" height="28" viewBox="0 0 120 120" fill="none">
+                        <path d="M60 10L90 30V60L60 90L30 60V30L60 10Z" fill="#8AB4F8"/>
+                        <path d="M60 20L80 35V55L60 75L40 55V35L60 20Z" fill="white"/>
+                    </svg>
+                    <span class="font-medium text-[#1f1f1f] dark:text-white">Gemini</span>
                 </div>
-                <p class="brand-copy">在同一个舞台上调试人设、粉丝画像、计划回复和异步 worker。</p>
+                <button @click="sidebarOpen = false" class="md:hidden w-10 h-10 flex items-center justify-center rounded-full hover:bg-[#e8eaed] dark:hover:bg-[#3d3d3d]">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </button>
             </div>
 
-            <button @click="showCreateRobotModal = true" class="primary-action touch-target">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <!-- 新建对话按钮 -->
+            <button @click="showCreateRobotModal = true" class="mx-3 mt-4 px-4 py-2.5 flex items-center gap-3 rounded-full border border-[#dadce0] dark:border-[#3d3d3d] hover:bg-[#f1f3f4] dark:hover:bg-[#3d3d3d] transition touch-target">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <line x1="12" y1="5" x2="12" y2="19"></line>
                     <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
-                <span>新建 Robot</span>
+                <span class="text-sm font-medium">新建 Robot</span>
             </button>
-
-            <div class="sidebar-section-title">Persona roster</div>
-
-            <div class="sidebar-scroll scrollbar-hide">
-                <div v-if="robots.length === 0" class="empty-sidebar-card">
-                    还没有 Robot，先创建一个夜场角色吧。
-                </div>
-
-                <div v-for="robot in robots" :key="robot.id" class="robot-card">
-                    <div class="robot-header" @click="toggleRobot(robot.id)">
-                        <div class="robot-header-main">
-                            <button class="collapse-toggle" type="button">
-                                <svg :class="['transition-transform', robot.collapsed ? '' : 'rotate-90']" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <polyline points="9 18 15 12 9 6"></polyline>
-                                </svg>
-                            </button>
-                            <div class="robot-info">
-                                <div class="robot-name">{{ robot.name }}</div>
-                                <div class="robot-summary">{{ robot.system_prompt ? robot.system_prompt.slice(0, 42) + '…' : '未配置 prompt' }}</div>
-                            </div>
-                        </div>
-                        <div class="robot-actions">
-                            <button @click.stop="openEditRobotModal(robot)" class="icon-action touch-target" title="编辑 Robot">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <path d="M12 20h9"></path>
-                                    <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"></path>
-                                </svg>
-                            </button>
-                            <button @click.stop="openCreateConversationModal(robot.id)" class="icon-action touch-target" title="新建会话">
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                    <line x1="12" y1="5" x2="12" y2="19"></line>
-                                    <line x1="5" y1="12" x2="19" y2="12"></line>
-                                </svg>
-                            </button>
-                        </div>
+            <!-- Robot 列表 -->
+            <div class="flex-1 overflow-y-auto mt-4 px-2 scrollbar-hide">
+                <div v-for="robot in robots" :key="robot.id" class="mb-2">
+                    <div class="flex items-center gap-1 px-3 py-2 rounded-lg hover:bg-[#f1f3f4] dark:hover:bg-[#3d3d3d] cursor-pointer transition" @click="toggleRobot(robot.id)">
+                        <svg :class="['transition-transform', collapsedRobots[robot.id] ? '' : 'rotate-90']" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 18 15 12 9 6"></polyline>
+                        </svg>
+                        <span class="font-medium text-sm flex-1">{{ robot.name }}</span>
+                        <button @click.stop="openCreateConversationModal(robot.id)" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-[#e8eaed] dark:hover:bg-[#3d3d3d] shrink-0 touch-target" title="新建会话">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <line x1="12" y1="5" x2="12" y2="19"></line>
+                                <line x1="5" y1="12" x2="19" y2="12"></line>
+                            </svg>
+                        </button>
                     </div>
 
-                    <div v-if="!robot.collapsed" class="conversation-list">
-                        <div
-                            v-for="conv in conversations.filter(c => c.robot_id === robot.id)"
-                            :key="conv.id"
-                            @click="selectConversation(conv.id); sidebarOpen = false"
-                            :class="['conversation-card', activeConvId === conv.id ? 'conversation-card-active' : '']"
-                        >
-                            <div class="conversation-card-header">
-                                <div class="conversation-title">{{ conv.title || '新对话' }}</div>
-                                <button @click.stop="openEditConversationModal(conv)" class="icon-action touch-target" title="编辑会话">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                        <path d="M12 20h9"></path>
-                                        <path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"></path>
+                    <!-- 会话列表 -->
+                    <div v-if="!collapsedRobots[robot.id]" class="ml-3 pl-3 border-l border-[#e5e5e5] dark:border-[#3d3d3d]">
+                        <div v-for="conv in conversations.filter(c => c.robot_id === robot.id)" :key="conv.id"
+                             @click="selectConversation(conv.id); sidebarOpen = false"
+                             class="group px-3 py-2 rounded-lg cursor-pointer transition text-sm"
+                             :class="activeConvId === conv.id ? 'bg-[#e8f0fe] dark:bg-[#174ea6]/30 text-[#1a73e8] dark:text-[#8ab4f8]' : 'hover:bg-[#f1f3f4] dark:hover:bg-[#3d3d3d] text-[#5f6368] dark:text-[#9aa0a6]'">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="line-clamp-1 flex-1">{{ conv.title || '新对话' }}</span>
+                                <button @click.stop="openEditConversationModal(conv)" class="w-6 h-6 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-[#dadce0] dark:hover:bg-[#4d4d4d] transition touch-target">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
                                     </svg>
                                 </button>
                             </div>
-                            <div class="conversation-meta">{{ conv.user_profile ? conv.user_profile.split('\n')[0] : '未设置粉丝档案' }}</div>
                         </div>
-
-                        <div v-if="conversations.filter(c => c.robot_id === robot.id).length === 0" class="conversation-empty">
+                        <div v-if="conversations.filter(c => c.robot_id === robot.id).length === 0" class="px-3 py-2 text-xs text-[#9aa0a6]">
                             暂无会话
                         </div>
                     </div>
                 </div>
-            </div>
-        </aside>
 
-        <main class="control-stage">
-            <header class="stage-header">
-                <div>
-                    <div class="eyebrow">Laborster / backstage</div>
-                    <h1 class="stage-title">{{ activeConversation ? activeConversation.title : '选择一个会话，开始今晚的调试' }}</h1>
-                    <p class="stage-subtitle">
-                        {{ activeRobot ? ('当前 Robot：' + activeRobot.name) : '在一个界面里观察 prompt、画像、排程和消息回放。' }}
-                    </p>
+                <!-- 无 Robot 时 -->
+                <div v-if="robots.length === 0" class="text-center py-8 text-[#9aa0a6]">
+                    <div class="w-12 h-12 mx-auto mb-3 rounded-full bg-[#f1f3f4] dark:bg-[#3d3d3d] flex items-center justify-center">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
+                            <path d="M2 17l10 5 10-5"></path>
+                            <path d="M2 12l10 5 10-5"></path>
+                        </svg>
+                    </div>
+                    <p class="text-sm">还没有 Robot</p>
                 </div>
+            </div>
 
-                <div v-if="activeConversation" class="header-actions">
-                    <button @click="openEditRobotModal(activeRobot)" class="secondary-action touch-target">编辑 Robot Prompt</button>
-                    <button @click="openEditConversationModal(activeConversation)" class="secondary-action touch-target">编辑 User Profile</button>
+            </aside>
+
+        <!-- 右侧聊天区 -->
+        <main class="flex-1 flex flex-col min-h-0 bg-white dark:bg-[#1f1f1f]">
+
+            <!-- 聊天头部 -->
+            <header class="h-14 flex items-center justify-between px-4 md:px-6 border-b border-[#e5e5e5] dark:border-[#3d3d3d] shrink-0" style="padding-top: env(safe-area-inset-top);">
+                <div class="flex items-center gap-3">
+                    <h2 class="font-medium text-[#1f1f1f] dark:text-white">{{ activeConvTitle || '新对话' }}</h2>
                 </div>
             </header>
 
-            <div v-if="activeConversation" class="control-panels">
-                <section class="info-panel">
-                    <div class="panel-label">Persona</div>
-                    <div class="panel-title">{{ activeRobot ? activeRobot.name : '未匹配到 Robot' }}</div>
-                    <p class="panel-copy">{{ promptPreview }}</p>
-                </section>
-                <section class="info-panel">
-                    <div class="panel-label">User profile</div>
-                    <div class="panel-title">会话画像</div>
-                    <p class="panel-copy">{{ profilePreview }}</p>
-                </section>
-            </div>
-
-            <div v-if="errorMessage" class="error-banner">
+            <!-- 错误提示 -->
+            <div v-if="errorMessage" class="mx-4 mt-3 px-4 py-3 bg-[#fce8e6] dark:bg-[#5c2b29] rounded-xl text-sm text-[#c5221f] dark:text-[#f28b82]">
                 {{ errorMessage }}
             </div>
 
-            <div class="chat-shell">
-                <div class="chat-scroll scrollbar-hide" id="chat-box">
-                    <div v-if="!activeConversation" class="empty-stage">
-                        <div class="empty-badge">MOCKUP</div>
-                        <div class="empty-logo">
-                            <svg width="34" height="34" viewBox="0 0 24 24" fill="none">
-                                <path d="M12 2L14.9 8.1L21 11L14.9 13.9L12 20L9.1 13.9L3 11L9.1 8.1L12 2Z" fill="url(#emptyGlow)"/>
-                                <defs>
-                                    <linearGradient id="emptyGlow" x1="3" y1="2" x2="21" y2="20" gradientUnits="userSpaceOnUse">
-                                        <stop stop-color="#58f4ff"/>
-                                        <stop offset="0.5" stop-color="#ff4fd8"/>
-                                        <stop offset="1" stop-color="#845dff"/>
-                                    </linearGradient>
-                                </defs>
+            <!-- 消息列表 -->
+            <div class="flex-1 overflow-y-auto overscroll-contain scrollbar-hide min-h-0" id="chat-box">
+                <div class="max-w-3xl mx-auto px-4 py-6 space-y-6">
+
+                    <!-- 空状态 -->
+                    <div v-if="!activeConvId" class="flex flex-col items-center justify-center h-full min-h-[60vh] text-center">
+                        <div class="w-16 h-16 mb-6 rounded-full bg-[#f1f3f4] dark:bg-[#3d3d3d] flex items-center justify-center">
+                            <svg width="32" height="32" viewBox="0 0 120 120" fill="none">
+                                <path d="M60 10L90 30V60L60 90L30 60V30L60 10Z" fill="#8AB4F8"/>
+                                <path d="M60 20L80 35V55L60 75L40 55V35L60 20Z" fill="white"/>
                             </svg>
                         </div>
-                        <h2>Laborster 夜场调度台</h2>
-                        <p>创建一个 Robot，然后为某个对象开一条会话，把人设、粉丝档案和延迟回复一起调顺。</p>
-                        <div class="empty-grid">
-                            <div class="empty-card">
-                                <div class="panel-label">01</div>
-                                <strong>写 Robot Prompt</strong>
-                                <span>定义角色气质、语感和输出格式。</span>
-                            </div>
-                            <div class="empty-card">
-                                <div class="panel-label">02</div>
-                                <strong>配 User Profile</strong>
-                                <span>把粉丝层级、备注和历史标签带进上下文。</span>
-                            </div>
-                            <div class="empty-card">
-                                <div class="panel-label">03</div>
-                                <strong>观察 Worker 节奏</strong>
-                                <span>看计划回复如何被逐条落成真实消息。</span>
-                            </div>
-                        </div>
-                        <button @click="showCreateRobotModal = true" class="primary-action touch-target">开始布置舞台</button>
+                        <h3 class="text-xl font-medium mb-2 text-[#202124] dark:text-white">有什么可以帮你的？</h3>
+                        <p class="text-[#5f6368] dark:text-[#9aa0a6] text-sm">开始一个新的对话吧</p>
                     </div>
 
                     <template v-else>
-                        <div class="message-stack">
-                            <div
-                                v-for="msg in currentMessages"
-                                :key="msg.id"
-                                :class="['message-row message-enter', msg.role === 'user' ? 'message-row-user' : 'message-row-robot']"
-                            >
-                                <div v-if="msg.role === 'robot'" class="avatar-mark">L</div>
-                                <div :class="['message-bubble', msg.role === 'user' ? 'message-bubble-user' : 'message-bubble-robot']">
-                                    {{ msg.content }}
+                        <div v-for="msg in currentMessages" :key="msg.id"
+                             :class="['flex', msg.role === 'user' ? 'justify-end' : 'justify-start']">
+
+                            <!-- AI 消息 -->
+                            <div v-if="msg.role === 'robot'" class="flex gap-3 max-w-[85%] md:max-w-[80%]">
+                                <div class="w-8 h-8 shrink-0 rounded-full bg-[#8AB4F8] flex items-center justify-center">
+                                    <svg width="16" height="16" viewBox="0 0 120 120" fill="none">
+                                        <path d="M60 10L90 30V60L60 90L30 60V30L60 10Z" fill="white"/>
+                                    </svg>
+                                </div>
+                                <div class="pt-1">
+                                    <p class="whitespace-pre-wrap break-words leading-relaxed text-[15px]">{{ msg.content }}</p>
                                 </div>
                             </div>
 
-                            <div v-if="plannedReplies.length > 0" class="planned-stack">
-                                <div v-for="reply in plannedReplies" :key="reply.id" class="message-row message-row-robot planned-row">
-                                    <div class="avatar-mark ghost-mark">L</div>
-                                    <div class="message-bubble message-bubble-robot planned-bubble">
-                                        <div>{{ reply.content }}</div>
-                                        <div class="planned-meta">{{ formatCountdown(reply.send_at) }}</div>
+                            <!-- 用户消息 -->
+                            <div v-else class="max-w-[85%] md:max-w-[80%]">
+                                <div class="bg-[#f1f3f4] dark:bg-[#3d3d3d] rounded-2xl rounded-tr-md px-4 py-3">
+                                    <p class="whitespace-pre-wrap break-words leading-relaxed text-[15px]">{{ msg.content }}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 计划回复预览（半透明气泡） -->
+                        <div v-if="plannedReplies.length > 0" class="flex flex-col gap-3 mt-2">
+                            <div v-for="reply in plannedReplies" :key="reply.id" class="flex justify-start">
+                                <div class="flex gap-3 max-w-[85%] md:max-w-[80%] opacity-40">
+                                    <div class="w-8 h-8 shrink-0 rounded-full bg-[#8AB4F8] flex items-center justify-center">
+                                        <svg width="16" height="16" viewBox="0 0 120 120" fill="none">
+                                            <path d="M60 10L90 30V60L60 90L30 60V30L60 10Z" fill="white"/>
+                                        </svg>
+                                    </div>
+                                    <div class="pt-1">
+                                        <p class="whitespace-pre-wrap break-words leading-relaxed text-[15px]">{{ reply.content }}</p>
+                                        <p class="text-xs text-[#9aa0a6] mt-1">{{ formatCountdown(reply.send_at) }}</p>
                                     </div>
                                 </div>
                             </div>
                         </div>
                     </template>
                 </div>
+            </div>
 
-                <div class="composer-shell">
-                    <div class="composer-inner">
+            <!-- 输入区域 -->
+            <div class="shrink-0 px-4 pb-4 md:px-6 md:pb-6" style="padding-bottom: env(safe-area-inset-bottom);">
+                <div class="max-w-3xl mx-auto">
+                    <div class="bg-[#f1f3f4] dark:bg-[#2f2f2f] rounded-2xl px-4 py-3 flex items-end gap-3">
                         <textarea
+                            ref="inputTextarea"
                             v-model="inputText"
                             @keydown.enter.exact.prevent="sendTextMessage"
                             @input="autoResizeTextarea"
                             rows="1"
-                            class="message-input scrollbar-hide"
-                            placeholder="发一条消息，看看 worker 今晚会怎么接..."
+                            class="flex-1 bg-transparent resize-none outline-none text-[15px] leading-relaxed max-h-[30vh] scrollbar-hide"
+                            placeholder="输入消息..."
+                            style="touch-action: manipulation;"
                         ></textarea>
 
-                        <div class="composer-actions">
-                            <button @click="handleAttachment" class="icon-action touch-target" title="添加附件">
-                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <div class="flex items-center gap-1 shrink-0">
+                            <button @click="handleAttachment" class="w-10 h-10 flex items-center justify-center rounded-full hover:bg-[#e8eaed] dark:hover:bg-[#3d3d3d] transition touch-target" title="添加附件">
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                     <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path>
                                 </svg>
                             </button>
-                            <button
-                                @click="sendTextMessage"
-                                :disabled="!inputText.trim() || !activeConvId"
-                                :class="['send-action touch-target', inputText.trim() && activeConvId ? 'send-action-ready' : 'send-action-disabled']"
-                            >
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <button @click="sendTextMessage" :disabled="!inputText.trim() || !activeConvId" class="w-10 h-10 flex items-center justify-center rounded-full transition touch-target" :class="inputText.trim() && activeConvId ? 'bg-[#1a73e8] text-white hover:bg-[#1557b0]' : 'bg-[#dadce0] text-[#9aa0a6]'">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                                     <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
                                 </svg>
                             </button>
                         </div>
                     </div>
-                    <p class="composer-note">消息会触发 Task，worker 会异步生成并排程回复。</p>
+                    <p class="text-center text-xs text-[#9aa0a6] mt-3">AI 助手可能会产生不准确的信息，请仔细核查</p>
                 </div>
             </div>
         </main>
 
-        <div v-if="showCreateRobotModal" class="modal-wrap">
-            <div @click="showCreateRobotModal = false" class="modal-overlay"></div>
-            <div class="modal-card modal-wide">
-                <div class="modal-title">新建 Robot</div>
-                <div class="modal-body">
-                    <div class="field-group">
-                        <label class="field-label">名称</label>
-                        <input v-model="newRobotName" type="text" class="field-input" placeholder="输入 Robot 名称" @keyup.enter="createRobot">
+        
+        <!-- 创建 Robot 弹窗 -->
+        <div v-if="showCreateRobotModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div @click="showCreateRobotModal = false" class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
+            <div class="relative bg-white dark:bg-[#2f2f2f] rounded-2xl p-6 w-full max-w-2xl shadow-xl max-h-[90vh] flex flex-col">
+                <h3 class="text-lg font-medium mb-4 shrink-0">新建 Robot</h3>
+                <div class="space-y-4 overflow-y-auto flex-1">
+                    <div>
+                        <label class="block text-sm font-medium mb-2 text-[#5f6368] dark:text-[#9aa0a6]">名称</label>
+                        <input v-model="newRobotName" type="text" class="w-full px-4 py-2.5 bg-[#f1f3f4] dark:bg-[#3d3d3d] rounded-lg outline-none focus:ring-2 focus:ring-[#1a73e8]" placeholder="输入 Robot 名称" @keyup.enter="createRobot">
                     </div>
-                    <div class="field-group">
-                        <div class="field-header">
-                            <label class="field-label">System Prompt</label>
-                            <button @click="newRobotSystemPrompt = TEMPLATE_SYSTEM_PROMPT" class="tiny-action">使用晚晚模板</button>
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-sm font-medium text-[#5f6368] dark:text-[#9aa0a6]">系统提示词（System Prompt）</label>
+                            <button @click="newRobotSystemPrompt = TEMPLATE_SYSTEM_PROMPT" class="text-xs px-2 py-1 rounded bg-[#e8f0fe] text-[#1a73e8] hover:bg-[#d2e3fc] transition">使用晚晚模板</button>
                         </div>
-                        <textarea v-model="newRobotSystemPrompt" class="field-textarea prompt-textarea scrollbar-hide" rows="14" placeholder="定义 Robot 的角色、背景、语感和输出规范"></textarea>
+                        <textarea v-model="newRobotSystemPrompt" class="w-full px-4 py-2.5 bg-[#f1f3f4] dark:bg-[#3d3d3d] rounded-lg outline-none focus:ring-2 focus:ring-[#1a73e8] font-mono text-xs" rows="12" placeholder="定义 Robot 的角色、背景和行为规则（支持大段 System Prompt）"></textarea>
                     </div>
                 </div>
-                <div class="modal-actions">
-                    <button @click="showCreateRobotModal = false" class="ghost-action">取消</button>
-                    <button @click="createRobot" class="primary-action">创建</button>
+                <div class="flex justify-end gap-3 mt-6 shrink-0">
+                    <button @click="showCreateRobotModal = false" class="px-4 py-2 text-[#5f6368] hover:bg-[#f1f3f4] dark:hover:bg-[#3d3d3d] rounded-lg transition">取消</button>
+                    <button @click="createRobot" class="px-4 py-2 bg-[#1a73e8] text-white rounded-lg hover:bg-[#1557b0] transition">创建</button>
                 </div>
             </div>
         </div>
 
-        <div v-if="showEditRobotModal" class="modal-wrap">
-            <div @click="closeEditRobotModal" class="modal-overlay"></div>
-            <div class="modal-card modal-wide">
-                <div class="modal-title">编辑 Robot</div>
-                <div class="modal-body">
-                    <div class="field-group">
-                        <label class="field-label">名称</label>
-                        <input v-model="editingRobotName" type="text" class="field-input" placeholder="输入 Robot 名称" @keyup.enter="saveRobotEdits">
+        <!-- 新建会话弹窗 -->
+        <div v-if="showCreateConvModal" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div @click="showCreateConvModal = false" class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
+            <div class="relative bg-white dark:bg-[#2f2f2f] rounded-2xl p-6 w-full max-w-lg shadow-xl max-h-[90vh] flex flex-col">
+                <h3 class="text-lg font-medium mb-4 shrink-0">新建会话</h3>
+                <div class="space-y-4 overflow-y-auto flex-1">
+                    <div>
+                        <label class="block text-sm font-medium mb-2 text-[#5f6368] dark:text-[#9aa0a6]">会话标题（可选）</label>
+                        <input v-model="newConvTitle" type="text" class="w-full px-4 py-2.5 bg-[#f1f3f4] dark:bg-[#3d3d3d] rounded-lg outline-none focus:ring-2 focus:ring-[#1a73e8]" placeholder="留空则自动生成">
                     </div>
-                    <div class="field-group">
-                        <div class="field-header">
-                            <label class="field-label">System Prompt</label>
-                            <button @click="editingRobotSystemPrompt = TEMPLATE_SYSTEM_PROMPT" class="tiny-action">使用晚晚模板</button>
+                    <div>
+                        <div class="flex items-center justify-between mb-2">
+                            <label class="text-sm font-medium text-[#5f6368] dark:text-[#9aa0a6]">粉丝档案（User Profile）</label>
+                            <button @click="newConvUserProfile = TEMPLATE_USER_PROFILE" class="text-xs px-2 py-1 rounded bg-[#e8f0fe] text-[#1a73e8] hover:bg-[#d2e3fc] transition">使用示例模板</button>
                         </div>
-                        <textarea v-model="editingRobotSystemPrompt" class="field-textarea prompt-textarea scrollbar-hide" rows="14" placeholder="定义 Robot 的角色、背景、语感和输出规范"></textarea>
+                        <textarea v-model="newConvUserProfile" class="w-full px-4 py-2.5 bg-[#f1f3f4] dark:bg-[#3d3d3d] rounded-lg outline-none focus:ring-2 focus:ring-[#1a73e8] text-sm" rows="6" placeholder="- 备注名：XXX&#10;- 累计打赏金额：XXX RMB&#10;- 关注时长：X个月&#10;- 历史标签：XXX"></textarea>
+                        <p class="text-xs text-[#9aa0a6] mt-1">该信息会附加到 System Prompt 末尾，帮助机器人了解对话对象</p>
                     </div>
                 </div>
-                <div class="modal-actions">
-                    <button @click="closeEditRobotModal" class="ghost-action">取消</button>
-                    <button @click="saveRobotEdits" class="primary-action">保存</button>
+                <div class="flex justify-end gap-3 mt-6 shrink-0">
+                    <button @click="showCreateConvModal = false" class="px-4 py-2 text-[#5f6368] hover:bg-[#f1f3f4] dark:hover:bg-[#3d3d3d] rounded-lg transition">取消</button>
+                    <button @click="createConversation" class="px-4 py-2 bg-[#1a73e8] text-white rounded-lg hover:bg-[#1557b0] transition">创建</button>
                 </div>
             </div>
         </div>
 
-        <div v-if="showCreateConvModal" class="modal-wrap">
-            <div @click="showCreateConvModal = false" class="modal-overlay"></div>
-            <div class="modal-card">
-                <div class="modal-title">新建会话</div>
-                <div class="modal-body">
-                    <div class="field-group">
-                        <label class="field-label">会话标题</label>
-                        <input v-model="newConvTitle" type="text" class="field-input" placeholder="留空则自动生成">
-                    </div>
-                    <div class="field-group">
-                        <div class="field-header">
-                            <label class="field-label">User Profile</label>
-                            <button @click="newConvUserProfile = TEMPLATE_USER_PROFILE" class="tiny-action">使用示例模板</button>
-                        </div>
-                        <textarea v-model="newConvUserProfile" class="field-textarea scrollbar-hide" rows="8" placeholder="- 备注名：XXX&#10;- 累计打赏金额：XXX RMB&#10;- 关注时长：X个月&#10;- 历史标签：XXX"></textarea>
-                    </div>
-                </div>
-                <div class="modal-actions">
-                    <button @click="showCreateConvModal = false" class="ghost-action">取消</button>
-                    <button @click="createConversation" class="primary-action">创建</button>
-                </div>
-            </div>
-        </div>
-
-        <div v-if="showEditConvModal" class="modal-wrap">
-            <div @click="closeEditConversationModal" class="modal-overlay"></div>
-            <div class="modal-card">
-                <div class="modal-title">编辑会话</div>
-                <div class="modal-body">
-                    <div class="field-group">
-                        <label class="field-label">会话标题</label>
-                        <input v-model="editingConvTitle" type="text" class="field-input" placeholder="请输入会话标题" @keyup.enter="saveConversationSettings">
-                    </div>
-                    <div class="field-group">
-                        <div class="field-header">
-                            <label class="field-label">User Profile</label>
-                            <button @click="editingConvUserProfile = TEMPLATE_USER_PROFILE" class="tiny-action">使用示例模板</button>
-                        </div>
-                        <textarea v-model="editingConvUserProfile" class="field-textarea scrollbar-hide" rows="8" placeholder="- 备注名：XXX&#10;- 累计打赏金额：XXX RMB&#10;- 关注时长：X个月&#10;- 历史标签：XXX"></textarea>
-                    </div>
-                </div>
-                <div class="modal-actions">
-                    <button @click="closeEditConversationModal" class="ghost-action">取消</button>
-                    <button @click="saveConversationSettings" class="primary-action">保存</button>
+        <!-- 编辑会话弹窗 -->
+        <div v-if="isEditingConv" class="fixed inset-0 z-50 flex items-center justify-center p-4">
+            <div @click="editingConvTitle = ''; editingConvId = null" class="absolute inset-0 bg-black/30 backdrop-blur-sm"></div>
+            <div class="relative bg-white dark:bg-[#2f2f2f] rounded-2xl p-6 w-full max-w-md shadow-xl">
+                <h3 class="text-lg font-medium mb-4">重命名会话</h3>
+                <input v-model="editingConvTitle" type="text" class="w-full px-4 py-2.5 bg-[#f1f3f4] dark:bg-[#3d3d3d] rounded-lg outline-none focus:ring-2 focus:ring-[#1a73e8]" @keyup.enter="saveEditConvTitle">
+                <div class="flex justify-end gap-3 mt-5">
+                    <button @click="editingConvTitle = ''; editingConvId = null" class="px-4 py-2 text-[#5f6368] hover:bg-[#f1f3f4] dark:hover:bg-[#3d3d3d] rounded-lg transition">取消</button>
+                    <button @click="saveEditConvTitle" class="px-4 py-2 bg-[#1a73e8] text-white rounded-lg hover:bg-[#1557b0] transition">保存</button>
                 </div>
             </div>
         </div>

@@ -2,6 +2,7 @@ const { createApp, ref, computed, onMounted, onUnmounted, nextTick } = Vue;
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
+// --- 模板常量 ---
 const TEMPLATE_SYSTEM_PROMPT = `# Role: 钓系名媛主播 (线下粉丝微信私聊场景)
 
 ## 1. 核心人设、深度记忆与原生背景
@@ -55,95 +56,88 @@ const TEMPLATE_USER_PROFILE = `- 备注名：榜三-吴辉-字节大厂程序员
 
 createApp({
     setup() {
+        // --- 状态 ---
         const robots = ref([]);
         const conversations = ref([]);
         const activeConvId = ref(null);
+        const activeConvTitle = ref("");
         const currentMessages = ref([]);
         const plannedReplies = ref([]);
         const inputText = ref("");
         const errorMessage = ref("");
         const currentTime = ref(Date.now());
 
+        // 侧边栏
         const sidebarOpen = ref(false);
+
+        // Robot 管理
+        const collapsedRobots = ref({});
         const showCreateRobotModal = ref(false);
         const newRobotName = ref("");
         const newRobotSystemPrompt = ref("");
 
-        const showEditRobotModal = ref(false);
-        const editingRobotId = ref(null);
-        const editingRobotName = ref("");
-        const editingRobotSystemPrompt = ref("");
-
+        // 新建会话弹窗
         const showCreateConvModal = ref(false);
         const newConvRobotId = ref(null);
         const newConvTitle = ref("");
         const newConvUserProfile = ref("");
 
-        const showEditConvModal = ref(false);
-        const editingConvId = ref(null);
+        // 编辑会话弹窗
         const editingConvTitle = ref("");
-        const editingConvUserProfile = ref("");
+        const editingConvId = ref(null);
+        const isEditingConv = computed(() => editingConvId.value !== null);
 
+        // 轮询
         let pollAbortController = null;
         let lastMsgId = 0;
         let plannedReplyTimer = null;
         let clockTimer = null;
 
-        const activeConversation = computed(() =>
-            conversations.value.find((conv) => conv.id === activeConvId.value) || null
-        );
-
-        const activeRobot = computed(() => {
-            const conv = activeConversation.value;
-            return conv ? robots.value.find((robot) => robot.id === conv.robot_id) || null : null;
-        });
-
-        const profilePreview = computed(() => summarizeMultiline(activeConversation.value?.user_profile, "还没有粉丝档案"));
-        const promptPreview = computed(() => summarizeMultiline(activeRobot.value?.system_prompt, "还没有设置 System Prompt"));
-
+        // --- 倒计时格式化 ---
         const formatCountdown = (sendAtStr) => {
-            const raw = sendAtStr.endsWith("Z") ? sendAtStr : `${sendAtStr}Z`;
+            // send_at 从后端来是 UTC，需要加 Z
+            const raw = sendAtStr.endsWith('Z') ? sendAtStr : sendAtStr + 'Z';
             const sendAt = new Date(raw).getTime();
-            const diff = Math.round((sendAt - currentTime.value) / 1000);
-
+            const now = currentTime.value;
+            const diff = Math.round((sendAt - now) / 1000);
             if (diff <= 0) return "发送中...";
-            if (diff < 60) return `${diff} 秒后`;
+            if (diff < 60) return diff + "秒后";
             const m = Math.floor(diff / 60);
             const s = diff % 60;
-            return s > 0 ? `${m} 分 ${s} 秒后` : `${m} 分后`;
+            return s > 0 ? m + "分" + s + "秒后" : m + "分后";
         };
 
-        async function loadRobots() {
+        // --- 加载数据 ---
+        const loadRobots = async () => {
             try {
                 robots.value = await API.getRobots();
             } catch (err) {
-                errorMessage.value = `加载 Robot 列表失败: ${err.message}`;
+                errorMessage.value = "加载 Robot 列表失败: " + err.message;
             }
-        }
+        };
 
-        async function loadConversations() {
+        const loadConversations = async () => {
             try {
                 conversations.value = await API.getConversations();
             } catch (err) {
-                errorMessage.value = `加载会话列表失败: ${err.message}`;
+                errorMessage.value = "加载会话列表失败: " + err.message;
             }
-        }
+        };
 
-        function toggleRobot(robotId) {
-            const robot = robots.value.find((item) => item.id === robotId);
-            if (!robot) return;
-            robot.collapsed = !robot.collapsed;
-            robots.value = [...robots.value];
-        }
+        // --- 侧边栏 ---
+        const toggleRobot = (robotId) => {
+            collapsedRobots.value[robotId] = !collapsedRobots.value[robotId];
+        };
 
-        async function createRobot() {
+        // --- Robot CRUD ---
+        const createRobot = async () => {
             const name = newRobotName.value.trim();
             if (!name) return;
 
             try {
                 await API.createRobot({
                     name,
-                    system_prompt: newRobotSystemPrompt.value
+                    system_prompt: newRobotSystemPrompt.value.trim() || null
                 });
                 newRobotName.value = "";
                 newRobotSystemPrompt.value = "";
@@ -151,56 +145,20 @@ createApp({
                 errorMessage.value = "";
                 await loadRobots();
             } catch (err) {
-                errorMessage.value = `创建 Robot 失败: ${err.message}`;
+                errorMessage.value = "创建 Robot 失败: " + err.message;
             }
-        }
+        };
 
-        function openEditRobotModal(robot) {
-            if (!robot) return;
-            editingRobotId.value = robot.id;
-            editingRobotName.value = robot.name || "";
-            editingRobotSystemPrompt.value = robot.system_prompt || "";
-            showEditRobotModal.value = true;
-        }
-
-        function closeEditRobotModal() {
-            showEditRobotModal.value = false;
-            editingRobotId.value = null;
-            editingRobotName.value = "";
-            editingRobotSystemPrompt.value = "";
-        }
-
-        async function saveRobotEdits() {
-            const robotId = editingRobotId.value;
-            const name = editingRobotName.value.trim();
-            if (!robotId || !name) {
-                errorMessage.value = "Robot 名称不能为空";
-                return;
-            }
-
-            try {
-                await API.updateRobot(robotId, {
-                    name,
-                    system_prompt: editingRobotSystemPrompt.value
-                });
-                errorMessage.value = "";
-                closeEditRobotModal();
-                await loadRobots();
-            } catch (err) {
-                errorMessage.value = `更新 Robot 失败: ${err.message}`;
-            }
-        }
-
-        function openCreateConversationModal(robotId) {
+        // --- 会话 ---
+        const openCreateConversationModal = (robotId) => {
             newConvRobotId.value = robotId;
             newConvTitle.value = "";
             newConvUserProfile.value = "";
             showCreateConvModal.value = true;
-        }
+        };
 
-        async function createConversation() {
+        const createConversation = async () => {
             if (!newConvRobotId.value) return;
-
             try {
                 const conv = await API.createConversation(
                     newConvRobotId.value,
@@ -211,80 +169,54 @@ createApp({
                 newConvTitle.value = "";
                 newConvUserProfile.value = "";
                 newConvRobotId.value = null;
-                errorMessage.value = "";
                 await loadConversations();
-                await selectConversation(conv.id);
+                selectConversation(conv.id);
                 sidebarOpen.value = false;
             } catch (err) {
-                errorMessage.value = `创建会话失败: ${err.message}`;
+                errorMessage.value = "创建会话失败: " + err.message;
             }
-        }
+        };
 
-        function openEditConversationModal(conv) {
-            if (!conv) return;
+        const openEditConversationModal = (conv) => {
             editingConvId.value = conv.id;
             editingConvTitle.value = conv.title || "";
-            editingConvUserProfile.value = conv.user_profile || "";
-            showEditConvModal.value = true;
-        }
+        };
 
-        function closeEditConversationModal() {
-            showEditConvModal.value = false;
-            editingConvId.value = null;
-            editingConvTitle.value = "";
-            editingConvUserProfile.value = "";
-        }
-
-        async function saveConversationSettings() {
-            const convId = editingConvId.value;
-            const title = editingConvTitle.value.trim();
-            if (!convId || !title) {
-                errorMessage.value = "会话标题不能为空";
-                return;
-            }
-
-            try {
-                await API.updateConversation(convId, {
-                    title,
-                    user_profile: editingConvUserProfile.value.trim()
-                });
-                errorMessage.value = "";
-                closeEditConversationModal();
-                await loadConversations();
-            } catch (err) {
-                errorMessage.value = `更新会话失败: ${err.message}`;
-            }
-        }
-
-        async function selectConversation(convId) {
+        const selectConversation = async (convId) => {
             stopPolling();
             stopPlannedReplyPolling();
 
             activeConvId.value = convId;
+            const conv = conversations.value.find(c => c.id === convId);
+            activeConvTitle.value = conv ? conv.title : "新对话";
+            editingConvTitle.value = "";
+            editingConvId.value = null;
             errorMessage.value = "";
+
             currentMessages.value = [];
             plannedReplies.value = [];
             lastMsgId = 0;
 
             startLongPolling();
             startPlannedReplyPolling();
-        }
+        };
 
-        function stopPolling() {
+        // --- 长轮询（消息） ---
+        const stopPolling = () => {
             if (pollAbortController) {
                 pollAbortController.abort();
                 pollAbortController = null;
             }
-        }
+        };
 
-        function startLongPolling() {
+        const startLongPolling = () => {
             stopPolling();
             pollAbortController = new AbortController();
             pollLoop(pollAbortController.signal, activeConvId.value);
-        }
+        };
 
-        async function pollLoop(signal, convId) {
-            const renderedIds = new Set(currentMessages.value.map((m) => m.id));
+        const pollLoop = async (signal, convId) => {
+            const renderedIds = new Set(currentMessages.value.map(m => m.id));
 
             while (!signal.aborted && activeConvId.value === convId) {
                 try {
@@ -292,57 +224,56 @@ createApp({
 
                     if (signal.aborted || activeConvId.value !== convId) return;
 
-                    const dedupedMsgs = newMsgs.filter((m) => !renderedIds.has(m.id));
+                    const dedupedMsgs = newMsgs.filter(m => !renderedIds.has(m.id));
                     if (dedupedMsgs.length > 0) {
-                        dedupedMsgs.forEach((m) => renderedIds.add(m.id));
+                        dedupedMsgs.forEach(m => renderedIds.add(m.id));
                         currentMessages.value.push(...dedupedMsgs);
                         lastMsgId = dedupedMsgs[dedupedMsgs.length - 1].id;
                         scrollToBottom();
                     }
                 } catch (err) {
                     if (signal.aborted) return;
-                    if (!err.message.includes("超时") && !err.message.includes("abort")) {
-                        errorMessage.value = `消息同步异常: ${err.message}`;
+                    if (!err.message.includes('超时') && !err.message.includes('abort')) {
+                        errorMessage.value = "消息同步异常: " + err.message;
                     }
-                    await new Promise((resolve) => setTimeout(resolve, 1500));
+                    await new Promise(r => setTimeout(r, 1500));
                 }
             }
-        }
+        };
 
-        function stopPlannedReplyPolling() {
+        // --- 计划回复轮询 ---
+        const stopPlannedReplyPolling = () => {
             if (plannedReplyTimer) {
                 clearInterval(plannedReplyTimer);
                 plannedReplyTimer = null;
             }
-        }
+        };
 
-        function startPlannedReplyPolling() {
+        const startPlannedReplyPolling = () => {
             stopPlannedReplyPolling();
             const fetchPlannedReplies = async () => {
                 const convId = activeConvId.value;
                 if (!convId) return;
                 try {
-                    const previousCount = plannedReplies.value.length;
+                    const prev = plannedReplies.value.length;
                     plannedReplies.value = await API.getPlannedReplies(convId);
-                    if (plannedReplies.value.length > 0 && previousCount === 0) {
-                        scrollToBottom();
-                    }
+                    if (plannedReplies.value.length > 0 && prev === 0) scrollToBottom();
                 } catch (err) {
-                    // 保持静默，避免轮询错误不断打断主界面
+                    // 静默失败
                 }
             };
-
             fetchPlannedReplies();
             plannedReplyTimer = setInterval(fetchPlannedReplies, 2000);
-        }
+        };
 
-        async function sendTextMessage() {
+        // --- 发送消息 ---
+        const sendTextMessage = async () => {
             const text = inputText.value.trim();
             if (!text || !activeConvId.value) return;
 
             inputText.value = "";
-            const textarea = document.querySelector("textarea.message-input");
-            if (textarea) textarea.style.height = "auto";
+            const textarea = document.querySelector('textarea');
+            if (textarea) textarea.style.height = 'auto';
 
             try {
                 await API.sendMessage({
@@ -351,21 +282,22 @@ createApp({
                     msg_type: "text",
                     content: text
                 });
+                // 用户发送后立即清空计划回复（后端已删除，前端同步）
                 plannedReplies.value = [];
             } catch (err) {
-                errorMessage.value = `发送消息失败: ${err.message}`;
+                errorMessage.value = "发送消息失败: " + err.message;
             }
-        }
+        };
 
-        function handleAttachment() {
-            const input = document.createElement("input");
-            input.type = "file";
-            input.accept = "image/*,audio/*,video/*";
+        const handleAttachment = () => {
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = 'image/*,audio/*,video/*';
             input.onchange = (e) => handleFileUpload(e);
             input.click();
-        }
+        };
 
-        async function handleFileUpload(event) {
+        const handleFileUpload = async (event) => {
             const file = event.target.files[0];
             if (!file) return;
 
@@ -376,7 +308,7 @@ createApp({
             }
 
             if (file.size > MAX_FILE_SIZE) {
-                errorMessage.value = `文件大小不能超过 ${MAX_FILE_SIZE / 1024 / 1024}MB`;
+                errorMessage.value = "文件大小不能超过 " + (MAX_FILE_SIZE / 1024 / 1024) + "MB";
                 event.target.value = "";
                 return;
             }
@@ -392,43 +324,58 @@ createApp({
                     });
                     plannedReplies.value = [];
                 } catch (err) {
-                    errorMessage.value = `发送文件失败: ${err.message}`;
+                    errorMessage.value = "发送文件失败: " + err.message;
                 }
             };
             reader.readAsDataURL(file);
             event.target.value = "";
-        }
+        };
 
-        function scrollToBottom() {
+        // --- 标题编辑 ---
+        const saveEditConvTitle = async () => {
+            const title = editingConvTitle.value ? editingConvTitle.value.trim() : "";
+            const convId = editingConvId.value;
+            if (!title || !convId) {
+                editingConvTitle.value = "";
+                editingConvId.value = null;
+                return;
+            }
+
+            try {
+                await API.updateConversation(convId, { title });
+                errorMessage.value = "";
+                editingConvTitle.value = "";
+                editingConvId.value = null;
+                await loadConversations();
+                if (activeConvId.value === convId) {
+                    activeConvTitle.value = title;
+                }
+            } catch (err) {
+                editingConvTitle.value = "";
+                editingConvId.value = null;
+                errorMessage.value = "更新会话失败: " + err.message;
+            }
+        };
+
+        // --- 辅助 ---
+        const scrollToBottom = () => {
             nextTick(() => {
                 const box = document.getElementById("chat-box");
                 if (box) box.scrollTop = box.scrollHeight;
             });
-        }
+        };
 
-        function autoResizeTextarea(event) {
-            const el = event.target;
-            el.style.height = "auto";
-            const maxHeight = window.innerHeight * 0.3;
-            el.style.height = `${Math.min(el.scrollHeight, maxHeight)}px`;
-        }
-
-        function summarizeMultiline(text, fallback) {
-            if (!text) return fallback;
-            const normalized = text
-                .split("\n")
-                .map((line) => line.trim().replace(/^[-*]\s*/, ""))
-                .filter(Boolean)
-                .join(" ");
-            return normalized || fallback;
-        }
+        const autoResizeTextarea = (e) => {
+            const el = e.target;
+            el.style.height = 'auto';
+            const maxH = window.innerHeight * 0.3;
+            el.style.height = Math.min(el.scrollHeight, maxH) + 'px';
+        };
 
         onMounted(() => {
             loadRobots();
             loadConversations();
-            clockTimer = setInterval(() => {
-                currentTime.value = Date.now();
-            }, 1000);
+            clockTimer = setInterval(() => { currentTime.value = Date.now(); }, 1000);
         });
 
         onUnmounted(() => {
@@ -438,49 +385,21 @@ createApp({
         });
 
         return {
-            robots,
-            conversations,
-            activeConvId,
-            activeConversation,
-            activeRobot,
-            currentMessages,
-            plannedReplies,
-            inputText,
-            errorMessage,
-            currentTime,
+            robots, conversations, activeConvId, activeConvTitle, currentMessages,
+            plannedReplies, inputText, errorMessage, currentTime,
             sidebarOpen,
-            showCreateRobotModal,
-            newRobotName,
-            newRobotSystemPrompt,
-            showEditRobotModal,
-            editingRobotName,
-            editingRobotSystemPrompt,
-            showCreateConvModal,
-            newConvRobotId,
-            newConvTitle,
-            newConvUserProfile,
-            showEditConvModal,
-            editingConvTitle,
-            editingConvUserProfile,
-            TEMPLATE_SYSTEM_PROMPT,
-            TEMPLATE_USER_PROFILE,
-            profilePreview,
-            promptPreview,
-            toggleRobot,
-            createRobot,
-            openEditRobotModal,
-            closeEditRobotModal,
-            saveRobotEdits,
+            collapsedRobots, toggleRobot,
+            showCreateRobotModal, newRobotName, newRobotSystemPrompt, createRobot,
+            TEMPLATE_SYSTEM_PROMPT, TEMPLATE_USER_PROFILE,
+            showCreateConvModal, newConvRobotId, newConvTitle, newConvUserProfile, createConversation,
             openCreateConversationModal,
-            createConversation,
             openEditConversationModal,
-            closeEditConversationModal,
-            saveConversationSettings,
             selectConversation,
-            sendTextMessage,
-            handleAttachment,
+            sendTextMessage, handleAttachment, handleFileUpload,
+            editingConvTitle, editingConvId, isEditingConv, saveEditConvTitle,
+            formatDate: Utils.formatDate,
             formatCountdown,
             autoResizeTextarea
         };
     }
-}).mount("#app");
+}).mount('#app');

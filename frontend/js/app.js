@@ -115,14 +115,7 @@ createApp({
 
         async function loadRobots() {
             try {
-                const previousCollapsed = Object.fromEntries(
-                    robots.value.map((robot) => [robot.id, Boolean(robot.collapsed)])
-                );
-                const loadedRobots = await API.getRobots();
-                robots.value = loadedRobots.map((robot) => ({
-                    ...robot,
-                    collapsed: previousCollapsed[robot.id] ?? false
-                }));
+                robots.value = await API.getRobots();
             } catch (err) {
                 errorMessage.value = `加载 Robot 列表失败: ${err.message}`;
             }
@@ -268,7 +261,6 @@ createApp({
             stopPlannedReplyPolling();
 
             activeConvId.value = convId;
-            sidebarOpen.value = false;
             errorMessage.value = "";
             currentMessages.value = [];
             plannedReplies.value = [];
@@ -428,16 +420,7 @@ createApp({
                 .map((line) => line.trim().replace(/^[-*]\s*/, ""))
                 .filter(Boolean)
                 .join(" ");
-            if (!normalized) return fallback;
-            return normalized.length > 140 ? `${normalized.slice(0, 140)}…` : normalized;
-        }
-
-        function getRobotSummary(robot) {
-            return summarizeMultiline(robot?.system_prompt, "未配置 prompt");
-        }
-
-        function getConversationSummary(conv) {
-            return summarizeMultiline(conv?.user_profile, "未设置粉丝档案");
+            return normalized || fallback;
         }
 
         onMounted(() => {
@@ -483,8 +466,6 @@ createApp({
             TEMPLATE_USER_PROFILE,
             profilePreview,
             promptPreview,
-            getRobotSummary,
-            getConversationSummary,
             toggleRobot,
             createRobot,
             openEditRobotModal,

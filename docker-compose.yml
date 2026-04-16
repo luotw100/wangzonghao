@@ -1,31 +1,44 @@
 services:
-  web:
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "23456:23456"
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - app-storage:/app/storage:ro
+    depends_on:
+      - chat
+      - robot-api
+      - robot-worker
+    restart: unless-stopped
+
+  chat:
     build:
       context: .
-    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 23456
-    ports:
-      - "${WEB_PORT:-23456}:23456"
+    command: uv run uvicorn chat.main:app --host 0.0.0.0 --port 23456
     volumes:
       - app-storage:/app/storage
     restart: unless-stopped
 
-  worker:
+  robot-api:
     build:
       context: .
-    command: uv run python worker/main.py
-    environment:
-      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com}
-      LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
-      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-120}
-      POLL_INTERVAL: ${POLL_INTERVAL:-2}
-      MAX_RETRIES: ${MAX_RETRIES:-3}
-      ECHO_MODE: ${ECHO_MODE:-false}
-      API_BASE_URL: http://web:23456/api
-    depends_on:
-      - web
+    command: uv run python -m robot.main --host 0.0.0.0 --port 23457 --chat-api-base-url http://chat:23456/api
     volumes:
       - app-storage:/app/storage
+    depends_on:
+      - chat
+    restart: unless-stopped
+
+  robot-worker:
+    build:
+      context: .
+    command: uv run python -m robot.worker --chat-api-base-url http://chat:23456/api
+    volumes:
+      - app-storage:/app/storage
+    depends_on:
+      - chat
     restart: unless-stopped
 
 volumes:

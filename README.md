@@ -1,28 +1,28 @@
 # Laborster
 
-Laborster 是一个面向私聊场景的 **AI 角色调试工作台**。它把 Robot 人设、粉丝画像、异步任务、计划回复和真实消息发送串在一起，方便你在一个最小可运行系统里反复调试 prompt 与回复节奏。
+Laborster 是一个面向私聊场景的 AI 角色调试工作台。
 
-## 项目背景
+这条重构分支的核心目标是把系统拆成两个边界更清晰的后端：
 
-这个项目不是一个通用聊天应用，而是一个专门用于测试 **“人设 prompt + 用户画像 + 延迟回复 + Worker 编排”** 的小型全栈工作台。
+- `chat` 只负责聊天事实本身：会话、消息、轮询
+- `robot` 负责角色策略与编排：`profile`、联系人画像、Session、Reply Plan、Provider Config、任务流
 
-核心调试目标包括：
-
-- 不同 `system_prompt` 是否能稳定塑造角色
-- 不同 `user_profile` 是否会影响回复风格
-- LLM 返回的多条延迟消息是否会被正确排程和发送
-- 用户新消息是否会中断未发送的 planned replies
-- Worker 的轮询、重试和回写链路是否正常
+当前前端还在适配新的后端边界，后端以 `chat` / `robot` 的拆分为准。
 
 ## 核心概念
 
 | 概念 | 作用 |
 | --- | --- |
-| `Robot` | 角色模板，核心字段是 `name` 和 `system_prompt` |
-| `Conversation` | 某个具体聊天对象的上下文，核心字段是 `title` 和 `user_profile` |
-| `Message` | 实际聊天消息，区分 `user` / `robot` |
-| `Task` | 用户消息触发的异步处理任务 |
-| `PlannedReply` | Worker 生成、等待未来发送的计划消息 |
+| `Robot` | 机器人角色模板，主要字段是 `name` 和 `profile` |
+| `Contact` | 独立联系人画像实体，主要字段是 `name` 和 `profile` |
+| `Session` | `robot` 服务中的核心会话资源，关联 Robot、Contact 和 Adapter Thread |
+| `ProviderConfig` | 内部 LLM Provider 配置资源，和 Robot 身份分离 |
+| `Conversation` | `chat` 服务中的纯聊天会话，主要字段是 `title` |
+| `Message` | 聊天消息，区分 `user` / `robot` |
+| `InboundEvent` | 从 adapter 侧摄入的入站用户事件 |
+| `GenerationJob` | 基于入站事件生成回复计划的任务 |
+| `ReplyPlan` | `robot` 生成、等待发送的计划回复 |
+| `DispatchJob` | 把 Reply Plan 发回 adapter 的发送任务 |
 
 ## 架构概览
 
@@ -30,56 +30,101 @@ Laborster 是一个面向私聊场景的 **AI 角色调试工作台**。它把 R
 
 ```text
 Browser
-  -> FastAPI Web(app/main.py)
-      -> SQLite(storage/chat.db)
-      -> Static Frontend(frontend/)
-      -> Attachments(storage/attachments/)
-  -> Worker(worker/main.py)
-      -> 调用 Web /api 接口
-      -> 调用 OpenAI-compatible LLM
+  -> Nginx (:23456)
+      -> /api/*        -> Chat (chat/main.py)
+      -> /api/robot/*  -> Robot API (robot/main.py)
+      -> /             -> frontend/
+
+Chat
+  -> SQLite(storage/chat.db)
+
+Robot API
+  -> calls Chat API for Session / adapter thread management
+
+Robot Worker
+  -> SQLite(storage/robot.db)
+  -> 按 Session 轮询 Chat /api/conversations/{id}/messages
+  -> 入站事件 -> 生成任务 -> 发送任务
+  -> 调用 Provider Config 指向的 OpenAI-compatible LLM
+  -> 把回复再发回 Chat /api/conversations/{id}/messages
 ```
 
 ### 组件职责
 
 | 组件 | 路径 | 职责 |
 | --- | --- | --- |
-| Web | `app/main.py` | FastAPI API、SQLAlchemy 模型、静态前端托管 |
-| Frontend | `frontend/` | Vue 3 + Tailwind CDN 的静态调试界面 |
-| Worker | `worker/main.py` | 轮询任务、拼接上下文、调用 LLM、写入/发送 planned replies |
-| Storage | `storage/` | SQLite 数据库、附件持久化 |
+| Chat | `chat/main.py` | 会话 CRUD、消息写入与长轮询、聊天数据持久化 |
+| Robot API | `robot/main.py` | Robot / Contact / Session / Provider Config API，以及 Session 对 adapter thread 的同步操作 |
+| Robot Worker | `robot/worker.py` | 消费 `inbound_events` / `generation_jobs` / `dispatch_jobs`，执行编排、生成、发送 |
+| Frontend | `frontend/` | 静态调试界面，由 Nginx 直接托管 |
+| Storage | `storage/` | `chat.db`、`robot.db`、附件等运行时数据 |
 
-### 消息处理流程
+## 当前消息流
 
-1. 前端调用 `POST /api/messages` 发送用户消息
-2. 后端落库消息，并取消该会话未发送的 planned replies
-3. 后端创建一条 `Task`
-4. Worker 轮询待处理任务
-5. Worker 拉取会话历史、Robot prompt、Conversation user profile
-6. Worker 调用 OpenAI-compatible LLM
-7. LLM 返回 JSON 后生成若干 `PlannedReply`
-8. Worker 到点把 planned replies 转成真实 robot 消息
-9. 前端通过轮询看到计划回复与正式消息
+1. 调用方通过 `POST /api/robot/sessions` 创建一个 Session。
+2. `robot` 服务调用 `chat` 创建真实聊天会话，并把返回的 `conversation_id` 记为 Session 的 adapter thread reference。
+3. 用户消息直接写入 `chat` 的 `POST /api/conversations/{id}/messages`。
+4. `robot-worker` 按 Session 轮询 `chat` 的消息接口，把新的用户消息记录为 `inbound_events`。
+5. 编排层把待处理入站事件变成 `generation_jobs`，显式记录本次运行选用的 Provider 和 Model。
+6. 生成层读取 `Robot.profile` 与 `Contact.profile`，调用 LLM 生成 `reply_plans`。
+7. 发送层把 `reply_plans` 转成 `dispatch_jobs`，到点后再发回 `chat`。
+8. 调用方继续从 `chat` 读取真实消息，从 `robot-api` 读取 Session 状态、任务状态和 Reply Plan。
 
-## 当前技术选型
+## API 边界
 
-- **Backend**: FastAPI + SQLAlchemy
-- **Frontend**: Vue 3 global build + Tailwind CDN + 原生 JS
-- **Database**: SQLite
-- **Worker**: Python 异步轮询进程
-- **Deployment**: Docker Compose
+Nginx 对外暴露两个后端命名空间：
+
+- `/api/*` -> `chat`
+- `/api/robot/*` -> `robot`
+
+当前建议：
+
+- 原始聊天数据操作走 `chat`
+- 任何跟角色、联系人画像、Session 编排、Provider 配置有关的操作走 `robot`
+
+### Chat API
+
+- `POST /api/conversations`
+- `GET /api/conversations`
+- `GET /api/conversations/{id}`
+- `PUT /api/conversations/{id}`
+- `DELETE /api/conversations/{id}`
+- `POST /api/conversations/{id}/restore`
+- `POST /api/conversations/{id}/messages`
+- `GET /api/conversations/{id}/messages`
+
+### Robot API
+
+- `POST /api/robot/robots`
+- `GET /api/robot/robots`
+- `PUT /api/robot/robots/{id}`
+- `POST /api/robot/contacts`
+- `GET /api/robot/contacts`
+- `PUT /api/robot/contacts/{id}`
+- `POST /api/robot/provider-configs`
+- `GET /api/robot/provider-configs`
+- `PUT /api/robot/provider-configs/{id}`
+- `POST /api/robot/sessions`
+- `GET /api/robot/sessions`
+- `GET /api/robot/sessions/{id}`
+- `PUT /api/robot/sessions/{id}`
+- `DELETE /api/robot/sessions/{id}`
+- `POST /api/robot/sessions/{id}/restore`
+- `GET /api/robot/sessions/{id}/reply-plans`
 
 ## 目录结构
 
 ```text
 .
-├── app/                 # FastAPI 服务、ORM、API 路由
+├── chat/                # 纯聊天后端
+├── robot/               # 角色策略与编排后端
 ├── frontend/            # 静态前端资源
 │   ├── css/
 │   └── js/
-├── worker/              # 异步 worker 与配置
-├── storage/             # SQLite 与附件目录（运行时数据）
-├── Dockerfile
+├── storage/             # 运行期数据目录
 ├── docker-compose.yml
+├── Dockerfile
+├── nginx.conf
 ├── pyproject.toml
 └── .github/
     └── copilot-instructions.md
@@ -87,22 +132,7 @@ Browser
 
 ## Docker Compose 启动
 
-项目包含两个运行中的进程：
-
-- `web`：FastAPI 服务，负责 API、SQLite 和静态前端页面
-- `worker`：轮询任务并调用 LLM 生成回复
-
-前端页面由 `web` 服务直接托管，不需要单独启动第三个前端容器。
-
-### 1. 准备环境变量
-
-```bash
-cp .env.example .env
-```
-
-至少需要把 `.env` 里的 `LLM_API_KEY` 改成可用值；如果只想联调流程，也可以把 `ECHO_MODE=true` 打开，让 worker 进入复读模式。
-
-### 2. 启动
+### 1. 启动
 
 ```bash
 docker compose up --build
@@ -114,48 +144,94 @@ docker compose up --build
 http://localhost:23456
 ```
 
-如果想改宿主机端口，可以在 `.env` 里调整 `WEB_PORT`。
+Compose 会启动四个服务：
+
+- `nginx`：统一入口，托管前端并分发 API 请求
+- `chat`：聊天后端
+- `robot-api`：Robot 领域 API
+- `robot-worker`：后台队列消费者
+
+### 1.1 初始化 Provider Config
+
+当前实现不再使用环境变量或 `.env` 来配置 Robot 进程。
+
+同时，当前实现也不再使用 `is_default` 自动选 Provider，而是要求系统里只有一个 Provider Config。
+
+如果一个都没有，Robot 不会创建生成任务。
+
+如果有多个，Robot 会直接报错，而不是偷偷选一个。
+
+示例：
+
+```bash
+curl -X POST http://localhost:23456/api/robot/provider-configs \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "name": "deepseek",
+    "base_url": "https://api.deepseek.com",
+    "api_key": "YOUR_API_KEY",
+    "default_model": "deepseek-chat"
+  }'
+```
+
+这里的 `base_url` 语义是“`/chat/completions` 之前的前缀”。
+
+例如：
+
+- DeepSeek: `https://api.deepseek.com`
+- OpenAI: `https://api.openai.com/v1`
 
 ### 3. 持久化数据
 
 `docker compose` 会创建名为 `app-storage` 的 volume，用来保存：
 
 - `storage/chat.db`
+- `storage/robot.db`
 - `storage/attachments/`
 
 容器重建后，这些数据会继续保留。
 
-应用启动时会对 SQLite 执行**增量补列**式迁移。像 Robot / Conversation 软删除这类新增字段，会直接在现有 `storage/chat.db` 上补齐，已有 Docker volume 可以直接复用，不需要重建数据库。
-
 ## 本地直接运行
 
+分别启动两个后端：
+
 ```bash
-uv run uvicorn app.main:app --host 0.0.0.0 --port 23456
-uv run python worker/main.py
+uv run uvicorn chat.main:app --host 0.0.0.0 --port 23456
+uv run python -m robot.main --host 127.0.0.1 --port 23457 --chat-api-base-url http://127.0.0.1:23456/api
+uv run python -m robot.worker --chat-api-base-url http://127.0.0.1:23456/api
 ```
 
-## 常用环境变量
+如果要完整走前端入口，再额外启动 Nginx；否则也可以直接分别请求两个后端端口调试。
 
-| 变量 | 说明 | 默认值 |
+如果要用复读模式联调：
+
+```bash
+uv run python -m robot.worker --chat-api-base-url http://127.0.0.1:23456/api --echo-mode
+```
+
+## Robot API 启动参数
+
+| 参数 | 说明 | 默认值 |
 | --- | --- | --- |
-| `WEB_PORT` | Web 暴露到宿主机的端口 | `23456` |
-| `LLM_BASE_URL` | OpenAI-compatible 接口地址 | `https://api.deepseek.com` |
-| `LLM_API_KEY` | LLM API Key | 空 |
-| `LLM_MODEL` | 模型名 | `deepseek-chat` |
-| `REQUEST_TIMEOUT` | LLM 请求超时（秒） | `120` |
-| `POLL_INTERVAL` | Worker 轮询间隔（秒） | `2` |
-| `MAX_RETRIES` | 任务最大重试次数 | `3` |
-| `ECHO_MODE` | 是否启用复读模式 | `false` |
+| `--host` | Robot API 监听地址 | `127.0.0.1` |
+| `--port` | Robot API 监听端口 | `23457` |
+| `--chat-api-base-url` | Robot API 访问 Chat Adapter 的 API 地址 | 必填 |
 
-## 开发约束
+## Robot Worker 启动参数
 
-- 前端不是独立 Node 工程，**不要默认引入构建链**
-- `app/main.py` 同时承担 API、模型和静态页面托管
-- `worker/` 必须通过 `/api` 与 web 通信
-- 变更持久化字段时，要同步考虑：
-  - ORM 模型
-  - Pydantic schema
-  - API handler
-  - 前端读写逻辑
-  - Worker 上下文拼接
-- `planned_replies.send_at` 当前以 **UTC naive datetime** 存储，避免随意改时区策略
+| 参数 | 说明 | 默认值 |
+| --- | --- | --- |
+| `--chat-api-base-url` | Robot Worker 访问 Chat Adapter 的 API 地址 | 必填 |
+| `--request-timeout` | LLM 请求超时（秒） | `120` |
+| `--poll-interval` | Robot 轮询 Chat 的间隔（秒） | `2` |
+| `--echo-mode` | 是否启用复读模式 | 关闭 |
+
+## 当前约束
+
+- `chat` 不负责 Robot / Contact / Session / Provider Config 的业务状态
+- `robot-api` 只负责 Robot 领域 API，不消费后台任务
+- `robot-worker` 通过 Chat API 感知新消息，不直接读写 `chat.db`
+- `robot` 当前采用显式任务表：`inbound_events`、`generation_jobs`、`dispatch_jobs`
+- `Provider Config` 目前是内部资源，当前实现要求库里只存在一个 Provider Config，或者显式开启 `--echo-mode`
+- 前端尚未完成对 `contacts` / `sessions` / `provider-configs` 新接口的适配
+- 前端仍在适配中，后端接口以这里的拆分设计为准

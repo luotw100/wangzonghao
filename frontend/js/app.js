@@ -109,7 +109,7 @@ createApp({
             const sendAt = new Date(raw).getTime();
             const now = currentTime.value;
             const diff = Math.round((sendAt - now) / 1000);
-            if (diff <= 0) return "发送中...";
+            if (diff <= 0) return "Worker 发送中...";
             if (diff < 60) return diff + "秒后";
             const m = Math.floor(diff / 60);
             const s = diff % 60;

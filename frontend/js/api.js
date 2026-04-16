@@ -1,4 +1,5 @@
 const API_BASE = '/api';
+const ROBOT_BASE = '/api/robot';
 
 const API = {
     // 通用请求封装，支持超时
@@ -26,29 +27,29 @@ const API = {
     // --- Robots ---
     async getRobots(includeDeleted = false) {
         const query = includeDeleted ? '?include_deleted=true' : '';
-        return this.request(`${API_BASE}/robots${query}`);
+        return this.request(`${ROBOT_BASE}/robots${query}`);
     },
     async createRobot(data) {
-        return this.request(`${API_BASE}/robots`, {
+        return this.request(`${ROBOT_BASE}/robots`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
     },
     async updateRobot(robotId, data) {
-        return this.request(`${API_BASE}/robots/${robotId}`, {
+        return this.request(`${ROBOT_BASE}/robots/${robotId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
     },
     async deleteRobot(robotId) {
-        return this.request(`${API_BASE}/robots/${robotId}`, {
+        return this.request(`${ROBOT_BASE}/robots/${robotId}`, {
             method: 'DELETE'
         });
     },
     async restoreRobot(robotId) {
-        return this.request(`${API_BASE}/robots/${robotId}/restore`, {
+        return this.request(`${ROBOT_BASE}/robots/${robotId}/restore`, {
             method: 'POST'
         });
     },
@@ -85,10 +86,11 @@ const API = {
 
     // --- Messages ---
     async sendMessage(payload) {
-        return this.request(`${API_BASE}/messages`, {
+        const { conversation_id, ...messageData } = payload;
+        return this.request(`${API_BASE}/conversations/${conversation_id}/messages`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: JSON.stringify(messageData)
         });
     },
     // 消息同步（长轮询）
@@ -104,12 +106,13 @@ const API = {
 
         try {
             const res = await fetch(
-                `${API_BASE}/messages?conversation_id=${convId}&last_id=${lastId}&timeout=${serverTimeout}`,
+                `${API_BASE}/conversations/${convId}/messages?last_id=${lastId}&timeout=${serverTimeout}`,
                 { signal: controller.signal }
             );
             clearTimeout(timeoutId);
             if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-            return await res.json();
+            const payload = await res.json();
+            return payload.messages || [];
         } catch (err) {
             clearTimeout(timeoutId);
             if (err.name === 'AbortError') {

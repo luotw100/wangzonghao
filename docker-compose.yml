@@ -1,0 +1,32 @@
+services:
+  web:
+    build:
+      context: .
+    command: uv run uvicorn app.main:app --host 0.0.0.0 --port 23456
+    ports:
+      - "${WEB_PORT:-23456}:23456"
+    volumes:
+      - app-storage:/app/storage
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+    command: uv run python worker/main.py
+    environment:
+      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.deepseek.com}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-deepseek-chat}
+      REQUEST_TIMEOUT: ${REQUEST_TIMEOUT:-120}
+      POLL_INTERVAL: ${POLL_INTERVAL:-2}
+      MAX_RETRIES: ${MAX_RETRIES:-3}
+      ECHO_MODE: ${ECHO_MODE:-false}
+      API_BASE_URL: http://web:23456/api
+    depends_on:
+      - web
+    volumes:
+      - app-storage:/app/storage
+    restart: unless-stopped
+
+volumes:
+  app-storage:

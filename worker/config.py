@@ -8,16 +8,16 @@ LLM_API_KEY = os.environ.get("LLM_API_KEY", "")
 LLM_MODEL = os.environ.get("LLM_MODEL", "deepseek-chat")
 
 # 请求超时（秒）
-REQUEST_TIMEOUT = 120
+REQUEST_TIMEOUT = int(os.environ.get("REQUEST_TIMEOUT", "120"))
 
 # Worker 轮询间隔（秒）
-POLL_INTERVAL = 2
+POLL_INTERVAL = float(os.environ.get("POLL_INTERVAL", "2"))
 
 # 最大重试次数
-MAX_RETRIES = 3
+MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "3"))
 
 # 后端 API 地址
-API_BASE_URL = "http://localhost:23456/api"
+API_BASE_URL = os.environ.get("API_BASE_URL", "http://localhost:23456/api").rstrip("/")
 
 # 测试模式：True = 复读机模式，False = 调用真实 LLM
-ECHO_MODE = False
+ECHO_MODE = os.environ.get("ECHO_MODE", "false").strip().lower() in {"1", "true", "yes", "on"}

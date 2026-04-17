@@ -61,4 +61,6 @@ class RobotMessage(Base):
     session_id = Column(String, index=True, nullable=False)
     role = Column(String, nullable=False)
     content = Column(Text, nullable=False)
+    status = Column(String, nullable=False, default="sent")  # scheduled, sent, canceled
+    scheduled_for = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)

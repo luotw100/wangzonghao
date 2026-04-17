@@ -74,6 +74,12 @@ export interface Session {
   updated_at: string;
 }
 
+export interface PlannedReply {
+  id: number;
+  content: string;
+  scheduled_for: string | null;
+}
+
 export interface Message {
   id: number;
   conversation_id: string;
@@ -246,6 +252,35 @@ export async function getMessages(
     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
     const payload = await res.json();
     return payload.messages || [];
+  } catch (err: unknown) {
+    clearTimeout(timeoutId);
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('请求超时，请检查网络连接');
+    }
+    throw err;
+  }
+}
+
+export async function getPlannedReplies(
+  sessionId: string,
+  serverTimeout = 30,
+  signal?: AbortSignal
+): Promise<PlannedReply[]> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), serverTimeout > 0 ? 35000 : 10000);
+
+  if (signal) {
+    signal.addEventListener('abort', () => controller.abort());
+  }
+
+  try {
+    const res = await fetch(
+      `${ROBOT_BASE}/sessions/${sessionId}/planned-replies?timeout=${serverTimeout}`,
+      { signal: controller.signal }
+    );
+    clearTimeout(timeoutId);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    return await res.json();
   } catch (err: unknown) {
     clearTimeout(timeoutId);
     if (err instanceof DOMException && err.name === 'AbortError') {

@@ -1,4 +1,6 @@
 import argparse
+import asyncio
+import time
 import uuid
 from contextlib import suppress
 from typing import Any, AsyncIterator, Dict, Optional
@@ -9,8 +11,8 @@ from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from robot.clients import ChatAPIClient
-from robot.db import ensure_database, get_db, utc_now
-from robot.models import Contact, ProviderConfig, Robot, SessionRecord
+from robot.db import SessionLocal, ensure_database, get_db, utc_now
+from robot.models import Contact, ProviderConfig, Robot, RobotMessage, SessionRecord
 from robot.schemas import (
     ContactCreate,
     ContactUpdate,
@@ -543,6 +545,49 @@ async def restore_session(
     robot = get_robot_or_404(db, session_record.robot_id, include_deleted=True)
     contact = get_contact_or_404(db, session_record.contact_id, include_deleted=True)
     return build_session_payload(db, session_record, robot, contact, conversation)
+
+
+@app.get("/api/sessions/{session_id}/planned-replies")
+async def get_planned_replies(
+    session_id: str,
+    timeout: int = Query(0, ge=0, description="超时时间(秒),0 表示立即返回"),
+):
+    """获取 session 的计划消息，支持长轮询。"""
+    start_time = time.time()
+
+    while True:
+        db = SessionLocal()
+        try:
+            get_session_or_404(db, session_id)
+            replies = (
+                db.query(RobotMessage)
+                .filter(
+                    RobotMessage.session_id == session_id,
+                    RobotMessage.status == "scheduled",
+                )
+                .order_by(RobotMessage.scheduled_for.asc())
+                .all()
+            )
+            result = [
+                {
+                    "id": r.id,
+                    "content": r.content,
+                    "scheduled_for": r.scheduled_for.isoformat() if r.scheduled_for else None,
+                }
+                for r in replies
+            ]
+        finally:
+            db.close()
+
+        if result:
+            return result
+
+        elapsed = time.time() - start_time
+        if elapsed >= timeout:
+            return result
+
+        sleep_time = min(0.5, timeout - elapsed)
+        await asyncio.sleep(sleep_time)
 
 
 def parse_args() -> argparse.Namespace:

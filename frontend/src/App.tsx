@@ -117,6 +117,7 @@ export default function App() {
         isActiveSessionDeleted={store.isActiveSessionDeleted}
         isActiveSessionReadOnly={store.isActiveSessionReadOnly}
         currentMessages={store.currentMessages}
+        plannedReplies={store.plannedReplies}
         inputText={store.inputText}
         setInputText={store.setInputText}
         errorMessage={store.errorMessage}

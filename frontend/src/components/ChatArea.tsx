@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { cn } from '../lib/utils';
 import { LaborsterLogo, LaborsterAvatar, IconSend, IconMenu, IconProvider, IconChevronDown, IconCheck } from './Icons';
-import type { Session, Message, ProviderConfig } from '../lib/api';
+import type { Session, Message, ProviderConfig, PlannedReply } from '../lib/api';
 
 interface ChatAreaProps {
   activeSession: Session | null;
@@ -9,6 +9,7 @@ interface ChatAreaProps {
   isActiveSessionDeleted: boolean;
   isActiveSessionReadOnly: boolean;
   currentMessages: Message[];
+  plannedReplies: PlannedReply[];
   inputText: string;
   setInputText: (v: string) => void;
   errorMessage: string;
@@ -26,6 +27,7 @@ export function ChatArea({
   isActiveSessionDeleted,
   isActiveSessionReadOnly,
   currentMessages,
+  plannedReplies,
   inputText,
   setInputText,
   errorMessage,
@@ -39,6 +41,7 @@ export function ChatArea({
   const chatBoxRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [showProviderDropdown, setShowProviderDropdown] = useState(false);
+  const [currentTime, setCurrentTime] = useState(() => Date.now());
 
   const scrollToBottom = useCallback(() => {
     requestAnimationFrame(() => {
@@ -48,10 +51,17 @@ export function ChatArea({
     });
   }, []);
 
-  // Scroll on new messages
+  // Scroll on new messages or planned replies
   useEffect(() => {
     scrollToBottom();
-  }, [currentMessages.length, scrollToBottom]);
+  }, [currentMessages.length, plannedReplies.length, scrollToBottom]);
+
+  // Countdown timer for planned replies
+  useEffect(() => {
+    if (plannedReplies.length === 0) return;
+    const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [plannedReplies.length]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -156,6 +166,33 @@ export function ChatArea({
                   )}
                 </div>
               ))}
+              {plannedReplies.length > 0 && (
+                <div className="space-y-3 mt-2">
+                  {plannedReplies.map((reply) => {
+                    const remaining = reply.scheduled_for
+                      ? Math.max(0, Math.ceil((new Date(reply.scheduled_for + 'Z').getTime() - currentTime) / 1000))
+                      : 0;
+                    return (
+                      <div key={reply.id} className="flex justify-start message-enter">
+                        <div className="flex gap-3 max-w-[85%] md:max-w-[80%]">
+                          <LaborsterAvatar />
+                          <div className="pt-1">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent/10 text-accent text-[11px] font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+                                {remaining > 0 ? `${remaining}s` : '发送中...'}
+                              </span>
+                            </div>
+                            <p className="whitespace-pre-wrap break-words leading-relaxed text-[15px] text-text-secondary">
+                              {reply.content}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </>
           )}
         </div>

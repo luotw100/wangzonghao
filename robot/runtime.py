@@ -3,6 +3,7 @@ import json
 import logging
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 import redis.asyncio as aioredis
@@ -169,14 +170,54 @@ class RobotRuntime:
             with suppress(asyncio.CancelledError):
                 await old_task
 
+        # Mark any remaining scheduled messages as canceled
+        self._cancel_scheduled_messages(session_id)
+
         task = asyncio.create_task(self._process_session(session_id), name=f"process-{session_id}")
         self._session_tasks[session_id] = task
+
+    def _cancel_scheduled_messages(self, session_id: str):
+        db = SessionLocal()
+        try:
+            db.query(RobotMessage).filter(
+                RobotMessage.session_id == session_id,
+                RobotMessage.status == "scheduled",
+            ).update({"status": "canceled"})
+            db.commit()
+        finally:
+            db.close()
 
     async def _process_session(self, session_id: str):
         try:
             replies = await self._generate_replies(session_id)
-            await self._send_replies(session_id, replies)
+            if not replies:
+                return
+            # Write all planned replies to DB with status=scheduled
+            now = utc_now()
+            db = SessionLocal()
+            try:
+                msg_ids: list[int] = []
+                for reply in replies:
+                    delay = max(int(reply.get("delay_seconds", 0)), 0)
+                    scheduled_for = now + timedelta(seconds=delay)
+                    msg = RobotMessage(
+                        session_id=session_id,
+                        role="assistant",
+                        content=str(reply.get("content", "")),
+                        status="scheduled",
+                        scheduled_for=scheduled_for,
+                        created_at=now,
+                    )
+                    db.add(msg)
+                    db.flush()
+                    msg_ids.append(msg.id)
+                db.commit()
+            finally:
+                db.close()
+            # Send each reply at scheduled time
+            await self._send_scheduled_replies(session_id, msg_ids)
         except asyncio.CancelledError:
+            self._cancel_scheduled_messages(session_id)
             raise
         except Exception as exc:
             logger.error("Processing session %s failed: %s", session_id, exc)
@@ -243,8 +284,8 @@ class RobotRuntime:
         response_text = await self.provider.complete_chat(base_url, api_key, model, llm_messages)
         return parse_llm_response(response_text)
 
-    async def _send_replies(self, session_id: str, replies: List[Dict[str, Any]]):
-        if not replies:
+    async def _send_scheduled_replies(self, session_id: str, msg_ids: list[int]):
+        if not msg_ids:
             return
 
         db = SessionLocal()
@@ -256,22 +297,31 @@ class RobotRuntime:
         finally:
             db.close()
 
-        for reply in replies:
-            delay = max(int(reply.get("delay_seconds", 0)), 0)
-            content = str(reply.get("content", ""))
-
-            if delay > 0:
-                await asyncio.sleep(delay)
-
-            # Store reply in robot_messages
+        for msg_id in msg_ids:
             db = SessionLocal()
             try:
-                db.add(RobotMessage(
-                    session_id=session_id,
-                    role="assistant",
-                    content=content,
-                    created_at=utc_now(),
-                ))
+                msg = db.query(RobotMessage).filter(RobotMessage.id == msg_id).first()
+                if not msg or msg.status != "scheduled":
+                    continue
+                scheduled_for = msg.scheduled_for
+                content = msg.content
+            finally:
+                db.close()
+
+            # Sleep until scheduled time
+            if scheduled_for:
+                now = utc_now()
+                wait = (scheduled_for - now).total_seconds()
+                if wait > 0:
+                    await asyncio.sleep(wait)
+
+            # Update status to sent
+            db = SessionLocal()
+            try:
+                msg = db.query(RobotMessage).filter(RobotMessage.id == msg_id).first()
+                if not msg or msg.status != "scheduled":
+                    continue
+                msg.status = "sent"
                 db.commit()
             finally:
                 db.close()

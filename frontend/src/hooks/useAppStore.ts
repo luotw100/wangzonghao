@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import * as api from '../lib/api';
-import type { Robot, Contact, Session, ProviderConfig, Message } from '../lib/api';
+import type { Robot, Contact, Session, ProviderConfig, Message, PlannedReply } from '../lib/api';
 
 export function useAppStore() {
   const [robots, setRobots] = useState<Robot[]>([]);
@@ -14,9 +14,11 @@ export function useAppStore() {
   const [showDeletedItems, setShowDeletedItems] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsedRobots, setCollapsedRobots] = useState<Record<string, boolean>>({});
+  const [plannedReplies, setPlannedReplies] = useState<PlannedReply[]>([]);
 
   // Polling refs
   const pollAbortRef = useRef<AbortController | null>(null);
+  const plannedPollAbortRef = useRef<AbortController | null>(null);
   const lastMsgIdRef = useRef(0);
   const activeSessionIdRef = useRef<string | null>(null);
 
@@ -125,6 +127,10 @@ export function useAppStore() {
       pollAbortRef.current.abort();
       pollAbortRef.current = null;
     }
+    if (plannedPollAbortRef.current) {
+      plannedPollAbortRef.current.abort();
+      plannedPollAbortRef.current = null;
+    }
   }, []);
 
   const startLongPolling = useCallback(
@@ -164,11 +170,42 @@ export function useAppStore() {
     [stopPolling, currentMessages]
   );
 
+  const startPlannedRepliesPolling = useCallback(
+    (sessionId: string) => {
+      if (plannedPollAbortRef.current) {
+        plannedPollAbortRef.current.abort();
+      }
+      const controller = new AbortController();
+      plannedPollAbortRef.current = controller;
+
+      const pollLoop = async () => {
+        while (!controller.signal.aborted && activeSessionIdRef.current === sessionId) {
+          try {
+            const replies = await api.getPlannedReplies(sessionId, 30, controller.signal);
+            if (controller.signal.aborted || activeSessionIdRef.current !== sessionId) return;
+            setPlannedReplies(replies);
+          } catch (err: unknown) {
+            if (controller.signal.aborted) return;
+            const msg = err instanceof Error ? err.message : '';
+            if (!msg.includes('超时') && !msg.includes('abort')) {
+              // Silently ignore planned replies polling errors
+            }
+            await new Promise((r) => setTimeout(r, 1500));
+          }
+        }
+      };
+
+      pollLoop();
+    },
+    []
+  );
+
   // --- Session Selection ---
   const clearActiveSession = useCallback(() => {
     stopPolling();
     setActiveSessionId(null);
     setCurrentMessages([]);
+    setPlannedReplies([]);
     lastMsgIdRef.current = 0;
   }, [stopPolling]);
 
@@ -178,6 +215,7 @@ export function useAppStore() {
       setActiveSessionId(sessionId);
       setErrorMessage('');
       setCurrentMessages([]);
+      setPlannedReplies([]);
       lastMsgIdRef.current = 0;
 
       try {
@@ -188,13 +226,14 @@ export function useAppStore() {
         if (convId) {
           setTimeout(() => {
             startLongPolling(convId, sessionId);
+            startPlannedRepliesPolling(sessionId);
           }, 0);
         }
       } catch (err: unknown) {
         setErrorMessage('加载 Session 详情失败: ' + (err instanceof Error ? err.message : String(err)));
       }
     },
-    [stopPolling, startLongPolling]
+    [stopPolling, startLongPolling, startPlannedRepliesPolling]
   );
 
   // --- Send Message ---
@@ -249,6 +288,7 @@ export function useAppStore() {
     activeSession,
     activeConversationId,
     currentMessages,
+    plannedReplies,
     inputText,
     setInputText,
     errorMessage,

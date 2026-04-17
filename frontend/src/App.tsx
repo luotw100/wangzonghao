@@ -94,7 +94,7 @@ export default function App() {
   }, [store]);
 
   return (
-    <div className="w-full h-dvh overflow-hidden flex bg-white text-text-primary">
+    <div className="w-full h-dvh overflow-hidden flex bg-bg-primary text-text-primary">
       <Sidebar
         sidebarOpen={store.sidebarOpen}
         setSidebarOpen={store.setSidebarOpen}

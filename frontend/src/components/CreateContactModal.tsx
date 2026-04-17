@@ -68,7 +68,7 @@ export function CreateContactModal({ open, onClose, onCreated, onError }: Create
         <button onClick={onClose} className="px-4 py-2 text-text-secondary hover:bg-bg-tertiary rounded-lg transition">
           取消
         </button>
-        <button onClick={handleCreate} className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition">
+        <button onClick={handleCreate} className="px-4 py-2 bg-accent text-bg-primary font-semibold rounded-lg hover:bg-accent-hover transition btn-neon">
           创建
         </button>
       </div>

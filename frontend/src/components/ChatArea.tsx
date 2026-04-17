@@ -83,12 +83,12 @@ export function ChatArea({
     : '选择或创建一个 Session';
 
   return (
-    <main className="flex-1 flex flex-col min-h-0 bg-[#fafafa]">
+    <main className="flex-1 flex flex-col min-h-0 bg-bg-primary tech-grid">
       {/* Mobile hamburger */}
       <div className="md:hidden">
         <button
           onClick={onOpenSidebar}
-          className="fixed top-4 left-4 z-30 w-11 h-11 flex items-center justify-center rounded-full bg-white/80 backdrop-blur-sm shadow-sm"
+          className="fixed top-4 left-4 z-30 w-11 h-11 flex items-center justify-center rounded-full bg-bg-secondary/80 backdrop-blur-sm shadow-lg shadow-black/20 border border-border-glow/20"
           aria-label="打开菜单"
         >
           <IconMenu />
@@ -96,7 +96,7 @@ export function ChatArea({
       </div>
 
       {/* Header */}
-      <header className="h-14 flex items-center justify-between px-4 md:px-6 border-b border-border shrink-0 bg-white">
+      <header className="h-14 flex items-center justify-between px-4 md:px-6 border-b border-border-glow/20 shrink-0 bg-bg-secondary/80 backdrop-blur-sm">
         <div className="flex items-center gap-3">
           <h2 className="font-medium text-text-primary">{sessionTitle}</h2>
           {isActiveSessionDeleted && (
@@ -151,7 +151,7 @@ export function ChatArea({
                     </div>
                   ) : (
                     <div className="max-w-[85%] md:max-w-[80%]">
-                      <div className="bg-accent text-white rounded-2xl rounded-tr-md px-4 py-3">
+                      <div className="msg-user-bubble text-white rounded-2xl rounded-tr-md px-4 py-3">
                         <p className="whitespace-pre-wrap break-words leading-relaxed text-[15px]">
                           {msg.content}
                         </p>
@@ -198,7 +198,7 @@ export function ChatArea({
             </div>
           )}
 
-          <div className="bg-white rounded-2xl shadow-sm border border-border focus-within:border-accent/40 focus-within:shadow-md transition-all overflow-hidden">
+          <div className="bg-bg-secondary/60 rounded-2xl shadow-lg shadow-black/20 border border-border-glow/20 input-glow transition-all backdrop-blur-sm">
             <textarea
               ref={textareaRef}
               value={inputText}
@@ -235,7 +235,7 @@ export function ChatArea({
                     </button>
                     {showProviderDropdown && (
                       <>
-                        <div className="absolute bottom-full mb-1 right-0 bg-white rounded-xl shadow-lg border border-border min-w-[180px] py-1 z-40">
+                        <div className="absolute bottom-full mb-1 right-0 bg-bg-secondary rounded-xl shadow-lg shadow-black/30 border border-border-glow/30 min-w-[180px] py-1 z-40">
                           {providerConfigs.map((p) => (
                             <button
                               key={p.id}
@@ -269,7 +269,7 @@ export function ChatArea({
                   className={cn(
                     'w-10 h-10 flex items-center justify-center rounded-full transition',
                     inputText.trim() && activeSessionId && !isActiveSessionReadOnly
-                      ? 'bg-accent text-white hover:bg-accent-hover'
+                      ? 'bg-accent text-bg-primary font-semibold hover:bg-accent-hover'
                       : 'bg-border text-text-tertiary'
                   )}
                 >

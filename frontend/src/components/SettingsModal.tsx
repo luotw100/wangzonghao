@@ -282,7 +282,7 @@ export function SettingsModal({
             <button onClick={() => setShowProviderForm(false)} className="px-4 py-2 text-text-secondary hover:bg-bg-tertiary rounded-lg transition">
               取消
             </button>
-            <button onClick={saveProvider} className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition">
+            <button onClick={saveProvider} className="px-4 py-2 bg-accent text-bg-primary font-semibold rounded-lg hover:bg-accent-hover transition btn-neon">
               {editingProviderId ? '更新' : '创建'}
             </button>
           </div>

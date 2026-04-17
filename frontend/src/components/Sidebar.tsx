@@ -41,23 +41,23 @@ export function Sidebar({
       {sidebarOpen && (
         <div
           onClick={() => setSidebarOpen(false)}
-          className="fixed inset-0 bg-black/30 z-40 md:hidden backdrop-blur-sm"
+          className="fixed inset-0 bg-black/60 z-40 md:hidden backdrop-blur-md"
         />
       )}
 
       <aside
         className={cn(
-          'w-80 bg-white/80 backdrop-blur-xl flex flex-col fixed md:relative inset-y-0 left-0 z-50',
+          'w-80 bg-bg-secondary/90 backdrop-blur-xl flex flex-col fixed md:relative inset-y-0 left-0 z-50',
           'transform transition-transform duration-300 ease-out',
-          'md:translate-x-0 md:bg-white md:border-r md:border-border',
+          'md:translate-x-0 md:bg-bg-secondary md:border-r md:border-border-glow/30',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
         )}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 h-14 border-b border-border">
+        <div className="flex items-center justify-between px-5 h-14 border-b border-border-glow/30">
           <div className="flex items-center gap-3">
             <LaborsterLogo />
-            <span className="font-medium text-text-primary">Laborster</span>
+            <span className="font-brand font-medium tracking-wider text-sm text-accent">Laborster</span>
           </div>
           <div className="flex items-center gap-1">
             <button
@@ -80,7 +80,7 @@ export function Sidebar({
         <div className="px-3 mt-4 space-y-2">
           <button
             onClick={() => onCreateSession(null)}
-            className="w-full px-4 py-2.5 flex items-center gap-3 rounded-xl border border-border hover:bg-bg-tertiary hover:border-accent/30 transition-all"
+            className="w-full px-4 py-2.5 flex items-center gap-3 rounded-xl border border-border-glow/30 hover:bg-accent/5 hover:border-accent/30 transition-all btn-neon"
           >
             <IconPlus />
             <span className="text-sm font-medium">新建 Session</span>
@@ -145,7 +145,7 @@ export function Sidebar({
 
               {/* Sessions under robot */}
               {!collapsedRobots[robot.id] && (
-                <div className="ml-3 pl-3 border-l border-border">
+                <div className="ml-3 pl-3 border-l border-border-glow/20">
                   {(sessionsByRobot[robot.id] || []).map((session) => {
                     const badge = getQueueBadge(session);
                     return (
@@ -158,7 +158,7 @@ export function Sidebar({
                         className={cn(
                           'group px-3 py-2 rounded-lg cursor-pointer transition text-sm',
                           activeSessionId === session.id
-                            ? 'bg-accent/10 text-accent'
+                            ? 'bg-accent/10 text-accent session-active'
                             : 'hover:bg-bg-tertiary text-text-secondary'
                         )}
                       >
@@ -178,12 +178,12 @@ export function Sidebar({
                               </span>
                             )}
                             {session.status === 'orphaned' && (
-                              <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 text-[10px] shrink-0">
+                              <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 text-[10px] shrink-0">
                                 孤立
                               </span>
                             )}
                             {badge && (
-                              <span className="w-5 h-5 flex items-center justify-center rounded-full bg-accent text-white text-[10px] shrink-0">
+                              <span className="w-5 h-5 flex items-center justify-center rounded-full bg-accent text-bg-primary text-[10px] font-semibold shrink-0">
                                 {badge}
                               </span>
                             )}
@@ -193,7 +193,7 @@ export function Sidebar({
                               e.stopPropagation();
                               onEditSession(session);
                             }}
-                            className="w-6 h-6 flex items-center justify-center rounded shrink-0 opacity-30 group-hover:opacity-100 hover:bg-border transition"
+                            className="w-6 h-6 flex items-center justify-center rounded shrink-0 opacity-30 group-hover:opacity-100 hover:bg-bg-tertiary transition"
                           >
                             <IconEdit size={12} />
                           </button>

@@ -118,7 +118,7 @@ export function EditRobotModal({ open, robot, onClose, onSaved, onError }: EditR
           <button
             onClick={handleSave}
             disabled={isDeleted}
-            className="px-4 py-2 bg-accent text-white rounded-lg hover:bg-accent-hover transition disabled:opacity-50"
+            className="px-4 py-2 bg-accent text-bg-primary font-semibold rounded-lg hover:bg-accent-hover transition disabled:opacity-50 btn-neon"
           >
             保存
           </button>

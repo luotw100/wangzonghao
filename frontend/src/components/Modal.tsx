@@ -37,10 +37,10 @@ export function Modal({ open, onClose, children, maxWidth = 'max-w-lg' }: ModalP
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div
         onClick={onClose}
-        className={`absolute inset-0 bg-black/30 backdrop-blur-sm transition-opacity duration-200 ${animating ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute inset-0 bg-black/60 backdrop-blur-md transition-opacity duration-200 ${animating ? 'opacity-100' : 'opacity-0'}`}
       />
       <div
-        className={`relative bg-white rounded-2xl p-6 w-full ${maxWidth} shadow-2xl max-h-[90vh] flex flex-col transition-all duration-200 ${
+        className={`relative bg-bg-secondary/95 backdrop-blur-xl border border-border-glow/50 rounded-2xl p-6 w-full ${maxWidth} shadow-2xl shadow-black/40 max-h-[90vh] flex flex-col transition-all duration-200 ${
           animating ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 translate-y-2'
         }`}
       >

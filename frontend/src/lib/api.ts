@@ -60,12 +60,6 @@ export interface ProviderConfig {
   updated_at: string;
 }
 
-export interface QueueState {
-  pending_inbound_events: number;
-  active_generation_jobs: number;
-  pending_dispatch_jobs: number;
-}
-
 export interface Session {
   id: string;
   title: string | null;
@@ -76,8 +70,6 @@ export interface Session {
   adapter?: { thread_id: string };
   robot?: { id: string; name: string };
   contact?: { id: string; name: string };
-  queue_state?: QueueState;
-  reply_plans?: ReplyPlan[];
   created_at: string;
   updated_at: string;
 }
@@ -91,15 +83,7 @@ export interface Message {
   created_at: string;
 }
 
-export interface ReplyPlan {
-  id: number;
-  content: string;
-  scheduled_for: string;
-  status: string;
-}
-
-// --- Robots ---
-export function getRobots(includeDeleted = false) {
+export interface Message {(includeDeleted = false) {
   const query = includeDeleted ? '?include_deleted=true' : '';
   return request<Robot[]>(`${ROBOT_BASE}/robots${query}`);
 }
@@ -228,10 +212,6 @@ export function deleteSession(sessionId: string) {
 
 export function restoreSession(sessionId: string) {
   return request<Session>(`${ROBOT_BASE}/sessions/${sessionId}/restore`, { method: 'POST' });
-}
-
-export function getReplyPlans(sessionId: string) {
-  return request<ReplyPlan[]>(`${ROBOT_BASE}/sessions/${sessionId}/reply-plans`, {}, 5000);
 }
 
 // --- Messages ---

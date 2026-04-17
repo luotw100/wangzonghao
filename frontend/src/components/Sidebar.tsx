@@ -1,4 +1,4 @@
-import { cn, getQueueBadge } from '../lib/utils';
+import { cn } from '../lib/utils';
 import { LaborsterLogo, IconPlus, IconSettings, IconClose, IconEdit, IconChevronRight, IconLayers } from './Icons';
 import type { Robot, Session } from '../lib/api';
 
@@ -147,7 +147,6 @@ export function Sidebar({
               {!collapsedRobots[robot.id] && (
                 <div className="ml-3 pl-3 border-l border-border-glow/20">
                   {(sessionsByRobot[robot.id] || []).map((session) => {
-                    const badge = getQueueBadge(session);
                     return (
                       <div
                         key={session.id}
@@ -180,11 +179,6 @@ export function Sidebar({
                             {session.status === 'orphaned' && (
                               <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-400 text-[10px] shrink-0">
                                 孤立
-                              </span>
-                            )}
-                            {badge && (
-                              <span className="w-5 h-5 flex items-center justify-center rounded-full bg-accent text-bg-primary text-[10px] font-semibold shrink-0">
-                                {badge}
                               </span>
                             )}
                           </div>

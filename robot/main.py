@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from robot.clients import ChatAPIClient
 from robot.db import ensure_database, get_db, utc_now
-from robot.models import Contact, DispatchJob, GenerationJob, InboundEvent, ProviderConfig, ReplyPlan, Robot, SessionRecord
+from robot.models import Contact, ProviderConfig, Robot, SessionRecord
 from robot.schemas import (
     ContactCreate,
     ContactUpdate,
@@ -70,30 +70,6 @@ def serialize_provider_config(provider_config: ProviderConfig) -> Dict[str, Any]
         "api_key_preview": mask_api_key(provider_config.api_key),
         "created_at": provider_config.created_at,
         "updated_at": provider_config.updated_at,
-    }
-
-
-def serialize_reply_plan(reply_plan: ReplyPlan) -> Dict[str, Any]:
-    return {
-        "id": reply_plan.id,
-        "session_id": reply_plan.session_id,
-        "generation_job_id": reply_plan.generation_job_id,
-        "content": reply_plan.content,
-        "scheduled_for": reply_plan.scheduled_for,
-        "status": reply_plan.status,
-        "created_at": reply_plan.created_at,
-        "updated_at": reply_plan.updated_at,
-        "sent_at": reply_plan.sent_at,
-        "canceled_at": reply_plan.canceled_at,
-        "failure_reason": reply_plan.failure_reason,
-    }
-
-
-def build_queue_state(db: Session, session_id: str) -> Dict[str, int]:
-    return {
-        "pending_inbound_events": db.query(InboundEvent).filter(InboundEvent.session_id == session_id, InboundEvent.status == "pending").count(),
-        "active_generation_jobs": db.query(GenerationJob).filter(GenerationJob.session_id == session_id, GenerationJob.status.in_(["pending", "running"])).count(),
-        "pending_dispatch_jobs": db.query(DispatchJob).filter(DispatchJob.session_id == session_id, DispatchJob.status == "pending").count(),
     }
 
 
@@ -169,8 +145,6 @@ def build_session_payload(
     robot: Robot,
     contact: Contact,
     conversation: Optional[Dict[str, Any]],
-    *,
-    include_reply_plans: bool = False,
 ) -> Dict[str, Any]:
     effective_status = session_record.status
     if conversation is None and session_record.status != "orphaned":
@@ -180,7 +154,7 @@ def build_session_payload(
     if session_record.provider_config_id:
         provider_config = db.query(ProviderConfig).filter(ProviderConfig.id == session_record.provider_config_id).first()
 
-    payload = {
+    return {
         "id": session_record.id,
         "title": conversation.get("title") if conversation else session_record.title,
         "status": effective_status,
@@ -198,19 +172,7 @@ def build_session_payload(
             "missing": conversation is None,
             "thread": conversation,
         },
-        "queue_state": build_queue_state(db, session_record.id),
     }
-
-    if include_reply_plans:
-        reply_plans = (
-            db.query(ReplyPlan)
-            .filter(ReplyPlan.session_id == session_record.id)
-            .order_by(ReplyPlan.scheduled_for.asc(), ReplyPlan.id.asc())
-            .all()
-        )
-        payload["reply_plans"] = [serialize_reply_plan(reply_plan) for reply_plan in reply_plans]
-
-    return payload
 
 
 async def fetch_conversation_or_none(chat: ChatAPIClient, adapter_thread_id: str) -> Optional[Dict[str, Any]]:
@@ -228,7 +190,6 @@ async def fetch_session_payload(
     chat: ChatAPIClient,
     *,
     include_deleted: bool = False,
-    include_reply_plans: bool = False,
 ) -> Dict[str, Any]:
     robot = get_robot_or_404(db, session_record.robot_id, include_deleted=True)
     contact = get_contact_or_404(db, session_record.contact_id, include_deleted=True)
@@ -237,14 +198,7 @@ async def fetch_session_payload(
     if conversation is not None and conversation.get("is_deleted") and not include_deleted:
         raise HTTPException(status_code=404, detail="Session 不存在")
 
-    return build_session_payload(
-        db,
-        session_record,
-        robot,
-        contact,
-        conversation,
-        include_reply_plans=include_reply_plans,
-    )
+    return build_session_payload(db, session_record, robot, contact, conversation)
 
 
 @app.post("/api/robots")
@@ -460,7 +414,6 @@ async def create_session(
         adapter_type="chat",
         adapter_thread_id=conversation["id"],
         status="active",
-        last_ingested_message_id=0,
         created_at=now,
         updated_at=now,
     )
@@ -475,7 +428,7 @@ async def create_session(
             await chat.delete_conversation(conversation["id"])
         raise
 
-    return await fetch_session_payload(db, session_record, chat, include_deleted=True, include_reply_plans=True)
+    return await fetch_session_payload(db, session_record, chat, include_deleted=True)
 
 
 @app.get("/api/sessions")
@@ -504,7 +457,7 @@ async def list_sessions(
         conversation = conversation_map.get(session_record.adapter_thread_id)
         if conversation is not None and conversation.get("is_deleted") and not include_deleted:
             continue
-        items.append(build_session_payload(db, session_record, robot, contact, conversation, include_reply_plans=False))
+        items.append(build_session_payload(db, session_record, robot, contact, conversation))
     return items
 
 
@@ -516,7 +469,7 @@ async def get_session(
     chat: ChatAPIClient = Depends(get_chat_client),
 ):
     session_record = get_session_or_404(db, session_id)
-    return await fetch_session_payload(db, session_record, chat, include_deleted=include_deleted, include_reply_plans=True)
+    return await fetch_session_payload(db, session_record, chat, include_deleted=include_deleted)
 
 
 @app.put("/api/sessions/{session_id}")
@@ -546,7 +499,7 @@ async def update_session(
     session_record.updated_at = utc_now()
     db.commit()
     db.refresh(session_record)
-    return await fetch_session_payload(db, session_record, chat, include_deleted=True, include_reply_plans=True)
+    return await fetch_session_payload(db, session_record, chat, include_deleted=True)
 
 
 @app.delete("/api/sessions/{session_id}")
@@ -564,20 +517,11 @@ async def delete_session(
     now = utc_now()
     session_record.status = "deleted"
     session_record.updated_at = now
-    for reply_plan in db.query(ReplyPlan).filter(ReplyPlan.session_id == session_record.id, ReplyPlan.status == "pending").all():
-        reply_plan.status = "canceled"
-        reply_plan.canceled_at = now
-        reply_plan.updated_at = now
-        reply_plan.failure_reason = "Session deleted"
-    for dispatch_job in db.query(DispatchJob).filter(DispatchJob.session_id == session_record.id, DispatchJob.status == "pending").all():
-        dispatch_job.status = "canceled"
-        dispatch_job.error = "Session deleted"
-        dispatch_job.finished_at = now
     db.commit()
 
     robot = get_robot_or_404(db, session_record.robot_id, include_deleted=True)
     contact = get_contact_or_404(db, session_record.contact_id, include_deleted=True)
-    return build_session_payload(db, session_record, robot, contact, conversation, include_reply_plans=True)
+    return build_session_payload(db, session_record, robot, contact, conversation)
 
 
 @app.post("/api/sessions/{session_id}/restore")
@@ -598,19 +542,7 @@ async def restore_session(
 
     robot = get_robot_or_404(db, session_record.robot_id, include_deleted=True)
     contact = get_contact_or_404(db, session_record.contact_id, include_deleted=True)
-    return build_session_payload(db, session_record, robot, contact, conversation, include_reply_plans=True)
-
-
-@app.get("/api/sessions/{session_id}/reply-plans")
-def get_session_reply_plans(session_id: str, db: Session = Depends(get_db)):
-    get_session_or_404(db, session_id)
-    reply_plans = (
-        db.query(ReplyPlan)
-        .filter(ReplyPlan.session_id == session_id)
-        .order_by(ReplyPlan.scheduled_for.asc(), ReplyPlan.id.asc())
-        .all()
-    )
-    return [serialize_reply_plan(reply_plan) for reply_plan in reply_plans]
+    return build_session_payload(db, session_record, robot, contact, conversation)
 
 
 def parse_args() -> argparse.Namespace:

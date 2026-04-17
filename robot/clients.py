@@ -43,17 +43,6 @@ class ChatAPIClient:
     async def restore_conversation(self, conversation_id: str) -> Dict[str, Any]:
         return await self._request("POST", f"/conversations/{conversation_id}/restore")
 
-    async def get_messages(self, conversation_id: str, last_id: int = 0, timeout: int = 0) -> Dict[str, Any]:
-        return await self._request(
-            "GET",
-            f"/conversations/{conversation_id}/messages",
-            params={"last_id": last_id, "timeout": timeout},
-        )
-
-    async def get_history(self, conversation_id: str) -> List[Dict[str, Any]]:
-        payload = await self.get_messages(conversation_id, last_id=0, timeout=0)
-        return payload.get("messages", [])
-
     async def send_message(self, conversation_id: str, content: str):
         await self._request(
             "POST",

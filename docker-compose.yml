@@ -14,12 +14,20 @@ services:
       - robot-worker
     restart: unless-stopped
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
   chat:
     build:
       context: .
     command: uv run uvicorn chat.main:app --host 0.0.0.0 --port 23456
+    environment:
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - app-storage:/app/storage
+    depends_on:
+      - redis
     restart: unless-stopped
 
   robot-api:
@@ -35,11 +43,12 @@ services:
   robot-worker:
     build:
       context: .
-    command: uv run python -m robot.worker --chat-api-base-url http://chat:23456/api
+    command: uv run python -m robot.worker --chat-api-base-url http://chat:23456/api --redis-url redis://redis:6379/0
     volumes:
       - app-storage:/app/storage
     depends_on:
       - chat
+      - redis
     restart: unless-stopped
 
 volumes:

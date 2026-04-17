@@ -1,7 +1,10 @@
 import asyncio
+import json
+import os
 import time
 import uuid
 
+import redis
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
@@ -11,6 +14,11 @@ from chat.models import Conversation, Message
 from chat.schemas import ConversationCreate, ConversationMessageCreate, ConversationUpdate
 
 ensure_database()
+
+# --- Redis ---
+REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+_redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+REDIS_INBOX_KEY = "robot:inbox"
 
 # --- FastAPI 实例与路由 ---
 app = FastAPI(title="Laborster Chat")
@@ -142,6 +150,19 @@ def send_message(
 
     db.commit()
     db.refresh(db_msg)
+
+    # Notify Robot worker via Redis for user messages
+    if msg_in.role == "user":
+        try:
+            _redis_client.lpush(REDIS_INBOX_KEY, json.dumps({
+                "conversation_id": conversation_id,
+                "message_id": db_msg.id,
+                "role": msg_in.role,
+                "content": msg_in.content,
+            }))
+        except Exception:
+            pass  # Redis failure should not block message storage
+
     return {"status": "success", "id": db_msg.id}
 
 @app.get("/api/conversations/{conversation_id}/messages")

@@ -1,7 +1,7 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
-import { cn, formatCountdown } from '../lib/utils';
+import { cn } from '../lib/utils';
 import { LaborsterLogo, LaborsterAvatar, IconSend, IconMenu, IconProvider, IconChevronDown, IconCheck } from './Icons';
-import type { Session, Message, ReplyPlan, ProviderConfig } from '../lib/api';
+import type { Session, Message, ProviderConfig } from '../lib/api';
 
 interface ChatAreaProps {
   activeSession: Session | null;
@@ -9,12 +9,10 @@ interface ChatAreaProps {
   isActiveSessionDeleted: boolean;
   isActiveSessionReadOnly: boolean;
   currentMessages: Message[];
-  plannedReplies: ReplyPlan[];
   inputText: string;
   setInputText: (v: string) => void;
   errorMessage: string;
   setErrorMessage: (v: string) => void;
-  currentTime: number;
   onSendMessage: () => void;
   onOpenSidebar: () => void;
   providerConfigs: ProviderConfig[];
@@ -28,12 +26,10 @@ export function ChatArea({
   isActiveSessionDeleted,
   isActiveSessionReadOnly,
   currentMessages,
-  plannedReplies,
   inputText,
   setInputText,
   errorMessage,
   setErrorMessage,
-  currentTime,
   onSendMessage,
   onOpenSidebar,
   providerConfigs,
@@ -55,7 +51,7 @@ export function ChatArea({
   // Scroll on new messages
   useEffect(() => {
     scrollToBottom();
-  }, [currentMessages.length, plannedReplies.length, scrollToBottom]);
+  }, [currentMessages.length, scrollToBottom]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -160,30 +156,6 @@ export function ChatArea({
                   )}
                 </div>
               ))}
-
-              {/* Planned replies */}
-              {plannedReplies.length > 0 && (
-                <div className="mt-2 space-y-3">
-                  <div className="pl-11 text-xs text-text-tertiary">
-                    Robot Worker 正在消费队列，以下是待发送回复预览。
-                  </div>
-                  {plannedReplies.map((reply) => (
-                    <div key={reply.id} className="flex justify-start">
-                      <div className="flex gap-3 max-w-[85%] md:max-w-[80%] opacity-40">
-                        <LaborsterAvatar />
-                        <div className="pt-1">
-                          <p className="whitespace-pre-wrap break-words leading-relaxed text-[15px]">
-                            {reply.content}
-                          </p>
-                          <p className="text-xs text-text-tertiary mt-1">
-                            {formatCountdown(reply.scheduled_for, currentTime)}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
             </>
           )}
         </div>

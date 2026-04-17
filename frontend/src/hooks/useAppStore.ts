@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import * as api from '../lib/api';
-import type { Robot, Contact, Session, ProviderConfig, Message, ReplyPlan } from '../lib/api';
+import type { Robot, Contact, Session, ProviderConfig, Message } from '../lib/api';
 
 export function useAppStore() {
   const [robots, setRobots] = useState<Robot[]>([]);
@@ -9,10 +9,8 @@ export function useAppStore() {
   const [providerConfigs, setProviderConfigs] = useState<ProviderConfig[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [currentMessages, setCurrentMessages] = useState<Message[]>([]);
-  const [plannedReplies, setPlannedReplies] = useState<ReplyPlan[]>([]);
   const [inputText, setInputText] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
-  const [currentTime, setCurrentTime] = useState(() => Date.now());
   const [showDeletedItems, setShowDeletedItems] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [collapsedRobots, setCollapsedRobots] = useState<Record<string, boolean>>({});
@@ -20,19 +18,12 @@ export function useAppStore() {
   // Polling refs
   const pollAbortRef = useRef<AbortController | null>(null);
   const lastMsgIdRef = useRef(0);
-  const replyPlanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const activeSessionIdRef = useRef<string | null>(null);
 
   // Keep ref in sync
   useEffect(() => {
     activeSessionIdRef.current = activeSessionId;
   }, [activeSessionId]);
-
-  // Clock timer
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   // Computed
   const activeSession = sessions.find((s) => s.id === activeSessionId) || null;
@@ -136,13 +127,6 @@ export function useAppStore() {
     }
   }, []);
 
-  const stopReplyPlanPolling = useCallback(() => {
-    if (replyPlanTimerRef.current) {
-      clearInterval(replyPlanTimerRef.current);
-      replyPlanTimerRef.current = null;
-    }
-  }, []);
-
   const startLongPolling = useCallback(
     (convId: string, sessionId: string) => {
       stopPolling();
@@ -180,67 +164,37 @@ export function useAppStore() {
     [stopPolling, currentMessages]
   );
 
-  const startReplyPlanPolling = useCallback(
-    (sessionId: string) => {
-      stopReplyPlanPolling();
-
-      const fetchPlans = async () => {
-        if (activeSessionIdRef.current !== sessionId) return;
-        try {
-          const plans = await api.getReplyPlans(sessionId);
-          setPlannedReplies(plans.filter((rp) => rp.status === 'pending'));
-        } catch {
-          /* silent */
-        }
-      };
-
-      fetchPlans();
-      replyPlanTimerRef.current = setInterval(fetchPlans, 2000);
-    },
-    [stopReplyPlanPolling]
-  );
-
   // --- Session Selection ---
   const clearActiveSession = useCallback(() => {
     stopPolling();
-    stopReplyPlanPolling();
     setActiveSessionId(null);
     setCurrentMessages([]);
-    setPlannedReplies([]);
     lastMsgIdRef.current = 0;
-  }, [stopPolling, stopReplyPlanPolling]);
+  }, [stopPolling]);
 
   const selectSession = useCallback(
     async (sessionId: string) => {
       stopPolling();
-      stopReplyPlanPolling();
       setActiveSessionId(sessionId);
       setErrorMessage('');
       setCurrentMessages([]);
-      setPlannedReplies([]);
       lastMsgIdRef.current = 0;
 
       try {
         const detail = await api.getSession(sessionId);
         setSessions((prev) => prev.map((s) => (s.id === sessionId ? detail : s)));
-        if (detail.reply_plans) {
-          setPlannedReplies(detail.reply_plans.filter((rp) => rp.status === 'pending'));
-        }
 
         const convId = detail.adapter?.thread_id;
         if (convId) {
-          // We need to start polling after state is set
-          // Use a small timeout to ensure state is updated
           setTimeout(() => {
             startLongPolling(convId, sessionId);
-            startReplyPlanPolling(sessionId);
           }, 0);
         }
       } catch (err: unknown) {
         setErrorMessage('加载 Session 详情失败: ' + (err instanceof Error ? err.message : String(err)));
       }
     },
-    [stopPolling, stopReplyPlanPolling, startLongPolling, startReplyPlanPolling]
+    [stopPolling, startLongPolling]
   );
 
   // --- Send Message ---
@@ -254,7 +208,6 @@ export function useAppStore() {
     setInputText('');
     try {
       await api.sendMessage(activeConversationId, { role: 'user', msg_type: 'text', content: text });
-      setPlannedReplies([]);
     } catch (err: unknown) {
       setErrorMessage('发送消息失败: ' + (err instanceof Error ? err.message : String(err)));
     }
@@ -282,9 +235,8 @@ export function useAppStore() {
   useEffect(() => {
     return () => {
       stopPolling();
-      stopReplyPlanPolling();
     };
-  }, [stopPolling, stopReplyPlanPolling]);
+  }, [stopPolling]);
 
   return {
     // State
@@ -297,13 +249,10 @@ export function useAppStore() {
     activeSession,
     activeConversationId,
     currentMessages,
-    plannedReplies,
-    setPlannedReplies,
     inputText,
     setInputText,
     errorMessage,
     setErrorMessage,
-    currentTime,
     showDeletedItems,
     setShowDeletedItems,
     sidebarOpen,

@@ -45,9 +45,11 @@ class SessionCreate(StrictModel):
     robot_id: str
     contact_id: str
     title: Optional[str] = None
+    provider_config_id: Optional[str] = None
 
 
 class SessionUpdate(StrictModel):
     title: Optional[str] = None
     robot_id: Optional[str] = None
     contact_id: Optional[str] = None
+    provider_config_id: Optional[str] = None

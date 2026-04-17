@@ -33,6 +33,8 @@ def serialize_robot(robot: Robot) -> Dict[str, Any]:
         "id": robot.id,
         "name": robot.name,
         "profile": robot.profile,
+        "is_deleted": robot.is_deleted,
+        "deleted_at": robot.deleted_at,
         "created_at": robot.created_at,
         "updated_at": robot.updated_at,
     }
@@ -43,6 +45,8 @@ def serialize_contact(contact: Contact) -> Dict[str, Any]:
         "id": contact.id,
         "name": contact.name,
         "profile": contact.profile,
+        "is_deleted": contact.is_deleted,
+        "deleted_at": contact.deleted_at,
         "created_at": contact.created_at,
         "updated_at": contact.updated_at,
     }
@@ -93,15 +97,21 @@ def build_queue_state(db: Session, session_id: str) -> Dict[str, int]:
     }
 
 
-def get_robot_or_404(db: Session, robot_id: str) -> Robot:
-    robot = db.query(Robot).filter(Robot.id == robot_id).first()
+def get_robot_or_404(db: Session, robot_id: str, include_deleted: bool = False) -> Robot:
+    query = db.query(Robot).filter(Robot.id == robot_id)
+    if not include_deleted:
+        query = query.filter(Robot.is_deleted.is_(False))
+    robot = query.first()
     if not robot:
         raise HTTPException(status_code=404, detail="Robot 不存在")
     return robot
 
 
-def get_contact_or_404(db: Session, contact_id: str) -> Contact:
-    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+def get_contact_or_404(db: Session, contact_id: str, include_deleted: bool = False) -> Contact:
+    query = db.query(Contact).filter(Contact.id == contact_id)
+    if not include_deleted:
+        query = query.filter(Contact.is_deleted.is_(False))
+    contact = query.first()
     if not contact:
         raise HTTPException(status_code=404, detail="联系人不存在")
     return contact
@@ -166,6 +176,10 @@ def build_session_payload(
     if conversation is None and session_record.status != "orphaned":
         effective_status = "orphaned"
 
+    provider_config = None
+    if session_record.provider_config_id:
+        provider_config = db.query(ProviderConfig).filter(ProviderConfig.id == session_record.provider_config_id).first()
+
     payload = {
         "id": session_record.id,
         "title": conversation.get("title") if conversation else session_record.title,
@@ -174,8 +188,10 @@ def build_session_payload(
         "updated_at": session_record.updated_at,
         "robot_id": session_record.robot_id,
         "contact_id": session_record.contact_id,
+        "provider_config_id": session_record.provider_config_id,
         "robot": serialize_robot(robot),
         "contact": serialize_contact(contact),
+        "provider_config": serialize_provider_config(provider_config) if provider_config else None,
         "adapter": {
             "type": session_record.adapter_type,
             "thread_id": session_record.adapter_thread_id,
@@ -214,8 +230,8 @@ async def fetch_session_payload(
     include_deleted: bool = False,
     include_reply_plans: bool = False,
 ) -> Dict[str, Any]:
-    robot = get_robot_or_404(db, session_record.robot_id)
-    contact = get_contact_or_404(db, session_record.contact_id)
+    robot = get_robot_or_404(db, session_record.robot_id, include_deleted=True)
+    contact = get_contact_or_404(db, session_record.contact_id, include_deleted=True)
     conversation = await fetch_conversation_or_none(chat, session_record.adapter_thread_id)
 
     if conversation is not None and conversation.get("is_deleted") and not include_deleted:
@@ -248,8 +264,14 @@ def create_robot(robot_in: RobotCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/api/robots")
-def list_robots(db: Session = Depends(get_db)):
-    robots = db.query(Robot).order_by(Robot.created_at.desc()).all()
+def list_robots(
+    include_deleted: bool = Query(False, description="是否返回已删除的 Robot"),
+    db: Session = Depends(get_db),
+):
+    query = db.query(Robot)
+    if not include_deleted:
+        query = query.filter(Robot.is_deleted.is_(False))
+    robots = query.order_by(Robot.created_at.desc()).all()
     return [serialize_robot(robot) for robot in robots]
 
 
@@ -266,11 +288,36 @@ def update_robot(robot_id: str, robot_update: RobotUpdate, db: Session = Depends
     return serialize_robot(robot)
 
 
+@app.delete("/api/robots/{robot_id}")
+def delete_robot(robot_id: str, db: Session = Depends(get_db)):
+    robot = get_robot_or_404(db, robot_id)
+    now = utc_now()
+    robot.is_deleted = True
+    robot.deleted_at = now
+    robot.updated_at = now
+    db.commit()
+    db.refresh(robot)
+    return serialize_robot(robot)
+
+
+@app.post("/api/robots/{robot_id}/restore")
+def restore_robot(robot_id: str, db: Session = Depends(get_db)):
+    robot = get_robot_or_404(db, robot_id, include_deleted=True)
+    if not robot.is_deleted:
+        return serialize_robot(robot)
+    robot.is_deleted = False
+    robot.deleted_at = None
+    robot.updated_at = utc_now()
+    db.commit()
+    db.refresh(robot)
+    return serialize_robot(robot)
+
+
 @app.post("/api/contacts")
 def create_contact(contact_in: ContactCreate, db: Session = Depends(get_db)):
     now = utc_now()
     contact = Contact(
-        id=f"c_{uuid.uuid4().hex[:8]}",
+        id=f"ct_{uuid.uuid4().hex[:8]}",
         name=contact_in.name,
         profile=contact_in.profile,
         created_at=now,
@@ -283,8 +330,14 @@ def create_contact(contact_in: ContactCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/api/contacts")
-def list_contacts(db: Session = Depends(get_db)):
-    contacts = db.query(Contact).order_by(Contact.created_at.desc()).all()
+def list_contacts(
+    include_deleted: bool = Query(False, description="是否返回已删除的联系人"),
+    db: Session = Depends(get_db),
+):
+    query = db.query(Contact)
+    if not include_deleted:
+        query = query.filter(Contact.is_deleted.is_(False))
+    contacts = query.order_by(Contact.created_at.desc()).all()
     return [serialize_contact(contact) for contact in contacts]
 
 
@@ -301,11 +354,33 @@ def update_contact(contact_id: str, contact_update: ContactUpdate, db: Session =
     return serialize_contact(contact)
 
 
+@app.delete("/api/contacts/{contact_id}")
+def delete_contact(contact_id: str, db: Session = Depends(get_db)):
+    contact = get_contact_or_404(db, contact_id)
+    now = utc_now()
+    contact.is_deleted = True
+    contact.deleted_at = now
+    contact.updated_at = now
+    db.commit()
+    db.refresh(contact)
+    return serialize_contact(contact)
+
+
+@app.post("/api/contacts/{contact_id}/restore")
+def restore_contact(contact_id: str, db: Session = Depends(get_db)):
+    contact = get_contact_or_404(db, contact_id, include_deleted=True)
+    if not contact.is_deleted:
+        return serialize_contact(contact)
+    contact.is_deleted = False
+    contact.deleted_at = None
+    contact.updated_at = utc_now()
+    db.commit()
+    db.refresh(contact)
+    return serialize_contact(contact)
+
+
 @app.post("/api/provider-configs")
 def create_provider_config(provider_in: ProviderConfigCreate, db: Session = Depends(get_db)):
-    if db.query(ProviderConfig).first():
-        raise HTTPException(status_code=409, detail="当前实现只支持一个 Provider Config，请更新现有配置")
-
     now = utc_now()
     provider_config = ProviderConfig(
         id=f"p_{uuid.uuid4().hex[:8]}",
@@ -345,6 +420,14 @@ def update_provider_config(provider_config_id: str, provider_update: ProviderCon
     return serialize_provider_config(provider_config)
 
 
+@app.delete("/api/provider-configs/{provider_config_id}")
+def delete_provider_config(provider_config_id: str, db: Session = Depends(get_db)):
+    provider_config = get_provider_config_or_404(db, provider_config_id)
+    db.delete(provider_config)
+    db.commit()
+    return {"status": "deleted", "id": provider_config_id}
+
+
 @app.post("/api/sessions")
 async def create_session(
     session_in: SessionCreate,
@@ -353,6 +436,14 @@ async def create_session(
 ):
     get_robot_or_404(db, session_in.robot_id)
     get_contact_or_404(db, session_in.contact_id)
+
+    # Resolve provider_config_id: use the supplied one or default to the first available
+    provider_config_id = session_in.provider_config_id
+    if provider_config_id:
+        get_provider_config_or_404(db, provider_config_id)
+    else:
+        first_provider = db.query(ProviderConfig).order_by(ProviderConfig.created_at.asc()).first()
+        provider_config_id = first_provider.id if first_provider else None
 
     try:
         conversation = await chat.create_conversation(session_in.title)
@@ -365,6 +456,7 @@ async def create_session(
         title=conversation.get("title"),
         robot_id=session_in.robot_id,
         contact_id=session_in.contact_id,
+        provider_config_id=provider_config_id,
         adapter_type="chat",
         adapter_thread_id=conversation["id"],
         status="active",
@@ -441,6 +533,10 @@ async def update_session(
     if "contact_id" in session_update.model_fields_set and session_update.contact_id is not None:
         get_contact_or_404(db, session_update.contact_id)
         session_record.contact_id = session_update.contact_id
+    if "provider_config_id" in session_update.model_fields_set:
+        if session_update.provider_config_id is not None:
+            get_provider_config_or_404(db, session_update.provider_config_id)
+        session_record.provider_config_id = session_update.provider_config_id
     if "title" in session_update.model_fields_set:
         try:
             conversation = await chat.update_conversation(session_record.adapter_thread_id, session_update.title)
@@ -479,8 +575,8 @@ async def delete_session(
         dispatch_job.finished_at = now
     db.commit()
 
-    robot = get_robot_or_404(db, session_record.robot_id)
-    contact = get_contact_or_404(db, session_record.contact_id)
+    robot = get_robot_or_404(db, session_record.robot_id, include_deleted=True)
+    contact = get_contact_or_404(db, session_record.contact_id, include_deleted=True)
     return build_session_payload(db, session_record, robot, contact, conversation, include_reply_plans=True)
 
 
@@ -500,8 +596,8 @@ async def restore_session(
     session_record.updated_at = utc_now()
     db.commit()
 
-    robot = get_robot_or_404(db, session_record.robot_id)
-    contact = get_contact_or_404(db, session_record.contact_id)
+    robot = get_robot_or_404(db, session_record.robot_id, include_deleted=True)
+    contact = get_contact_or_404(db, session_record.contact_id, include_deleted=True)
     return build_session_payload(db, session_record, robot, contact, conversation, include_reply_plans=True)
 
 

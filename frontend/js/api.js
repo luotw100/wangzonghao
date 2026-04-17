@@ -1,4 +1,4 @@
-const API_BASE = '/api';
+const CHAT_BASE = '/api';
 const ROBOT_BASE = '/api/robot';
 
 const API = {
@@ -13,8 +13,16 @@ const API = {
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
-            if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-            return await res.json();
+            if (!res.ok) {
+                let detail = `HTTP ${res.status}`;
+                try {
+                    const body = await res.json();
+                    if (body && body.detail) detail = body.detail;
+                } catch (_) { /* ignore */ }
+                throw new Error(detail);
+            }
+            const text = await res.text();
+            return text ? JSON.parse(text) : null;
         } catch (err) {
             clearTimeout(timeoutId);
             if (err.name === 'AbortError') {
@@ -44,59 +52,103 @@ const API = {
         });
     },
     async deleteRobot(robotId) {
-        return this.request(`${ROBOT_BASE}/robots/${robotId}`, {
-            method: 'DELETE'
-        });
+        return this.request(`${ROBOT_BASE}/robots/${robotId}`, { method: 'DELETE' });
     },
     async restoreRobot(robotId) {
-        return this.request(`${ROBOT_BASE}/robots/${robotId}/restore`, {
-            method: 'POST'
-        });
+        return this.request(`${ROBOT_BASE}/robots/${robotId}/restore`, { method: 'POST' });
     },
 
-    // --- Conversations ---
-    async getConversations(includeDeleted = false) {
+    // --- Contacts ---
+    async getContacts(includeDeleted = false) {
         const query = includeDeleted ? '?include_deleted=true' : '';
-        return this.request(`${API_BASE}/conversations${query}`);
+        return this.request(`${ROBOT_BASE}/contacts${query}`);
     },
-    async createConversation(robotId, title, userProfile) {
-        return this.request(`${API_BASE}/conversations`, {
+    async createContact(data) {
+        return this.request(`${ROBOT_BASE}/contacts`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ robot_id: robotId, title: title || null, user_profile: userProfile || null })
+            body: JSON.stringify(data)
         });
     },
-    async updateConversation(convId, data) {
-        return this.request(`${API_BASE}/conversations/${convId}`, {
+    async updateContact(contactId, data) {
+        return this.request(`${ROBOT_BASE}/contacts/${contactId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
     },
-    async deleteConversation(convId) {
-        return this.request(`${API_BASE}/conversations/${convId}`, {
-            method: 'DELETE'
+    async deleteContact(contactId) {
+        return this.request(`${ROBOT_BASE}/contacts/${contactId}`, { method: 'DELETE' });
+    },
+    async restoreContact(contactId) {
+        return this.request(`${ROBOT_BASE}/contacts/${contactId}/restore`, { method: 'POST' });
+    },
+
+    // --- Provider Configs ---
+    async getProviderConfigs() {
+        return this.request(`${ROBOT_BASE}/provider-configs`);
+    },
+    async createProviderConfig(data) {
+        return this.request(`${ROBOT_BASE}/provider-configs`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
         });
     },
-    async restoreConversation(convId) {
-        return this.request(`${API_BASE}/conversations/${convId}/restore`, {
-            method: 'POST'
+    async updateProviderConfig(id, data) {
+        return this.request(`${ROBOT_BASE}/provider-configs/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+    },
+    async deleteProviderConfig(id) {
+        return this.request(`${ROBOT_BASE}/provider-configs/${id}`, { method: 'DELETE' });
+    },
+
+    // --- Sessions ---
+    async getSessions(includeDeleted = false) {
+        const query = includeDeleted ? '?include_deleted=true' : '';
+        return this.request(`${ROBOT_BASE}/sessions${query}`);
+    },
+    async createSession(data) {
+        return this.request(`${ROBOT_BASE}/sessions`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+    },
+    async getSession(sessionId) {
+        return this.request(`${ROBOT_BASE}/sessions/${sessionId}?include_deleted=true`);
+    },
+    async updateSession(sessionId, data) {
+        return this.request(`${ROBOT_BASE}/sessions/${sessionId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+    },
+    async deleteSession(sessionId) {
+        return this.request(`${ROBOT_BASE}/sessions/${sessionId}`, { method: 'DELETE' });
+    },
+    async restoreSession(sessionId) {
+        return this.request(`${ROBOT_BASE}/sessions/${sessionId}/restore`, { method: 'POST' });
+    },
+    async getReplyPlans(sessionId) {
+        return this.request(`${ROBOT_BASE}/sessions/${sessionId}/reply-plans`, {}, 5000);
+    },
+
+    // --- Messages (direct to Chat API via conversation_id) ---
+    async sendMessage(conversationId, payload) {
+        return this.request(`${CHAT_BASE}/conversations/${conversationId}/messages`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
         });
     },
 
-    // --- Messages ---
-    async sendMessage(payload) {
-        const { conversation_id, ...messageData } = payload;
-        return this.request(`${API_BASE}/conversations/${conversation_id}/messages`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(messageData)
-        });
-    },
     // 消息同步（长轮询）
-    // serverTimeout=0 时立即返回（短轮询），serverTimeout>0 时等待新消息
-    // signal 可选，用于外部中止请求（如切换会话时取消正在进行的请求）
-    async getMessages(convId, lastId, serverTimeout = 30, signal) {
+    async getMessages(conversationId, lastId, serverTimeout = 30, signal) {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), serverTimeout > 0 ? 35000 : 10000);
 
@@ -106,7 +158,7 @@ const API = {
 
         try {
             const res = await fetch(
-                `${API_BASE}/conversations/${convId}/messages?last_id=${lastId}&timeout=${serverTimeout}`,
+                `${CHAT_BASE}/conversations/${conversationId}/messages?last_id=${lastId}&timeout=${serverTimeout}`,
                 { signal: controller.signal }
             );
             clearTimeout(timeoutId);
@@ -120,10 +172,5 @@ const API = {
             }
             throw err;
         }
-    }
-    ,
-    // --- PlannedReplies ---
-    async getPlannedReplies(convId) {
-        return this.request(`${API_BASE}/planned_replies?conversation_id=${convId}`, {}, 5000);
     }
 };

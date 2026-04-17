@@ -54,12 +54,24 @@ def parse_llm_response(text: str) -> List[Dict[str, Any]]:
     return parsed_messages
 
 
-def get_generation_provider_config(db: Session) -> Optional[ProviderConfig]:
+def get_generation_provider_config(db: Session, session_record: SessionRecord) -> Optional[ProviderConfig]:
+    """Return the ProviderConfig for a session.
+
+    Priority: session.provider_config_id → any single provider in the DB.
+    Raises RuntimeError if multiple providers exist and the session has no explicit choice.
+    """
+    if session_record.provider_config_id:
+        return db.query(ProviderConfig).filter(ProviderConfig.id == session_record.provider_config_id).first()
+
+    # Fallback: pick the only provider, or raise if ambiguous
     provider_configs = db.query(ProviderConfig).order_by(ProviderConfig.created_at.asc(), ProviderConfig.id.asc()).all()
     if not provider_configs:
         return None
     if len(provider_configs) > 1:
-        raise RuntimeError("当前运行模型不支持自动从多个 Provider Config 中选一个，请先只保留一个 Provider Config")
+        raise RuntimeError(
+            f"Session {session_record.id} 没有指定 Provider Config，"
+            "且数据库中存在多个 Provider Config，请在 Session 上明确选择一个"
+        )
     return provider_configs[0]
 
 
@@ -225,10 +237,6 @@ class RobotRuntime:
                 .all()
             ]
 
-            provider_config = None if self.runtime_options.echo_mode else get_generation_provider_config(db)
-            if pending_session_ids and not self.runtime_options.echo_mode and provider_config is None:
-                raise RuntimeError("当前没有可用的 Provider Config，无法创建生成任务")
-
             for session_id in pending_session_ids:
                 session_record = db.query(SessionRecord).filter(SessionRecord.id == session_id).first()
                 if not session_record or session_record.status != "active":
@@ -250,6 +258,18 @@ class RobotRuntime:
                 )
                 if not latest_event:
                     continue
+
+                if not self.runtime_options.echo_mode:
+                    try:
+                        provider_config = get_generation_provider_config(db, session_record)
+                    except RuntimeError as exc:
+                        logger.error("Orchestrator: cannot resolve provider for session %s: %s", session_id, exc)
+                        continue
+                    if provider_config is None:
+                        logger.warning("Orchestrator: no provider config available, skipping session %s", session_id)
+                        continue
+                else:
+                    provider_config = None
 
                 generation_job = GenerationJob(
                     session_id=session_id,

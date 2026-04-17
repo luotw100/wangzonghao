@@ -1,4 +1,4 @@
-from sqlalchemy import Column, DateTime, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, UniqueConstraint
 
 from robot.db import Base, utc_now
 
@@ -9,6 +9,8 @@ class Robot(Base):
     id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False)
     profile = Column(Text, nullable=True)
+    is_deleted = Column(Boolean, nullable=False, default=False)
+    deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, nullable=False)
 
@@ -19,6 +21,8 @@ class Contact(Base):
     id = Column(String, primary_key=True, index=True)
     name = Column(String, nullable=False)
     profile = Column(Text, nullable=True)
+    is_deleted = Column(Boolean, nullable=False, default=False)
+    deleted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, nullable=False)
 
@@ -42,6 +46,7 @@ class SessionRecord(Base):
     title = Column(String, nullable=True)
     robot_id = Column(String, index=True, nullable=False)
     contact_id = Column(String, index=True, nullable=False)
+    provider_config_id = Column(String, index=True, nullable=True)
     adapter_type = Column(String, nullable=False, default="chat")
     adapter_thread_id = Column(String, unique=True, index=True, nullable=False)
     status = Column(String, nullable=False, default="active")

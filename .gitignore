@@ -9,3 +9,7 @@ __pycache__/
 storage/
 
 .env
+
+# Frontend
+frontend/node_modules/
+frontend/dist/

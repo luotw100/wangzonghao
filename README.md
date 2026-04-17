@@ -9,7 +9,7 @@ Laborster 是一个面向私聊场景的 **AI 角色调试工作台**。通过�
 ```mermaid
 graph TB
     subgraph Browser
-        FE["Frontend<br/>(Vue 3 + Tailwind CSS)"]
+        FE["Frontend<br/>(React + Tailwind CSS)"]
     end
 
     subgraph Nginx["Nginx :23456"]
@@ -254,7 +254,7 @@ erDiagram
 | **Chat** | `chat/main.py` | 会话 CRUD、消息写入与长轮询、聊天数据持久化 |
 | **Robot API** | `robot/main.py` | Robot / Contact / Session / ProviderConfig API，Session 创建时代理调用 Chat 创建会话 |
 | **Robot Worker** | `robot/worker.py` + `robot/runtime.py` | 4 个 asyncio 循环：ingest → orchestrate → generate → dispatch |
-| **Frontend** | `frontend/` | 静态 SPA (Vue 3 + Tailwind CSS)，由 Nginx 直接托管 |
+| **Frontend** | `frontend/` | React SPA (Vite + React + Tailwind CSS)，Nginx 容器内构建并托管 |
 | **Storage** | `storage/` | `chat.db`、`robot.db`、`attachments/` 等运行时数据 |
 
 ### Robot Worker 内部循环
@@ -332,12 +332,33 @@ Nginx 对外暴露两个后端命名空间：
 │   ├── clients.py             # Chat API / Provider HTTP 客户端
 │   └── db.py                  # 数据库引擎与工具函数
 ├── frontend/
-│   ├── index.html             # SPA 入口
-│   ├── css/style.css          # 样式
-│   └── js/
-│       ├── api.js             # API 封装层
-│       ├── app.js             # Vue 3 应用逻辑
-│       └── utils.js           # 工具函数
+│   ├── Dockerfile             # 多阶段构建 (Node build → Nginx)
+│   ├── index.html             # Vite 入口 HTML
+│   ├── package.json           # Node 依赖
+│   ├── vite.config.ts         # Vite 配置
+│   ├── tsconfig.json          # TypeScript 配置
+│   └── src/
+│       ├── main.tsx           # React 应用入口
+│       ├── App.tsx            # 根组件 (Layout + Modal 管理)
+│       ├── index.css          # Tailwind CSS 入口 + 自定义样式
+│       ├── hooks/
+│       │   └── useAppStore.ts # 全局状态 Hook
+│       ├── lib/
+│       │   ├── api.ts         # 后端 API 封装 (fetch)
+│       │   ├── utils.ts       # 工具函数
+│       │   └── templates.ts   # 模板常量
+│       └── components/
+│           ├── Icons.tsx              # SVG 图标组件
+│           ├── Modal.tsx              # 通用 Modal 组件
+│           ├── Sidebar.tsx            # 侧边栏 (Robot/Session 列表)
+│           ├── ChatArea.tsx           # 聊天区域 (消息 + 输入)
+│           ├── CreateRobotModal.tsx   # 创建 Robot 弹窗
+│           ├── EditRobotModal.tsx     # 编辑 Robot 弹窗
+│           ├── CreateContactModal.tsx # 创建联系人弹窗
+│           ├── EditContactModal.tsx   # 编辑联系人弹窗
+│           ├── CreateSessionModal.tsx # 创建 Session 弹窗
+│           ├── EditSessionModal.tsx   # 编辑 Session 弹窗
+│           └── SettingsModal.tsx      # 设置弹窗 (Robot/联系人/Provider)
 ├── docker-compose.yml
 ├── Dockerfile
 ├── nginx.conf
@@ -401,6 +422,16 @@ uv run python -m robot.worker --chat-api-base-url http://127.0.0.1:23456/api
 # 复读模式 (不需要 LLM)
 uv run python -m robot.worker --chat-api-base-url http://127.0.0.1:23456/api --echo-mode
 ```
+
+### 前端开发模式
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+前端开发服务器默认运行在 `http://localhost:5173`，已配置 Vite 代理将 `/api` 和 `/storage` 请求转发到 `http://localhost:23456`（需要后端服务同时运行）。
 
 ---
 

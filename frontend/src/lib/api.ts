@@ -83,7 +83,8 @@ export interface Message {
   created_at: string;
 }
 
-export interface Message {(includeDeleted = false) {
+// --- Robots ---
+export function getRobots(includeDeleted = false) {
   const query = includeDeleted ? '?include_deleted=true' : '';
   return request<Robot[]>(`${ROBOT_BASE}/robots${query}`);
 }

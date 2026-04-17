@@ -43,7 +43,7 @@ services:
   robot-worker:
     build:
       context: .
-    command: uv run python -m robot.worker --chat-api-base-url http://chat:23456/api --redis-url redis://redis:6379/0
+    command: uv run python -m robot.worker --chat-api-base-url http://chat:23456/api --redis-url redis://redis:6379/0 --request-timeout 120
     volumes:
       - app-storage:/app/storage
     depends_on:

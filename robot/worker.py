@@ -3,7 +3,7 @@ import asyncio
 import logging
 
 from robot.db import ensure_database
-from robot.runtime import DEFAULT_REQUEST_TIMEOUT, RobotRuntime, RuntimeOptions
+from robot.runtime import RobotRuntime, RuntimeOptions
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -23,7 +23,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Robot worker service")
     parser.add_argument("--chat-api-base-url", required=True)
     parser.add_argument("--redis-url", required=True)
-    parser.add_argument("--request-timeout", type=float, default=DEFAULT_REQUEST_TIMEOUT)
+    parser.add_argument("--request-timeout", type=float, required=True,
+                        help="LLM 请求超时秒数，例: 120")
     parser.add_argument("--echo-mode", action="store_true")
     return parser.parse_args()
 

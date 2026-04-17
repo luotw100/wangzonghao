@@ -16,7 +16,9 @@ from chat.schemas import ConversationCreate, ConversationMessageCreate, Conversa
 ensure_database()
 
 # --- Redis ---
-REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
+REDIS_URL = os.environ.get("REDIS_URL")
+if not REDIS_URL:
+    raise RuntimeError("环境变量 REDIS_URL 未设置，例: redis://localhost:6379/0")
 _redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
 REDIS_INBOX_KEY = "robot:inbox"
 

@@ -14,7 +14,6 @@ from robot.models import Contact, ProviderConfig, Robot, RobotMessage, SessionRe
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_REQUEST_TIMEOUT = 120.0
 REDIS_INBOX_KEY = "robot:inbox"
 
 
@@ -22,8 +21,8 @@ REDIS_INBOX_KEY = "robot:inbox"
 class RuntimeOptions:
     chat_api_base_url: str
     redis_url: str
-    request_timeout: float = DEFAULT_REQUEST_TIMEOUT
-    echo_mode: bool = False
+    request_timeout: float
+    echo_mode: bool
 
 
 OUTPUT_FORMAT_INSTRUCTION = """你必须只输出一个合法 JSON 对象，不要输出 Markdown、解释文字或额外前后缀。

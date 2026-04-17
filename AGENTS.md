@@ -21,6 +21,10 @@ Laborster 的核心产品是 **Robot** —— 一个面向销售、客服、运�
 - 流水表全砍，Worker 处理过程纯内存，可靠性靠 DB 兜底
 - 延迟发送用 asyncio.sleep 实现，不需要额外表
 
+## 编码偏好
+
+- **禁止偷偷搞默认值**：所有配置（环境变量、CLI 参数、连接串）必须由外部显式指定，缺失时直接报错。不允许用 fallback 默认值静默连接到错误的服务。唯一例外是布尔开关型 flag（如 `--echo-mode`），默认关闭是合理的。
+
 ## 技术栈
 
 - 后端：Python 3.12+, FastAPI, SQLAlchemy, SQLite, Redis

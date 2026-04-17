@@ -547,8 +547,8 @@ async def restore_session(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Robot API service")
-    parser.add_argument("--host", default="127.0.0.1")
-    parser.add_argument("--port", type=int, default=23457)
+    parser.add_argument("--host", required=True, help="监听地址，例: 127.0.0.1")
+    parser.add_argument("--port", type=int, required=True, help="监听端口，例: 23457")
     parser.add_argument("--chat-api-base-url", required=True)
     return parser.parse_args()
 

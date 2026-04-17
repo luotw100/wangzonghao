@@ -367,10 +367,10 @@ REDIS_URL=redis://localhost:6379/0 uv run uvicorn chat.main:app --host 0.0.0.0 -
 uv run python -m robot.main --host 127.0.0.1 --port 23457 --chat-api-base-url http://127.0.0.1:23456/api
 
 # Robot Worker
-uv run python -m robot.worker --chat-api-base-url http://127.0.0.1:23456/api --redis-url redis://localhost:6379/0
+uv run python -m robot.worker --chat-api-base-url http://127.0.0.1:23456/api --redis-url redis://localhost:6379/0 --request-timeout 120
 
 # 复读模式 (不需要 LLM)
-uv run python -m robot.worker --chat-api-base-url http://127.0.0.1:23456/api --redis-url redis://localhost:6379/0 --echo-mode
+uv run python -m robot.worker --chat-api-base-url http://127.0.0.1:23456/api --redis-url redis://localhost:6379/0 --request-timeout 120 --echo-mode
 ```
 
 ### 前端开发模式
@@ -391,9 +391,15 @@ npm run dev
 
 | 参数 | 说明 | 默认值 |
 | --- | --- | --- |
-| `--host` | 监听地址 | `127.0.0.1` |
-| `--port` | 监听端口 | `23457` |
+| `--host` | 监听地址 | 必填 |
+| `--port` | 监听端口 | 必填 |
 | `--chat-api-base-url` | Chat API 地址 | 必填 |
+
+### Chat Service
+
+| 环境变量 | 说明 | 默认值 |
+| --- | --- | --- |
+| `REDIS_URL` | Redis 连接地址 | 必填，未设置报错 |
 
 ### Robot Worker
 
@@ -401,7 +407,7 @@ npm run dev
 | --- | --- | --- |
 | `--chat-api-base-url` | Chat API 地址 | 必填 |
 | `--redis-url` | Redis 连接地址 | 必填 |
-| `--request-timeout` | LLM 请求超时 (秒) | `120` |
+| `--request-timeout` | LLM 请求超时 (秒) | 必填 |
 | `--echo-mode` | 复读模式 (不调用 LLM) | 关闭 |
 
 ---

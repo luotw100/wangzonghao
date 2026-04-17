@@ -3,12 +3,12 @@ export function LaborsterLogo({ size = 28, id = 'laborsterGradient' }: { size?: 
     <svg width={size} height={size} viewBox="0 0 28 28" fill="none" className="laborster-logo">
       <rect x="2" y="2" width="24" height="24" rx="8" fill={`url(#${id})`} />
       <path d="M9 8.5V19.5H19" stroke="white" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="19" cy="19.5" r="2" fill="#58F7FF" />
+      <circle cx="19" cy="19.5" r="2" fill="#22d3ee" />
       <defs>
         <linearGradient id={id} x1="2" y1="2" x2="26" y2="26" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#7C4DFF" />
-          <stop offset="0.48" stopColor="#FF4DB8" />
-          <stop offset="1" stopColor="#2EE6FF" />
+          <stop stopColor="#4f46e5" />
+          <stop offset="0.48" stopColor="#a855f7" />
+          <stop offset="1" stopColor="#06b6d4" />
         </linearGradient>
       </defs>
     </svg>
@@ -21,12 +21,12 @@ export function LaborsterAvatar({ size = 8 }: { size?: number }) {
       <svg width={size * 2} height={size * 2} viewBox="0 0 28 28" fill="none">
         <rect x="2.5" y="2.5" width="23" height="23" rx="7" fill="url(#laborsterAvatarGrad)" />
         <path d="M10 8.8V18.7H18.4" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-        <circle cx="18.5" cy="18.8" r="1.7" fill="#58F7FF" />
+        <circle cx="18.5" cy="18.8" r="1.7" fill="#22d3ee" />
         <defs>
           <linearGradient id="laborsterAvatarGrad" x1="2.5" y1="2.5" x2="25.5" y2="25.5" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#7C4DFF" />
-            <stop offset="0.48" stopColor="#FF4DB8" />
-            <stop offset="1" stopColor="#2EE6FF" />
+            <stop stopColor="#4f46e5" />
+            <stop offset="0.48" stopColor="#a855f7" />
+            <stop offset="1" stopColor="#06b6d4" />
           </linearGradient>
         </defs>
       </svg>

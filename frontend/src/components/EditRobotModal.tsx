@@ -86,7 +86,7 @@ export function EditRobotModal({ open, robot, onClose, onSaved, onError }: EditR
             <button
               onClick={() => setProfile(TEMPLATE_SYSTEM_PROMPT)}
               disabled={isDeleted}
-              className="text-xs px-2 py-1 rounded bg-[#e8f0fe] text-accent hover:bg-[#d2e3fc] transition disabled:opacity-50"
+              className="text-xs px-2 py-1 rounded bg-accent/10 text-accent hover:bg-accent/20 transition disabled:opacity-50"
             >
               使用晚晚模板
             </button>

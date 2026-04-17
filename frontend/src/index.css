@@ -4,15 +4,15 @@
   --color-bg-primary: #ffffff;
   --color-bg-secondary: #fafafa;
   --color-bg-tertiary: #f1f3f4;
-  --color-text-primary: #202124;
+  --color-text-primary: #1a1a2e;
   --color-text-secondary: #5f6368;
   --color-text-tertiary: #9aa0a6;
-  --color-border: #e5e5e5;
-  --color-accent: #1a73e8;
-  --color-accent-hover: #1557b0;
-  --color-danger: #c5221f;
-  --color-danger-bg: #fce8e6;
-  --color-success: #188038;
+  --color-border: #e8e8e8;
+  --color-accent: #4f46e5;
+  --color-accent-hover: #4338ca;
+  --color-danger: #dc2626;
+  --color-danger-bg: #fef2f2;
+  --color-success: #16a34a;
 }
 
 *, *::before, *::after {
@@ -31,6 +31,11 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior: none;
+  background: #fafafa;
+}
+
+::selection {
+  background: rgba(79, 70, 229, 0.15);
 }
 
 .scrollbar-hide {
@@ -51,14 +56,14 @@ body {
 }
 
 .laborster-logo {
-  filter: drop-shadow(0 0 8px rgba(124, 77, 255, 0.35)) drop-shadow(0 0 14px rgba(255, 77, 184, 0.22));
+  filter: drop-shadow(0 0 8px rgba(79, 70, 229, 0.35)) drop-shadow(0 0 14px rgba(168, 85, 247, 0.22));
 }
 
 .laborster-empty-logo {
-  box-shadow: inset 0 0 16px rgba(124, 77, 255, 0.15), 0 0 24px rgba(255, 77, 184, 0.12);
+  box-shadow: inset 0 0 16px rgba(79, 70, 229, 0.15), 0 0 24px rgba(168, 85, 247, 0.12);
 }
 
 .laborster-avatar {
-  background: linear-gradient(135deg, #7c4dff 0%, #ff4db8 52%, #2ee6ff 100%) !important;
-  box-shadow: 0 0 12px rgba(124, 77, 255, 0.28);
+  background: linear-gradient(135deg, #4f46e5 0%, #a855f7 52%, #06b6d4 100%) !important;
+  box-shadow: 0 0 12px rgba(79, 70, 229, 0.28);
 }

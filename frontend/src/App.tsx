@@ -26,8 +26,17 @@ export default function App() {
   const [showEditSession, setShowEditSession] = useState(false);
   const [editingSession, setEditingSession] = useState<Session | null>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsReturn, setSettingsReturn] = useState(false);
 
   const handleError = useCallback((msg: string) => store.setErrorMessage(msg), [store]);
+
+  // Close a sub-modal and return to SettingsModal if it was opened from there
+  const returnToSettings = useCallback(() => {
+    if (settingsReturn) {
+      setSettingsReturn(false);
+      setShowSettings(true);
+    }
+  }, [settingsReturn]);
 
   const handleEditRobot = useCallback((robot: Robot) => {
     setEditingRobot(robot);
@@ -125,27 +134,27 @@ export default function App() {
       {/* Modals */}
       <CreateRobotModal
         open={showCreateRobot}
-        onClose={() => setShowCreateRobot(false)}
+        onClose={() => { setShowCreateRobot(false); returnToSettings(); }}
         onCreated={handleRobotSaved}
         onError={handleError}
       />
       <EditRobotModal
         open={showEditRobot}
         robot={editingRobot}
-        onClose={() => setShowEditRobot(false)}
+        onClose={() => { setShowEditRobot(false); returnToSettings(); }}
         onSaved={handleRobotSaved}
         onError={handleError}
       />
       <CreateContactModal
         open={showCreateContact}
-        onClose={() => setShowCreateContact(false)}
+        onClose={() => { setShowCreateContact(false); returnToSettings(); }}
         onCreated={handleContactSaved}
         onError={handleError}
       />
       <EditContactModal
         open={showEditContact}
         contact={editingContact}
-        onClose={() => setShowEditContact(false)}
+        onClose={() => { setShowEditContact(false); returnToSettings(); }}
         onSaved={handleContactSaved}
         onError={handleError}
       />
@@ -172,10 +181,10 @@ export default function App() {
         robots={store.robots}
         contacts={store.contacts}
         providerConfigs={store.providerConfigs}
-        onEditRobot={handleEditRobot}
-        onCreateRobot={() => setShowCreateRobot(true)}
-        onEditContact={handleEditContact}
-        onCreateContact={() => setShowCreateContact(true)}
+        onEditRobot={(robot) => { setShowSettings(false); setSettingsReturn(true); handleEditRobot(robot); }}
+        onCreateRobot={() => { setShowSettings(false); setSettingsReturn(true); setShowCreateRobot(true); }}
+        onEditContact={(contact) => { setShowSettings(false); setSettingsReturn(true); handleEditContact(contact); }}
+        onCreateContact={() => { setShowSettings(false); setSettingsReturn(true); setShowCreateContact(true); }}
         onRefresh={store.refreshAll}
         onError={handleError}
       />

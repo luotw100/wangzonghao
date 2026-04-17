@@ -85,7 +85,7 @@ export function EditContactModal({ open, contact, onClose, onSaved, onError }: E
             <button
               onClick={() => setProfile(TEMPLATE_CONTACT_PROFILE)}
               disabled={isDeleted}
-              className="text-xs px-2 py-1 rounded bg-[#e8f0fe] text-accent hover:bg-[#d2e3fc] transition disabled:opacity-50"
+              className="text-xs px-2 py-1 rounded bg-accent/10 text-accent hover:bg-accent/20 transition disabled:opacity-50"
             >
               使用示例模板
             </button>

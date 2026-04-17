@@ -47,7 +47,7 @@ export function CreateRobotModal({ open, onClose, onCreated, onError }: CreateRo
             <label className="text-sm font-medium text-text-secondary">系统提示词（Profile / System Prompt）</label>
             <button
               onClick={() => setProfile(TEMPLATE_SYSTEM_PROMPT)}
-              className="text-xs px-2 py-1 rounded bg-[#e8f0fe] text-accent hover:bg-[#d2e3fc] transition"
+              className="text-xs px-2 py-1 rounded bg-accent/10 text-accent hover:bg-accent/20 transition"
             >
               使用晚晚模板
             </button>

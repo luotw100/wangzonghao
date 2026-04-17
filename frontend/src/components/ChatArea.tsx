@@ -83,7 +83,7 @@ export function ChatArea({
     : '选择或创建一个 Session';
 
   return (
-    <main className="flex-1 flex flex-col min-h-0 bg-white">
+    <main className="flex-1 flex flex-col min-h-0 bg-[#fafafa]">
       {/* Mobile hamburger */}
       <div className="md:hidden">
         <button
@@ -96,7 +96,7 @@ export function ChatArea({
       </div>
 
       {/* Header */}
-      <header className="h-14 flex items-center justify-between px-4 md:px-6 border-b border-border shrink-0">
+      <header className="h-14 flex items-center justify-between px-4 md:px-6 border-b border-border shrink-0 bg-white">
         <div className="flex items-center gap-3">
           <h2 className="font-medium text-text-primary">{sessionTitle}</h2>
           {isActiveSessionDeleted && (
@@ -151,7 +151,7 @@ export function ChatArea({
                     </div>
                   ) : (
                     <div className="max-w-[85%] md:max-w-[80%]">
-                      <div className="bg-bg-tertiary rounded-2xl rounded-tr-md px-4 py-3">
+                      <div className="bg-accent text-white rounded-2xl rounded-tr-md px-4 py-3">
                         <p className="whitespace-pre-wrap break-words leading-relaxed text-[15px]">
                           {msg.content}
                         </p>
@@ -198,7 +198,7 @@ export function ChatArea({
             </div>
           )}
 
-          <div className="bg-bg-tertiary rounded-3xl shadow-sm border border-border overflow-hidden">
+          <div className="bg-white rounded-2xl shadow-sm border border-border focus-within:border-accent/40 focus-within:shadow-md transition-all overflow-hidden">
             <textarea
               ref={textareaRef}
               value={inputText}
@@ -226,7 +226,7 @@ export function ChatArea({
                   <div className="relative">
                     <button
                       onClick={() => setShowProviderDropdown(!showProviderDropdown)}
-                      className="h-8 px-2.5 flex items-center gap-1 rounded-lg text-xs text-text-secondary hover:bg-[#e8eaed] transition max-w-[120px] truncate"
+                      className="h-8 px-2.5 flex items-center gap-1 rounded-lg text-xs text-text-secondary hover:bg-bg-tertiary transition max-w-[120px] truncate"
                       title="切换 LLM Provider"
                     >
                       <IconProvider />

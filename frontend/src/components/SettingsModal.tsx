@@ -143,7 +143,7 @@ export function SettingsModal({
               </div>
               <button
                 onClick={onCreateRobot}
-                className="mt-3 w-full text-left px-3 py-2.5 rounded-lg text-sm text-accent hover:bg-[#e8f0fe] transition flex items-center gap-2"
+                className="mt-3 w-full text-left px-3 py-2.5 rounded-lg text-sm text-accent hover:bg-accent/10 transition flex items-center gap-2"
               >
                 <IconPlus size={14} />
                 新建 Robot
@@ -176,7 +176,7 @@ export function SettingsModal({
               </div>
               <button
                 onClick={onCreateContact}
-                className="mt-3 w-full text-left px-3 py-2.5 rounded-lg text-sm text-accent hover:bg-[#e8f0fe] transition flex items-center gap-2"
+                className="mt-3 w-full text-left px-3 py-2.5 rounded-lg text-sm text-accent hover:bg-accent/10 transition flex items-center gap-2"
               >
                 <IconPlus size={14} />
                 新建联系人
@@ -205,7 +205,7 @@ export function SettingsModal({
               </div>
               <button
                 onClick={() => openProviderForm(null)}
-                className="mt-3 w-full text-left px-3 py-2.5 rounded-lg text-sm text-accent hover:bg-[#e8f0fe] transition flex items-center gap-2"
+                className="mt-3 w-full text-left px-3 py-2.5 rounded-lg text-sm text-accent hover:bg-accent/10 transition flex items-center gap-2"
               >
                 <IconPlus size={14} />
                 新建 Provider

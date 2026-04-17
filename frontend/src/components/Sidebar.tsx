@@ -47,7 +47,7 @@ export function Sidebar({
 
       <aside
         className={cn(
-          'w-80 bg-[#fafafa] flex flex-col fixed md:relative inset-y-0 left-0 z-50',
+          'w-80 bg-white/80 backdrop-blur-xl flex flex-col fixed md:relative inset-y-0 left-0 z-50',
           'transform transition-transform duration-300 ease-out',
           'md:translate-x-0 md:bg-white md:border-r md:border-border',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full'
@@ -80,7 +80,7 @@ export function Sidebar({
         <div className="px-3 mt-4 space-y-2">
           <button
             onClick={() => onCreateSession(null)}
-            className="w-full px-4 py-2.5 flex items-center gap-3 rounded-full border border-border hover:bg-bg-tertiary transition"
+            className="w-full px-4 py-2.5 flex items-center gap-3 rounded-xl border border-border hover:bg-bg-tertiary hover:border-accent/30 transition-all"
           >
             <IconPlus />
             <span className="text-sm font-medium">新建 Session</span>
@@ -158,7 +158,7 @@ export function Sidebar({
                         className={cn(
                           'group px-3 py-2 rounded-lg cursor-pointer transition text-sm',
                           activeSessionId === session.id
-                            ? 'bg-[#e8f0fe] text-accent'
+                            ? 'bg-accent/10 text-accent'
                             : 'hover:bg-bg-tertiary text-text-secondary'
                         )}
                       >
@@ -178,7 +178,7 @@ export function Sidebar({
                               </span>
                             )}
                             {session.status === 'orphaned' && (
-                              <span className="px-2 py-0.5 rounded-full bg-[#fef7e0] text-[#e37400] text-[10px] shrink-0">
+                              <span className="px-2 py-0.5 rounded-full bg-amber-50 text-amber-600 text-[10px] shrink-0">
                                 孤立
                               </span>
                             )}

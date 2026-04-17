@@ -251,7 +251,7 @@ erDiagram
 
 | 组件 | 路径 | 职责 |
 | --- | --- | --- |
-| **Chat** | `chat/main.py` | 会话 CRUD、消息写入与长轮询、聊天数据持久化 |
+| **Chat** | `chat/` | 会话 CRUD、消息写入与长轮询、聊天数据持久化 |
 | **Robot API** | `robot/main.py` | Robot / Contact / Session / ProviderConfig API，Session 创建时代理调用 Chat 创建会话 |
 | **Robot Worker** | `robot/worker.py` + `robot/runtime.py` | 4 个 asyncio 循环：ingest → orchestrate → generate → dispatch |
 | **Frontend** | `frontend/` | React SPA (Vite + React + Tailwind CSS)，Nginx 容器内构建并托管 |
@@ -321,7 +321,11 @@ Nginx 对外暴露两个后端命名空间：
 ```text
 .
 ├── chat/
-│   └── main.py              # Chat 后端 (会话 + 消息)
+│   ├── __init__.py
+│   ├── main.py              # Chat 后端入口 (FastAPI app + 路由)
+│   ├── models.py            # SQLAlchemy ORM 模型 (Conversation, Message)
+│   ├── schemas.py           # Pydantic 请求模型
+│   └── db.py                # 数据库引擎与工具函数
 ├── robot/
 │   ├── __init__.py
 │   ├── main.py               # Robot API (FastAPI)

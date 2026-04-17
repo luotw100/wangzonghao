@@ -1,85 +1,22 @@
 import asyncio
-
-import uuid
 import time
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Optional
+import uuid
 
-from fastapi import FastAPI, HTTPException, Query, Depends
+from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel, ConfigDict
-from sqlalchemy import Boolean, Column, String, Integer, DateTime, Text, create_engine
-from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
+from sqlalchemy.orm import Session
 
-# --- 1. 环境与路径配置 ---
-BASE_DIR = Path(__file__).resolve().parent.parent
-STORAGE_DIR = BASE_DIR / "storage"
+from chat.db import STORAGE_DIR, SessionLocal, ensure_database, get_db, utc_now
+from chat.models import Conversation, Message
+from chat.schemas import ConversationCreate, ConversationMessageCreate, ConversationUpdate
 
-STORAGE_DIR.mkdir(exist_ok=True)
+ensure_database()
 
-DB_PATH = STORAGE_DIR / "chat.db"
-DATABASE_URL = f"sqlite:///{DB_PATH}"
-
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-class Base(DeclarativeBase):
-    pass
-
-# --- 2. 数据库模型 (ORM) ---
-class Conversation(Base):
-    __tablename__ = "conversations"
-    id = Column(String, primary_key=True, index=True)
-    title = Column(String, nullable=False)
-    is_deleted = Column(Boolean, nullable=False, default=False)
-    deleted_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-class Message(Base):
-    __tablename__ = "messages"
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    conversation_id = Column(String, index=True)
-    role = Column(String, nullable=False)
-    msg_type = Column(String, nullable=False)
-    content = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-# 创建所有表
-Base.metadata.create_all(bind=engine)
-
-# --- 3. Pydantic 响应/请求模型 (Schemas) ---
-class ConversationCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    title: Optional[str] = None
-
-class ConversationUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    title: Optional[str] = None
-
-class ConversationMessageCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    role: str
-    msg_type: str
-    content: str
-
-# --- 5. FastAPI 实例与路由 ---
+# --- FastAPI 实例与路由 ---
 app = FastAPI(title="Laborster Chat")
 
 app.mount("/storage", StaticFiles(directory=str(STORAGE_DIR)), name="storage")
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
 
 def get_conversation_query(db: Session, include_deleted: bool = False):
     query = db.query(Conversation)

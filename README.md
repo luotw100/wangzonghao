@@ -66,9 +66,11 @@ sequenceDiagram
     participant Worker as Robot Worker
     participant LLM as LLM Provider
 
-    Note over User, Chat: 1. 创建 Session (通过 Robot API)
-    User->>Chat: POST /api/conversations (由 Robot API 代理)
-    Chat-->>User: conversation_id
+    Note over User, Chat: 1. 创建 Session（用户调用 Robot API）
+    User->>Robot as Robot API: POST /api/robot/sessions (robot_id, contact_id)
+    Robot->>Chat: POST /api/conversations（内部 HTTP 调用）
+    Chat-->>Robot: conversation
+    Robot-->>User: session payload（含 adapter.thread_id）
 
     Note over User, Chat: 2. 用户发送消息
     User->>Chat: POST /api/conversations/{id}/messages (role=user)
@@ -190,6 +192,8 @@ erDiagram
         String session_id FK
         String role "user, assistant"
         Text content
+        String status "scheduled, sent, canceled"
+        DateTime scheduled_for
         DateTime created_at
     }
 

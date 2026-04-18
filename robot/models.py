@@ -76,15 +76,3 @@ class LlmLog(Base):
     response_raw = Column(Text, nullable=False)        # raw LLM response text
     model = Column(String, nullable=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)
-
-
-class LlmLog(Base):
-    __tablename__ = "llm_logs"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String, index=True, nullable=False)
-    request_messages = Column(Text, nullable=False)   # JSON: the messages array sent to LLM
-    request_pending = Column(Text, nullable=True)      # JSON: pending contents sent to LLM (null if none)
-    response_raw = Column(Text, nullable=False)        # raw LLM response text
-    model = Column(String, nullable=True)
-    created_at = Column(DateTime, default=utc_now, nullable=False)

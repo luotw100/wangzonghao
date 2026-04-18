@@ -190,5 +190,5 @@ async def get_conversation_messages(
         if elapsed >= timeout:
             return payload
 
-        sleep_time = min(0.01, timeout - elapsed)
+        sleep_time = min(0.05, timeout - elapsed)
         await asyncio.sleep(sleep_time)

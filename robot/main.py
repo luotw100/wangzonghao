@@ -595,7 +595,7 @@ async def get_planned_replies(
         if elapsed >= timeout:
             return result
 
-        sleep_time = min(0.01, timeout - elapsed)
+        sleep_time = min(0.05, timeout - elapsed)
         await asyncio.sleep(sleep_time)
 
 

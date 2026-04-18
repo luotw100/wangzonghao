@@ -235,14 +235,12 @@ class SessionController:
                     )
                 elif self._state in ("thinking", "sending"):
                     self._interrupted = True
-                    if self._state == "sending":
-                        self._lock_scheduled_messages()
         except asyncio.CancelledError:
             if self._think_task and not self._think_task.done():
                 self._think_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await self._think_task
-            self._cancel_all_pending()
+            self._cancel_all_scheduled()
             raise
 
     def _store_user_message(self, payload: Dict[str, Any]):
@@ -263,58 +261,35 @@ class SessionController:
 
     # -- DB helpers --------------------------------------------------------
 
-    def _lock_scheduled_messages(self):
+    def _cancel_all_scheduled(self):
         db = SessionLocal()
         try:
             db.query(RobotMessage).filter(
                 RobotMessage.session_id == self.session_id,
                 RobotMessage.status == "scheduled",
-            ).update({"status": "locked"})
-            db.commit()
-        finally:
-            db.close()
-
-    def _cancel_all_pending(self):
-        db = SessionLocal()
-        try:
-            db.query(RobotMessage).filter(
-                RobotMessage.session_id == self.session_id,
-                RobotMessage.status.in_(["scheduled", "locked"]),
             ).update({"status": "canceled"}, synchronize_session="fetch")
             db.commit()
         finally:
             db.close()
 
-    def _get_locked_messages(self) -> List[Dict[str, Any]]:
+    def _cancel_and_capture_scheduled(self) -> List[str]:
+        """Cancel all scheduled messages and return their content."""
         db = SessionLocal()
         try:
             rows = (
                 db.query(RobotMessage)
                 .filter(
                     RobotMessage.session_id == self.session_id,
-                    RobotMessage.status == "locked",
+                    RobotMessage.status == "scheduled",
                 )
                 .order_by(RobotMessage.scheduled_for.asc())
                 .all()
             )
-            return [{"id": r.id, "content": r.content} for r in rows]
-        finally:
-            db.close()
-
-    def _apply_pending_decisions(self, locked_msgs: List[Dict[str, Any]], decisions: List[Dict[str, Any]]):
-        db = SessionLocal()
-        try:
-            for locked, decision in zip(locked_msgs, decisions):
-                msg = db.query(RobotMessage).filter(RobotMessage.id == locked["id"]).first()
-                if not msg or msg.status != "locked":
-                    continue
-                if decision["action"] == "send":
-                    if "content" in decision:
-                        msg.content = decision["content"]
-                    msg.status = "scheduled"
-                elif decision["action"] == "cancel":
-                    msg.status = "canceled"
+            contents = [r.content for r in rows]
+            for r in rows:
+                r.status = "canceled"
             db.commit()
+            return contents
         finally:
             db.close()
 
@@ -377,22 +352,27 @@ class SessionController:
 
             if self._interrupted:
                 # New user message arrived during LLM call.
-                # Treat unfinished output as new pending.
+                # Merge pending decisions + new messages into memory-only pending.
                 new_pending: list[str] = []
-                for d in result.get("pending", []):
+                for i, d in enumerate(result.get("pending", [])):
                     if d["action"] == "send":
-                        new_pending.append(d.get("content", ""))
+                        # Use modified content if provided, otherwise original
+                        content = d["content"] if "content" in d else pending_contents[i]
+                        new_pending.append(content)
                 new_pending.extend(m["content"] for m in result["messages"])
                 pending_contents = new_pending if new_pending else None
                 continue
 
-            # Apply pending decisions for locked messages
-            locked_msgs = self._get_locked_messages()
-            if locked_msgs and result["pending"]:
-                self._apply_pending_decisions(locked_msgs, result["pending"])
+            # Merge pending "send" decisions + new messages → write all to DB
+            messages_to_schedule: List[Dict[str, Any]] = []
+            if pending_contents and result["pending"]:
+                for i, d in enumerate(result["pending"]):
+                    if d["action"] == "send":
+                        content = d["content"] if "content" in d else pending_contents[i]
+                        messages_to_schedule.append({"delay_seconds": 0, "content": content})
+            messages_to_schedule.extend(result["messages"])
 
-            # Write new scheduled messages
-            self._write_scheduled_messages(result["messages"])
+            self._write_scheduled_messages(messages_to_schedule)
 
             all_scheduled_ids = self._get_all_scheduled_ids()
 
@@ -403,8 +383,9 @@ class SessionController:
             await self._send_messages(all_scheduled_ids)
 
             if self._interrupted:
-                locked = self._get_locked_messages()
-                pending_contents = [m["content"] for m in locked] if locked else None
+                # Cancel unsent scheduled messages, capture content as pending
+                remaining = self._cancel_and_capture_scheduled()
+                pending_contents = remaining if remaining else None
                 continue
 
             self._state = "idle"

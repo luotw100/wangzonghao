@@ -567,7 +567,7 @@ async def get_planned_replies(
                 db.query(RobotMessage)
                 .filter(
                     RobotMessage.session_id == session_id,
-                    RobotMessage.status.in_(["scheduled", "locked"]),
+                    RobotMessage.status == "scheduled",
                 )
                 .order_by(RobotMessage.scheduled_for.asc())
                 .all()

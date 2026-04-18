@@ -2,10 +2,13 @@
 
 ## 产品定位
 
-Laborster 的核心产品是 **Robot** —— 一个面向销售、客服、运营等人群的拟人自动化回复服务。
+Laborster 的核心产品是 **Robot** —— 一个拟人自动化回复服务，帮助主播在微信里和粉丝保温。
 
-用户在后台注册自己的 profile（即 Robot profile），再添加当前客户的 profile（即 Contact profile），
-让 AI 基于这两个角色画像生成拟人化的回复。
+**核心场景**：娱乐主播在直播或发抖音时，粉丝会线下加微信。但主播很忙，来不及及时回复，我们帮助主播和粉丝保温。系统把主播「蒸馏」——模拟主播的记忆、偏好、兴趣、经历，以及主播现实环境的情况（当地地标、交通、餐饮、文化等），以极高的拟人度在微信里和粉丝聊天。
+
+**核心目标**：非常非常像真人。不冷场、不让粉丝的话落地上、培养亲密感。只提供情绪价值，不涉及金钱交易和线下约会。
+
+用户在后台注册 Robot profile（主播人设），添加 Contact profile（粉丝档案），让 AI 基于这两个角色画像生成拟人化的回复。
 
 ## 当前阶段
 
@@ -23,7 +26,7 @@ Laborster 的核心产品是 **Robot** —— 一个面向销售、客服、运�
 
 ## 编码偏好
 
-- **禁止偷偷搞默认值**：所有配置（环境变量、CLI 参数、连接串）必须由外部显式指定，缺失时直接报错。不允许用 fallback 默认值静默连接到错误的服务。唯一例外是布尔开关型 flag（如 `--echo-mode`），默认关闭是合理的。
+- **禁止偷偷搞默认值**：所有配置（环境变量、CLI 参数、连接串）必须由外部显式指定，缺失时直接报错。不允许用 fallback 默认值静默连接到错误的服务。
 
 ## 问题处理原则
 
@@ -100,7 +103,7 @@ Nginx 路由规则（nginx.conf）：
   - 按 `scheduled_for` 时间依次 `asyncio.sleep` → 更新 status=sent → 调用 Chat API 发送消息
 - **数据库**：`storage/robot.db`（同 Robot API 共享）
 - **外部依赖**：Redis（消费）、Chat API（HTTP 发送回复）、LLM Provider（HTTP）
-- **启动参数**：`--chat-api-base-url`、`--redis-url`、`--request-timeout`（必填）；`--echo-mode`（可选，复读机模式，跳过 LLM 调用，用于调试）
+- **启动参数**：`--chat-api-base-url`、`--redis-url`、`--request-timeout`（必填）
 
 #### `robot/clients.py` — HTTP 客户端封装
 

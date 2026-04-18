@@ -77,6 +77,7 @@ export interface Session {
 export interface PlannedReply {
   id: number;
   content: string;
+  status: 'scheduled' | 'locked';
   scheduled_for: string | null;
 }
 

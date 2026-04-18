@@ -178,9 +178,17 @@ export function ChatArea({
                           <LaborsterAvatar />
                           <div className="pt-1">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-accent/10 text-accent text-[11px] font-medium">
-                                <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
-                                {remaining > 0 ? `${remaining}s` : '发送中...'}
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                                reply.status === 'locked'
+                                  ? 'bg-warning/10 text-warning'
+                                  : 'bg-accent/10 text-accent'
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full animate-pulse ${
+                                  reply.status === 'locked' ? 'bg-warning' : 'bg-accent'
+                                }`} />
+                                {reply.status === 'locked'
+                                  ? '已锁定'
+                                  : remaining > 0 ? `${remaining}s` : '发送中...'}
                               </span>
                             </div>
                             <p className="whitespace-pre-wrap break-words leading-relaxed text-[15px] text-text-secondary">

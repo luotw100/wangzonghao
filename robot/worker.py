@@ -25,7 +25,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--redis-url", required=True)
     parser.add_argument("--request-timeout", type=float, required=True,
                         help="LLM 请求超时秒数，例: 120")
-    parser.add_argument("--echo-mode", action="store_true")
     return parser.parse_args()
 
 
@@ -36,7 +35,6 @@ def main():
         chat_api_base_url=args.chat_api_base_url.rstrip("/"),
         redis_url=args.redis_url,
         request_timeout=args.request_timeout,
-        echo_mode=args.echo_mode,
     )
     try:
         asyncio.run(run_worker(runtime_options))

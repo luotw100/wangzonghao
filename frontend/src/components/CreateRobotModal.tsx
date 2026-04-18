@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal } from './Modal';
 import * as api from '../lib/api';
-import { TEMPLATE_SYSTEM_PROMPT } from '../lib/templates';
+import { ROBOT_TEMPLATES } from '../lib/templates';
 
 interface CreateRobotModalProps {
   open: boolean;
@@ -45,12 +45,22 @@ export function CreateRobotModal({ open, onClose, onCreated, onError }: CreateRo
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-medium text-text-secondary">系统提示词（Profile / System Prompt）</label>
-            <button
-              onClick={() => setProfile(TEMPLATE_SYSTEM_PROMPT)}
-              className="text-xs px-2 py-1 rounded bg-accent/10 text-accent hover:bg-accent/20 transition"
+            <select
+              onChange={(e) => {
+                const idx = parseInt(e.target.value);
+                if (!isNaN(idx) && ROBOT_TEMPLATES[idx]) {
+                  setProfile(ROBOT_TEMPLATES[idx].profile);
+                  if (!name.trim()) setName(ROBOT_TEMPLATES[idx].name.split(' · ')[1] || ROBOT_TEMPLATES[idx].name);
+                }
+              }}
+              defaultValue=""
+              className="text-xs px-2 py-1 rounded bg-accent/10 text-accent hover:bg-accent/20 transition cursor-pointer"
             >
-              使用晚晚模板
-            </button>
+              <option value="" disabled>选择模板</option>
+              {ROBOT_TEMPLATES.map((t, i) => (
+                <option key={i} value={i}>{t.name}</option>
+              ))}
+            </select>
           </div>
           <textarea
             value={profile}

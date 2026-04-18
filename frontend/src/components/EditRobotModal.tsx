@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Modal } from './Modal';
 import * as api from '../lib/api';
 import type { Robot } from '../lib/api';
-import { TEMPLATE_SYSTEM_PROMPT } from '../lib/templates';
+import { ROBOT_TEMPLATES } from '../lib/templates';
 
 interface EditRobotModalProps {
   open: boolean;
@@ -83,13 +83,22 @@ export function EditRobotModal({ open, robot, onClose, onSaved, onError }: EditR
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-medium text-text-secondary">系统提示词（Profile / System Prompt）</label>
-            <button
-              onClick={() => setProfile(TEMPLATE_SYSTEM_PROMPT)}
+            <select
+              onChange={(e) => {
+                const idx = parseInt(e.target.value);
+                if (!isNaN(idx) && ROBOT_TEMPLATES[idx]) {
+                  setProfile(ROBOT_TEMPLATES[idx].profile);
+                }
+              }}
               disabled={isDeleted}
-              className="text-xs px-2 py-1 rounded bg-accent/10 text-accent hover:bg-accent/20 transition disabled:opacity-50"
+              defaultValue=""
+              className="text-xs px-2 py-1 rounded bg-accent/10 text-accent hover:bg-accent/20 transition cursor-pointer disabled:opacity-50"
             >
-              使用晚晚模板
-            </button>
+              <option value="" disabled>选择模板</option>
+              {ROBOT_TEMPLATES.map((t, i) => (
+                <option key={i} value={i}>{t.name}</option>
+              ))}
+            </select>
           </div>
           <textarea
             value={profile}

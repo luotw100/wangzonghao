@@ -179,10 +179,12 @@ export function useAppStore() {
       plannedPollAbortRef.current = controller;
 
       const pollLoop = async () => {
+        let lastCount = -1;
         while (!controller.signal.aborted && activeSessionIdRef.current === sessionId) {
           try {
-            const replies = await api.getPlannedReplies(sessionId, 30, controller.signal);
+            const replies = await api.getPlannedReplies(sessionId, 30, controller.signal, lastCount);
             if (controller.signal.aborted || activeSessionIdRef.current !== sessionId) return;
+            lastCount = replies.length;
             setPlannedReplies(replies);
           } catch (err: unknown) {
             if (controller.signal.aborted) return;

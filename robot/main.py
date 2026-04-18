@@ -551,8 +551,12 @@ async def restore_session(
 async def get_planned_replies(
     session_id: str,
     timeout: int = Query(0, ge=0, description="超时时间(秒),0 表示立即返回"),
+    last_count: int = Query(-1, description="客户端已知的计划消息数量，-1 表示首次请求"),
 ):
-    """获取 session 的计划消息，支持长轮询。"""
+    """获取 session 的计划消息，支持长轮询。
+
+    当 last_count >= 0 时，只要当前数量与 last_count 不同就立即返回（检测增减变化）。
+    """
     start_time = time.time()
 
     while True:
@@ -579,7 +583,11 @@ async def get_planned_replies(
         finally:
             db.close()
 
-        if result:
+        # 状态有变化就立即返回（数量增减都算）
+        if last_count >= 0 and len(result) != last_count:
+            return result
+        # 首次请求且有结果，立即返回
+        if last_count < 0 and result:
             return result
 
         elapsed = time.time() - start_time

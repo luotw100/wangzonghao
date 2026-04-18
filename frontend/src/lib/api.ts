@@ -264,7 +264,8 @@ export async function getMessages(
 export async function getPlannedReplies(
   sessionId: string,
   serverTimeout = 30,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  lastCount = -1
 ): Promise<PlannedReply[]> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), serverTimeout > 0 ? 35000 : 10000);
@@ -275,7 +276,7 @@ export async function getPlannedReplies(
 
   try {
     const res = await fetch(
-      `${ROBOT_BASE}/sessions/${sessionId}/planned-replies?timeout=${serverTimeout}`,
+      `${ROBOT_BASE}/sessions/${sessionId}/planned-replies?timeout=${serverTimeout}&last_count=${lastCount}`,
       { signal: controller.signal }
     );
     clearTimeout(timeoutId);

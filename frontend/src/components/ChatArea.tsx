@@ -59,6 +59,7 @@ export function ChatArea({
   // Countdown timer for planned replies
   useEffect(() => {
     if (plannedReplies.length === 0) return;
+    setCurrentTime(Date.now()); // sync immediately so first render isn't stale
     const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [plannedReplies.length]);

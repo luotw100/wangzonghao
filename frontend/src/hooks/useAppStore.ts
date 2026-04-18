@@ -150,7 +150,12 @@ export function useAppStore() {
             const dedupedMsgs = newMsgs.filter((m) => !renderedIds.has(m.id));
             if (dedupedMsgs.length > 0) {
               dedupedMsgs.forEach((m) => renderedIds.add(m.id));
-              setCurrentMessages((prev) => [...prev, ...dedupedMsgs]);
+              // Dedup against prev state too (handles optimistic updates)
+              setCurrentMessages((prev) => {
+                const existingIds = new Set(prev.map((m) => m.id));
+                const truly_new = dedupedMsgs.filter((m) => !existingIds.has(m.id));
+                return truly_new.length > 0 ? [...prev, ...truly_new] : prev;
+              });
               localLastMsgId = dedupedMsgs[dedupedMsgs.length - 1].id;
               lastMsgIdRef.current = localLastMsgId;
             }
@@ -248,7 +253,18 @@ export function useAppStore() {
     }
     setInputText('');
     try {
-      await api.sendMessage(activeConversationId, { role: 'user', msg_type: 'text', content: text });
+      const result = await api.sendMessage(activeConversationId, { role: 'user', msg_type: 'text', content: text });
+      // Optimistic: show own message immediately instead of waiting for long-poll
+      const msg: Message = {
+        id: result.id,
+        conversation_id: activeConversationId,
+        role: 'user',
+        msg_type: 'text',
+        content: text,
+        created_at: new Date().toISOString(),
+      };
+      setCurrentMessages((prev) => [...prev, msg]);
+      lastMsgIdRef.current = Math.max(lastMsgIdRef.current, result.id);
     } catch (err: unknown) {
       setErrorMessage('发送消息失败: ' + (err instanceof Error ? err.message : String(err)));
     }

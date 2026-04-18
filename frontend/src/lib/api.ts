@@ -224,7 +224,7 @@ export function restoreSession(sessionId: string) {
 
 // --- Messages ---
 export function sendMessage(conversationId: string, payload: { role: string; msg_type: string; content: string }) {
-  return request<Message>(`${CHAT_BASE}/conversations/${conversationId}/messages`, {
+  return request<{ status: string; id: number }>(`${CHAT_BASE}/conversations/${conversationId}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

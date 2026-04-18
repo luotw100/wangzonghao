@@ -208,6 +208,7 @@ class SessionController:
         self._state = "idle"
         self._interrupted = False
         self._task: Optional[asyncio.Task[Any]] = None
+        self._think_task: Optional[asyncio.Task[Any]] = None
 
     async def start(self):
         self._task = asyncio.get_running_loop().create_task(
@@ -221,18 +222,26 @@ class SessionController:
                 await self._task
 
     async def _run(self):
+        """Inbox consumer — runs concurrently with _think_and_send."""
         try:
             while True:
                 msg = await self.inbox.get()
                 self._store_user_message(msg)
 
                 if self._state == "idle":
-                    await self._think_and_send()
+                    self._think_task = asyncio.get_running_loop().create_task(
+                        self._think_and_send(),
+                        name=f"think-{self.session_id}",
+                    )
                 elif self._state in ("thinking", "sending"):
                     self._interrupted = True
                     if self._state == "sending":
                         self._lock_scheduled_messages()
         except asyncio.CancelledError:
+            if self._think_task and not self._think_task.done():
+                self._think_task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await self._think_task
             self._cancel_all_pending()
             raise
 
@@ -393,7 +402,7 @@ class SessionController:
 
             await self._send_messages(all_scheduled_ids)
 
-            if self._interrupted or not self.inbox.empty():
+            if self._interrupted:
                 locked = self._get_locked_messages()
                 pending_contents = [m["content"] for m in locked] if locked else None
                 continue

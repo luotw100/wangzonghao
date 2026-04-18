@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Modal } from './Modal';
 import * as api from '../lib/api';
 import type { Contact } from '../lib/api';
-import { TEMPLATE_CONTACT_PROFILE } from '../lib/templates';
+import { CONTACT_TEMPLATES } from '../lib/templates';
 
 interface EditContactModalProps {
   open: boolean;
@@ -82,13 +82,22 @@ export function EditContactModal({ open, contact, onClose, onSaved, onError }: E
         <div>
           <div className="flex items-center justify-between mb-2">
             <label className="text-sm font-medium text-text-secondary">联系人画像 (Contact Profile)</label>
-            <button
-              onClick={() => setProfile(TEMPLATE_CONTACT_PROFILE)}
+            <select
+              onChange={(e) => {
+                const idx = parseInt(e.target.value);
+                if (!isNaN(idx) && CONTACT_TEMPLATES[idx]) {
+                  setProfile(CONTACT_TEMPLATES[idx].profile);
+                }
+              }}
               disabled={isDeleted}
-              className="text-xs px-2 py-1 rounded bg-accent/10 text-accent hover:bg-accent/20 transition disabled:opacity-50"
+              defaultValue=""
+              className="text-xs px-2 py-1 rounded bg-accent/10 text-accent hover:bg-accent/20 transition cursor-pointer disabled:opacity-50"
             >
-              使用示例模板
-            </button>
+              <option value="" disabled>选择模板</option>
+              {CONTACT_TEMPLATES.map((t, i) => (
+                <option key={i} value={i}>{t.name}</option>
+              ))}
+            </select>
           </div>
           <textarea
             value={profile}

@@ -194,12 +194,13 @@ class RobotRuntime:
                 return
             # Write all planned replies to DB with status=scheduled
             now = utc_now()
+            now_naive = now.replace(tzinfo=None)
             db = SessionLocal()
             try:
                 msg_ids: list[int] = []
                 for reply in replies:
                     delay = max(int(reply.get("delay_seconds", 0)), 0)
-                    scheduled_for = now + timedelta(seconds=delay)
+                    scheduled_for = now_naive + timedelta(seconds=delay)
                     msg = RobotMessage(
                         session_id=session_id,
                         role="assistant",
@@ -256,7 +257,7 @@ class RobotRuntime:
 
             history = (
                 db.query(RobotMessage)
-                .filter(RobotMessage.session_id == session_id)
+                .filter(RobotMessage.session_id == session_id, RobotMessage.status == "sent")
                 .order_by(RobotMessage.id.asc())
                 .all()
             )
@@ -310,7 +311,7 @@ class RobotRuntime:
 
             # Sleep until scheduled time
             if scheduled_for:
-                now = utc_now()
+                now = utc_now().replace(tzinfo=None)
                 wait = (scheduled_for - now).total_seconds()
                 if wait > 0:
                     await asyncio.sleep(wait)

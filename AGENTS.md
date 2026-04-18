@@ -4,7 +4,7 @@
 
 Laborster 的核心产品是 **Robot** —— 一个面向销售、客服、运营等人群的拟人自动化回复服务。
 
-用户在后台注册自己的 profile（即 Robot profile / System Prompt），再添加当前客户的 profile（即 Contact profile），
+用户在后台注册自己的 profile（即 Robot profile），再添加当前客户的 profile（即 Contact profile），
 让 AI 基于这两个角色画像生成拟人化的回复。
 
 ## 当前阶段

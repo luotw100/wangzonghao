@@ -1,3 +1,27 @@
+export interface ProviderTemplate {
+  name: string;
+  base_url: string;
+  default_model: string;
+}
+
+export const PROVIDER_TEMPLATES: ProviderTemplate[] = [
+  {
+    name: 'DeepSeek',
+    base_url: 'https://api.deepseek.com',
+    default_model: 'deepseek-chat',
+  },
+  {
+    name: 'Grok',
+    base_url: 'https://api.jiekou.ai/openai',
+    default_model: 'grok-4-1-fast-non-reasoning',
+  },
+  {
+    name: 'Gemini',
+    base_url: 'https://api.jiekou.ai/openai',
+    default_model: 'gemini-3.1-pro-preview',
+  },
+];
+
 export interface RobotTemplate {
   name: string;
   profile: string;

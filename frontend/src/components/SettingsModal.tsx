@@ -4,6 +4,7 @@ import * as api from '../lib/api';
 import type { Robot, Contact, ProviderConfig } from '../lib/api';
 import { IconEdit, IconPlus, IconClose, IconChevronRight } from './Icons';
 import { cn } from '../lib/utils';
+import { PROVIDER_TEMPLATES } from '../lib/templates';
 
 interface SettingsModalProps {
   open: boolean;
@@ -217,9 +218,34 @@ export function SettingsModal({
 
       {/* Provider Form Sub-Modal */}
       <Modal open={showProviderForm} onClose={() => setShowProviderForm(false)}>
-        <h3 className="text-lg font-medium mb-4 shrink-0">
-          {editingProviderId ? '编辑 LLM Provider' : '新建 LLM Provider'}
-        </h3>
+        <div className="flex items-center justify-between mb-4 shrink-0">
+          <h3 className="text-lg font-medium">
+            {editingProviderId ? '编辑 LLM Provider' : '新建 LLM Provider'}
+          </h3>
+          {!editingProviderId && (
+            <select
+              onChange={(e) => {
+                const idx = parseInt(e.target.value);
+                if (!isNaN(idx) && PROVIDER_TEMPLATES[idx]) {
+                  const t = PROVIDER_TEMPLATES[idx];
+                  setProviderForm((f) => ({
+                    ...f,
+                    name: t.name,
+                    base_url: t.base_url,
+                    default_model: t.default_model,
+                  }));
+                }
+              }}
+              defaultValue=""
+              className="text-xs px-2 py-1 rounded bg-accent/10 text-accent hover:bg-accent/20 transition cursor-pointer"
+            >
+              <option value="" disabled>选择模板</option>
+              {PROVIDER_TEMPLATES.map((t, i) => (
+                <option key={i} value={i}>{t.name}</option>
+              ))}
+            </select>
+          )}
+        </div>
         <div className="space-y-4 overflow-y-auto flex-1">
           <div>
             <label className="block text-sm font-medium mb-2 text-text-secondary">名称</label>

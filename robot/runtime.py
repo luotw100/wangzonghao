@@ -502,7 +502,7 @@ class SessionController:
         pending_count = len(pending_contents) if pending_contents else 0
 
         try:
-            response_text = await self.runtime.provider.complete_chat(
+            response_text, _usage = await self.runtime.provider.complete_chat(
                 base_url, api_key, model, llm_messages
             )
         except Exception as exc:

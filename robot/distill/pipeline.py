@@ -120,7 +120,7 @@ async def run_l1(
     people: PeopleConfig,
     me_wxid: str,
     intermediate_dir: Path,
-) -> str:
+) -> tuple[str, dict]:
     """Run L1 extraction on a single window."""
     user_message = build_l1_user_message(window, total_windows, people, me_wxid)
     prefix = intermediate_dir / f"window_{window.window_id:02d}"
@@ -131,9 +131,9 @@ async def run_l1(
         {"role": "system", "content": L1_PROMPT},
         {"role": "user", "content": user_message},
     ]
-    result = await client.complete_chat(base_url, api_key, model, messages)
+    result, usage = await client.complete_chat(base_url, api_key, model, messages)
     prefix.with_suffix(".output.json").write_text(result, encoding="utf-8")
-    return result
+    return result, usage
 
 
 async def run_l2(
@@ -143,7 +143,7 @@ async def run_l2(
     model: str,
     l1_results: list[str],
     intermediate_dir: Path,
-) -> str:
+) -> tuple[str, dict]:
     """Run L2 aggregation on all L1 results."""
     user_message = build_l2_user_message(l1_results)
     (intermediate_dir / "l2.input.txt").write_text(
@@ -153,9 +153,9 @@ async def run_l2(
         {"role": "system", "content": L2_PROMPT},
         {"role": "user", "content": user_message},
     ]
-    result = await client.complete_chat(base_url, api_key, model, messages)
+    result, usage = await client.complete_chat(base_url, api_key, model, messages)
     (intermediate_dir / "l2.output.txt").write_text(result, encoding="utf-8")
-    return result
+    return result, usage
 
 
 async def run_pipeline(
@@ -209,22 +209,29 @@ async def run_pipeline(
     intermediate_dir = output_path / "intermediate"
     intermediate_dir.mkdir(exist_ok=True)
 
+    total_usage: dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+
     async def run_l1_with_semaphore(window: Window) -> tuple[int, str]:
         async with semaphore:
             print(f"  L1 Window {window.window_id}/{len(windows)} 开始...")
-            result = await run_l1(client, api_base, api_key, model, window, len(windows), people, me_wxid, intermediate_dir)
-            print(f"  L1 Window {window.window_id}/{len(windows)} 完成 ✓")
+            result, usage = await run_l1(client, api_base, api_key, model, window, len(windows), people, me_wxid, intermediate_dir)
+            for k in total_usage:
+                total_usage[k] += usage.get(k, 0)
+            print(f"  L1 Window {window.window_id}/{len(windows)} 完成 ✓  ({usage.get('total_tokens', '?')} tokens)")
             return window.window_id, result
 
     tasks = [run_l1_with_semaphore(w) for w in windows]
     l1_raw_results = await asyncio.gather(*tasks)
     l1_raw_results_sorted = sorted(l1_raw_results, key=lambda x: x[0])
     l1_results = [result for _, result in l1_raw_results_sorted]
-    print(f"  L1 结果已全部保存到 {intermediate_dir}/")
+    print(f"  L1 合计: prompt={total_usage['prompt_tokens']}, completion={total_usage['completion_tokens']}, total={total_usage['total_tokens']}")
 
     # Step 4: L2 — aggregation
     print("\n📊 开始 L2 聚合...")
-    l2_result = await run_l2(client, api_base, api_key, model, l1_results, intermediate_dir)
+    l2_result, l2_usage = await run_l2(client, api_base, api_key, model, l1_results, intermediate_dir)
+    for k in total_usage:
+        total_usage[k] += l2_usage.get(k, 0)
+    print(f"  L2: prompt={l2_usage.get('prompt_tokens', '?')}, completion={l2_usage.get('completion_tokens', '?')}, total={l2_usage.get('total_tokens', '?')}")
     await client.close()
 
     # Step 5: Split and save output
@@ -244,7 +251,7 @@ async def run_pipeline(
         (output_path / "memory.md").write_text(memory_md, encoding="utf-8")
         print(f"  ✅ {output_path / 'memory.md'}")
 
-    print("\n🎉 完成！")
+    print(f"\n🎉 完成！总计消耗: prompt={total_usage['prompt_tokens']}, completion={total_usage['completion_tokens']}, total={total_usage['total_tokens']}")
 
 
 def main() -> None:

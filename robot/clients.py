@@ -68,7 +68,8 @@ class ProviderClient:
         api_key: str,
         model: str,
         messages: List[Dict[str, str]],
-    ) -> str:
+    ) -> tuple[str, Dict[str, int]]:
+        """Returns (content, usage) where usage = {prompt_tokens, completion_tokens, total_tokens}."""
         response = await self.http.post(
             f"{base_url.rstrip('/')}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
@@ -80,4 +81,10 @@ class ProviderClient:
         )
         response.raise_for_status()
         payload = response.json()
-        return payload["choices"][0]["message"]["content"]
+        content = payload["choices"][0]["message"]["content"]
+        usage = payload.get("usage") or {}
+        return content, {
+            "prompt_tokens": usage.get("prompt_tokens", 0),
+            "completion_tokens": usage.get("completion_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+        }

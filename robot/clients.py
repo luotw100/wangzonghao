@@ -62,14 +62,19 @@ class ProviderClient:
     async def close(self):
         await self.http.aclose()
 
-    async def complete_chat(self, base_url: str, api_key: str, model: str, messages: List[Dict[str, str]]) -> str:
+    async def complete_chat(
+        self,
+        base_url: str,
+        api_key: str,
+        model: str,
+        messages: List[Dict[str, str]],
+    ) -> str:
         response = await self.http.post(
             f"{base_url.rstrip('/')}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={
                 "model": model,
                 "messages": messages,
-                "response_format": {"type": "json_object"},
                 "temperature": 0.7,
             },
         )

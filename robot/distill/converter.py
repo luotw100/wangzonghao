@@ -67,18 +67,18 @@ def _resolve_nickname(msg: Message, people: PeopleConfig, me_wxid: str) -> str |
 
 
 def _format_timestamp(msg: Message) -> str:
-    """Format message timestamp to [YYYY-MM-DD HH:MM]."""
+    """Format message timestamp to [YYYY-MM-DD HH:MM:SS]."""
     formatted = msg.get("formattedTime", "")
     if formatted:
-        # formattedTime is like "2025-03-14 11:10:26", trim seconds
-        return formatted[:16]
+        # formattedTime is like "2025-03-14 11:10:26"
+        return formatted[:19]
 
     create_time = msg.get("createTime")
     if create_time is not None:
         dt = datetime.fromtimestamp(create_time)
-        return dt.strftime("%Y-%m-%d %H:%M")
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
 
-    return "????-??-?? ??:??"
+    return "????-??-?? ??:??:??"
 
 
 def _clean_content(content: str) -> str:

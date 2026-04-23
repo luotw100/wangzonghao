@@ -34,14 +34,19 @@ class Window:
     """A window of messages for L1 processing."""
 
     window_id: int
-    messages: list[TextMessage] = field(default_factory=list)
+    sessions: list[list[TextMessage]] = field(default_factory=list)
+
+    @property
+    def messages(self) -> list[TextMessage]:
+        return [m for s in self.sessions for m in s]
 
     @property
     def time_range(self) -> str:
-        if not self.messages:
+        msgs = self.messages
+        if not msgs:
             return ""
-        start = self.messages[0].timestamp.strftime("%Y-%m-%d")
-        end = self.messages[-1].timestamp.strftime("%Y-%m-%d")
+        start = msgs[0].timestamp.strftime("%Y-%m-%d")
+        end = msgs[-1].timestamp.strftime("%Y-%m-%d")
         if start == end:
             return start
         return f"{start} ~ {end}"
@@ -52,7 +57,22 @@ class Window:
 
     @property
     def text(self) -> str:
-        return "\n".join(m.raw_line for m in self.messages)
+        """Render messages with relative timestamps within each session."""
+        lines: list[str] = []
+        for session in self.sessions:
+            if not session:
+                continue
+            if lines:
+                lines.append("")  # blank line between sessions
+            first = session[0]
+            lines.append(f"[{first.timestamp.strftime('%Y-%m-%d %H:%M:%S')}] {first.sender}: {first.content}")
+            prev_ts = first.timestamp
+            for msg in session[1:]:
+                delta = int((msg.timestamp - prev_ts).total_seconds())
+                rel = f"+{delta}s" if delta < 60 else f"+{delta // 60}m"
+                lines.append(f"[{rel}] {msg.sender}: {msg.content}")
+                prev_ts = msg.timestamp
+        return "\n".join(lines)
 
     @property
     def participants(self) -> set[str]:
@@ -80,7 +100,7 @@ def parse_text_lines(lines: list[str]) -> list[TextMessage]:
         sender = rest[:colon_pos]
         content = rest[colon_pos + 2:]
         try:
-            timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M")
+            timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
         except ValueError:
             continue
         messages.append(TextMessage(timestamp=timestamp, sender=sender, content=content, raw_line=line))
@@ -132,16 +152,13 @@ def pack_windows(sessions: list[list[TextMessage]]) -> list[Window]:
             total_tokens += s_tokens
             j += 1
 
-        # Flatten sessions into messages
-        window_messages = [m for s in window_sessions for m in s]
-
         # Check minimum "my" message count
-        my_count = sum(1 for m in window_messages if m.is_me)
+        my_count = sum(1 for s in window_sessions for m in s if m.is_me)
         if my_count < MIN_MY_MESSAGES and windows:
             # Merge into previous window
-            windows[-1].messages.extend(window_messages)
+            windows[-1].sessions.extend(window_sessions)
         else:
-            windows.append(Window(window_id=window_id, messages=window_messages))
+            windows.append(Window(window_id=window_id, sessions=window_sessions))
             window_id += 1
 
         # Next window starts with overlap

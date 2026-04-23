@@ -119,14 +119,21 @@ async def run_l1(
     total_windows: int,
     people: PeopleConfig,
     me_wxid: str,
+    intermediate_dir: Path,
 ) -> str:
     """Run L1 extraction on a single window."""
     user_message = build_l1_user_message(window, total_windows, people, me_wxid)
+    prefix = intermediate_dir / f"window_{window.window_id:02d}"
+    prefix.with_suffix(".input.txt").write_text(
+        f"[SYSTEM]\n{L1_PROMPT}\n\n[USER]\n{user_message}", encoding="utf-8"
+    )
     messages = [
         {"role": "system", "content": L1_PROMPT},
         {"role": "user", "content": user_message},
     ]
-    return await client.complete_chat(base_url, api_key, model, messages)
+    result = await client.complete_chat(base_url, api_key, model, messages)
+    prefix.with_suffix(".output.json").write_text(result, encoding="utf-8")
+    return result
 
 
 async def run_l2(
@@ -135,14 +142,20 @@ async def run_l2(
     api_key: str,
     model: str,
     l1_results: list[str],
+    intermediate_dir: Path,
 ) -> str:
     """Run L2 aggregation on all L1 results."""
     user_message = build_l2_user_message(l1_results)
+    (intermediate_dir / "l2.input.txt").write_text(
+        f"[SYSTEM]\n{L2_PROMPT}\n\n[USER]\n{user_message}", encoding="utf-8"
+    )
     messages = [
         {"role": "system", "content": L2_PROMPT},
         {"role": "user", "content": user_message},
     ]
-    return await client.complete_chat(base_url, api_key, model, messages)
+    result = await client.complete_chat(base_url, api_key, model, messages)
+    (intermediate_dir / "l2.output.txt").write_text(result, encoding="utf-8")
+    return result
 
 
 async def run_pipeline(
@@ -154,6 +167,7 @@ async def run_pipeline(
     output_dir: str,
     request_timeout: float,
     concurrency: int,
+    max_windows: int = 0,
 ) -> None:
     """Run the full distill pipeline."""
     me_wxid, people = load_people(people_path)
@@ -176,7 +190,11 @@ async def run_pipeline(
     text_messages.sort(key=lambda m: m.timestamp)
     sessions = split_sessions(text_messages)
     windows = pack_windows(sessions)
-    print(f"📦 切分为 {len(sessions)} 个 session，打包为 {len(windows)} 个窗口")
+    if max_windows > 0:
+        windows = windows[:max_windows]
+        print(f"📦 切分为 {len(sessions)} 个 session，打包为 {len(windows)} 个窗口（--max-windows={max_windows}）")
+    else:
+        print(f"📦 切分为 {len(sessions)} 个 session，打包为 {len(windows)} 个窗口")
 
     for w in windows:
         print(f"  Window {w.window_id}: {len(w.messages)} 条消息，我的消息 {w.my_message_count} 条，{w.time_range}")
@@ -186,10 +204,15 @@ async def run_pipeline(
     client = ProviderClient(request_timeout=request_timeout)
     semaphore = asyncio.Semaphore(concurrency)
 
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    intermediate_dir = output_path / "intermediate"
+    intermediate_dir.mkdir(exist_ok=True)
+
     async def run_l1_with_semaphore(window: Window) -> tuple[int, str]:
         async with semaphore:
             print(f"  L1 Window {window.window_id}/{len(windows)} 开始...")
-            result = await run_l1(client, api_base, api_key, model, window, len(windows), people, me_wxid)
+            result = await run_l1(client, api_base, api_key, model, window, len(windows), people, me_wxid, intermediate_dir)
             print(f"  L1 Window {window.window_id}/{len(windows)} 完成 ✓")
             return window.window_id, result
 
@@ -197,19 +220,11 @@ async def run_pipeline(
     l1_raw_results = await asyncio.gather(*tasks)
     l1_raw_results_sorted = sorted(l1_raw_results, key=lambda x: x[0])
     l1_results = [result for _, result in l1_raw_results_sorted]
-
-    # Save intermediate L1 results
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-    intermediate_dir = output_path / "intermediate"
-    intermediate_dir.mkdir(exist_ok=True)
-    for i, result in enumerate(l1_results, 1):
-        (intermediate_dir / f"window_{i:02d}.json").write_text(result, encoding="utf-8")
-    print(f"  L1 结果已保存到 {intermediate_dir}/")
+    print(f"  L1 结果已全部保存到 {intermediate_dir}/")
 
     # Step 4: L2 — aggregation
     print("\n📊 开始 L2 聚合...")
-    l2_result = await run_l2(client, api_base, api_key, model, l1_results)
+    l2_result = await run_l2(client, api_base, api_key, model, l1_results, intermediate_dir)
     await client.close()
 
     # Step 5: Split and save output
@@ -242,6 +257,7 @@ def main() -> None:
     parser.add_argument("--output-dir", default="output", help="输出目录")
     parser.add_argument("--request-timeout", type=float, default=120.0, help="LLM 请求超时（秒）")
     parser.add_argument("--concurrency", type=int, default=3, help="L1 并发数")
+    parser.add_argument("--max-windows", type=int, default=0, help="最多处理几个窗口（0=不限制，调试用）")
     args = parser.parse_args()
 
     asyncio.run(
@@ -254,6 +270,7 @@ def main() -> None:
             output_dir=args.output_dir,
             request_timeout=args.request_timeout,
             concurrency=args.concurrency,
+            max_windows=args.max_windows,
         )
     )
 

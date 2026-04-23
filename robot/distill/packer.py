@@ -7,6 +7,7 @@ from datetime import datetime
 
 SESSION_GAP_SECONDS = 30 * 60  # 30 minutes
 WINDOW_TOKEN_LIMIT = 10_000
+MAX_WINDOW_TOKENS = 40_000  # Hard cap: never merge beyond this to stay within LLM context limits
 OVERLAP_SESSIONS = 2
 MIN_MY_MESSAGES = 10
 
@@ -154,7 +155,10 @@ def pack_windows(sessions: list[list[TextMessage]]) -> list[Window]:
 
         # Check minimum "my" message count
         my_count = sum(1 for s in window_sessions for m in s if m.is_me)
-        if my_count < MIN_MY_MESSAGES and windows:
+        new_tokens = _estimate_tokens([m for s in window_sessions for m in s])
+        prev_tokens = _estimate_tokens(windows[-1].messages) if windows else 0
+        can_merge = my_count < MIN_MY_MESSAGES and windows and (prev_tokens + new_tokens <= MAX_WINDOW_TOKENS)
+        if can_merge:
             # Merge into previous window
             windows[-1].sessions.extend(window_sessions)
         else:

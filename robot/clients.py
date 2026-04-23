@@ -79,6 +79,8 @@ class ProviderClient:
                 "temperature": 0.7,
             },
         )
+        if not response.is_success:
+            raise ValueError(f"LLM API error {response.status_code}: {response.text[:2000]}")
         response.raise_for_status()
         payload = response.json()
         content = payload["choices"][0]["message"]["content"]

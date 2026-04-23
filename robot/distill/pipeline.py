@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
+from prettytable import PrettyTable
 
 from robot.clients import ProviderClient
 from robot.distill.converter import convert_messages
@@ -209,14 +210,18 @@ async def run_pipeline(
     intermediate_dir = output_path / "intermediate"
     intermediate_dir.mkdir(exist_ok=True)
 
-    total_usage: dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    token_rows: list[tuple] = []  # (label, prompt, completion, total)
 
     async def run_l1_with_semaphore(window: Window) -> tuple[int, str]:
         async with semaphore:
             print(f"  L1 Window {window.window_id}/{len(windows)} 开始...")
             result, usage = await run_l1(client, api_base, api_key, model, window, len(windows), people, me_wxid, intermediate_dir)
-            for k in total_usage:
-                total_usage[k] += usage.get(k, 0)
+            token_rows.append((
+                f"L1 Window {window.window_id}",
+                usage.get("prompt_tokens", 0),
+                usage.get("completion_tokens", 0),
+                usage.get("total_tokens", 0),
+            ))
             print(f"  L1 Window {window.window_id}/{len(windows)} 完成 ✓  ({usage.get('total_tokens', '?')} tokens)")
             return window.window_id, result
 
@@ -224,14 +229,16 @@ async def run_pipeline(
     l1_raw_results = await asyncio.gather(*tasks)
     l1_raw_results_sorted = sorted(l1_raw_results, key=lambda x: x[0])
     l1_results = [result for _, result in l1_raw_results_sorted]
-    print(f"  L1 合计: prompt={total_usage['prompt_tokens']}, completion={total_usage['completion_tokens']}, total={total_usage['total_tokens']}")
 
     # Step 4: L2 — aggregation
     print("\n📊 开始 L2 聚合...")
     l2_result, l2_usage = await run_l2(client, api_base, api_key, model, l1_results, intermediate_dir)
-    for k in total_usage:
-        total_usage[k] += l2_usage.get(k, 0)
-    print(f"  L2: prompt={l2_usage.get('prompt_tokens', '?')}, completion={l2_usage.get('completion_tokens', '?')}, total={l2_usage.get('total_tokens', '?')}")
+    token_rows.append((
+        "L2",
+        l2_usage.get("prompt_tokens", 0),
+        l2_usage.get("completion_tokens", 0),
+        l2_usage.get("total_tokens", 0),
+    ))
     await client.close()
 
     # Step 5: Split and save output
@@ -251,7 +258,22 @@ async def run_pipeline(
         (output_path / "memory.md").write_text(memory_md, encoding="utf-8")
         print(f"  ✅ {output_path / 'memory.md'}")
 
-    print(f"\n🎉 完成！总计消耗: prompt={total_usage['prompt_tokens']}, completion={total_usage['completion_tokens']}, total={total_usage['total_tokens']}")
+    token_rows.sort(key=lambda r: r[0])  # sort by label
+    total_prompt = sum(r[1] for r in token_rows)
+    total_completion = sum(r[2] for r in token_rows)
+    total_total = sum(r[3] for r in token_rows)
+
+    table = PrettyTable(["阶段", "prompt", "completion", "total"])
+    table.align["阶段"] = "l"
+    table.align["prompt"] = "r"
+    table.align["completion"] = "r"
+    table.align["total"] = "r"
+    for row in token_rows:
+        table.add_row(row)
+    table.add_divider()
+    table.add_row(["合计", total_prompt, total_completion, total_total])
+    print(f"\n{table}")
+    print("🎉 完成！")
 
 
 def main() -> None:

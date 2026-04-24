@@ -68,6 +68,10 @@ class Window:
     def participants(self) -> set[str]:
         return {m.sender for m in self.messages}
 
+    @property
+    def session_count(self) -> int:
+        return len(self.sessions)
+
 
 def parse_text_lines(lines: list[str]) -> list[TextMessage]:
     """Parse plain text format lines into TextMessage objects."""

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import Counter
 from datetime import datetime
 from typing import Any
 
@@ -13,6 +14,28 @@ KEEP_TYPES = {"文本消息", "引用消息"}
 MAYBE_KEEP_TYPES = {"其他消息"}
 # Content patterns to filter out even if type matches
 FILTER_CONTENT_PATTERNS = {"[图片]", "[文件]", "[语音]", "[视频]", "[撤回了一条消息]"}
+
+
+def build_name_map(all_messages: list[list[Message]]) -> dict[str, str]:
+    """Build wxid → canonical display name from all message lists.
+
+    For each wxid, picks the most frequent senderDisplayName.
+    Chatroom system accounts are excluded.
+    """
+    counts: dict[str, Counter[str]] = {}
+    for messages in all_messages:
+        for msg in messages:
+            wxid = msg.get("senderUsername", "")
+            if not wxid or "@chatroom" in wxid:
+                continue
+            display = msg.get("senderDisplayName", "")
+            if not display:
+                continue
+            if wxid not in counts:
+                counts[wxid] = Counter()
+            counts[wxid][display] += 1
+
+    return {wxid: counter.most_common(1)[0][0] for wxid, counter in counts.items()}
 
 
 def _should_keep(msg: Message) -> bool:
@@ -38,19 +61,6 @@ def _should_keep(msg: Message) -> bool:
     return False
 
 
-def _resolve_sender(msg: Message) -> str | None:
-    """Resolve the display name for a message sender.
-
-    Returns None for chatroom system messages.
-    """
-    sender_key = msg.get("senderUsername", "")
-
-    if "@chatroom" in sender_key:
-        return None
-
-    return msg.get("senderDisplayName") or sender_key
-
-
 def _format_timestamp(msg: Message) -> str:
     """Format message timestamp to [YYYY-MM-DD HH:MM:SS]."""
     formatted = msg.get("formattedTime", "")
@@ -70,9 +80,10 @@ def _clean_content(content: str) -> str:
     return content.strip()
 
 
-def convert_messages(messages: list[Message]) -> list[str]:
+def convert_messages(messages: list[Message], name_map: dict[str, str]) -> list[str]:
     """Convert a list of WeFlow messages to plain text lines.
 
+    Uses name_map (wxid → canonical name) to resolve sender names.
     Returns a list of formatted lines like:
         [2025-03-14 11:10:26] 白焕鹏: 明天下午三点不见不散
     """
@@ -83,10 +94,11 @@ def convert_messages(messages: list[Message]) -> list[str]:
         if not _should_keep(msg):
             continue
 
-        sender = _resolve_sender(msg)
-        if sender is None:
+        wxid = msg.get("senderUsername", "")
+        if not wxid or "@chatroom" in wxid:
             continue
 
+        sender = name_map.get(wxid) or msg.get("senderDisplayName") or wxid
         timestamp = _format_timestamp(msg)
         content = _clean_content(msg.get("content", ""))
         if not content:

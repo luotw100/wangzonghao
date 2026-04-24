@@ -12,7 +12,7 @@ from typing import Any
 from prettytable import PrettyTable
 
 from robot.clients import ProviderClient
-from robot.distill.converter import convert_messages
+from robot.distill.converter import build_name_map, convert_messages
 from robot.distill.packer import Window, pack_windows, parse_text_lines, split_sessions
 
 PROMPTS_DIR = Path(__file__).parent / "prompts"
@@ -56,6 +56,7 @@ def _build_profiles_block(profiles: dict[str, dict[str, str]], participants: set
 def _build_fold_user_message(
     window: Window,
     total_windows: int,
+    total_sessions: int,
     profiles: dict[str, dict[str, str]],
 ) -> str:
     """Build the user message for a fold call."""
@@ -65,6 +66,8 @@ def _build_fold_user_message(
         f"```yaml\n"
         f"window: {window.window_id}/{total_windows}\n"
         f"time_range: \"{window.time_range}\"\n"
+        f"sessions_in_window: {window.session_count}\n"
+        f"total_sessions: {total_sessions}\n"
         f"participants: {json.dumps(participants, ensure_ascii=False)}\n"
         f"```\n\n"
         f"当前档案：\n\n{profiles_block}\n\n"
@@ -91,11 +94,12 @@ async def run_fold(
     model: str,
     window: Window,
     total_windows: int,
+    total_sessions: int,
     profiles: dict[str, dict[str, str]],
     intermediate_dir: Path,
 ) -> tuple[dict[str, dict[str, str]], dict[str, int]]:
     """Run one fold step: update profiles with a new window."""
-    user_message = _build_fold_user_message(window, total_windows, profiles)
+    user_message = _build_fold_user_message(window, total_windows, total_sessions, profiles)
     prefix = intermediate_dir / f"fold_{window.window_id:02d}"
     prefix.with_suffix(".input.txt").write_text(
         f"[SYSTEM]\n{FOLD_PROMPT}\n\n[USER]\n{user_message}", encoding="utf-8"
@@ -135,11 +139,17 @@ async def run_pipeline(
         print("没有有效的聊天数据。")
         return
 
-    # Step 1: Convert all exports to plain text and merge
-    print(f"📄 加载了 {len(exports)} 个聊天文件")
+    # Step 1: Build name map across all files, then convert
+    all_message_lists = [messages for _, messages in exports]
+    name_map = build_name_map(all_message_lists)
+    print(f"👤 发现 {len(name_map)} 个参与者：")
+    for wxid, name in sorted(name_map.items(), key=lambda x: x[1]):
+        print(f"  {name} ({wxid})")
+
+    print(f"\n📄 加载了 {len(exports)} 个聊天文件")
     all_lines: list[str] = []
     for session_name, messages in exports:
-        lines = convert_messages(messages)
+        lines = convert_messages(messages, name_map)
         print(f"  {session_name}: {len(messages)} 条原始消息 → {len(lines)} 条有效消息")
         all_lines.extend(lines)
 
@@ -153,9 +163,10 @@ async def run_pipeline(
     print(f"📦 切分为 {len(sessions)} 个 session，打包为 {len(windows)} 个窗口")
 
     for w in windows:
-        print(f"  Window {w.window_id}: {len(w.messages)} 条消息，{w.time_range}，参与者: {', '.join(sorted(w.participants))}")
+        print(f"  Window {w.window_id}: {len(w.messages)} 条消息，{w.session_count} 个 session，{w.time_range}，参与者: {', '.join(sorted(w.participants))}")
 
     # Step 3: Rolling fold
+    total_sessions_so_far = 0
     print(f"\n🔄 开始滚动蒸馏（共 {len(windows)} 步）...")
     client = ProviderClient(request_timeout=request_timeout)
 
@@ -168,9 +179,10 @@ async def run_pipeline(
     token_rows: list[tuple] = []
 
     for window in windows:
-        print(f"  Fold {window.window_id}/{len(windows)} 开始...")
+        total_sessions_so_far += window.session_count
+        print(f"  Fold {window.window_id}/{len(windows)} 开始（{window.session_count} sessions，累计 {total_sessions_so_far}）...")
         profiles, usage = await run_fold(
-            client, api_base, api_key, model, window, len(windows), profiles, intermediate_dir,
+            client, api_base, api_key, model, window, len(windows), total_sessions_so_far, profiles, intermediate_dir,
         )
         token_rows.append((
             f"Fold {window.window_id}",

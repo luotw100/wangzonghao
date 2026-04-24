@@ -6,7 +6,6 @@ from datetime import datetime
 from typing import Any
 
 type Message = dict[str, Any]
-type PeopleConfig = dict[str, Any]
 
 # Message types to keep
 KEEP_TYPES = {"文本消息", "引用消息"}
@@ -20,7 +19,6 @@ def _should_keep(msg: Message) -> bool:
     """Decide whether a message should be kept in the output."""
     msg_type = msg.get("type", "")
 
-    # Always skip these types
     if msg_type in ("系统消息", "动画表情", "表情包", "图片消息", "视频消息", "语音消息"):
         return False
 
@@ -34,43 +32,29 @@ def _should_keep(msg: Message) -> bool:
     if msg_type in KEEP_TYPES:
         return True
 
-    # "其他消息" — keep if content has semantic info (e.g. [小程序] xxx)
     if msg_type in MAYBE_KEEP_TYPES:
         return True
 
     return False
 
 
-def _resolve_nickname(msg: Message, people: PeopleConfig, me_wxid: str) -> str | None:
-    """Resolve the display nickname for a message sender.
+def _resolve_sender(msg: Message) -> str | None:
+    """Resolve the display name for a message sender.
 
-    Returns None if the sender is unknown (not in people config).
+    Returns None for chatroom system messages.
     """
     sender_key = msg.get("senderUsername", "")
 
-    # chatroom system messages
     if "@chatroom" in sender_key:
         return None
 
-    if sender_key == me_wxid:
-        return "我"
-
-    person = people.get(sender_key)
-    if person:
-        nickname = person.get("nickname", "")
-        if nickname:
-            return nickname
-        return person.get("name", sender_key)
-
-    # Unknown sender — use display name from message
-    return msg.get("senderDisplayName", sender_key)
+    return msg.get("senderDisplayName") or sender_key
 
 
 def _format_timestamp(msg: Message) -> str:
     """Format message timestamp to [YYYY-MM-DD HH:MM:SS]."""
     formatted = msg.get("formattedTime", "")
     if formatted:
-        # formattedTime is like "2025-03-14 11:10:26"
         return formatted[:19]
 
     create_time = msg.get("createTime")
@@ -86,11 +70,11 @@ def _clean_content(content: str) -> str:
     return content.strip()
 
 
-def convert_messages(messages: list[Message], people: PeopleConfig, me_wxid: str) -> list[str]:
+def convert_messages(messages: list[Message]) -> list[str]:
     """Convert a list of WeFlow messages to plain text lines.
 
     Returns a list of formatted lines like:
-        [2025-03-14 11:10] 鹏哥: 明天下午三点不见不散
+        [2025-03-14 11:10:26] 白焕鹏: 明天下午三点不见不散
     """
     sorted_msgs = sorted(messages, key=lambda m: m.get("createTime", 0))
     lines: list[str] = []
@@ -99,8 +83,8 @@ def convert_messages(messages: list[Message], people: PeopleConfig, me_wxid: str
         if not _should_keep(msg):
             continue
 
-        nickname = _resolve_nickname(msg, people, me_wxid)
-        if nickname is None:
+        sender = _resolve_sender(msg)
+        if sender is None:
             continue
 
         timestamp = _format_timestamp(msg)
@@ -108,16 +92,6 @@ def convert_messages(messages: list[Message], people: PeopleConfig, me_wxid: str
         if not content:
             continue
 
-        lines.append(f"[{timestamp}] {nickname}: {content}")
+        lines.append(f"[{timestamp}] {sender}: {content}")
 
     return lines
-
-
-def convert_file(
-    messages: list[Message],
-    people: PeopleConfig,
-    me_wxid: str,
-) -> str:
-    """Convert all messages from a WeFlow export to plain text."""
-    lines = convert_messages(messages, people, me_wxid)
-    return "\n".join(lines)

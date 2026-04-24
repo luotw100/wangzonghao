@@ -6,10 +6,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 SESSION_GAP_SECONDS = 30 * 60  # 30 minutes
-WINDOW_TOKEN_LIMIT = 10_000
-MAX_WINDOW_TOKENS = 40_000  # Hard cap: never merge beyond this to stay within LLM context limits
-OVERLAP_SESSIONS = 2
-MIN_MY_MESSAGES = 10
+WINDOW_TOKEN_LIMIT = 40_000
 
 # Rough token estimate: 1 Chinese char ≈ 0.6 tokens, 1 ASCII char ≈ 0.25 tokens
 # For mixed Chinese text, ~2 chars per token is a safe approximation
@@ -24,10 +21,6 @@ class TextMessage:
     sender: str
     content: str
     raw_line: str
-
-    @property
-    def is_me(self) -> bool:
-        return self.sender == "我"
 
 
 @dataclass
@@ -51,10 +44,6 @@ class Window:
         if start == end:
             return start
         return f"{start} ~ {end}"
-
-    @property
-    def my_message_count(self) -> int:
-        return sum(1 for m in self.messages if m.is_me)
 
     @property
     def text(self) -> str:
@@ -132,7 +121,7 @@ def _estimate_tokens(messages: list[TextMessage]) -> int:
 
 
 def pack_windows(sessions: list[list[TextMessage]]) -> list[Window]:
-    """Pack sessions into windows with overlap."""
+    """Pack sessions into windows, no overlap."""
     if not sessions:
         return []
 
@@ -143,29 +132,16 @@ def pack_windows(sessions: list[list[TextMessage]]) -> list[Window]:
     while i < len(sessions):
         window_sessions: list[list[TextMessage]] = []
         total_tokens = 0
-        j = i
 
-        while j < len(sessions):
-            s_tokens = _estimate_tokens(sessions[j])
+        while i < len(sessions):
+            s_tokens = _estimate_tokens(sessions[i])
             if total_tokens + s_tokens > WINDOW_TOKEN_LIMIT and window_sessions:
                 break
-            window_sessions.append(sessions[j])
+            window_sessions.append(sessions[i])
             total_tokens += s_tokens
-            j += 1
+            i += 1
 
-        # Check minimum "my" message count
-        my_count = sum(1 for s in window_sessions for m in s if m.is_me)
-        new_tokens = _estimate_tokens([m for s in window_sessions for m in s])
-        prev_tokens = _estimate_tokens(windows[-1].messages) if windows else 0
-        can_merge = my_count < MIN_MY_MESSAGES and windows and (prev_tokens + new_tokens <= MAX_WINDOW_TOKENS)
-        if can_merge:
-            # Merge into previous window
-            windows[-1].sessions.extend(window_sessions)
-        else:
-            windows.append(Window(window_id=window_id, sessions=window_sessions))
-            window_id += 1
-
-        # Next window starts with overlap
-        i = max(i + 1, j - OVERLAP_SESSIONS)
+        windows.append(Window(window_id=window_id, sessions=window_sessions))
+        window_id += 1
 
     return windows

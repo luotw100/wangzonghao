@@ -1,26 +1,16 @@
 import asyncio
-import json
-import os
 import time
 import uuid
 
-import redis
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 
 from chat.db import STORAGE_DIR, SessionLocal, ensure_database, get_db, utc_now
-from chat.models import Conversation, Message
-from chat.schemas import ConversationCreate, ConversationMessageCreate, ConversationUpdate
+from chat.models import Conversation, Message, User
+from chat.schemas import ConversationCreate, ConversationUpdate, MessageCreate, UserCreate, UserUpdate
 
 ensure_database()
-
-# --- Redis ---
-REDIS_URL = os.environ.get("REDIS_URL")
-if not REDIS_URL:
-    raise RuntimeError("环境变量 REDIS_URL 未设置，例: redis://localhost:6379/0")
-_redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
-REDIS_INBOX_KEY = "robot:inbox"
 
 # --- FastAPI 实例与路由 ---
 app = FastAPI(title="Laborster Chat")
@@ -28,17 +18,33 @@ app = FastAPI(title="Laborster Chat")
 app.mount("/storage", StaticFiles(directory=str(STORAGE_DIR)), name="storage")
 
 
+# --- User helpers ---
+
+def get_user_or_404(db: Session, user_id: str, include_deleted: bool = False) -> User:
+    query = db.query(User).filter(User.id == user_id)
+    if not include_deleted:
+        query = query.filter(User.is_deleted.is_(False))
+    user = query.first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    return user
+
+
+# --- Conversation helpers ---
+
 def get_conversation_query(db: Session, include_deleted: bool = False):
     query = db.query(Conversation)
     if not include_deleted:
         query = query.filter(Conversation.is_deleted.is_(False))
     return query
 
+
 def get_conversation_or_404(db: Session, conv_id: str, include_deleted: bool = False) -> Conversation:
     conversation = get_conversation_query(db, include_deleted=include_deleted).filter(Conversation.id == conv_id).first()
     if not conversation:
         raise HTTPException(status_code=404, detail="会话不存在")
     return conversation
+
 
 def get_messages_after_id(db: Session, conversation_id: str, last_id: int):
     return (
@@ -57,40 +63,122 @@ def build_conversation_messages_payload(db: Session, conversation_id: str, last_
         "messages": messages,
     }
 
+
+# --- User API ---
+
+@app.post("/api/users")
+def create_user(user_in: UserCreate, db: Session = Depends(get_db)):
+    now = utc_now()
+    user = User(
+        id=f"u_{uuid.uuid4().hex[:8]}",
+        name=user_in.name,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.get("/api/users")
+def list_users(
+    include_deleted: bool = Query(False),
+    db: Session = Depends(get_db),
+):
+    query = db.query(User)
+    if not include_deleted:
+        query = query.filter(User.is_deleted.is_(False))
+    return query.order_by(User.created_at.desc()).all()
+
+
+@app.get("/api/users/{user_id}")
+def get_user(user_id: str, db: Session = Depends(get_db)):
+    return get_user_or_404(db, user_id, include_deleted=True)
+
+
+@app.put("/api/users/{user_id}")
+def update_user(user_id: str, user_update: UserUpdate, db: Session = Depends(get_db)):
+    user = get_user_or_404(db, user_id)
+    if user_update.name is not None:
+        user.name = user_update.name
+    user.updated_at = utc_now()
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.delete("/api/users/{user_id}")
+def delete_user(user_id: str, db: Session = Depends(get_db)):
+    user = get_user_or_404(db, user_id)
+    now = utc_now()
+    user.is_deleted = True
+    user.deleted_at = now
+    user.updated_at = now
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@app.post("/api/users/{user_id}/restore")
+def restore_user(user_id: str, db: Session = Depends(get_db)):
+    user = get_user_or_404(db, user_id, include_deleted=True)
+    if not user.is_deleted:
+        return user
+    user.is_deleted = False
+    user.deleted_at = None
+    user.updated_at = utc_now()
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 # --- 会话 API ---
+
 @app.post("/api/conversations")
 def create_conversation(conv_in: ConversationCreate, db: Session = Depends(get_db)):
-    now_str = utc_now().strftime("%m%d_%H%M")
+    # Validate both users exist
+    get_user_or_404(db, conv_in.user_a_id)
+    get_user_or_404(db, conv_in.user_b_id)
+
+    if conv_in.user_a_id == conv_in.user_b_id:
+        raise HTTPException(status_code=400, detail="两个参与者不能是同一个用户")
+
+    now = utc_now()
+    now_str = now.strftime("%m%d_%H%M")
     final_title = conv_in.title if conv_in.title else f"Conv_{now_str}"
 
     conv_id = f"c_{uuid.uuid4().hex[:12]}"
     db_conv = Conversation(
         id=conv_id,
-        title=final_title
+        title=final_title,
+        user_a_id=conv_in.user_a_id,
+        user_b_id=conv_in.user_b_id,
+        created_at=now,
+        updated_at=now,
     )
     db.add(db_conv)
     db.commit()
     db.refresh(db_conv)
     return db_conv
 
+
 @app.get("/api/conversations")
 def list_conversations(
-    include_deleted: bool = Query(False, description="是否返回已删除的会话"),
-    db: Session = Depends(get_db)
+    include_deleted: bool = Query(False),
+    db: Session = Depends(get_db),
 ):
     return get_conversation_query(db, include_deleted=include_deleted).order_by(Conversation.updated_at.desc()).all()
 
+
 @app.get("/api/conversations/{conv_id}")
-def get_conversation(
-    conv_id: str,
-    db: Session = Depends(get_db)
-):
+def get_conversation(conv_id: str, db: Session = Depends(get_db)):
     return get_conversation_or_404(db, conv_id, include_deleted=True)
+
 
 @app.put("/api/conversations/{conv_id}")
 def update_conversation(conv_id: str, conv_update: ConversationUpdate, db: Session = Depends(get_db)):
     db_conv = get_conversation_or_404(db, conv_id)
-
     if conv_update.title is not None:
         db_conv.title = conv_update.title
     db_conv.updated_at = utc_now()
@@ -98,82 +186,69 @@ def update_conversation(conv_id: str, conv_update: ConversationUpdate, db: Sessi
     db.refresh(db_conv)
     return db_conv
 
+
 @app.delete("/api/conversations/{conv_id}")
 def delete_conversation(conv_id: str, db: Session = Depends(get_db)):
     db_conv = get_conversation_or_404(db, conv_id)
     now = utc_now()
-
     db_conv.is_deleted = True
     db_conv.deleted_at = now
     db_conv.updated_at = now
-
     db.commit()
     db.refresh(db_conv)
     return db_conv
+
 
 @app.post("/api/conversations/{conv_id}/restore")
 def restore_conversation(conv_id: str, db: Session = Depends(get_db)):
     db_conv = get_conversation_or_404(db, conv_id, include_deleted=True)
     if not db_conv.is_deleted:
         return db_conv
-
     db_conv.is_deleted = False
     db_conv.deleted_at = None
     db_conv.updated_at = utc_now()
-
     db.commit()
     db.refresh(db_conv)
     return db_conv
 
+
 # --- 消息 API ---
+
 @app.post("/api/conversations/{conversation_id}/messages")
 def send_message(
     conversation_id: str,
-    msg_in: ConversationMessageCreate,
-    db: Session = Depends(get_db)
+    msg_in: MessageCreate,
+    db: Session = Depends(get_db),
 ):
-    if msg_in.role not in ["user", "robot"]:
-        raise HTTPException(status_code=400, detail="角色 role 只能是 'user' 或 'robot'")
+    conv = get_conversation_or_404(db, conversation_id)
 
-    get_conversation_or_404(db, conversation_id)
+    # Validate sender is a participant
+    if msg_in.sender_id not in (conv.user_a_id, conv.user_b_id):
+        raise HTTPException(status_code=400, detail="发送者不是该会话的参与者")
 
     db_msg = Message(
         conversation_id=conversation_id,
-        role=msg_in.role,
+        sender_id=msg_in.sender_id,
         msg_type=msg_in.msg_type,
-        content=msg_in.content
+        content=msg_in.content,
     )
     db.add(db_msg)
 
-    # 更新会话活跃时间
     db.query(Conversation).filter(Conversation.id == conversation_id).update(
         {"updated_at": utc_now()}
     )
 
     db.commit()
     db.refresh(db_msg)
-
-    # Notify Robot worker via Redis for user messages
-    if msg_in.role == "user":
-        try:
-            _redis_client.lpush(REDIS_INBOX_KEY, json.dumps({
-                "conversation_id": conversation_id,
-                "message_id": db_msg.id,
-                "role": msg_in.role,
-                "content": msg_in.content,
-            }))
-        except Exception:
-            pass  # Redis failure should not block message storage
-
     return {"status": "success", "id": db_msg.id}
+
 
 @app.get("/api/conversations/{conversation_id}/messages")
 async def get_conversation_messages(
     conversation_id: str,
     last_id: int = Query(0, ge=0),
-    timeout: int = Query(0, ge=0, description="超时时间(秒),0 表示立即返回"),
+    timeout: int = Query(0, ge=0),
 ):
-    """按会话获取消息，支持全量快照、增量查询和长轮询。"""
     start_time = time.time()
 
     while True:

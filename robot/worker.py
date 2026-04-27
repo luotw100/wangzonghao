@@ -22,7 +22,6 @@ async def run_worker(runtime_options: RuntimeOptions):
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run the Robot worker service")
     parser.add_argument("--chat-api-base-url", required=True)
-    parser.add_argument("--redis-url", required=True)
     parser.add_argument("--request-timeout", type=float, required=True,
                         help="LLM 请求超时秒数，例: 120")
     return parser.parse_args()
@@ -33,7 +32,6 @@ def main():
     args = parse_args()
     runtime_options = RuntimeOptions(
         chat_api_base_url=args.chat_api_base_url.rstrip("/"),
-        redis_url=args.redis_url,
         request_timeout=args.request_timeout,
     )
     try:

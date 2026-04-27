@@ -1,30 +1,6 @@
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import Column, DateTime, Integer, String, Text
 
 from robot.db import Base, utc_now
-
-
-class Robot(Base):
-    __tablename__ = "robots"
-
-    id = Column(String, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    profile = Column(Text, nullable=True)
-    is_deleted = Column(Boolean, nullable=False, default=False)
-    deleted_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=utc_now, nullable=False)
-    updated_at = Column(DateTime, default=utc_now, nullable=False)
-
-
-class Contact(Base):
-    __tablename__ = "contacts"
-
-    id = Column(String, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    profile = Column(Text, nullable=True)
-    is_deleted = Column(Boolean, nullable=False, default=False)
-    deleted_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=utc_now, nullable=False)
-    updated_at = Column(DateTime, default=utc_now, nullable=False)
 
 
 class ProviderConfig(Base):
@@ -43,12 +19,12 @@ class SessionRecord(Base):
     __tablename__ = "sessions"
 
     id = Column(String, primary_key=True, index=True)
-    title = Column(String, nullable=True)
-    robot_id = Column(String, index=True, nullable=False)
-    contact_id = Column(String, index=True, nullable=False)
-    provider_config_id = Column(String, index=True, nullable=True)
     adapter_type = Column(String, nullable=False, default="chat")
     adapter_thread_id = Column(String, unique=True, index=True, nullable=False)
+    takeover_user_id = Column(String, nullable=False)
+    profile = Column(Text, nullable=True)
+    counterpart_profile = Column(Text, nullable=True)
+    provider_config_id = Column(String, index=True, nullable=True)
     status = Column(String, nullable=False, default="active")
     created_at = Column(DateTime, default=utc_now, nullable=False)
     updated_at = Column(DateTime, default=utc_now, nullable=False)
@@ -71,8 +47,8 @@ class LlmLog(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     session_id = Column(String, index=True, nullable=False)
-    request_messages = Column(Text, nullable=False)   # JSON: the messages array sent to LLM
-    request_pending = Column(Text, nullable=True)      # JSON: pending contents sent to LLM (null if none)
-    response_raw = Column(Text, nullable=False)        # raw LLM response text
+    request_messages = Column(Text, nullable=False)
+    request_pending = Column(Text, nullable=True)
+    response_raw = Column(Text, nullable=False)
     model = Column(String, nullable=True)
     created_at = Column(DateTime, default=utc_now, nullable=False)

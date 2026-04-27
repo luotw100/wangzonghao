@@ -30,24 +30,34 @@ async function request<T>(url: string, options: RequestInit = {}, timeout = 1000
 }
 
 // --- Types ---
-export interface Robot {
+
+export interface ChatUser {
   id: string;
   name: string;
-  profile: string | null;
   is_deleted: boolean;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface Contact {
+export interface Conversation {
   id: string;
-  name: string;
-  profile: string | null;
+  title: string;
+  user_a_id: string;
+  user_b_id: string;
   is_deleted: boolean;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface Message {
+  id: number;
+  conversation_id: string;
+  sender_id: string;
+  msg_type: string;
+  content: string;
+  created_at: string;
 }
 
 export interface ProviderConfig {
@@ -62,14 +72,14 @@ export interface ProviderConfig {
 
 export interface Session {
   id: string;
-  title: string | null;
-  robot_id: string;
-  contact_id: string;
+  adapter_type: string;
+  adapter_thread_id: string;
+  takeover_user_id: string;
+  profile: string | null;
+  counterpart_profile: string | null;
   provider_config_id: string | null;
+  provider_config: ProviderConfig | null;
   status: string;
-  adapter?: { thread_id: string };
-  robot?: { id: string; name: string };
-  contact?: { id: string; name: string };
   created_at: string;
   updated_at: string;
 }
@@ -81,76 +91,109 @@ export interface PlannedReply {
   scheduled_for: string | null;
 }
 
-export interface Message {
-  id: number;
-  conversation_id: string;
-  role: 'user' | 'robot';
-  msg_type: string;
-  content: string;
-  created_at: string;
-}
+// --- Chat Users ---
 
-// --- Robots ---
-export function getRobots(includeDeleted = false) {
+export function getUsers(includeDeleted = false) {
   const query = includeDeleted ? '?include_deleted=true' : '';
-  return request<Robot[]>(`${ROBOT_BASE}/robots${query}`);
+  return request<ChatUser[]>(`${CHAT_BASE}/users${query}`);
 }
 
-export function createRobot(data: { name: string; profile?: string | null }) {
-  return request<Robot>(`${ROBOT_BASE}/robots`, {
+export function createUser(data: { name: string }) {
+  return request<ChatUser>(`${CHAT_BASE}/users`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 }
 
-export function updateRobot(robotId: string, data: { name: string; profile?: string | null }) {
-  return request<Robot>(`${ROBOT_BASE}/robots/${robotId}`, {
+export function updateUser(userId: string, data: { name: string }) {
+  return request<ChatUser>(`${CHAT_BASE}/users/${userId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 }
 
-export function deleteRobot(robotId: string) {
-  return request<void>(`${ROBOT_BASE}/robots/${robotId}`, { method: 'DELETE' });
+export function deleteUser(userId: string) {
+  return request<ChatUser>(`${CHAT_BASE}/users/${userId}`, { method: 'DELETE' });
 }
 
-export function restoreRobot(robotId: string) {
-  return request<Robot>(`${ROBOT_BASE}/robots/${robotId}/restore`, { method: 'POST' });
+export function restoreUser(userId: string) {
+  return request<ChatUser>(`${CHAT_BASE}/users/${userId}/restore`, { method: 'POST' });
 }
 
-// --- Contacts ---
-export function getContacts(includeDeleted = false) {
+// --- Chat Conversations ---
+
+export function getConversations(includeDeleted = false) {
   const query = includeDeleted ? '?include_deleted=true' : '';
-  return request<Contact[]>(`${ROBOT_BASE}/contacts${query}`);
+  return request<Conversation[]>(`${CHAT_BASE}/conversations${query}`);
 }
 
-export function createContact(data: { name: string; profile?: string | null }) {
-  return request<Contact>(`${ROBOT_BASE}/contacts`, {
+export function createConversation(data: { title?: string; user_a_id: string; user_b_id: string }) {
+  return request<Conversation>(`${CHAT_BASE}/conversations`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 }
 
-export function updateContact(contactId: string, data: { name: string; profile?: string | null }) {
-  return request<Contact>(`${ROBOT_BASE}/contacts/${contactId}`, {
+export function updateConversation(convId: string, data: { title: string }) {
+  return request<Conversation>(`${CHAT_BASE}/conversations/${convId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 }
 
-export function deleteContact(contactId: string) {
-  return request<void>(`${ROBOT_BASE}/contacts/${contactId}`, { method: 'DELETE' });
+export function deleteConversation(convId: string) {
+  return request<Conversation>(`${CHAT_BASE}/conversations/${convId}`, { method: 'DELETE' });
 }
 
-export function restoreContact(contactId: string) {
-  return request<Contact>(`${ROBOT_BASE}/contacts/${contactId}/restore`, { method: 'POST' });
+export function restoreConversation(convId: string) {
+  return request<Conversation>(`${CHAT_BASE}/conversations/${convId}/restore`, { method: 'POST' });
 }
 
-// --- Provider Configs ---
+// --- Chat Messages ---
+
+export function sendMessage(conversationId: string, payload: { sender_id: string; msg_type: string; content: string }) {
+  return request<{ status: string; id: number }>(`${CHAT_BASE}/conversations/${conversationId}/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function getMessages(
+  conversationId: string,
+  lastId: number,
+  serverTimeout = 30,
+  signal?: AbortSignal
+): Promise<Message[]> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), serverTimeout > 0 ? 35000 : 10000);
+
+  if (signal) {
+    signal.addEventListener('abort', () => controller.abort());
+  }
+
+  try {
+    const res = await fetch(
+      `${CHAT_BASE}/conversations/${conversationId}/messages?last_id=${lastId}&timeout=${serverTimeout}`,
+      { signal: controller.signal }
+    );
+    clearTimeout(timeoutId);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    return data?.messages || [];
+  } catch (err: unknown) {
+    clearTimeout(timeoutId);
+    if (err instanceof DOMException && err.name === 'AbortError') return [];
+    throw err;
+  }
+}
+
+// --- Robot Provider Configs ---
+
 export function getProviderConfigs() {
   return request<ProviderConfig[]>(`${ROBOT_BASE}/provider-configs`);
 }
@@ -183,16 +226,21 @@ export function deleteProviderConfig(id: string) {
   return request<void>(`${ROBOT_BASE}/provider-configs/${id}`, { method: 'DELETE' });
 }
 
-// --- Sessions ---
-export function getSessions(includeDeleted = false) {
-  const query = includeDeleted ? '?include_deleted=true' : '';
-  return request<Session[]>(`${ROBOT_BASE}/sessions${query}`);
+// --- Robot Sessions ---
+
+export function getRobotConversations() {
+  return request<Conversation[]>(`${ROBOT_BASE}/conversations`);
+}
+
+export function getSessions() {
+  return request<Session[]>(`${ROBOT_BASE}/sessions`);
 }
 
 export function createSession(data: {
-  robot_id: string;
-  contact_id: string;
-  title?: string | null;
+  adapter_thread_id: string;
+  takeover_user_id: string;
+  profile?: string | null;
+  counterpart_profile?: string | null;
   provider_config_id?: string | null;
 }) {
   return request<Session>(`${ROBOT_BASE}/sessions`, {
@@ -203,7 +251,7 @@ export function createSession(data: {
 }
 
 export function getSession(sessionId: string) {
-  return request<Session>(`${ROBOT_BASE}/sessions/${sessionId}?include_deleted=true`);
+  return request<Session>(`${ROBOT_BASE}/sessions/${sessionId}`);
 }
 
 export function updateSession(sessionId: string, data: Record<string, unknown>) {
@@ -218,62 +266,17 @@ export function deleteSession(sessionId: string) {
   return request<void>(`${ROBOT_BASE}/sessions/${sessionId}`, { method: 'DELETE' });
 }
 
-export function restoreSession(sessionId: string) {
-  return request<Session>(`${ROBOT_BASE}/sessions/${sessionId}/restore`, { method: 'POST' });
-}
-
-// --- Messages ---
-export function sendMessage(conversationId: string, payload: { role: string; msg_type: string; content: string }) {
-  return request<{ status: string; id: number }>(`${CHAT_BASE}/conversations/${conversationId}/messages`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
-}
-
-export async function getMessages(
-  conversationId: string,
-  lastId: number,
-  serverTimeout = 30,
-  signal?: AbortSignal
-): Promise<Message[]> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), serverTimeout > 0 ? 35000 : 10000);
-
-  if (signal) {
-    signal.addEventListener('abort', () => controller.abort());
-  }
-
-  try {
-    const res = await fetch(
-      `${CHAT_BASE}/conversations/${conversationId}/messages?last_id=${lastId}&timeout=${serverTimeout}`,
-      { signal: controller.signal }
-    );
-    clearTimeout(timeoutId);
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-    const payload = await res.json();
-    return payload.messages || [];
-  } catch (err: unknown) {
-    clearTimeout(timeoutId);
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new Error('请求超时，请检查网络连接');
-    }
-    throw err;
-  }
-}
+// --- Planned Replies ---
 
 export async function getPlannedReplies(
   sessionId: string,
+  lastCount: number,
   serverTimeout = 30,
-  signal?: AbortSignal,
-  lastCount = -1
+  signal?: AbortSignal
 ): Promise<PlannedReply[]> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), serverTimeout > 0 ? 35000 : 10000);
-
-  if (signal) {
-    signal.addEventListener('abort', () => controller.abort());
-  }
+  if (signal) signal.addEventListener('abort', () => controller.abort());
 
   try {
     const res = await fetch(
@@ -281,13 +284,11 @@ export async function getPlannedReplies(
       { signal: controller.signal }
     );
     clearTimeout(timeoutId);
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (err: unknown) {
     clearTimeout(timeoutId);
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new Error('请求超时，请检查网络连接');
-    }
+    if (err instanceof DOMException && err.name === 'AbortError') return [];
     throw err;
   }
 }

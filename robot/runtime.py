@@ -6,22 +6,18 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-import redis.asyncio as aioredis
 from sqlalchemy.orm import Session
 
-from robot.clients import ChatAPIClient, ProviderClient
+from robot.clients import ChatAdapter, ProviderClient
 from robot.db import SessionLocal, utc_now
-from robot.models import Contact, LlmLog, ProviderConfig, Robot, RobotMessage, SessionRecord
+from robot.models import LlmLog, ProviderConfig, RobotMessage, SessionRecord
 
 logger = logging.getLogger(__name__)
-
-REDIS_INBOX_KEY = "robot:inbox"
 
 
 @dataclass(frozen=True)
 class RuntimeOptions:
     chat_api_base_url: str
-    redis_url: str
     request_timeout: float
 
 
@@ -101,18 +97,17 @@ def format_beijing_time(dt: Optional[datetime] = None) -> str:
 
 
 def build_system_prompt(
-    robot: Robot,
-    contact: Contact,
+    session_record: SessionRecord,
     pending: Optional[List[str]] = None,
 ) -> str:
     parts: list[str] = [SYSTEM_INSTRUCTION]
 
-    if robot.profile:
-        parts.append(robot.profile)
+    if session_record.profile:
+        parts.append(session_record.profile)
 
-    ctx_lines = [f"---\n【当前联系人】{contact.name}"]
-    if contact.profile:
-        ctx_lines.append(contact.profile)
+    ctx_lines: list[str] = []
+    if session_record.counterpart_profile:
+        ctx_lines.append(f"---\n【当前联系人画像】\n{session_record.counterpart_profile}")
     ctx_lines.append(f"---\n【当前时间】{format_beijing_time()}")
 
     if pending:
@@ -222,7 +217,6 @@ class SessionController:
                 await self._task
 
     async def _run(self):
-        """Inbox consumer — runs concurrently with _think_and_send."""
         try:
             while True:
                 msg = await self.inbox.get()
@@ -250,7 +244,7 @@ class SessionController:
         try:
             db.add(RobotMessage(
                 session_id=self.session_id,
-                role=payload.get("role", "user"),
+                role="user",
                 content=payload.get("content", ""),
                 status="sent",
                 created_at=utc_now(),
@@ -273,7 +267,6 @@ class SessionController:
             db.close()
 
     def _cancel_and_capture_scheduled(self) -> List[str]:
-        """Cancel all scheduled messages and return their content."""
         db = SessionLocal()
         try:
             rows = (
@@ -339,9 +332,7 @@ class SessionController:
     # -- Core loop ---------------------------------------------------------
 
     async def _think_and_send(self, pending_contents: Optional[List[str]] = None):
-        """Think → send loop. Re-enters on interrupt."""
         while True:
-            # --- THINKING ---
             self._state = "thinking"
             self._interrupted = False
 
@@ -351,19 +342,15 @@ class SessionController:
                 return
 
             if self._interrupted:
-                # New user message arrived during LLM call.
-                # Merge pending decisions + new messages into memory-only pending.
                 new_pending: list[str] = []
                 for i, d in enumerate(result.get("pending", [])):
                     if d["action"] == "send":
-                        # Use modified content if provided, otherwise original
                         content = d["content"] if "content" in d else pending_contents[i]
                         new_pending.append(content)
                 new_pending.extend(m["content"] for m in result["messages"])
                 pending_contents = new_pending if new_pending else None
                 continue
 
-            # Merge pending "send" decisions + new messages → write all to DB
             messages_to_schedule: List[Dict[str, Any]] = []
             if pending_contents and result["pending"]:
                 for i, d in enumerate(result["pending"]):
@@ -376,14 +363,12 @@ class SessionController:
 
             all_scheduled_ids = self._get_all_scheduled_ids()
 
-            # --- SENDING ---
             self._state = "sending"
             self._interrupted = False
 
             await self._send_messages(all_scheduled_ids)
 
             if self._interrupted:
-                # Cancel unsent scheduled messages, capture content as pending
                 remaining = self._cancel_and_capture_scheduled()
                 pending_contents = remaining if remaining else None
                 continue
@@ -403,6 +388,7 @@ class SessionController:
             if not session_record:
                 return
             adapter_thread_id = session_record.adapter_thread_id
+            takeover_user_id = session_record.takeover_user_id
         finally:
             db.close()
 
@@ -441,7 +427,7 @@ class SessionController:
                 db.close()
 
             try:
-                await self.runtime.chat.send_message(adapter_thread_id, content)
+                await self.runtime.adapter.send_message(adapter_thread_id, takeover_user_id, content)
             except Exception as exc:
                 logger.error("Failed to send reply for session %s: %s", self.session_id, exc)
 
@@ -455,12 +441,6 @@ class SessionController:
                 SessionRecord.id == self.session_id
             ).first()
             if not session_record or session_record.status != "active":
-                return None
-
-            robot = db.query(Robot).filter(Robot.id == session_record.robot_id).first()
-            contact = db.query(Contact).filter(Contact.id == session_record.contact_id).first()
-            if not robot or not contact:
-                logger.error("Session %s references missing robot or contact", self.session_id)
                 return None
 
             provider_config = get_provider_config(db, session_record)
@@ -481,7 +461,7 @@ class SessionController:
                 .all()
             )
 
-            system_prompt = build_system_prompt(robot, contact, pending=pending_contents)
+            system_prompt = build_system_prompt(session_record, pending=pending_contents)
 
             llm_messages: List[Dict[str, str]] = [
                 {"role": "system", "content": system_prompt}
@@ -543,34 +523,39 @@ class SessionController:
 
 
 # ---------------------------------------------------------------------------
-# RobotRuntime — top-level orchestrator
+# RobotRuntime — top-level orchestrator (long-polling based)
 # ---------------------------------------------------------------------------
 
 class RobotRuntime:
     def __init__(self, options: RuntimeOptions):
         self.options = options
-        self.chat = ChatAPIClient(options.chat_api_base_url)
+        self.adapter = ChatAdapter(options.chat_api_base_url)
         self.provider = ProviderClient(options.request_timeout)
-        self.redis: aioredis.Redis = aioredis.from_url(options.redis_url, decode_responses=True)
         self._task: Optional[asyncio.Task[Any]] = None
         self._controllers: Dict[str, SessionController] = {}
+        self._poll_tasks: Dict[str, asyncio.Task[Any]] = {}
 
     async def start(self):
         await self._recover_unprocessed()
         loop = asyncio.get_running_loop()
-        self._task = loop.create_task(self._consume_loop(), name="robot-consumer")
+        self._task = loop.create_task(self._session_scan_loop(), name="session-scanner")
 
     async def stop(self):
         if self._task:
             self._task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._task
+        for task in self._poll_tasks.values():
+            task.cancel()
+        for task in self._poll_tasks.values():
+            with suppress(asyncio.CancelledError):
+                await task
         for ctrl in self._controllers.values():
             await ctrl.stop()
         self._controllers.clear()
-        await self.chat.close()
+        self._poll_tasks.clear()
+        await self.adapter.close()
         await self.provider.close()
-        await self.redis.aclose()
 
     async def _recover_unprocessed(self):
         db = SessionLocal()
@@ -585,60 +570,87 @@ class RobotRuntime:
                 )
                 if last_msg and last_msg.role == "user":
                     logger.info("Recovery: re-triggering session %s", sr.id)
-                    await self.redis.lpush(
-                        REDIS_INBOX_KEY,
-                        json.dumps({
-                            "conversation_id": sr.adapter_thread_id,
-                            "role": "user",
-                            "content": "",
-                            "recovery": True,
-                        }),
-                    )
+                    ctrl = self._get_or_create_controller(sr.id)
+                    await ctrl.inbox.put({"content": "", "recovery": True})
         finally:
             db.close()
 
-    async def _consume_loop(self):
-        logger.info("Consumer loop started")
-        while True:
-            try:
-                result = await self.redis.brpop(REDIS_INBOX_KEY, timeout=5)
-                if result is None:
-                    continue
-                _, raw = result
-                payload = json.loads(raw)
-                await self._handle_inbox_message(payload)
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.error("Consumer loop error: %s", exc)
-                await asyncio.sleep(1)
-
-    async def _handle_inbox_message(self, payload: Dict[str, Any]):
-        conversation_id = payload.get("conversation_id")
-        if not conversation_id:
-            logger.warning("Inbox message missing conversation_id: %s", payload)
-            return
-
-        db = SessionLocal()
-        try:
-            session_record = (
-                db.query(SessionRecord)
-                .filter(
-                    SessionRecord.adapter_thread_id == conversation_id,
-                    SessionRecord.status == "active",
-                )
-                .first()
-            )
-            if not session_record:
-                logger.warning("No active session for conversation %s", conversation_id)
-                return
-            session_id = session_record.id
-        finally:
-            db.close()
-
+    def _get_or_create_controller(self, session_id: str) -> SessionController:
         if session_id not in self._controllers:
             ctrl = SessionController(session_id, self)
             self._controllers[session_id] = ctrl
-            await ctrl.start()
+            asyncio.get_running_loop().create_task(ctrl.start())
+        return self._controllers[session_id]
 
-        await self._controllers[session_id].inbox.put(payload)
+    async def _session_scan_loop(self):
+        """Periodically scan for active sessions and start/stop poll tasks."""
+        while True:
+            try:
+                db = SessionLocal()
+                try:
+                    active_sessions = db.query(SessionRecord).filter(
+                        SessionRecord.status == "active"
+                    ).all()
+                    active_ids = {s.id for s in active_sessions}
+                    session_map = {s.id: s for s in active_sessions}
+                finally:
+                    db.close()
+
+                # Start poll tasks for new active sessions
+                for sid in active_ids:
+                    if sid not in self._poll_tasks or self._poll_tasks[sid].done():
+                        sr = session_map[sid]
+                        self._poll_tasks[sid] = asyncio.get_running_loop().create_task(
+                            self._poll_session(sr.id, sr.adapter_thread_id, sr.takeover_user_id),
+                            name=f"poll-{sid}",
+                        )
+
+                # Stop poll tasks for inactive sessions
+                for sid in list(self._poll_tasks.keys()):
+                    if sid not in active_ids:
+                        self._poll_tasks[sid].cancel()
+                        with suppress(asyncio.CancelledError):
+                            await self._poll_tasks[sid]
+                        del self._poll_tasks[sid]
+
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error("Session scan error: %s", exc)
+
+            await asyncio.sleep(5)
+
+    async def _poll_session(self, session_id: str, thread_id: str, takeover_user_id: str):
+        """Long-poll a single session for new messages from the counterpart."""
+        # Get the last known message id from robot_messages
+        last_id = 0
+        db = SessionLocal()
+        try:
+            # First, get current messages to establish baseline
+            result = await self.adapter.get_messages(thread_id, last_id=0, timeout=0)
+            messages = result.get("messages", [])
+            if messages:
+                last_id = messages[-1]["id"]
+        except Exception as exc:
+            logger.error("Failed to get initial messages for session %s: %s", session_id, exc)
+        finally:
+            db.close()
+
+        while True:
+            try:
+                result = await self.adapter.get_messages(thread_id, last_id=last_id, timeout=30)
+                messages = result.get("messages", [])
+                for msg in messages:
+                    last_id = msg["id"]
+                    # Only process messages from the counterpart (not from takeover_user)
+                    if msg.get("sender_id") != takeover_user_id:
+                        ctrl = self._get_or_create_controller(session_id)
+                        await ctrl.inbox.put({
+                            "content": msg.get("content", ""),
+                            "sender_id": msg.get("sender_id"),
+                        })
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error("Poll error for session %s: %s", session_id, exc)
+                await asyncio.sleep(2)

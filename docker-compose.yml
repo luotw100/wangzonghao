@@ -16,6 +16,8 @@ services:
 
   redis:
     image: redis:7-alpine
+    volumes:
+      - app-storage:/data
     restart: unless-stopped
 
   chat:
@@ -53,3 +55,8 @@ services:
 
 volumes:
   app-storage:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${PWD}/storage

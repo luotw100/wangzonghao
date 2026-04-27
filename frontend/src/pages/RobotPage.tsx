@@ -1,15 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { LaborsterLogo, IconPlus } from '../components/Icons';
+import { LaborsterLogo, IconPlus, IconArrowLeft } from '../components/Icons';
 import { Modal } from '../components/Modal';
 import { cn } from '../lib/utils';
 import * as api from '../lib/api';
-import type { Conversation, Session, ProviderConfig } from '../lib/api';
+import type { ChatUser, Conversation, Session, ProviderConfig } from '../lib/api';
+import { PROVIDER_TEMPLATES } from '../lib/templates';
 
 export function RobotPage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [providerConfigs, setProviderConfigs] = useState<ProviderConfig[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [users, setUsers] = useState<ChatUser[]>([]);
   const [error, setError] = useState('');
   const [tab, setTab] = useState<'sessions' | 'providers'>('sessions');
 
@@ -27,6 +29,7 @@ export function RobotPage() {
   const [providerBaseUrl, setProviderBaseUrl] = useState('');
   const [providerApiKey, setProviderApiKey] = useState('');
   const [providerModel, setProviderModel] = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState(-1);
 
   // Edit session modal
   const [editingSession, setEditingSession] = useState<Session | null>(null);
@@ -46,7 +49,14 @@ export function RobotPage() {
     try { setConversations(await api.getRobotConversations()); } catch (e) { setError(String(e)); }
   }, []);
 
-  useEffect(() => { loadSessions(); loadProviders(); }, [loadSessions, loadProviders]);
+  const loadUsers = useCallback(async () => {
+    try { setUsers(await api.getUsers(true)); } catch (e) { setError(String(e)); }
+  }, []);
+
+  useEffect(() => { loadSessions(); loadProviders(); loadUsers(); loadConversations(); }, [loadSessions, loadProviders, loadUsers, loadConversations]);
+
+  const userMap = new Map(users.map(u => [u.id, u.name]));
+  const userName = (id: string) => userMap.get(id) || id;
 
   const selectedConv = conversations.find(c => c.id === selectedConvId);
 
@@ -115,7 +125,7 @@ export function RobotPage() {
         api_key: providerApiKey || null,
         default_model: providerModel.trim(),
       });
-      setProviderName(''); setProviderBaseUrl(''); setProviderApiKey(''); setProviderModel('');
+      setProviderName(''); setProviderBaseUrl(''); setProviderApiKey(''); setProviderModel(''); setSelectedTemplate(-1);
       setShowCreateProvider(false);
       await loadProviders();
     } catch (e) { setError(String(e)); }
@@ -134,10 +144,17 @@ export function RobotPage() {
     <div className="w-full h-dvh overflow-hidden flex flex-col bg-bg-primary text-text-primary">
       {/* Header */}
       <header className="h-14 flex items-center justify-between px-6 border-b border-border-glow/20 shrink-0 bg-bg-secondary/80 backdrop-blur-sm">
-        <Link to="/" className="flex items-center gap-3">
-          <LaborsterLogo />
-          <span className="font-brand font-medium tracking-wider text-sm text-accent">Robot</span>
-        </Link>
+        <div className="flex items-center gap-4">
+          <Link to="/" className="flex items-center gap-2 text-text-secondary hover:text-accent transition-colors">
+            <IconArrowLeft size={18} />
+            <span className="text-sm">返回</span>
+          </Link>
+          <div className="w-px h-5 bg-border-glow/30" />
+          <div className="flex items-center gap-2">
+            <LaborsterLogo size={22} />
+            <span className="font-brand font-medium tracking-wider text-sm text-accent">Robot</span>
+          </div>
+        </div>
       </header>
 
       {/* Error */}
@@ -189,7 +206,15 @@ export function RobotPage() {
                     >
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">会话 {session.adapter_thread_id}</span>
+                          <span className="text-sm font-medium">
+                            {(() => {
+                              const conv = conversations.find(c => c.id === session.adapter_thread_id);
+                              if (conv) {
+                                return `${userName(conv.user_a_id)} ↔ ${userName(conv.user_b_id)}`;
+                              }
+                              return `会话 ${session.adapter_thread_id}`;
+                            })()}
+                          </span>
                           <span className={cn(
                             'px-2 py-0.5 rounded-full text-[10px] font-medium',
                             session.status === 'active' ? 'bg-success/10 text-success' : 'bg-danger-bg text-danger'
@@ -198,7 +223,7 @@ export function RobotPage() {
                           </span>
                         </div>
                         <div className="text-xs text-text-secondary mt-1">
-                          接管用户: {session.takeover_user_id}
+                          AI 扮演: {userName(session.takeover_user_id)}
                           {session.provider_config?.name && ` · Provider: ${session.provider_config.name}`}
                         </div>
                         {session.profile && (
@@ -274,7 +299,9 @@ export function RobotPage() {
             >
               <option value="">选择会话</option>
               {availableConversations.map(c => (
-                <option key={c.id} value={c.id}>{c.title} ({c.id})</option>
+                <option key={c.id} value={c.id}>
+                  {c.title} — {userName(c.user_a_id)} ↔ {userName(c.user_b_id)}
+                </option>
               ))}
             </select>
           </div>
@@ -294,7 +321,7 @@ export function RobotPage() {
                         : 'border-border-glow/30 bg-bg-tertiary text-text-secondary hover:border-accent/30'
                     )}
                   >
-                    {uid}
+                    {userName(uid)}
                   </button>
                 ))}
               </div>
@@ -390,6 +417,32 @@ export function RobotPage() {
       <Modal open={showCreateProvider} onClose={() => setShowCreateProvider(false)}>
         <h3 className="text-lg font-medium mb-4">添加 Provider</h3>
         <div className="space-y-3 mb-4">
+          {/* Template selector */}
+          <div>
+            <label className="text-xs text-text-secondary mb-1.5 block">快速填充模板</label>
+            <div className="flex flex-wrap gap-1.5">
+              {PROVIDER_TEMPLATES.map((tpl, i) => (
+                <button
+                  key={i}
+                  onClick={() => {
+                    setSelectedTemplate(i);
+                    setProviderName(tpl.name);
+                    setProviderBaseUrl(tpl.base_url);
+                    setProviderModel(tpl.default_model);
+                  }}
+                  className={cn(
+                    'px-2.5 py-1 rounded-lg text-xs border transition-all',
+                    selectedTemplate === i
+                      ? 'border-accent/50 bg-accent/10 text-accent'
+                      : 'border-border-glow/30 bg-bg-tertiary text-text-secondary hover:border-accent/30 hover:text-text-primary'
+                  )}
+                >
+                  {tpl.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
           <input
             value={providerName}
             onChange={e => setProviderName(e.target.value)}

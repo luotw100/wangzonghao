@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { cn, formatDate } from '../lib/utils';
-import { LaborsterLogo, IconPlus, IconClose } from '../components/Icons';
+import { LaborsterLogo, IconPlus, IconClose, IconArrowLeft, IconSwap } from '../components/Icons';
 import { Modal } from '../components/Modal';
 import * as api from '../lib/api';
 import type { ChatUser, Conversation, Message } from '../lib/api';
@@ -16,6 +16,7 @@ export function ChatPage() {
   const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<'conversations' | 'users'>('conversations');
+  const [swapped, setSwapped] = useState(false);
 
   // Modals
   const [showCreateUser, setShowCreateUser] = useState(false);
@@ -204,10 +205,16 @@ export function ChatPage() {
       )}>
         {/* Header */}
         <div className="flex items-center justify-between px-5 h-14 border-b border-border-glow/30">
-          <Link to="/" className="flex items-center gap-3">
-            <LaborsterLogo />
-            <span className="font-brand font-medium tracking-wider text-sm text-accent">Chat</span>
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link to="/" className="flex items-center gap-1.5 text-text-secondary hover:text-accent transition-colors">
+              <IconArrowLeft size={16} />
+            </Link>
+            <div className="w-px h-4 bg-border-glow/30" />
+            <div className="flex items-center gap-2">
+              <LaborsterLogo size={20} />
+              <span className="font-brand font-medium tracking-wider text-sm text-accent">Chat</span>
+            </div>
+          </div>
           <button onClick={() => setSidebarOpen(false)} className="md:hidden w-10 h-10 flex items-center justify-center rounded-full hover:bg-bg-tertiary">
             <IconClose size={20} />
           </button>
@@ -318,7 +325,24 @@ export function ChatPage() {
         <header className="h-14 flex items-center justify-between px-4 md:px-6 border-b border-border-glow/20 shrink-0 bg-bg-secondary/80 backdrop-blur-sm">
           <h2 className="font-medium text-text-primary">{activeConv ? activeConv.title : '选择或创建一个会话'}</h2>
           {activeConv && userA && userB && (
-            <div className="text-xs text-text-secondary">{userA.name} ↔ {userB.name}</div>
+            <div className="flex items-center gap-3">
+              <div className="text-xs text-text-secondary">
+                {swapped ? `${userB.name} ↔ ${userA.name}` : `${userA.name} ↔ ${userB.name}`}
+              </div>
+              <button
+                onClick={() => setSwapped(s => !s)}
+                className={cn(
+                  'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-all border',
+                  swapped
+                    ? 'bg-accent/15 text-accent border-accent/30'
+                    : 'bg-bg-tertiary text-text-secondary border-border-glow/20 hover:text-text-primary hover:border-accent/20'
+                )}
+                title="切换左右显示"
+              >
+                <IconSwap size={14} />
+                <span>换边</span>
+              </button>
+            </div>
           )}
         </header>
 
@@ -344,10 +368,12 @@ export function ChatPage() {
             ) : (
               messages.map(msg => {
                 const sender = users.find(u => u.id === msg.sender_id);
-                const isUserA = msg.sender_id === activeConv?.user_a_id;
+                const isLeft = swapped
+                  ? msg.sender_id !== activeConv?.user_a_id
+                  : msg.sender_id === activeConv?.user_a_id;
                 return (
-                  <div key={msg.id} className={cn('flex message-enter', isUserA ? 'justify-start' : 'justify-end')}>
-                    {isUserA ? (
+                  <div key={msg.id} className={cn('flex message-enter', isLeft ? 'justify-start' : 'justify-end')}>
+                    {isLeft ? (
                       <div className="flex gap-3 max-w-[85%] md:max-w-[80%]">
                         <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center text-xs font-bold text-accent shrink-0 mt-1">
                           {sender?.name?.[0] || '?'}

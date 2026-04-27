@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, Column, DateTime, String, Text, BigInteger
 
 from chat.db import Base, utc_now
 
@@ -17,7 +17,7 @@ class Conversation(Base):
 class Message(Base):
     __tablename__ = "messages"
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
     conversation_id = Column(String, index=True)
     role = Column(String, nullable=False)
     msg_type = Column(String, nullable=False)

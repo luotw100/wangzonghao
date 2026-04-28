@@ -8,11 +8,11 @@ class BaseAdapter(ABC):
     """Abstract base for message platform adapters (Chat, WeChat, Feishu, etc.)."""
 
     @abstractmethod
-    async def list_conversations(self, include_deleted: bool = False) -> List[Dict[str, Any]]:
+    async def list_conversations(self) -> List[Dict[str, Any]]:
         ...
 
     @abstractmethod
-    async def get_conversation(self, conversation_id: str, include_deleted: bool = False) -> Dict[str, Any]:
+    async def get_conversation(self, conversation_id: str) -> Dict[str, Any]:
         ...
 
     @abstractmethod
@@ -55,11 +55,11 @@ class ChatAdapter(BaseAdapter):
             return None
         return response.json()
 
-    async def list_conversations(self, include_deleted: bool = False) -> List[Dict[str, Any]]:
-        return await self._request("GET", "/conversations", params={"include_deleted": include_deleted})
+    async def list_conversations(self) -> List[Dict[str, Any]]:
+        return await self._request("GET", "/conversations", params={"include_deleted": False})
 
-    async def get_conversation(self, conversation_id: str, include_deleted: bool = False) -> Dict[str, Any]:
-        return await self._request("GET", f"/conversations/{conversation_id}", params={"include_deleted": include_deleted})
+    async def get_conversation(self, conversation_id: str) -> Dict[str, Any]:
+        return await self._request("GET", f"/conversations/{conversation_id}", params={"include_deleted": False})
 
     async def get_messages(
         self, conversation_id: str, last_id: int = 0, timeout: int = 0

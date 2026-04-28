@@ -157,7 +157,7 @@ def delete_provider_config(provider_config_id: str, db: Session = Depends(get_db
 async def list_conversations(adapter: ChatAdapter = Depends(get_adapter)):
     """Proxy: list Chat conversations for the frontend to pick from when creating a session."""
     try:
-        return await adapter.list_conversations(include_deleted=False)
+        return await adapter.list_conversations()
     except httpx.HTTPStatusError as err:
         raise HTTPException(status_code=err.response.status_code, detail="获取会话列表失败")
 

@@ -8,7 +8,7 @@ Laborster 的核心产品是 **Robot** —— 一个拟人自动化回复服务�
 
 **核心目标**：非常非常像真人。不冷场、不让粉丝的话落地上、培养亲密感。只提供情绪价值，不涉及金钱交易和线下约会。
 
-用户在后台注册 Robot profile（主播人设），添加 Contact profile（粉丝档案），让 AI 基于这两个角色画像生成拟人化的回复。
+用户在后台配置 Session（绑定人设 + 联系人画像 + LLM Provider），让 AI 基于这两个角色画像生成拟人化的回复。
 
 ## 当前阶段
 
@@ -19,9 +19,8 @@ Laborster 的核心产品是 **Robot** —— 一个拟人自动化回复服务�
 ## 架构原则
 
 - 简单可靠、耐操、易于理解、可扩展、性能好
-- 消息队列 + 消费者模型（Redis 作为传输管道）
+- Robot Worker 通过长轮询 Chat API 获取新消息，不依赖消息队列
 - Robot Service 拥有完整消息历史（source of truth），不依赖 Adapter 在线
-- 流水表全砍，Worker 处理过程纯内存，可靠性靠 DB 兜底
 - 延迟发送用 asyncio.sleep 实现，不需要额外表
 
 ## 编码偏好
@@ -38,7 +37,7 @@ Laborster 的核心产品是 **Robot** —— 一个拟人自动化回复服务�
 
 ## 技术栈
 
-- 后端：Python 3.12+, FastAPI, SQLAlchemy, SQLite, Redis
+- 后端：Python 3.12+, FastAPI, SQLAlchemy, SQLite, httpx
 - 前端：React + TypeScript + Tailwind CSS + Vite
 - 部署：Docker Compose + Nginx 反向代理
 
@@ -48,15 +47,14 @@ Laborster 的核心产品是 **Robot** —— 一个拟人自动化回复服务�
 
 ### 整体架构
 
-系统共有五个运行单元，全部通过 Docker Compose 编排，由 Nginx 统一对外暴露 23456 端口：
+系统共有四个运行单元，全部通过 Docker Compose 编排，由 Nginx 统一对外暴露 23456 端口：
 
 | 容器 | 对外路径 | 内部端口 | 职责 |
 | --- | --- | --- | --- |
 | `nginx` | `:23456` | — | 静态资源 + 反向代理 |
 | `chat` | `/api/*` | `:23456` | Chat Adapter 服务（FastAPI） |
 | `robot-api` | `/api/robot/*` | `:23457` | Robot 管理 API（FastAPI） |
-| `robot-worker` | — | — | 消息消费 + LLM 调用（asyncio） |
-| `redis` | — | `:6379` | 消息管道（robot:inbox 队列） |
+| `robot-worker` | — | — | 消息长轮询 + LLM 调用（asyncio） |
 
 Nginx 路由规则（nginx.conf）：
 - `/api/robot/` → `robot-api:23457/api/`（去掉 `/robot` 前缀）
@@ -72,49 +70,68 @@ Nginx 路由规则（nginx.conf）：
 
 - **定位**：最简化的聊天 Adapter，不含任何角色/策略逻辑，仅存储原始消息。
 - **核心职责**：
-  - 管理 `Conversation`（聊天会话）和 `Message`（消息）的 CRUD
-  - 用户发送消息时，把消息推入 Redis `robot:inbox` 队列（`LPUSH`）
-  - 提供长轮询接口 `GET /api/conversations/{id}/messages?last_id=M&timeout=N`，前端通过此接口拉取新消息
+  - 管理 `User`（用户）、`Conversation`（聊天会话）和 `Message`（消息）的 CRUD
+  - 用户和会话支持软删除（is_deleted / deleted_at）
+  - 提供长轮询接口 `GET /api/conversations/{id}/messages?last_id=M&timeout=N`，前端和 Worker 通过此接口拉取新消息
   - 提供 `/storage` 静态文件服务（附件）
 - **数据库**：`storage/chat.db`
-- **外部依赖**：Redis（仅用于推送消息，失败不阻断消息存储）
+- **外部依赖**：无
 
 #### `robot/main.py` — Robot API
 
-- **定位**：Robot 领域的管理 API，是前端操作 Robot/Contact/Session 的唯一入口。
+- **定位**：Robot 领域的管理 API，是前端操作 ProviderConfig / Session 的唯一入口。
 - **核心职责**：
-  - 管理 `Robot`（机器人角色）、`Contact`（联系人）、`ProviderConfig`（LLM 配置）的 CRUD
-  - 管理 `Session`（会话）的生命周期：创建时同步在 Chat 侧创建对应 `Conversation`，删除时同步删除
-  - 通过 `ChatAPIClient`（HTTP）与 Chat 服务通信
+  - 管理 `ProviderConfig`（LLM 配置）的 CRUD，api_key 仅在内部使用，API 返回时脱敏
+  - 管理 `Session`（会话）的生命周期：创建时绑定 adapter_thread_id 和 takeover_user_id
+  - 代理 Chat API 的会话列表（`GET /api/conversations`），供前端创建 Session 时选择
+  - 通过 `ChatAdapter`（HTTP）与 Chat 服务通信
   - 提供 `GET /api/sessions/{id}/planned-replies` 长轮询接口，供前端实时展示待发送消息
 - **数据库**：`storage/robot.db`
 - **外部依赖**：Chat API（HTTP）
+- **启动参数**：`--host`、`--port`、`--chat-api-base-url`（必填）
 
 #### `robot/worker.py` + `robot/runtime.py` — Robot Worker
 
 - **定位**：独立运行的消息消费者进程，是 LLM 推理和回复发送的执行者。
+- **核心架构**：
+  - `RobotRuntime`：顶层编排器，负责启动时故障恢复、定期扫描 active Session、为每个 Session 启动长轮询任务
+  - `SessionController`：每个 active Session 一个实例，状态机驱动：`idle → thinking → sending → (idle | thinking)`
 - **核心职责**：
   - 启动时执行 **故障恢复**：扫描所有 active Session，若最后一条消息是 user 消息则重新触发处理
-  - 持续 `BRPOP robot:inbox` 消费用户消息
-  - 收到消息后：查找对应 Session → 存入 `robot_messages`（role=user）→ 启动 asyncio 处理 Task
-  - 若同一 Session 有未完成的旧 Task，先 cancel 并将其 scheduled 消息标记为 canceled（防止过时回复发出）
-  - 调用 LLM，解析 JSON 响应（`{"messages": [{"delay_seconds": N, "content": "..."}]}`）
+  - 为每个 active Session 长轮询 Chat API（`get_messages(timeout=30)`），检测到非 takeover_user 发的消息后推入 SessionController 的 inbox
+  - 收到消息后：存入 `robot_messages`（role=user, status=sent）→ 启动 think+send 流程
+  - 若同一 SessionController 有未完成的处理（thinking/sending 状态），标记 interrupted，旧 scheduled 消息变为 pending
+  - 调用 LLM，解析 JSON 响应（含 `pending` 决策和 `messages` 新消息）
   - 将所有计划回复写入 `robot_messages`（status=scheduled）
   - 按 `scheduled_for` 时间依次 `asyncio.sleep` → 更新 status=sent → 调用 Chat API 发送消息
+  - 所有 LLM 调用记录到 `llm_logs` 表
 - **数据库**：`storage/robot.db`（同 Robot API 共享）
-- **外部依赖**：Redis（消费）、Chat API（HTTP 发送回复）、LLM Provider（HTTP）
-- **启动参数**：`--chat-api-base-url`、`--redis-url`、`--request-timeout`（必填）
+- **外部依赖**：Chat API（HTTP 长轮询 + 发送回复）、LLM Provider（HTTP）
+- **启动参数**：`--chat-api-base-url`、`--request-timeout`（必填）
 
 #### `robot/clients.py` — HTTP 客户端封装
 
-- `ChatAPIClient`：封装对 Chat API 的所有 HTTP 调用（conversation CRUD + send_message）
+- `BaseAdapter`（ABC）：消息平台适配器抽象基类，定义 `list_conversations`、`get_conversation`、`get_messages`、`send_message`、`close` 接口
+- `ChatAdapter`：继承 `BaseAdapter`，封装对 Chat API 的所有 HTTP 调用
 - `ProviderClient`：封装对 OpenAI-compatible LLM 的 `/chat/completions` 调用，超时由 `--request-timeout` 控制
+
+#### `robot/distill/` — Distill CLI（蒸馏工具）
+
+- **定位**：独立的命令行工具，从微信聊天记录导出文件中蒸馏出每个人的风格档案和记忆账本。
+- **核心流程**：
+  1. 加载 WeFlow JSON 聊天导出文件
+  2. `converter.py`：构建 wxid→姓名映射，过滤消息类型，转为 `[timestamp] sender: content` 格式
+  3. `packer.py`：按 30 分钟间隔切分 Session，按 40k token 限制打包为 Window
+  4. `pipeline.py`：滚动蒸馏（rolling fold），每个 Window 调用 LLM 更新档案，输出每人 `style.md` + `memory.md`
+- **外部依赖**：LLM Provider（HTTP，复用 `ProviderClient`）
+- **启动参数**：`--input`、`--api-base`、`--api-key`、`--model`、`--output-dir`（必填），`--request-timeout`、`--max-windows`（可选）
 
 #### `frontend/` — React 前端
 
-- 通过 `/api/robot/*` 调用 Robot API 管理 Robot / Contact / ProviderConfig / Session
+- 通过 `/api/robot/*` 调用 Robot API 管理 ProviderConfig / Session
 - 通过 `/api/conversations/{id}/messages` 直接与 Chat API 交互（发消息 + 长轮询拉取）
 - 通过 `/api/robot/sessions/{id}/planned-replies` 长轮询展示 Worker 正在排队的待发消息
+- 暗色赛博朋克风格 UI，cyan (#00e5ff) 为主色调
 
 ---
 
@@ -124,30 +141,37 @@ Nginx 路由规则（nginx.conf）：
 
 | 表 | 主键规则 | 说明 |
 | --- | --- | --- |
-| `conversations` | `c_{uuid12}` | 聊天会话，支持软删除（is_deleted / deleted_at） |
-| `messages` | 自增 Integer | 聊天消息，role 为 `user` 或 `robot` |
-
-`messages` 包含 `msg_type` 字段（如 `text`），为未来富媒体消息预留。
+| `users` | `u_{uuid8}` | 用户，支持软删除（is_deleted / deleted_at） |
+| `conversations` | `c_{uuid12}` | 聊天会话，关联两个 User（user_a_id / user_b_id），支持软删除 |
+| `messages` | 自增 Integer | 聊天消息，含 sender_id、msg_type（如 `text`）、content |
 
 #### `storage/robot.db`
 
 | 表 | 主键规则 | 说明 |
 | --- | --- | --- |
-| `robots` | `r_{uuid8}` | 机器人角色，含 `name` + `profile`（System Prompt），支持软删除 |
-| `contacts` | `ct_{uuid8}` | 联系人画像，含 `name` + `profile`，支持软删除 |
 | `provider_configs` | `p_{uuid8}` | LLM Provider 配置，`api_key` 仅在内部使用，API 返回时脱敏 |
-| `sessions` | `s_{uuid8}` | 核心会话，关联 robot + contact + provider_config + adapter conversation |
+| `sessions` | `s_{uuid8}` | 核心会话，关联 provider_config + adapter conversation |
 | `robot_messages` | 自增 Integer | 完整消息历史（source of truth），含调度状态 |
+| `llm_logs` | 自增 Integer | LLM 调用日志，记录请求/响应/模型 |
 
 **`sessions` 关键字段：**
 - `adapter_type`：当前固定为 `"chat"`，为未来接入微信/企微预留
 - `adapter_thread_id`：对应 chat.db 中 `conversations.id`（唯一索引）
-- `status`：DB 层存储 `"active"` / `"deleted"`；API 响应时若对应 Conversation 不存在则动态计算为 `"orphaned"`
+- `takeover_user_id`：机器人扮演的 User.id（在 Chat 中以此身份发送回复）
+- `profile`：机器人人设文本（System Prompt 的核心部分）
+- `counterpart_profile`：联系人画像文本
+- `status`：`"active"` / `"deleted"`
 
 **`robot_messages` 关键字段：**
 - `role`：`"user"`（用户输入）或 `"assistant"`（机器人回复）
 - `status`：`"scheduled"`（已计划待发）/ `"sent"`（已发送）/ `"canceled"`（被新消息打断取消）
 - `scheduled_for`：计划发送时间，Worker 据此 sleep
+
+**`llm_logs` 关键字段：**
+- `request_messages`：发送给 LLM 的完整消息列表（JSON）
+- `request_pending`：当前的 pending 消息内容（JSON，可为空）
+- `response_raw`：LLM 原始响应文本
+- `model`：使用的模型名称
 
 ---
 
@@ -157,25 +181,27 @@ Nginx 路由规则（nginx.conf）：
 
 ```
 用户 → POST /api/robot/sessions
-Robot API → 验证 robot/contact/provider_config 存在
-         → POST /api/conversations（Chat API）
-         → 创建 SessionRecord（robot.db）
-         → 返回完整 session payload（含 adapter.thread）
+Robot API → 检查 adapter_thread_id 唯一性
+          → 解析 provider_config_id（未指定则取唯一的一个）
+          → 创建 SessionRecord（robot.db）
+          → 返回完整 session payload（含嵌入的 provider_config）
 ```
 
 #### 用户发消息 → 机器人回复
 
 ```
-1. 用户 → POST /api/conversations/{id}/messages (role=user)
-2. Chat → 存 Message（chat.db）→ LPUSH robot:inbox {conversation_id, role, content}
-3. Worker → BRPOP robot:inbox
-4. Worker → 查找 Session（by adapter_thread_id）→ 存 RobotMessage(role=user, status=sent)
-5. Worker → Cancel 旧 Task（若有）→ 将旧 scheduled 消息标记 canceled
-6. Worker → 查询消息历史（status=sent）+ robot/contact profile → 构建 LLM messages
-7. Worker → POST {llm_base_url}/chat/completions → 解析 JSON 响应
-8. Worker → 批量写入 RobotMessage(role=assistant, status=scheduled, scheduled_for=...)
-9. Worker → 逐条 asyncio.sleep → 更新 status=sent → POST /api/conversations/{id}/messages (role=robot)
-10. 前端 → GET /api/conversations/{id}/messages?last_id=M&timeout=30（长轮询）→ 收到新消息
+1. 用户 → POST /api/conversations/{id}/messages (sender_id=对方, msg_type=text)
+2. Chat → 存 Message（chat.db）→ 返回成功
+3. Worker → 长轮询 GET /api/conversations/{id}/messages?last_id=M&timeout=30
+4. Worker → 检测到 sender_id != takeover_user_id 的新消息
+5. Worker → 推入 SessionController.inbox → 存 RobotMessage(role=user, status=sent)
+6. Worker → 若 SessionController 正在 thinking/sending → 标记 interrupted
+7. Worker → SessionController 状态机：
+   a. idle → thinking：取消旧 scheduled 消息（如有），捕获为 pending → 构建 LLM messages → 调用 LLM
+   b. thinking 被打断：保留 LLM 返回的 pending 中 action=send 的消息，与新 pending 合并，重新调 LLM
+   c. thinking 完成 → 写入 scheduled 消息 → sending：逐条 asyncio.sleep → 更新 status=sent → POST Chat API 发送
+   d. sending 被打断：取消剩余 scheduled 消息，捕获为 pending，回到 thinking
+8. 前端 → GET /api/conversations/{id}/messages?last_id=M&timeout=30（长轮询）→ 收到新消息
 ```
 
 #### 故障恢复（Worker 启动时）
@@ -183,14 +209,28 @@ Robot API → 验证 robot/contact/provider_config 存在
 ```
 Worker 启动 → 扫描所有 status=active Session
             → 若最后一条 RobotMessage.role == "user"
-            → LPUSH robot:inbox {conversation_id, recovery: true}
-            → 正常走消费流程（不重复写 user 消息，直接生成回复）
+            → 推入 SessionController.inbox（recovery: true，不重复写 user 消息）
+            → 正常走 think+send 流程
 ```
 
 #### LLM Prompt 构建规则
 
-- System prompt = `OUTPUT_FORMAT_INSTRUCTION` + robot.profile + `【联系人档案：{name}】\n{contact.profile}`
+- System prompt = `SYSTEM_INSTRUCTION`（硬编码微信拟人指令）+ session.profile + `【当前联系人画像】\n{counterpart_profile}` + `【当前时间】{北京时间}` + pending 消息（如有）
 - 消息历史仅包含 `status=sent` 的消息（scheduled/canceled 的不进入上下文）
 - `role=assistant` 的消息 → LLM messages 中 role=`"assistant"`；其余 → `"user"`
 - 内容以 `data:` 开头（base64 附件）→ 替换为 `"[附件已省略]"`
-- LLM 必须返回合法 JSON：`{"messages": [{"delay_seconds": N, "content": "..."}]}`
+- LLM 必须返回合法 JSON：
+  ```json
+  {
+    "pending": [
+      {"action": "send"},
+      {"action": "send", "content": "修改后的文本"},
+      {"action": "cancel"}
+    ],
+    "messages": [
+      {"delay_seconds": 5, "content": "消息文本"}
+    ]
+  }
+  ```
+- `pending`：对待定消息的决策，与系统提供的待定消息列表一一对应
+- `messages`：额外发送的新消息，delay_seconds 反映真实打字速度

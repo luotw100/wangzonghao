@@ -54,19 +54,10 @@ SYSTEM_INSTRUCTION = """\
 ## 输出格式
 你的回复必须是一个合法的 JSON 对象，不要输出任何其他内容。
 
-{"pending": [<对待定消息的决策>], "messages": [{"delay_seconds": <数字>, "content": "<文本>"}]}
+{"messages": [{"delay_seconds": <数字>, "content": "<文本>"}]}
 
-### pending 字段
-pending 是一个数组，与系统提供给你的【待定消息】列表一一对应。如果没有待定消息，pending 为空数组 []。
-每个元素是一个对象：
-- {"action": "send"} — 保留原内容，继续发送
-- {"action": "send", "content": "修改后的文本"} — 修改内容后发送
-- {"action": "cancel"} — 取消这条，不发了
-
-### messages 字段
-messages 是你要额外发送的新消息，按顺序排列。
-- delay_seconds 是距离上一条消息（包括 pending 中 send 的消息）的间隔秒数
-- delay_seconds 反映真实打字速度：短消息 2-5 秒，长消息 5-15 秒
+- messages 是你要发送的消息，按顺序排列
+- delay_seconds 是距离上一条消息的间隔秒数，反映真实打字速度：短消息 2-5 秒，长消息 5-15 秒
 - content 是纯文本，就是微信聊天框里显示的内容
 - 消息条数不限，看你觉得怎么自然"""
 
@@ -96,10 +87,7 @@ def format_beijing_time(dt: Optional[datetime] = None) -> str:
     return f"{beijing.year}年{beijing.month}月{beijing.day}日 {wd} {period}{display_hour}:{beijing.minute:02d}"
 
 
-def build_system_prompt(
-    session_record: SessionRecord,
-    pending: Optional[List[str]] = None,
-) -> str:
+def build_system_prompt(session_record: SessionRecord) -> str:
     parts: list[str] = [SYSTEM_INSTRUCTION]
 
     if session_record.profile:
@@ -110,14 +98,6 @@ def build_system_prompt(
         ctx_lines.append(f"---\n【当前联系人画像】\n{session_record.counterpart_profile}")
     ctx_lines.append(f"---\n【当前时间】{format_beijing_time()}")
 
-    if pending:
-        items = "\n".join(f'{i + 1}. "{p}"' for i, p in enumerate(pending))
-        ctx_lines.append(
-            f"---\n【待定消息】\n"
-            f"以下是你已经想好但还没发出去的消息：\n{items}\n"
-            f"对方没有看到这些。请在 pending 字段中对每条做出决策（send/cancel），也可以修改内容。"
-        )
-
     parts.append("\n".join(ctx_lines))
     return "\n\n".join(parts)
 
@@ -126,32 +106,12 @@ def build_system_prompt(
 # LLM response parser
 # ---------------------------------------------------------------------------
 
-def parse_llm_response(text: str, pending_count: int) -> Dict[str, Any]:
+def parse_llm_response(text: str) -> List[Dict[str, Any]]:
     data = json.loads(text.strip())
-
-    pending_decisions: List[Dict[str, Any]] = []
-    raw_pending = data.get("pending", [])
-    if not isinstance(raw_pending, list):
-        raise ValueError("LLM response 'pending' is not an array")
-    if len(raw_pending) != pending_count:
-        raise ValueError(
-            f"LLM returned {len(raw_pending)} pending decisions but expected {pending_count}"
-        )
-    for item in raw_pending:
-        if not isinstance(item, dict) or "action" not in item:
-            raise ValueError("pending item must have 'action' field")
-        action = item["action"]
-        if action not in ("send", "cancel"):
-            raise ValueError(f"Invalid pending action: {action}")
-        decision: Dict[str, Any] = {"action": action}
-        if action == "send" and "content" in item:
-            decision["content"] = str(item["content"])
-        pending_decisions.append(decision)
-
-    messages: List[Dict[str, Any]] = []
     raw_messages = data.get("messages", [])
     if not isinstance(raw_messages, list):
         raise ValueError("LLM response 'messages' is not an array")
+    messages: List[Dict[str, Any]] = []
     for msg in raw_messages:
         if not isinstance(msg, dict):
             raise ValueError("message item must be an object")
@@ -161,8 +121,7 @@ def parse_llm_response(text: str, pending_count: int) -> Dict[str, Any]:
             "delay_seconds": int(msg.get("delay_seconds", 0)),
             "content": str(msg["content"]),
         })
-
-    return {"pending": pending_decisions, "messages": messages}
+    return messages
 
 
 # ---------------------------------------------------------------------------
@@ -244,7 +203,7 @@ class SessionController:
         try:
             db.add(RobotMessage(
                 session_id=self.session_id,
-                role="user",
+                role="counterpart",
                 content=payload.get("content", ""),
                 status="sent",
                 created_at=utc_now(),
@@ -266,26 +225,6 @@ class SessionController:
         finally:
             db.close()
 
-    def _cancel_and_capture_scheduled(self) -> List[str]:
-        db = SessionLocal()
-        try:
-            rows = (
-                db.query(RobotMessage)
-                .filter(
-                    RobotMessage.session_id == self.session_id,
-                    RobotMessage.status == "scheduled",
-                )
-                .order_by(RobotMessage.scheduled_for.asc())
-                .all()
-            )
-            contents = [r.content for r in rows]
-            for r in rows:
-                r.status = "canceled"
-            db.commit()
-            return contents
-        finally:
-            db.close()
-
     def _write_scheduled_messages(self, messages: List[Dict[str, Any]]) -> List[int]:
         if not messages:
             return []
@@ -299,7 +238,7 @@ class SessionController:
                 scheduled_for = now + timedelta(seconds=cumulative_delay)
                 row = RobotMessage(
                     session_id=self.session_id,
-                    role="assistant",
+                    role="robot",
                     content=str(m.get("content", "")),
                     status="scheduled",
                     scheduled_for=scheduled_for,
@@ -331,36 +270,20 @@ class SessionController:
 
     # -- Core loop ---------------------------------------------------------
 
-    async def _think_and_send(self, pending_contents: Optional[List[str]] = None):
+    async def _think_and_send(self):
         while True:
             self._state = "thinking"
             self._interrupted = False
 
-            result = await self._call_llm(pending_contents=pending_contents)
-            if result is None:
+            messages = await self._call_llm()
+            if messages is None:
                 self._state = "idle"
                 return
 
             if self._interrupted:
-                new_pending: list[str] = []
-                for i, d in enumerate(result.get("pending", [])):
-                    if d["action"] == "send":
-                        content = d["content"] if "content" in d else pending_contents[i]
-                        new_pending.append(content)
-                new_pending.extend(m["content"] for m in result["messages"])
-                pending_contents = new_pending if new_pending else None
                 continue
 
-            messages_to_schedule: List[Dict[str, Any]] = []
-            if pending_contents and result["pending"]:
-                for i, d in enumerate(result["pending"]):
-                    if d["action"] == "send":
-                        content = d["content"] if "content" in d else pending_contents[i]
-                        messages_to_schedule.append({"delay_seconds": 0, "content": content})
-            messages_to_schedule.extend(result["messages"])
-
-            self._write_scheduled_messages(messages_to_schedule)
-
+            self._write_scheduled_messages(messages)
             all_scheduled_ids = self._get_all_scheduled_ids()
 
             self._state = "sending"
@@ -369,8 +292,7 @@ class SessionController:
             await self._send_messages(all_scheduled_ids)
 
             if self._interrupted:
-                remaining = self._cancel_and_capture_scheduled()
-                pending_contents = remaining if remaining else None
+                self._cancel_all_scheduled()
                 continue
 
             self._state = "idle"
@@ -431,10 +353,7 @@ class SessionController:
             except Exception as exc:
                 logger.error("Failed to send reply for session %s: %s", self.session_id, exc)
 
-    async def _call_llm(
-        self,
-        pending_contents: Optional[List[str]] = None,
-    ) -> Optional[Dict[str, Any]]:
+    async def _call_llm(self) -> Optional[List[Dict[str, Any]]]:
         db = SessionLocal()
         try:
             session_record = db.query(SessionRecord).filter(
@@ -461,13 +380,13 @@ class SessionController:
                 .all()
             )
 
-            system_prompt = build_system_prompt(session_record, pending=pending_contents)
+            system_prompt = build_system_prompt(session_record)
 
             llm_messages: List[Dict[str, str]] = [
                 {"role": "system", "content": system_prompt}
             ]
             for msg in history:
-                role = "assistant" if msg.role == "assistant" else "user"
+                role = "assistant" if msg.role == "robot" else "user"
                 content = msg.content
                 if content.startswith("data:"):
                     content = "[附件已省略]"
@@ -479,21 +398,19 @@ class SessionController:
         finally:
             db.close()
 
-        pending_count = len(pending_contents) if pending_contents else 0
-
         try:
             response_text, _usage = await self.runtime.provider.complete_chat(
                 base_url, api_key, model, llm_messages
             )
         except Exception as exc:
             logger.error("LLM call failed for session %s: %s", self.session_id, exc)
-            self._log_llm_call(llm_messages, pending_contents, f"ERROR: {exc}", model)
+            self._log_llm_call(llm_messages, f"ERROR: {exc}", model)
             return None
 
-        self._log_llm_call(llm_messages, pending_contents, response_text, model)
+        self._log_llm_call(llm_messages, response_text, model)
 
         try:
-            return parse_llm_response(response_text, pending_count)
+            return parse_llm_response(response_text)
         except (json.JSONDecodeError, ValueError) as exc:
             logger.error("Failed to parse LLM response for session %s: %s", self.session_id, exc)
             return None
@@ -501,7 +418,6 @@ class SessionController:
     def _log_llm_call(
         self,
         request_messages: List[Dict[str, str]],
-        pending: Optional[List[str]],
         response_raw: str,
         model: Optional[str],
     ):
@@ -510,7 +426,6 @@ class SessionController:
             db.add(LlmLog(
                 session_id=self.session_id,
                 request_messages=json.dumps(request_messages, ensure_ascii=False),
-                request_pending=json.dumps(pending, ensure_ascii=False) if pending else None,
                 response_raw=response_raw,
                 model=model,
                 created_at=utc_now(),
@@ -568,7 +483,7 @@ class RobotRuntime:
                     .order_by(RobotMessage.id.desc())
                     .first()
                 )
-                if last_msg and last_msg.role == "user":
+                if last_msg and last_msg.role == "counterpart":
                     logger.info("Recovery: re-triggering session %s", sr.id)
                     ctrl = self._get_or_create_controller(sr.id)
                     await ctrl.inbox.put({"content": "", "recovery": True})

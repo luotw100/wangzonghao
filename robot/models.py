@@ -35,7 +35,7 @@ class RobotMessage(Base):
 
     id            = Column(Integer, primary_key=True, autoincrement=True)  # 消息自增主键
     session_id    = Column(String, index=True, nullable=False)             # 关联的会话 ID
-    role          = Column(String, nullable=False)                         # 消息角色："user" 为对方发来的，"assistant" 为机器人回复的
+    role          = Column(String, nullable=False)                         # 消息角色："counterpart" 为对方发来的，"robot" 为机器人回复的
     content       = Column(Text, nullable=False)                           # 消息文本内容
     status        = Column(String, nullable=False, default="sent")         # 消息状态：scheduled（待发送）、sent（已发送）、canceled（已取消）
     scheduled_for = Column(DateTime, nullable=True)                        # 计划发送时间，用于模拟打字延迟
@@ -48,7 +48,6 @@ class LlmLog(Base):
     id               = Column(Integer, primary_key=True, autoincrement=True)  # 日志自增主键
     session_id       = Column(String, index=True, nullable=False)             # 关联的会话 ID
     request_messages = Column(Text, nullable=False)                           # 发送给 LLM 的完整消息列表（JSON）
-    request_pending  = Column(Text, nullable=True)                            # 本次请求携带的待定消息列表（JSON），即机器人之前想好但被中断未发送的内容
     response_raw     = Column(Text, nullable=False)                           # LLM 返回的原始响应文本
     model            = Column(String, nullable=True)                          # 使用的模型名称
     created_at       = Column(DateTime, default=utc_now, nullable=False)

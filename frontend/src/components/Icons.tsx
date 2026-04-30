@@ -139,11 +139,3 @@ export function IconArrowLeft({ size = 20 }: { size?: number }) {
     </svg>
   );
 }
-
-export function IconSwap({ size = 18 }: { size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M7 16l-4-4m0 0l4-4m-4 4h18M17 8l4 4m0 0l-4 4m4-4H3" />
-    </svg>
-  );
-}

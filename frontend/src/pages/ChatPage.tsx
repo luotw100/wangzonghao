@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { cn, formatDate } from '../lib/utils';
-import { LaborsterLogo, IconPlus, IconClose, IconArrowLeft, IconSwap } from '../components/Icons';
+import { LaborsterLogo, IconPlus, IconClose, IconArrowLeft } from '../components/Icons';
 import { Modal } from '../components/Modal';
 import * as api from '../lib/api';
 import type { ChatUser, Conversation, Message } from '../lib/api';
@@ -16,8 +16,6 @@ export function ChatPage() {
   const [error, setError] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<'conversations' | 'users'>('conversations');
-  const [swapped, setSwapped] = useState(false);
-
   // Modals
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [showCreateConv, setShowCreateConv] = useState(false);
@@ -325,23 +323,8 @@ export function ChatPage() {
         <header className="h-14 flex items-center justify-between px-4 md:px-6 border-b border-border-glow/20 shrink-0 bg-bg-secondary/80 backdrop-blur-sm">
           <h2 className="font-medium text-text-primary">{activeConv ? activeConv.title : '选择或创建一个会话'}</h2>
           {activeConv && userA && userB && (
-            <div className="flex items-center gap-3">
-              <div className="text-xs text-text-secondary">
-                {swapped ? `${userB.name} ↔ ${userA.name}` : `${userA.name} ↔ ${userB.name}`}
-              </div>
-              <button
-                onClick={() => setSwapped(s => !s)}
-                className={cn(
-                  'flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs transition-all border',
-                  swapped
-                    ? 'bg-accent/15 text-accent border-accent/30'
-                    : 'bg-bg-tertiary text-text-secondary border-border-glow/20 hover:text-text-primary hover:border-accent/20'
-                )}
-                title="切换左右显示"
-              >
-                <IconSwap size={14} />
-                <span>换边</span>
-              </button>
+            <div className="text-xs text-text-secondary">
+              {userA.name} ↔ {userB.name}
             </div>
           )}
         </header>
@@ -368,9 +351,7 @@ export function ChatPage() {
             ) : (
               messages.map(msg => {
                 const sender = users.find(u => u.id === msg.sender_id);
-                const isLeft = swapped
-                  ? msg.sender_id !== activeConv?.user_a_id
-                  : msg.sender_id === activeConv?.user_a_id;
+                const isLeft = msg.sender_id !== activeSenderId;
                 return (
                   <div key={msg.id} className={cn('flex message-enter', isLeft ? 'justify-start' : 'justify-end')}>
                     {isLeft ? (

@@ -86,6 +86,15 @@ export function RobotPage() {
     } catch (e) { setError(String(e)); }
   };
 
+  // Toggle session status
+  const handleToggleSession = async (session: Session) => {
+    const newStatus = session.status === 'active' ? 'paused' : 'active';
+    try {
+      await api.updateSession(session.id, { status: newStatus });
+      await loadSessions();
+    } catch (e) { setError(String(e)); }
+  };
+
   // Delete session
   const handleDeleteSession = async (sessionId: string) => {
     try {
@@ -135,10 +144,6 @@ export function RobotPage() {
   const handleDeleteProvider = async (id: string) => {
     try { await api.deleteProviderConfig(id); await loadProviders(); } catch (e) { setError(String(e)); }
   };
-
-  // Filter out already-taken conversations
-  const takenThreadIds = new Set(sessions.map(s => s.adapter_thread_id));
-  const availableConversations = conversations.filter(c => !takenThreadIds.has(c.id));
 
   return (
     <div className="w-full h-dvh overflow-hidden flex flex-col bg-bg-primary text-text-primary">
@@ -217,9 +222,9 @@ export function RobotPage() {
                           </span>
                           <span className={cn(
                             'px-2 py-0.5 rounded-full text-[10px] font-medium',
-                            session.status === 'active' ? 'bg-success/10 text-success' : 'bg-danger-bg text-danger'
+                            session.status === 'active' ? 'bg-success/10 text-success' : 'bg-warning/10 text-warning'
                           )}>
-                            {session.status}
+                            {session.status === 'active' ? '运行中' : '已暂停'}
                           </span>
                         </div>
                         <div className="text-xs text-text-secondary mt-1">
@@ -230,14 +235,23 @@ export function RobotPage() {
                           <div className="text-xs text-text-tertiary mt-1 truncate">人设: {session.profile.slice(0, 80)}...</div>
                         )}
                       </div>
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition">
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => handleToggleSession(session)}
+                          className={cn(
+                            'px-3 py-1.5 text-xs rounded-lg transition font-medium',
+                            session.status === 'active'
+                              ? 'bg-warning/10 text-warning hover:bg-warning/20'
+                              : 'bg-success/10 text-success hover:bg-success/20'
+                          )}
+                        >{session.status === 'active' ? '暂停' : '启动'}</button>
                         <button
                           onClick={() => openEditSession(session)}
-                          className="px-3 py-1.5 text-xs rounded-lg bg-bg-tertiary hover:bg-accent/10 text-text-secondary hover:text-accent transition"
+                          className="px-3 py-1.5 text-xs rounded-lg bg-bg-tertiary hover:bg-accent/10 text-text-secondary hover:text-accent transition opacity-0 group-hover:opacity-100"
                         >编辑</button>
                         <button
                           onClick={() => handleDeleteSession(session.id)}
-                          className="px-3 py-1.5 text-xs rounded-lg bg-bg-tertiary hover:bg-danger-bg text-text-secondary hover:text-danger transition"
+                          className="px-3 py-1.5 text-xs rounded-lg bg-bg-tertiary hover:bg-danger-bg text-text-secondary hover:text-danger transition opacity-0 group-hover:opacity-100"
                         >删除</button>
                       </div>
                     </div>
@@ -298,7 +312,7 @@ export function RobotPage() {
               className="w-full bg-bg-tertiary border border-border-glow/30 rounded-xl px-4 py-3 text-sm outline-none focus:border-accent/50"
             >
               <option value="">选择会话</option>
-              {availableConversations.map(c => (
+              {conversations.map(c => (
                 <option key={c.id} value={c.id}>
                   {c.title} — {userName(c.user_a_id)} ↔ {userName(c.user_b_id)}
                 </option>

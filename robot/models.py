@@ -20,7 +20,7 @@ class SessionRecord(Base):
 
     id                   = Column(String, primary_key=True, index=True)            # 会话主键
     adapter_type         = Column(String, nullable=False, default="chat")          # 消息平台类型，如 "chat"、"wechat"、"feishu"，对应不同的 Adapter 实现
-    adapter_thread_id    = Column(String, unique=True, index=True, nullable=False) # 消息平台上的会话 ID，如 Chat 服务的 conversation_id，用于轮询消息和发送回复
+    adapter_thread_id    = Column(String, index=True, nullable=False)               # 消息平台上的会话 ID，如 Chat 服务的 conversation_id，用于轮询消息和发送回复
     takeover_user_id     = Column(String, nullable=False)                          # 机器人接管的角色 ID，即冒充哪个用户发言；来自此 ID 的消息会被忽略，只处理对方的消息
     profile              = Column(Text, nullable=True)                             # 机器人人设 prompt，定义性格、说话风格等，注入 LLM system prompt
     counterpart_profile  = Column(Text, nullable=True)                             # 对方（聊天对象）的画像描述，帮助机器人更了解对话方

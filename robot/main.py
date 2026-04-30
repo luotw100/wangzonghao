@@ -164,13 +164,6 @@ async def list_conversations(adapter: ChatAdapter = Depends(get_adapter)):
 
 @app.post("/api/sessions")
 def create_session(session_in: SessionCreate, db: Session = Depends(get_db)):
-    # Check adapter_thread_id not already taken
-    existing = db.query(SessionRecord).filter(
-        SessionRecord.adapter_thread_id == session_in.adapter_thread_id
-    ).first()
-    if existing:
-        raise HTTPException(status_code=409, detail="该会话已被接管")
-
     provider_config_id = session_in.provider_config_id
     if provider_config_id:
         get_provider_config_or_404(db, provider_config_id)
@@ -220,6 +213,8 @@ def update_session(session_id: str, session_update: SessionUpdate, db: Session =
         if session_update.provider_config_id is not None:
             get_provider_config_or_404(db, session_update.provider_config_id)
         session_record.provider_config_id = session_update.provider_config_id
+    if "status" in session_update.model_fields_set and session_update.status is not None:
+        session_record.status = session_update.status
     session_record.updated_at = utc_now()
     db.commit()
     db.refresh(session_record)

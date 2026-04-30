@@ -33,3 +33,4 @@ class SessionUpdate(StrictModel):
     profile: Optional[str] = None
     counterpart_profile: Optional[str] = None
     provider_config_id: Optional[str] = None
+    status: Optional[str] = None

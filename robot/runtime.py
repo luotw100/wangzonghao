@@ -398,22 +398,28 @@ class SessionController:
         finally:
             db.close()
 
-        try:
-            response_text, _usage = await self.runtime.provider.complete_chat(
-                base_url, api_key, model, llm_messages
-            )
-        except Exception as exc:
-            logger.error("LLM call failed for session %s: %s", self.session_id, exc)
-            self._log_llm_call(llm_messages, f"ERROR: {exc}", model)
-            return None
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                response_text, _usage = await self.runtime.provider.complete_chat(
+                    base_url, api_key, model, llm_messages
+                )
+            except Exception as exc:
+                logger.error("LLM call failed for session %s: %s", self.session_id, exc)
+                self._log_llm_call(llm_messages, f"ERROR: {exc}", model)
+                return None
 
-        self._log_llm_call(llm_messages, response_text, model)
+            self._log_llm_call(llm_messages, response_text, model)
 
-        try:
-            return parse_llm_response(response_text)
-        except (json.JSONDecodeError, ValueError) as exc:
-            logger.error("Failed to parse LLM response for session %s: %s", self.session_id, exc)
-            return None
+            try:
+                return parse_llm_response(response_text)
+            except (json.JSONDecodeError, ValueError) as exc:
+                logger.warning(
+                    "Failed to parse LLM response for session %s (attempt %d/%d): %s",
+                    self.session_id, attempt + 1, max_retries, exc,
+                )
+                if attempt == max_retries - 1:
+                    return None
 
     def _log_llm_call(
         self,

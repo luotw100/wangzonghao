@@ -103,6 +103,7 @@ class ProviderClient:
                 "model": model,
                 "messages": messages,
                 "temperature": 0.7,
+                "response_format": {"type": "json_object"},
             },
         )
         if not response.is_success:

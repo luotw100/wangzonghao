@@ -54,11 +54,10 @@ SYSTEM_INSTRUCTION = """\
 ## 输出格式
 你的回复必须是一个合法的 JSON 对象，不要输出任何其他内容。
 
-{"messages": [{"delay_seconds": <数字>, "content": "<文本>"}]}
+{"messages": ["第一条消息", "第二条消息"]}
 
-- messages 是你要发送的消息，按顺序排列
-- delay_seconds 是距离上一条消息的间隔秒数，反映真实打字速度：短消息 2-5 秒，长消息 5-15 秒
-- content 是纯文本，就是微信聊天框里显示的内容
+- messages 是你要发送的消息字符串列表，按顺序排列
+- 每条消息是纯文本，就是微信聊天框里显示的内容
 - 消息条数不限，看你觉得怎么自然"""
 
 
@@ -118,21 +117,20 @@ def build_chat_history(history: list) -> str:
 # LLM response parser
 # ---------------------------------------------------------------------------
 
-def parse_llm_response(text: str) -> List[Dict[str, Any]]:
+TYPING_CHARS_PER_SECOND = 6  # simulated typing speed for delay calculation
+
+
+def parse_llm_response(text: str) -> List[str]:
     data = json.loads(text.strip())
     raw_messages = data.get("messages", [])
     if not isinstance(raw_messages, list):
         raise ValueError("LLM response 'messages' is not an array")
-    messages: List[Dict[str, Any]] = []
+    messages: List[str] = []
     for msg in raw_messages:
-        if not isinstance(msg, dict):
-            raise ValueError("message item must be an object")
-        if "content" not in msg:
-            raise ValueError("message item missing 'content'")
-        messages.append({
-            "delay_seconds": int(msg.get("delay_seconds", 0)),
-            "content": str(msg["content"]),
-        })
+        if not isinstance(msg, str):
+            raise ValueError("message item must be a string")
+        if msg.strip():
+            messages.append(msg)
     return messages
 
 
@@ -311,7 +309,7 @@ class RobotRuntime:
         finally:
             db.close()
 
-    def _write_scheduled_messages(self, session_id: str, messages: List[Dict[str, Any]]) -> List[int]:
+    def _write_scheduled_messages(self, session_id: str, messages: List[str]) -> List[int]:
         if not messages:
             return []
         now = utc_now()
@@ -319,13 +317,14 @@ class RobotRuntime:
         try:
             msg_ids: List[int] = []
             cumulative_delay = 0
-            for m in messages:
-                cumulative_delay += max(int(m.get("delay_seconds", 0)), 0)
+            for content in messages:
+                delay = max(2, len(content) / TYPING_CHARS_PER_SECOND)
+                cumulative_delay += delay
                 scheduled_for = now + timedelta(seconds=cumulative_delay)
                 row = RobotMessage(
                     session_id=session_id,
                     role="robot",
-                    content=str(m.get("content", "")),
+                    content=content,
                     status="scheduled",
                     scheduled_for=scheduled_for,
                     created_at=now,
@@ -374,7 +373,7 @@ class RobotRuntime:
 
     # -- LLM ---------------------------------------------------------------
 
-    async def _call_llm(self, session_id: str) -> Optional[List[Dict[str, Any]]]:
+    async def _call_llm(self, session_id: str) -> Optional[List[str]]:
         db = SessionLocal()
         try:
             session_record = db.query(SessionRecord).filter(

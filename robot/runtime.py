@@ -90,16 +90,28 @@ def format_beijing_time(dt: Optional[datetime] = None) -> str:
 def build_system_prompt(session_record: SessionRecord) -> str:
     parts: list[str] = [SYSTEM_INSTRUCTION]
 
-    if session_record.profile:
-        parts.append(session_record.profile)
-
     ctx_lines: list[str] = []
+    if session_record.profile:
+        ctx_lines.append(f"---\n【你的角色画像】\n{session_record.profile}")
     if session_record.counterpart_profile:
         ctx_lines.append(f"---\n【当前联系人画像】\n{session_record.counterpart_profile}")
     ctx_lines.append(f"---\n【当前时间】{format_beijing_time()}")
 
     parts.append("\n".join(ctx_lines))
     return "\n\n".join(parts)
+
+
+def build_chat_history(history: list) -> str:
+    if not history:
+        return "（暂无聊天记录，这是第一次对话）"
+    lines: list[str] = []
+    for msg in history:
+        label = "我" if msg.role == "robot" else "对方"
+        content = msg.content
+        if content.startswith("data:"):
+            content = "[附件已省略]"
+        lines.append(f"{label}: {content}")
+    return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
@@ -390,16 +402,12 @@ class RobotRuntime:
             )
 
             system_prompt = build_system_prompt(session_record)
+            chat_history = build_chat_history(history)
 
             llm_messages: List[Dict[str, str]] = [
-                {"role": "system", "content": system_prompt}
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": chat_history},
             ]
-            for msg in history:
-                role = "assistant" if msg.role == "robot" else "user"
-                content = msg.content
-                if content.startswith("data:"):
-                    content = "[附件已省略]"
-                llm_messages.append({"role": role, "content": content})
 
             base_url = provider_config.base_url
             api_key = provider_config.api_key

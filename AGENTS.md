@@ -19,7 +19,7 @@ Laborster 的核心产品是 **Robot** —— 一个拟人自动化回复服务�
 ## 架构原则
 
 - 简单可靠、耐操、易于理解、可扩展、性能好
-- Robot Worker 通过长轮询 Chat API 获取新消息，不依赖消息队列
+- Robot Worker 每秒轮询 Chat API 获取新消息，不依赖消息队列
 - Robot Service 拥有完整消息历史（source of truth），不依赖 Adapter 在线
 - 延迟发送用 asyncio.sleep 实现，不需要额外表
 
@@ -54,7 +54,7 @@ Laborster 的核心产品是 **Robot** —— 一个拟人自动化回复服务�
 | `nginx` | `:23456` | — | 静态资源 + 反向代理 |
 | `chat` | `/api/*` | `:23456` | Chat Adapter 服务（FastAPI） |
 | `robot-api` | `/api/robot/*` | `:23457` | Robot 管理 API（FastAPI） |
-| `robot-worker` | — | — | 消息长轮询 + LLM 调用（asyncio） |
+| `robot-worker` | — | — | 消息轮询 + LLM 调用（asyncio） |
 
 Nginx 路由规则（nginx.conf）：
 - `/api/robot/` → `robot-api:23457/api/`（去掉 `/robot` 前缀）
@@ -93,20 +93,21 @@ Nginx 路由规则（nginx.conf）：
 #### `robot/worker.py` + `robot/runtime.py` — Robot Worker
 
 - **定位**：独立运行的消息消费者进程，是 LLM 推理和回复发送的执行者。
-- **核心架构**：
-  - `RobotRuntime`：顶层编排器，负责启动时故障恢复、定期扫描 active Session、为每个 Session 启动长轮询任务
-  - `SessionController`：每个 active Session 一个实例，状态机驱动：`idle → thinking → sending → (idle | thinking)`
+- **核心架构**：1 个 Scanner + N 个 Session Loop
+  - `RobotRuntime`：顶层编排器，包含一个 Scanner 协程和 N 个 Session Loop 协程
+  - Scanner 每 5s 扫描 DB，为新 active Session 创建 Session Loop，为 inactive Session 销毁 Session Loop
+  - Session Loop 每 1s 轮询 Chat API，发现对方新消息则存入 `robot_messages`，检查是否需要回复（最后一条消息是对方发的），需要则调 LLM + 发送
 - **核心职责**：
-  - 启动时执行 **故障恢复**：扫描所有 active Session，若最后一条消息是 user 消息则重新触发处理
-  - 为每个 active Session 长轮询 Chat API（`get_messages(timeout=30)`），检测到非 takeover_user 发的消息后推入 SessionController 的 inbox
-  - 收到消息后：存入 `robot_messages`（role=user, status=sent）→ 启动 think+send 流程
-  - 若同一 SessionController 有未完成的处理（thinking/sending 状态），标记 interrupted，旧 scheduled 消息变为 pending
-  - 调用 LLM，解析 JSON 响应（含 `pending` 决策和 `messages` 新消息）
-  - 将所有计划回复写入 `robot_messages`（status=scheduled）
+  - 每秒轮询 Chat API（`get_messages(timeout=0)`），检测到非 takeover_user 发的消息后存入 `robot_messages`
+  - 检查 `robot_messages` 最后一条已发送消息，若 role=counterpart 则触发 LLM 调用
+  - 调用 LLM，解析 JSON 响应中的 `messages`
+  - 将计划回复写入 `robot_messages`（status=scheduled）
   - 按 `scheduled_for` 时间依次 `asyncio.sleep` → 更新 status=sent → 调用 Chat API 发送消息
   - 所有 LLM 调用记录到 `llm_logs` 表
+  - Session Loop 被取消时，自动将剩余 scheduled 消息标记为 canceled
+- **故障恢复**：自然实现——Worker 重启后 Scanner 重建 Session Loop，Session Loop 检查 `robot_messages` 最后一条消息即可判断是否需要回复，无需额外恢复逻辑
 - **数据库**：`storage/robot.db`（同 Robot API 共享）
-- **外部依赖**：Chat API（HTTP 长轮询 + 发送回复）、LLM Provider（HTTP）
+- **外部依赖**：Chat API（HTTP 轮询 + 发送回复）、LLM Provider（HTTP）
 - **启动参数**：`--chat-api-base-url`、`--request-timeout`（必填）
 
 #### `robot/clients.py` — HTTP 客户端封装
@@ -163,13 +164,12 @@ Nginx 路由规则（nginx.conf）：
 - `status`：`"active"` / `"deleted"`
 
 **`robot_messages` 关键字段：**
-- `role`：`"user"`（用户输入）或 `"assistant"`（机器人回复）
-- `status`：`"scheduled"`（已计划待发）/ `"sent"`（已发送）/ `"canceled"`（被新消息打断取消）
+- `role`：`"counterpart"`（对方消息）或 `"robot"`（机器人回复）
+- `status`：`"scheduled"`（已计划待发）/ `"sent"`（已发送）/ `"canceled"`（已取消）
 - `scheduled_for`：计划发送时间，Worker 据此 sleep
 
 **`llm_logs` 关键字段：**
 - `request_messages`：发送给 LLM 的完整消息列表（JSON）
-- `request_pending`：当前的 pending 消息内容（JSON，可为空）
 - `response_raw`：LLM 原始响应文本
 - `model`：使用的模型名称
 
@@ -192,45 +192,35 @@ Robot API → 检查 adapter_thread_id 唯一性
 ```
 1. 用户 → POST /api/conversations/{id}/messages (sender_id=对方, msg_type=text)
 2. Chat → 存 Message（chat.db）→ 返回成功
-3. Worker → 长轮询 GET /api/conversations/{id}/messages?last_id=M&timeout=30
+3. Worker Session Loop → 每秒 GET /api/conversations/{id}/messages?last_id=M&timeout=0
 4. Worker → 检测到 sender_id != takeover_user_id 的新消息
-5. Worker → 推入 SessionController.inbox → 存 RobotMessage(role=user, status=sent)
-6. Worker → 若 SessionController 正在 thinking/sending → 标记 interrupted
-7. Worker → SessionController 状态机：
-   a. idle → thinking：取消旧 scheduled 消息（如有），捕获为 pending → 构建 LLM messages → 调用 LLM
-   b. thinking 被打断：保留 LLM 返回的 pending 中 action=send 的消息，与新 pending 合并，重新调 LLM
-   c. thinking 完成 → 写入 scheduled 消息 → sending：逐条 asyncio.sleep → 更新 status=sent → POST Chat API 发送
-   d. sending 被打断：取消剩余 scheduled 消息，捕获为 pending，回到 thinking
+5. Worker → 存 RobotMessage(role=counterpart, status=sent)
+6. Worker → 检查 robot_messages 最后一条 sent 消息，role=counterpart → 触发 LLM
+7. Worker → 调用 LLM → 写入 scheduled 消息 → 逐条 asyncio.sleep → status=sent → POST Chat API 发送
 8. 前端 → GET /api/conversations/{id}/messages?last_id=M&timeout=30（长轮询）→ 收到新消息
 ```
 
-#### 故障恢复（Worker 启动时）
+#### 故障恢复
 
 ```
-Worker 启动 → 扫描所有 status=active Session
-            → 若最后一条 RobotMessage.role == "user"
-            → 推入 SessionController.inbox（recovery: true，不重复写 user 消息）
-            → 正常走 think+send 流程
+自然实现：Worker 重启 → Scanner 扫描 active Session → 创建 Session Loop
+        → Session Loop 检查 robot_messages 最后一条 sent 消息
+        → 若 role=counterpart → 自动触发 LLM 回复
+        → 无需额外恢复逻辑
 ```
 
 #### LLM Prompt 构建规则
 
-- System prompt = `SYSTEM_INSTRUCTION`（硬编码微信拟人指令）+ session.profile + `【当前联系人画像】\n{counterpart_profile}` + `【当前时间】{北京时间}` + pending 消息（如有）
+- System prompt = `SYSTEM_INSTRUCTION`（硬编码微信拟人指令）+ session.profile + `【当前联系人画像】\n{counterpart_profile}` + `【当前时间】{北京时间}`
 - 消息历史仅包含 `status=sent` 的消息（scheduled/canceled 的不进入上下文）
-- `role=assistant` 的消息 → LLM messages 中 role=`"assistant"`；其余 → `"user"`
+- `role=robot` 的消息 → LLM messages 中 role=`"assistant"`；其余 → `"user"`
 - 内容以 `data:` 开头（base64 附件）→ 替换为 `"[附件已省略]"`
 - LLM 必须返回合法 JSON：
   ```json
   {
-    "pending": [
-      {"action": "send"},
-      {"action": "send", "content": "修改后的文本"},
-      {"action": "cancel"}
-    ],
     "messages": [
       {"delay_seconds": 5, "content": "消息文本"}
     ]
   }
   ```
-- `pending`：对待定消息的决策，与系统提供的待定消息列表一一对应
-- `messages`：额外发送的新消息，delay_seconds 反映真实打字速度
+- `messages`：要发送的消息列表，delay_seconds 反映真实打字速度

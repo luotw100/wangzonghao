@@ -146,65 +146,125 @@ def get_provider_config(db: Session, session_record: SessionRecord) -> Optional[
 
 
 # ---------------------------------------------------------------------------
-# SessionController — one per active session
+# RobotRuntime — 1 scanner + N session loops
 # ---------------------------------------------------------------------------
 
-class SessionController:
-    """Full-duplex controller for a single session.
-
-    States: idle → thinking → sending → (idle | thinking)
-    """
-
-    def __init__(self, session_id: str, runtime: "RobotRuntime"):
-        self.session_id = session_id
-        self.runtime = runtime
-        self.inbox: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
-        self._state = "idle"
-        self._interrupted = False
-        self._task: Optional[asyncio.Task[Any]] = None
-        self._think_task: Optional[asyncio.Task[Any]] = None
+class RobotRuntime:
+    def __init__(self, options: RuntimeOptions):
+        self.options = options
+        self.adapter = ChatAdapter(options.chat_api_base_url)
+        self.provider = ProviderClient(options.request_timeout)
+        self._scanner_task: Optional[asyncio.Task[Any]] = None
+        self._session_tasks: Dict[str, asyncio.Task[Any]] = {}
 
     async def start(self):
-        self._task = asyncio.get_running_loop().create_task(
-            self._run(), name=f"session-ctrl-{self.session_id}"
+        self._scanner_task = asyncio.get_running_loop().create_task(
+            self._scanner_loop(), name="session-scanner"
         )
 
     async def stop(self):
-        if self._task:
-            self._task.cancel()
+        if self._scanner_task:
+            self._scanner_task.cancel()
             with suppress(asyncio.CancelledError):
-                await self._task
+                await self._scanner_task
+        for task in self._session_tasks.values():
+            task.cancel()
+        for task in self._session_tasks.values():
+            with suppress(asyncio.CancelledError):
+                await task
+        self._session_tasks.clear()
+        await self.adapter.close()
+        await self.provider.close()
 
-    async def _run(self):
+    # -- Scanner -----------------------------------------------------------
+
+    async def _scanner_loop(self):
+        while True:
+            try:
+                db = SessionLocal()
+                try:
+                    active_ids = {
+                        s.id for s in db.query(SessionRecord).filter(
+                            SessionRecord.status == "active"
+                        ).all()
+                    }
+                finally:
+                    db.close()
+
+                for sid in active_ids:
+                    if sid not in self._session_tasks or self._session_tasks[sid].done():
+                        self._session_tasks[sid] = asyncio.get_running_loop().create_task(
+                            self._session_loop(sid), name=f"session-{sid}"
+                        )
+
+                for sid in list(self._session_tasks.keys()):
+                    if sid not in active_ids:
+                        self._session_tasks[sid].cancel()
+                        with suppress(asyncio.CancelledError):
+                            await self._session_tasks[sid]
+                        del self._session_tasks[sid]
+
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error("Scanner error: %s", exc)
+
+            await asyncio.sleep(5)
+
+    # -- Session loop ------------------------------------------------------
+
+    async def _session_loop(self, session_id: str):
+        db = SessionLocal()
+        try:
+            sr = db.query(SessionRecord).filter(SessionRecord.id == session_id).first()
+            if not sr:
+                return
+            thread_id = sr.adapter_thread_id
+            takeover_user_id = sr.takeover_user_id
+        finally:
+            db.close()
+
+        last_id = 0
+        try:
+            result = await self.adapter.get_messages(thread_id, last_id=0, timeout=0)
+            msgs = result.get("messages", [])
+            if msgs:
+                last_id = msgs[-1]["id"]
+        except Exception as exc:
+            logger.error("Failed to get initial messages for session %s: %s", session_id, exc)
+
         try:
             while True:
-                msg = await self.inbox.get()
-                self._store_user_message(msg)
+                try:
+                    result = await self.adapter.get_messages(thread_id, last_id=last_id, timeout=0)
+                    for msg in result.get("messages", []):
+                        last_id = msg["id"]
+                        if msg.get("sender_id") != takeover_user_id:
+                            self._store_counterpart_message(session_id, msg.get("content", ""))
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.error("Poll error for session %s: %s", session_id, exc)
 
-                if self._state == "idle":
-                    self._think_task = asyncio.get_running_loop().create_task(
-                        self._think_and_send(),
-                        name=f"think-{self.session_id}",
-                    )
-                elif self._state in ("thinking", "sending"):
-                    self._interrupted = True
-        except asyncio.CancelledError:
-            if self._think_task and not self._think_task.done():
-                self._think_task.cancel()
-                with suppress(asyncio.CancelledError):
-                    await self._think_task
-            self._cancel_all_scheduled()
-            raise
+                if self._needs_reply(session_id):
+                    messages = await self._call_llm(session_id)
+                    if messages:
+                        msg_ids = self._write_scheduled_messages(session_id, messages)
+                        await self._send_scheduled(session_id, thread_id, takeover_user_id, msg_ids)
 
-    def _store_user_message(self, payload: Dict[str, Any]):
-        if payload.get("recovery"):
-            return
+                await asyncio.sleep(1)
+        finally:
+            self._cancel_scheduled(session_id)
+
+    # -- Helpers -----------------------------------------------------------
+
+    def _store_counterpart_message(self, session_id: str, content: str):
         db = SessionLocal()
         try:
             db.add(RobotMessage(
-                session_id=self.session_id,
+                session_id=session_id,
                 role="counterpart",
-                content=payload.get("content", ""),
+                content=content,
                 status="sent",
                 created_at=utc_now(),
             ))
@@ -212,20 +272,34 @@ class SessionController:
         finally:
             db.close()
 
-    # -- DB helpers --------------------------------------------------------
+    def _needs_reply(self, session_id: str) -> bool:
+        db = SessionLocal()
+        try:
+            last_msg = (
+                db.query(RobotMessage)
+                .filter(
+                    RobotMessage.session_id == session_id,
+                    RobotMessage.status == "sent",
+                )
+                .order_by(RobotMessage.id.desc())
+                .first()
+            )
+            return last_msg is not None and last_msg.role == "counterpart"
+        finally:
+            db.close()
 
-    def _cancel_all_scheduled(self):
+    def _cancel_scheduled(self, session_id: str):
         db = SessionLocal()
         try:
             db.query(RobotMessage).filter(
-                RobotMessage.session_id == self.session_id,
+                RobotMessage.session_id == session_id,
                 RobotMessage.status == "scheduled",
             ).update({"status": "canceled"}, synchronize_session="fetch")
             db.commit()
         finally:
             db.close()
 
-    def _write_scheduled_messages(self, messages: List[Dict[str, Any]]) -> List[int]:
+    def _write_scheduled_messages(self, session_id: str, messages: List[Dict[str, Any]]) -> List[int]:
         if not messages:
             return []
         now = utc_now()
@@ -237,7 +311,7 @@ class SessionController:
                 cumulative_delay += max(int(m.get("delay_seconds", 0)), 0)
                 scheduled_for = now + timedelta(seconds=cumulative_delay)
                 row = RobotMessage(
-                    session_id=self.session_id,
+                    session_id=session_id,
                     role="robot",
                     content=str(m.get("content", "")),
                     status="scheduled",
@@ -252,72 +326,8 @@ class SessionController:
         finally:
             db.close()
 
-    def _get_all_scheduled_ids(self) -> List[int]:
-        db = SessionLocal()
-        try:
-            rows = (
-                db.query(RobotMessage.id)
-                .filter(
-                    RobotMessage.session_id == self.session_id,
-                    RobotMessage.status == "scheduled",
-                )
-                .order_by(RobotMessage.scheduled_for.asc())
-                .all()
-            )
-            return [r[0] for r in rows]
-        finally:
-            db.close()
-
-    # -- Core loop ---------------------------------------------------------
-
-    async def _think_and_send(self):
-        while True:
-            self._state = "thinking"
-            self._interrupted = False
-
-            messages = await self._call_llm()
-            if messages is None:
-                self._state = "idle"
-                return
-
-            if self._interrupted:
-                continue
-
-            self._write_scheduled_messages(messages)
-            all_scheduled_ids = self._get_all_scheduled_ids()
-
-            self._state = "sending"
-            self._interrupted = False
-
-            await self._send_messages(all_scheduled_ids)
-
-            if self._interrupted:
-                self._cancel_all_scheduled()
-                continue
-
-            self._state = "idle"
-            return
-
-    async def _send_messages(self, msg_ids: List[int]):
-        if not msg_ids:
-            return
-
-        db = SessionLocal()
-        try:
-            session_record = db.query(SessionRecord).filter(
-                SessionRecord.id == self.session_id
-            ).first()
-            if not session_record:
-                return
-            adapter_thread_id = session_record.adapter_thread_id
-            takeover_user_id = session_record.takeover_user_id
-        finally:
-            db.close()
-
+    async def _send_scheduled(self, session_id: str, thread_id: str, takeover_user_id: str, msg_ids: List[int]):
         for msg_id in msg_ids:
-            if self._interrupted:
-                return
-
             db = SessionLocal()
             try:
                 msg = db.query(RobotMessage).filter(RobotMessage.id == msg_id).first()
@@ -334,9 +344,6 @@ class SessionController:
                 if wait > 0:
                     await asyncio.sleep(wait)
 
-            if self._interrupted:
-                return
-
             db = SessionLocal()
             try:
                 msg = db.query(RobotMessage).filter(RobotMessage.id == msg_id).first()
@@ -349,22 +356,24 @@ class SessionController:
                 db.close()
 
             try:
-                await self.runtime.adapter.send_message(adapter_thread_id, takeover_user_id, content)
+                await self.adapter.send_message(thread_id, takeover_user_id, content)
             except Exception as exc:
-                logger.error("Failed to send reply for session %s: %s", self.session_id, exc)
+                logger.error("Failed to send reply for session %s: %s", session_id, exc)
 
-    async def _call_llm(self) -> Optional[List[Dict[str, Any]]]:
+    # -- LLM ---------------------------------------------------------------
+
+    async def _call_llm(self, session_id: str) -> Optional[List[Dict[str, Any]]]:
         db = SessionLocal()
         try:
             session_record = db.query(SessionRecord).filter(
-                SessionRecord.id == self.session_id
+                SessionRecord.id == session_id
             ).first()
             if not session_record or session_record.status != "active":
                 return None
 
             provider_config = get_provider_config(db, session_record)
             if not provider_config:
-                logger.warning("No provider config for session %s", self.session_id)
+                logger.warning("No provider config for session %s", session_id)
                 return None
             if not provider_config.api_key:
                 logger.error("Provider config %s missing api_key", provider_config.id)
@@ -373,7 +382,7 @@ class SessionController:
             history = (
                 db.query(RobotMessage)
                 .filter(
-                    RobotMessage.session_id == self.session_id,
+                    RobotMessage.session_id == session_id,
                     RobotMessage.status == "sent",
                 )
                 .order_by(RobotMessage.id.asc())
@@ -401,20 +410,20 @@ class SessionController:
         max_retries = 5
         for attempt in range(max_retries):
             try:
-                response_text, _usage = await self.runtime.provider.complete_chat(
+                response_text, _usage = await self.provider.complete_chat(
                     base_url, api_key, model, llm_messages
                 )
             except Exception as exc:
-                logger.error("LLM call failed for session %s: %s", self.session_id, exc)
-                self._log_llm_call(llm_messages, f"ERROR: {exc}", model)
+                logger.error("LLM call failed for session %s: %s", session_id, exc)
+                self._log_llm_call(session_id, llm_messages, f"ERROR: {exc}", model)
                 return None
 
-            self._log_llm_call(llm_messages, response_text, model)
+            self._log_llm_call(session_id, llm_messages, response_text, model)
 
             if not response_text or not response_text.strip():
                 logger.warning(
                     "Empty response for session %s (attempt %d/%d), retrying...",
-                    self.session_id, attempt + 1, max_retries,
+                    session_id, attempt + 1, max_retries,
                 )
                 if attempt < max_retries - 1:
                     await asyncio.sleep(3 * (attempt + 1))
@@ -425,7 +434,7 @@ class SessionController:
             except (json.JSONDecodeError, ValueError) as exc:
                 logger.warning(
                     "Failed to parse LLM response for session %s (attempt %d/%d): %s",
-                    self.session_id, attempt + 1, max_retries, exc,
+                    session_id, attempt + 1, max_retries, exc,
                 )
                 if attempt < max_retries - 1:
                     await asyncio.sleep(2)
@@ -434,6 +443,7 @@ class SessionController:
 
     def _log_llm_call(
         self,
+        session_id: str,
         request_messages: List[Dict[str, str]],
         response_raw: str,
         model: Optional[str],
@@ -441,7 +451,7 @@ class SessionController:
         db = SessionLocal()
         try:
             db.add(LlmLog(
-                session_id=self.session_id,
+                session_id=session_id,
                 request_messages=json.dumps(request_messages, ensure_ascii=False),
                 response_raw=response_raw,
                 model=model,
@@ -452,167 +462,3 @@ class SessionController:
             logger.error("Failed to write LLM log: %s", exc)
         finally:
             db.close()
-
-
-# ---------------------------------------------------------------------------
-# RobotRuntime — top-level orchestrator (long-polling based)
-# ---------------------------------------------------------------------------
-
-class RobotRuntime:
-    def __init__(self, options: RuntimeOptions):
-        self.options = options
-        self.adapter = ChatAdapter(options.chat_api_base_url)
-        self.provider = ProviderClient(options.request_timeout)
-        self._task: Optional[asyncio.Task[Any]] = None
-        self._controllers: Dict[str, SessionController] = {}
-        self._poll_tasks: Dict[str, asyncio.Task[Any]] = {}
-
-    async def start(self):
-        await self._recover_unprocessed()
-        loop = asyncio.get_running_loop()
-        self._task = loop.create_task(self._session_scan_loop(), name="session-scanner")
-
-    async def stop(self):
-        if self._task:
-            self._task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._task
-        for task in self._poll_tasks.values():
-            task.cancel()
-        for task in self._poll_tasks.values():
-            with suppress(asyncio.CancelledError):
-                await task
-        for ctrl in self._controllers.values():
-            await ctrl.stop()
-        self._controllers.clear()
-        self._poll_tasks.clear()
-        await self.adapter.close()
-        await self.provider.close()
-
-    async def _recover_unprocessed(self):
-        db = SessionLocal()
-        try:
-            sessions = db.query(SessionRecord).filter(SessionRecord.status == "active").all()
-            for sr in sessions:
-                last_msg = (
-                    db.query(RobotMessage)
-                    .filter(RobotMessage.session_id == sr.id)
-                    .order_by(RobotMessage.id.desc())
-                    .first()
-                )
-                if last_msg and last_msg.role == "counterpart":
-                    logger.info("Recovery: re-triggering session %s", sr.id)
-                    ctrl = self._get_or_create_controller(sr.id)
-                    await ctrl.inbox.put({"content": "", "recovery": True})
-        finally:
-            db.close()
-
-    def _get_or_create_controller(self, session_id: str) -> SessionController:
-        if session_id not in self._controllers:
-            ctrl = SessionController(session_id, self)
-            self._controllers[session_id] = ctrl
-            asyncio.get_running_loop().create_task(ctrl.start())
-        return self._controllers[session_id]
-
-    async def _session_scan_loop(self):
-        """Periodically scan for active sessions and start/stop poll tasks."""
-        scan_count = 0
-        while True:
-            try:
-                db = SessionLocal()
-                try:
-                    active_sessions = db.query(SessionRecord).filter(
-                        SessionRecord.status == "active"
-                    ).all()
-                    active_ids = {s.id for s in active_sessions}
-                    session_map = {s.id: s for s in active_sessions}
-                finally:
-                    db.close()
-
-                # Start poll tasks for new active sessions
-                for sid in active_ids:
-                    if sid not in self._poll_tasks or self._poll_tasks[sid].done():
-                        sr = session_map[sid]
-                        self._poll_tasks[sid] = asyncio.get_running_loop().create_task(
-                            self._poll_session(sr.id, sr.adapter_thread_id, sr.takeover_user_id),
-                            name=f"poll-{sid}",
-                        )
-
-                # Stop poll tasks for inactive sessions
-                for sid in list(self._poll_tasks.keys()):
-                    if sid not in active_ids:
-                        self._poll_tasks[sid].cancel()
-                        with suppress(asyncio.CancelledError):
-                            await self._poll_tasks[sid]
-                        del self._poll_tasks[sid]
-
-                # Every ~60s: detect deadlocked idle sessions and re-trigger
-                scan_count += 1
-                if scan_count % 12 == 0:
-                    await self._recover_stuck_idle_sessions()
-
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.error("Session scan error: %s", exc)
-
-            await asyncio.sleep(5)
-
-    async def _recover_stuck_idle_sessions(self):
-        """Re-trigger sessions that are idle but have an unprocessed counterpart message."""
-        db = SessionLocal()
-        try:
-            active_sessions = db.query(SessionRecord).filter(
-                SessionRecord.status == "active"
-            ).all()
-            for sr in active_sessions:
-                ctrl = self._controllers.get(sr.id)
-                if ctrl and ctrl._state != "idle":
-                    continue
-                last_msg = (
-                    db.query(RobotMessage)
-                    .filter(RobotMessage.session_id == sr.id)
-                    .order_by(RobotMessage.id.desc())
-                    .first()
-                )
-                if last_msg and last_msg.role == "counterpart":
-                    logger.info("Recovering stuck idle session %s", sr.id)
-                    ctrl = self._get_or_create_controller(sr.id)
-                    await ctrl.inbox.put({"content": "", "recovery": True})
-        finally:
-            db.close()
-
-    async def _poll_session(self, session_id: str, thread_id: str, takeover_user_id: str):
-        """Long-poll a single session for new messages from the counterpart."""
-        # Get the last known message id from robot_messages
-        last_id = 0
-        db = SessionLocal()
-        try:
-            # First, get current messages to establish baseline
-            result = await self.adapter.get_messages(thread_id, last_id=0, timeout=0)
-            messages = result.get("messages", [])
-            if messages:
-                last_id = messages[-1]["id"]
-        except Exception as exc:
-            logger.error("Failed to get initial messages for session %s: %s", session_id, exc)
-        finally:
-            db.close()
-
-        while True:
-            try:
-                result = await self.adapter.get_messages(thread_id, last_id=last_id, timeout=30)
-                messages = result.get("messages", [])
-                for msg in messages:
-                    last_id = msg["id"]
-                    # Only process messages from the counterpart (not from takeover_user)
-                    if msg.get("sender_id") != takeover_user_id:
-                        ctrl = self._get_or_create_controller(session_id)
-                        await ctrl.inbox.put({
-                            "content": msg.get("content", ""),
-                            "sender_id": msg.get("sender_id"),
-                        })
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.error("Poll error for session %s: %s", session_id, exc)
-                await asyncio.sleep(2)

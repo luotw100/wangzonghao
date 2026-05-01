@@ -398,7 +398,7 @@ class SessionController:
         finally:
             db.close()
 
-        max_retries = 3
+        max_retries = 5
         for attempt in range(max_retries):
             try:
                 response_text, _usage = await self.runtime.provider.complete_chat(
@@ -411,6 +411,15 @@ class SessionController:
 
             self._log_llm_call(llm_messages, response_text, model)
 
+            if not response_text or not response_text.strip():
+                logger.warning(
+                    "Empty response for session %s (attempt %d/%d), retrying...",
+                    self.session_id, attempt + 1, max_retries,
+                )
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(3 * (attempt + 1))
+                continue
+
             try:
                 return parse_llm_response(response_text)
             except (json.JSONDecodeError, ValueError) as exc:
@@ -418,8 +427,10 @@ class SessionController:
                     "Failed to parse LLM response for session %s (attempt %d/%d): %s",
                     self.session_id, attempt + 1, max_retries, exc,
                 )
-                if attempt == max_retries - 1:
-                    return None
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(2)
+
+        return None
 
     def _log_llm_call(
         self,
@@ -505,6 +516,7 @@ class RobotRuntime:
 
     async def _session_scan_loop(self):
         """Periodically scan for active sessions and start/stop poll tasks."""
+        scan_count = 0
         while True:
             try:
                 db = SessionLocal()
@@ -534,12 +546,41 @@ class RobotRuntime:
                             await self._poll_tasks[sid]
                         del self._poll_tasks[sid]
 
+                # Every ~60s: detect deadlocked idle sessions and re-trigger
+                scan_count += 1
+                if scan_count % 12 == 0:
+                    await self._recover_stuck_idle_sessions()
+
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.error("Session scan error: %s", exc)
 
             await asyncio.sleep(5)
+
+    async def _recover_stuck_idle_sessions(self):
+        """Re-trigger sessions that are idle but have an unprocessed counterpart message."""
+        db = SessionLocal()
+        try:
+            active_sessions = db.query(SessionRecord).filter(
+                SessionRecord.status == "active"
+            ).all()
+            for sr in active_sessions:
+                ctrl = self._controllers.get(sr.id)
+                if ctrl and ctrl._state != "idle":
+                    continue
+                last_msg = (
+                    db.query(RobotMessage)
+                    .filter(RobotMessage.session_id == sr.id)
+                    .order_by(RobotMessage.id.desc())
+                    .first()
+                )
+                if last_msg and last_msg.role == "counterpart":
+                    logger.info("Recovering stuck idle session %s", sr.id)
+                    ctrl = self._get_or_create_controller(sr.id)
+                    await ctrl.inbox.put({"content": "", "recovery": True})
+        finally:
+            db.close()
 
     async def _poll_session(self, session_id: str, thread_id: str, takeover_user_id: str):
         """Long-poll a single session for new messages from the counterpart."""

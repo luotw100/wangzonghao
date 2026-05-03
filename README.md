@@ -1,41 +1,53 @@
 # Laborster
 
-Laborster 是一个面向私聊场景的 **AI 角色调试工作台**。通过前后端分离架构，将「聊天数据」与「角色策略/编排」拆分为两个独立后端，实现清晰的领域边界与灵活的消息流控制。
+Laborster 是一个**通用拟人化私聊接管服务**：让 AI 替你的主播 / 销售 / 自由职业者，在长期私聊场景里自动回复联系人，保温关系。
+
+> 当前阶段聚焦「主播-粉丝」场景，命名上保持中性（Operator / Contact）以兼容未来扩展。详细产品定位与规则参见 [AGENTS.md](./AGENTS.md)。
 
 ---
 
-## 架构概览
+## 数据模型
+
+三个核心原语：
+
+| 原语 | 数量 | 角色 |
+| --- | --- | --- |
+| **Operator** | 1 / 账号 | 主播本人。包含 Persona（风格 + 生活情境） |
+| **Contact** | N / Operator | 粉丝。包含 Card（备注名 / 关系档位 / 共享过的事实 等） |
+| **Conversation** | 每个 Contact 一段 | 真实聊天历史，原始数据；蒸馏读它，运行时也读它 |
+
+**Persona 和 Card 怎么来**：上传历史聊天 → 蒸馏（rolling fold over LLM）→ 自动生成 → 主播校对。运行时把 Persona + Card + 完整对话历史一起喂给 LLM，生成拟人回复。
+
+---
+
+## 架构
 
 ```mermaid
 graph TB
     subgraph Browser
-        FE["Frontend<br/>(React + Tailwind CSS)"]
+        FE["Frontend<br/>React + Tailwind"]
     end
 
-    subgraph Nginx["Nginx :23456"]
-        direction LR
-        NG_STATIC["/ → 静态资源"]
+    subgraph Nginx[":23456"]
+        NG_STATIC["/ → 静态"]
         NG_CHAT["/api/* → Chat"]
         NG_ROBOT["/api/robot/* → Robot API"]
     end
 
     subgraph Backend
-        CHAT["Chat Service<br/>:23456<br/>(FastAPI)"]
-        ROBOT_API["Robot API<br/>:23457<br/>(FastAPI)"]
-        ROBOT_WORKER["Robot Worker<br/>(asyncio consumer)"]
-    end
-
-    subgraph Infra
-        REDIS["Redis"]
+        CHAT["Chat Service<br/>(微信模拟器)"]
+        ROBOT_API["Robot API"]
+        ROBOT_WORKER["Robot Worker<br/>(Session + Distill)"]
     end
 
     subgraph Storage
-        CHAT_DB[("chat.db<br/>SQLite")]
-        ROBOT_DB[("robot.db<br/>SQLite")]
+        CHAT_DB[("chat.db")]
+        ROBOT_DB[("robot.db")]
+        UPLOADS[("storage/uploads/")]
     end
 
     subgraph External
-        LLM["OpenAI-compatible<br/>LLM Provider"]
+        LLM["LLM Provider"]
     end
 
     FE -->|HTTP| Nginx
@@ -44,403 +56,177 @@ graph TB
     NG_ROBOT --> ROBOT_API
 
     CHAT --> CHAT_DB
-    CHAT -->|"LPUSH robot:inbox"| REDIS
     ROBOT_API --> ROBOT_DB
-    ROBOT_API -->|"HTTP: 创建/删除 Conversation"| CHAT
-
+    ROBOT_API --> UPLOADS
+    ROBOT_API -->|创建 user/conversation/bulk-import| CHAT
     ROBOT_WORKER --> ROBOT_DB
-    ROBOT_WORKER -->|"BRPOP robot:inbox"| REDIS
-    ROBOT_WORKER -->|"HTTP: 发送回复"| CHAT
-    ROBOT_WORKER -->|"HTTP: LLM Chat Completions"| LLM
+    ROBOT_WORKER -->|轮询 + 发送| CHAT
+    ROBOT_WORKER -->|reply + distill| LLM
 ```
 
+四个容器：
+
+| 容器 | 角色 |
+| --- | --- |
+| `nginx` | 静态资源 + 反向代理 |
+| `chat` | 通用聊天 Adapter，**充当微信模拟器**——上传历史聊天会自动注入此处，调试者可继续在 Chat UI 里扮演粉丝聊天 |
+| `robot-api` | Robot 领域 API（Operator / Contact / Archive / Distill / Provider） |
+| `robot-worker` | 1 Session Scanner + 1 Distill Scanner + N Session Loop。所有耗时的事都在这里 |
+
 ---
 
-## 消息流
+## 主播 Onboarding 流程
 
-```mermaid
-sequenceDiagram
-    participant User as 用户 (Browser)
-    participant Chat as Chat Service
-    participant Redis as Redis
-    participant Worker as Robot Worker
-    participant LLM as LLM Provider
-
-    Note over User, Chat: 1. 创建 Session（用户调用 Robot API）
-    User->>Robot as Robot API: POST /api/robot/sessions (robot_id, contact_id)
-    Robot->>Chat: POST /api/conversations（内部 HTTP 调用）
-    Chat-->>Robot: conversation
-    Robot-->>User: session payload（含 adapter.thread_id）
-
-    Note over User, Chat: 2. 用户发送消息
-    User->>Chat: POST /api/conversations/{id}/messages (role=user)
-    Chat->>Redis: LPUSH robot:inbox {conversation_id, content}
-    Chat-->>User: OK
-
-    Note over Worker, Redis: 3. Worker 消费 inbox
-    Worker->>Redis: BRPOP robot:inbox
-    Redis-->>Worker: {conversation_id, role, content}
-
-    Note over Worker: 4. 存入 robot_messages 表
-
-    Note over Worker, LLM: 5. 调用 LLM 生成回复
-    Worker->>LLM: POST /chat/completions (带 profile + 历史)
-    LLM-->>Worker: JSON {messages: [{delay_seconds, content}]}
-
-    Note over Worker: 6. 按 delay_seconds 依次 asyncio.sleep + 发送
-
-    Note over Worker, Chat: 7. 发送回复到 Chat
-    Worker->>Chat: POST /api/conversations/{id}/messages (role=robot)
-
-    Note over User, Chat: 8. 用户通过长轮询收到回复
-    User->>Chat: GET /api/conversations/{id}/messages?last_id=M&timeout=30
-    Chat-->>User: robot 消息
+```
+1. 创建 Operator（自动绑一个 chat 模拟器 user）
+2. 配置 Provider Config
+3. 上传 WeFlow JSON 聊天记录（指明 self_wxid）
+   ↓
+   robot-api 一次性完成：
+     - 解析 → 写 robot.db (Contact + Session + messages)
+     - 给粉丝创建 chat 模拟器 user
+     - 创建 chat 模拟器 conversation
+     - bulk-import 历史聊天到 chat（保留原始 timestamp）
+4. 触发蒸馏 Job
+   ↓
+   robot-worker 后台跑：
+     - 每个 Contact 切 session/window
+     - rolling fold 更新 operator.persona_md + contact.card_md
+5. 主播在 RobotPage 校对 Persona / Cards
+6. 在 Chat UI 切换到粉丝身份继续聊天 → Worker 自动回复
 ```
 
----
-
-## 核心概念
-
-| 概念 | 归属 | 说明 |
-| --- | --- | --- |
-| `Robot` | robot.db | 机器人角色模板，含 `name` + `profile`(System Prompt) |
-| `Contact` | robot.db | 独立联系人画像实体，含 `name` + `profile` |
-| `ProviderConfig` | robot.db | LLM Provider 配置：`base_url` / `api_key` / `default_model` |
-| `Session` | robot.db | 核心会话资源，关联 Robot + Contact + adapter thread |
-| `RobotMessage` | robot.db | Robot 拥有的完整消息历史（source of truth） |
-| `Conversation` | chat.db | 纯聊天会话，不关心角色/策略 |
-| `Message` | chat.db | 聊天消息，区分 `user` / `robot` |
+历史聊天和实时聊天**进同一张 messages 表**（用 `source` 字段区分），蒸馏和运行时都能看到全量上下文。
 
 ---
 
-## 数据库结构
+## 数据库
 
 ### chat.db
 
-```mermaid
-erDiagram
-    conversations {
-        String id PK "c_{uuid12}"
-        String title
-        Boolean is_deleted "默认 false"
-        DateTime deleted_at
-        DateTime created_at
-        DateTime updated_at
-    }
-
-    messages {
-        Integer id PK "自增"
-        String conversation_id FK
-        String role "user, robot"
-        String msg_type
-        Text content
-        DateTime created_at
-    }
-
-    conversations ||--o{ messages : "has"
-```
+| 表 | 说明 |
+| --- | --- |
+| `users` | chat 用户（Operator 和 Contact 都在这里有对应 shadow user） |
+| `conversations` | chat 会话 |
+| `messages` | chat 消息（包括 ingest 时 bulk-import 的历史） |
 
 ### robot.db
 
-```mermaid
-erDiagram
-    robots {
-        String id PK "r_{uuid8}"
-        String name
-        Text profile "System Prompt"
-        Boolean is_deleted "默认 false"
-        DateTime deleted_at
-        DateTime created_at
-        DateTime updated_at
-    }
-
-    contacts {
-        String id PK "ct_{uuid8}"
-        String name
-        Text profile "联系人画像"
-        Boolean is_deleted "默认 false"
-        DateTime deleted_at
-        DateTime created_at
-        DateTime updated_at
-    }
-
-    provider_configs {
-        String id PK "p_{uuid8}"
-        String name
-        String base_url
-        Text api_key
-        String default_model
-        DateTime created_at
-        DateTime updated_at
-    }
-
-    sessions {
-        String id PK "s_{uuid8}"
-        String title
-        String robot_id FK
-        String contact_id FK
-        String provider_config_id FK "可选"
-        String adapter_type "chat"
-        String adapter_thread_id UK "对应 chat.conversations.id"
-        String status "active, deleted, orphaned"
-        DateTime created_at
-        DateTime updated_at
-    }
-
-    robot_messages {
-        Integer id PK "自增"
-        String session_id FK
-        String role "user, assistant"
-        Text content
-        String status "scheduled, sent, canceled"
-        DateTime scheduled_for
-        DateTime created_at
-    }
-
-    robots ||--o{ sessions : "robot_id"
-    contacts ||--o{ sessions : "contact_id"
-    provider_configs ||--o{ sessions : "provider_config_id"
-    sessions ||--o{ robot_messages : "session_id"
-```
+| 表 | 说明 |
+| --- | --- |
+| `provider_configs` | LLM Provider |
+| `operators` | 主播本人。`adapter_identities` JSON 存各 adapter 上的身份 |
+| `contacts` | 粉丝。`(operator_id, wechat_wxid)` 唯一 |
+| `sessions` | 纯连接器：Contact ↔ adapter_thread_id |
+| `chat_archives` | 上传的 WeFlow 文件清单（保留原始文件路径，便于重蒸） |
+| `messages` | 统一消息表（upload + live） |
+| `distill_jobs` | 蒸馏任务（pending/running/done/failed + progress JSON） |
+| `llm_logs` | LLM 调用日志（reply / distill 共用） |
 
 ---
 
-## 组件职责
+## API 速览
 
-| 组件 | 路径 | 职责 |
-| --- | --- | --- |
-| **Chat** | `chat/` | 会话 CRUD、消息写入与长轮询、用户消息推送到 Redis inbox |
-| **Robot API** | `robot/main.py` | Robot / Contact / Session / ProviderConfig API |
-| **Robot Worker** | `robot/worker.py` + `robot/runtime.py` | 单消费者 loop：BRPOP inbox → 存消息 → 调 LLM → 延迟发送回复 |
-| **Frontend** | `frontend/` | React SPA (Vite + React + Tailwind CSS)，Nginx 容器内构建并托管 |
-| **Storage** | `storage/` | `chat.db`、`robot.db` 等运行时数据 |
-
----
-
-## API 参考
-
-Nginx 对外暴露两个后端命名空间：
-
-- `/api/*` → Chat 服务
-- `/api/robot/*` → Robot API 服务
-
-### Chat API
+### Chat (`/api/*`)
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/conversations` | 创建会话 |
-| GET | `/api/conversations` | 列出会话 (`?include_deleted=true`) |
-| GET | `/api/conversations/{id}` | 获取单个会话 |
-| PUT | `/api/conversations/{id}` | 更新会话标题 |
-| DELETE | `/api/conversations/{id}` | 软删除会话 |
-| POST | `/api/conversations/{id}/restore` | 恢复已删除会话 |
-| POST | `/api/conversations/{id}/messages` | 写入消息 (`role=user\|robot`)，user 消息自动推送到 Redis |
-| GET | `/api/conversations/{id}/messages` | 获取消息 (`?last_id=&timeout=` 支持长轮询) |
+| POST | `/users` | 创建 user |
+| GET/PUT/DELETE | `/users/{id}` | 用户 CRUD |
+| POST | `/conversations` | 创建会话 |
+| GET | `/conversations/{id}/messages?last_id=&timeout=` | 长轮询拉消息 |
+| POST | `/conversations/{id}/messages` | 发消息 |
+| **POST** | **`/conversations/{id}/messages/bulk`** | **bulk import（保留历史 timestamp）** |
 
-### Robot API
+### Robot (`/api/robot/*`)
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/api/robot/robots` | 创建 Robot |
-| GET | `/api/robot/robots` | 列出 Robots (`?include_deleted=true`) |
-| PUT | `/api/robot/robots/{id}` | 更新 Robot |
-| DELETE | `/api/robot/robots/{id}` | 软删除 Robot |
-| POST | `/api/robot/robots/{id}/restore` | 恢复 Robot |
-| POST | `/api/robot/contacts` | 创建联系人 |
-| GET | `/api/robot/contacts` | 列出联系人 (`?include_deleted=true`) |
-| PUT | `/api/robot/contacts/{id}` | 更新联系人 |
-| DELETE | `/api/robot/contacts/{id}` | 软删除联系人 |
-| POST | `/api/robot/contacts/{id}/restore` | 恢复联系人 |
-| POST | `/api/robot/provider-configs` | 创建 ProviderConfig |
-| GET | `/api/robot/provider-configs` | 列出 ProviderConfig |
-| PUT | `/api/robot/provider-configs/{id}` | 更新 ProviderConfig |
-| DELETE | `/api/robot/provider-configs/{id}` | 删除 ProviderConfig |
-| POST | `/api/robot/sessions` | 创建 Session (自动创建 Conversation) |
-| GET | `/api/robot/sessions` | 列出 Sessions (`?include_deleted=true`) |
-| GET | `/api/robot/sessions/{id}` | 获取 Session 详情 |
-| PUT | `/api/robot/sessions/{id}` | 更新 Session (标题/Robot/Contact) |
-| DELETE | `/api/robot/sessions/{id}` | 软删除 Session + 底层 Conversation |
-| POST | `/api/robot/sessions/{id}/restore` | 恢复 Session + 底层 Conversation |
-
----
-
-## 目录结构
-
-```text
-.
-├── chat/
-│   ├── __init__.py
-│   ├── main.py              # Chat 后端入口 (FastAPI app + 路由 + Redis 推送)
-│   ├── models.py            # SQLAlchemy ORM 模型 (Conversation, Message)
-│   ├── schemas.py           # Pydantic 请求模型
-│   └── db.py                # 数据库引擎与工具函数
-├── robot/
-│   ├── __init__.py
-│   ├── main.py               # Robot API (FastAPI)
-│   ├── worker.py              # Worker 启动入口
-│   ├── runtime.py             # Worker 核心消费者 loop
-│   ├── models.py              # SQLAlchemy ORM 模型
-│   ├── schemas.py             # Pydantic 请求模型
-│   ├── clients.py             # Chat API / Provider HTTP 客户端
-│   └── db.py                  # 数据库引擎与工具函数
-├── frontend/
-│   ├── Dockerfile             # 多阶段构建 (Node build → Nginx)
-│   ├── index.html             # Vite 入口 HTML
-│   ├── package.json           # Node 依赖
-│   ├── vite.config.ts         # Vite 配置
-│   ├── tsconfig.json          # TypeScript 配置
-│   └── src/
-│       ├── main.tsx           # React 应用入口
-│       ├── App.tsx            # 根组件 (Layout + Modal 管理)
-│       ├── index.css          # Tailwind CSS 入口 + 自定义样式
-│       ├── hooks/
-│       │   └── useAppStore.ts # 全局状态 Hook
-│       ├── lib/
-│       │   ├── api.ts         # 后端 API 封装 (fetch)
-│       │   ├── utils.ts       # 工具函数
-│       │   └── templates.ts   # 模板常量
-│       └── components/
-│           ├── Icons.tsx              # SVG 图标组件
-│           ├── Modal.tsx              # 通用 Modal 组件
-│           ├── Sidebar.tsx            # 侧边栏 (Robot/Session 列表)
-│           ├── ChatArea.tsx           # 聊天区域 (消息 + 输入)
-│           ├── CreateRobotModal.tsx   # 创建 Robot 弹窗
-│           ├── EditRobotModal.tsx     # 编辑 Robot 弹窗
-│           ├── CreateContactModal.tsx # 创建联系人弹窗
-│           ├── EditContactModal.tsx   # 编辑联系人弹窗
-│           ├── CreateSessionModal.tsx # 创建 Session 弹窗
-│           ├── EditSessionModal.tsx   # 编辑 Session 弹窗
-│           └── SettingsModal.tsx      # 设置弹窗 (Robot/联系人/Provider)
-├── docker-compose.yml
-├── Dockerfile
-├── nginx.conf
-├── pyproject.toml
-└── README.md
-```
+| GET/POST | `/provider-configs` | Provider CRUD |
+| GET/POST | `/operators` | Operator CRUD（POST 自动建 chat user） |
+| GET/PUT | `/operators/{id}` | 单个 Operator（PUT 改 persona_md / provider 等） |
+| GET | `/operators/{id}/contacts` | 列出该 Operator 的粉丝 |
+| PUT | `/contacts/{id}` | 改备注名 / Card |
+| GET/POST | `/operators/{id}/chat-archives` | multipart 上传 + 列表 |
+| GET/POST | `/operators/{id}/distill-jobs` | 触发蒸馏 + 列表 |
+| GET | `/distill-jobs/{id}` | 查蒸馏进度 |
+| GET | `/operators/{id}/sessions` | 看 Session 列表（read-only） |
+| GET | `/sessions/{id}/planned-replies?last_count=&timeout=` | 长轮询查待发消息 |
 
 ---
 
 ## 快速开始
 
-### Docker Compose 启动
+### Docker Compose
 
 ```bash
-docker compose up --build
+docker compose up -d --build
 ```
 
-访问地址：`http://localhost:23456`
+打开 http://localhost:23456 。
 
-Compose 启动五个服务：
+四个服务：`nginx`, `chat`, `robot-api`, `robot-worker`。`storage/` 目录持久化两个 SQLite DB 和上传的 archive。
 
-| 服务 | 说明 |
+### 第一次使用
+
+1. 进 RobotPage → Provider tab → 新建 Provider Config（base_url + api_key + model）
+2. 顶部「新建主播」→ 填名字、选 Provider
+3. 切到「聊天记录」tab → 填 self_wxid（在导出文件里要存在）→ 选文件 → 上传
+4. 切到「蒸馏」tab → 「开始蒸馏」→ 等几分钟（可看进度）
+5. 切到「人设」tab → 校对自动生成的人设
+6. 切到「联系人」tab → 校对每个粉丝的 Card
+7. 切到 ChatPage → 选刚自动创建的会话 → 切换为粉丝身份发消息 → 等 Worker 回复
+
+### 启动参数
+
+| 服务 | 必填参数 |
 | --- | --- |
-| `nginx` | 统一入口，托管前端并分发 API 请求 |
-| `redis` | 消息队列 (inbox) |
-| `chat` | 聊天后端 |
-| `robot-api` | Robot 领域 API |
-| `robot-worker` | 后台 Worker (消费 inbox → LLM 生成 → 延迟发送) |
+| `robot-api` | `--host`, `--port`, `--chat-api-base-url` |
+| `robot-worker` | `--chat-api-base-url`, `--request-timeout` |
+| `chat` | (无；监听 `0.0.0.0:23456`) |
 
-### 初始化 Provider Config
-
-系统启动后，需要通过 API 或前端设置页创建一个 Provider Config，否则 Robot Worker 无法调用 LLM：
+### 本地开发（不用 docker）
 
 ```bash
-curl -X POST http://localhost:23456/api/robot/provider-configs \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "name": "deepseek",
-    "base_url": "https://api.deepseek.com",
-    "api_key": "YOUR_API_KEY",
-    "default_model": "deepseek-chat"
-  }'
-```
-
-> `base_url` 是 `/chat/completions` 之前的前缀。
-> 例：DeepSeek → `https://api.deepseek.com`，OpenAI → `https://api.openai.com/v1`
-
-### 本地直接运行
-
-```bash
-# 启动 Redis
-redis-server
-
-# 聊天后端
-REDIS_URL=redis://localhost:6379/0 uv run uvicorn chat.main:app --host 0.0.0.0 --port 23456
+# Chat
+uv run uvicorn chat.main:app --host 0.0.0.0 --port 23456
 
 # Robot API
-uv run python -m robot.main --host 127.0.0.1 --port 23457 --chat-api-base-url http://127.0.0.1:23456/api
+uv run python -m robot.main \
+  --host 127.0.0.1 --port 23457 \
+  --chat-api-base-url http://127.0.0.1:23456/api
 
 # Robot Worker
-uv run python -m robot.worker --chat-api-base-url http://127.0.0.1:23456/api --redis-url redis://localhost:6379/0 --request-timeout 120
+uv run python -m robot.worker \
+  --chat-api-base-url http://127.0.0.1:23456/api \
+  --request-timeout 120
 
-# 复读模式 (不需要 LLM)
-uv run python -m robot.worker --chat-api-base-url http://127.0.0.1:23456/api --redis-url redis://localhost:6379/0 --request-timeout 120 --echo-mode
+# Frontend
+cd frontend && npm install && npm run dev
 ```
 
-### 前端开发模式
+蒸馏也可以脱离 worker 直接跑（调试用）：
 
 ```bash
-cd frontend
-npm install
-npm run dev
+uv run python -m robot.distill.pipeline \
+  --operator-id op_xxxxxxxx --request-timeout 120
 ```
-
-前端开发服务器默认运行在 `http://localhost:5173`，已配置 Vite 代理将 `/api` 和 `/storage` 请求转发到 `http://localhost:23456`（需要后端服务同时运行）。
-
----
-
-## 启动参数
-
-### Robot API
-
-| 参数 | 说明 | 默认值 |
-| --- | --- | --- |
-| `--host` | 监听地址 | 必填 |
-| `--port` | 监听端口 | 必填 |
-| `--chat-api-base-url` | Chat API 地址 | 必填 |
-
-### Chat Service
-
-| 环境变量 | 说明 | 默认值 |
-| --- | --- | --- |
-| `REDIS_URL` | Redis 连接地址 | 必填，未设置报错 |
-
-### Robot Worker
-
-| 参数 | 说明 | 默认值 |
-| --- | --- | --- |
-| `--chat-api-base-url` | Chat API 地址 | 必填 |
-| `--redis-url` | Redis 连接地址 | 必填 |
-| `--request-timeout` | LLM 请求超时 (秒) | 必填 |
-| `--echo-mode` | 复读模式 (不调用 LLM) | 关闭 |
 
 ---
 
 ## 持久化
 
-Docker Compose 创建名为 `app-storage` 的 volume，保存：
+`storage/` 目录（被 docker bind-mount）：
 
-- `storage/chat.db` — 聊天数据
-- `storage/robot.db` — Robot 领域数据
-
-容器重建后数据保留。
+- `chat.db`, `robot.db`
+- `uploads/{operator_id}/{archive_id}.json`：上传的 WeFlow 原始文件，保留以便未来 prompt 改动后重蒸
 
 ---
 
 ## 设计备注
 
-### 架构原则
-
-- **消息队列 + 消费者模型**：Chat 写入消息后 LPUSH 到 Redis inbox，Worker BRPOP 消费
-- **Robot 拥有完整消息历史**：`robot_messages` 表是 source of truth，Worker 不依赖 Adapter 在线
-- **无流水表**：Worker 处理过程纯内存，可靠性靠 DB 兜底（重启后扫描未回复的 session 恢复）
-- **延迟发送用 asyncio.sleep**：不需要额外表或定时器
-- **新消息取消旧任务**：用户发新消息时，Worker 取消该 session 正在进行的处理任务，重新生成
-
-### 已知约束
-
-- `chat` 不关心 Robot / Contact / Session / ProviderConfig
-- `robot-api` 只做 API，不消费后台任务
-- `robot-worker` 通过 Redis 感知新消息，通过 Chat HTTP API 发送回复
-- 两个 SQLite 数据库之间没有跨库外键约束
-- 无认证/授权机制 (调试用途)
+- **「微信模拟器」是关键设计**：上传聊天记录时，**双写**到 robot.db（蒸馏用）和 chat.db（调试用），调试场景和真实微信场景代码路径完全同构。未来接微信只是换一个 Adapter，业务逻辑零改动。
+- **三原语严格分离**：Operator 的人设和 Contact 的卡片是不同生命周期的资产，不要把它们塞进 Session。Session 只是 (Contact × adapter thread) 的连接器。
+- **故障恢复天然**：Worker 重启后扫 active sessions 重建即可，无需任务表。Session Loop 启动取当前 `last_id` 自然跳过 backlog（包括 ingest bulk-import 的历史）。
+- **蒸馏的产出是非对称的**：一份 Operator Persona 全 Operator 共享，N 份 Contact Card 各属各的粉丝。fold prompt（[robot/distill/prompts/fold.md](robot/distill/prompts/fold.md)）按这个形态写。
+- **目前未实现 / 未来再做**：search-tool（基于 corpus 的事实召回）、Playbook（按场景定制 SYSTEM_INSTRUCTION）、增量蒸馏、多 adapter（真实微信 / 企微 / 飞书）。

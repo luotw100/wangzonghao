@@ -1,22 +1,34 @@
 import argparse
 import asyncio
+import tempfile
 import time
 import uuid
+from pathlib import Path
 from typing import Any, AsyncIterator, Dict, Optional
 
 import httpx
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from sqlalchemy.orm import Session
 
 from robot.clients import ChatAdapter
 from robot.db import SessionLocal, ensure_database, get_db, utc_now
-from robot.models import ProviderConfig, RobotMessage, SessionRecord
+from robot.distill.ingest import ingest_archive
+from robot.models import (
+    ChatArchive,
+    Contact,
+    DistillJob,
+    Message,
+    Operator,
+    ProviderConfig,
+    SessionRecord,
+)
 from robot.schemas import (
+    ContactUpdate,
+    OperatorCreate,
+    OperatorUpdate,
     ProviderConfigCreate,
     ProviderConfigUpdate,
-    SessionCreate,
-    SessionUpdate,
 )
 
 ensure_database()
@@ -48,34 +60,93 @@ def serialize_provider_config(provider_config: ProviderConfig) -> Dict[str, Any]
     }
 
 
-def serialize_session(session_record: SessionRecord, provider_config: Optional[ProviderConfig] = None) -> Dict[str, Any]:
+def serialize_operator(op: Operator, db: Session) -> Dict[str, Any]:
+    pc = None
+    if op.provider_config_id:
+        pc = db.query(ProviderConfig).filter(ProviderConfig.id == op.provider_config_id).first()
+    return {
+        "id": op.id,
+        "name": op.name,
+        "persona_md": op.persona_md,
+        "adapter_identities": op.adapter_identities or {},
+        "provider_config_id": op.provider_config_id,
+        "provider_config": serialize_provider_config(pc) if pc else None,
+        "status": op.status,
+        "created_at": op.created_at,
+        "updated_at": op.updated_at,
+    }
+
+
+def serialize_contact(contact: Contact) -> Dict[str, Any]:
+    return {
+        "id": contact.id,
+        "operator_id": contact.operator_id,
+        "display_name": contact.display_name,
+        "wechat_wxid": contact.wechat_wxid,
+        "chat_user_id": contact.chat_user_id,
+        "card_md": contact.card_md,
+        "status": contact.status,
+        "created_at": contact.created_at,
+        "updated_at": contact.updated_at,
+    }
+
+
+def serialize_session(session_record: SessionRecord) -> Dict[str, Any]:
     return {
         "id": session_record.id,
+        "contact_id": session_record.contact_id,
         "adapter_type": session_record.adapter_type,
         "adapter_thread_id": session_record.adapter_thread_id,
-        "takeover_user_id": session_record.takeover_user_id,
-        "profile": session_record.profile,
-        "counterpart_profile": session_record.counterpart_profile,
-        "provider_config_id": session_record.provider_config_id,
-        "provider_config": serialize_provider_config(provider_config) if provider_config else None,
         "status": session_record.status,
         "created_at": session_record.created_at,
         "updated_at": session_record.updated_at,
     }
 
 
+def serialize_archive(archive: ChatArchive) -> Dict[str, Any]:
+    return {
+        "id": archive.id,
+        "operator_id": archive.operator_id,
+        "filename": archive.filename,
+        "self_wxid": archive.self_wxid,
+        "message_count": archive.message_count,
+        "contact_count": archive.contact_count,
+        "uploaded_at": archive.uploaded_at,
+    }
+
+
+def serialize_distill_job(job: DistillJob) -> Dict[str, Any]:
+    return {
+        "id": job.id,
+        "operator_id": job.operator_id,
+        "status": job.status,
+        "progress": job.progress or {},
+        "error_message": job.error_message,
+        "created_at": job.created_at,
+        "started_at": job.started_at,
+        "finished_at": job.finished_at,
+    }
+
+
 def get_provider_config_or_404(db: Session, provider_config_id: str) -> ProviderConfig:
-    provider_config = db.query(ProviderConfig).filter(ProviderConfig.id == provider_config_id).first()
-    if not provider_config:
+    pc = db.query(ProviderConfig).filter(ProviderConfig.id == provider_config_id).first()
+    if not pc:
         raise HTTPException(status_code=404, detail="Provider Config 不存在")
-    return provider_config
+    return pc
 
 
-def get_session_or_404(db: Session, session_id: str) -> SessionRecord:
-    session_record = db.query(SessionRecord).filter(SessionRecord.id == session_id).first()
-    if not session_record:
-        raise HTTPException(status_code=404, detail="Session 不存在")
-    return session_record
+def get_operator_or_404(db: Session, operator_id: str) -> Operator:
+    op = db.query(Operator).filter(Operator.id == operator_id).first()
+    if not op:
+        raise HTTPException(status_code=404, detail="Operator 不存在")
+    return op
+
+
+def get_contact_or_404(db: Session, contact_id: str) -> Contact:
+    contact = db.query(Contact).filter(Contact.id == contact_id).first()
+    if not contact:
+        raise HTTPException(status_code=404, detail="Contact 不存在")
+    return contact
 
 
 def get_chat_api_base_url(request: Request) -> str:
@@ -93,19 +164,12 @@ async def get_adapter(request: Request) -> AsyncIterator[ChatAdapter]:
         await adapter.close()
 
 
-def build_session_payload(db: Session, session_record: SessionRecord) -> Dict[str, Any]:
-    provider_config = None
-    if session_record.provider_config_id:
-        provider_config = db.query(ProviderConfig).filter(ProviderConfig.id == session_record.provider_config_id).first()
-    return serialize_session(session_record, provider_config)
-
-
 # --- Provider Configs ---
 
 @app.post("/api/provider-configs")
 def create_provider_config(provider_in: ProviderConfigCreate, db: Session = Depends(get_db)):
     now = utc_now()
-    provider_config = ProviderConfig(
+    pc = ProviderConfig(
         id=f"p_{uuid.uuid4().hex[:8]}",
         name=provider_in.name,
         base_url=provider_in.base_url.rstrip("/"),
@@ -114,124 +178,271 @@ def create_provider_config(provider_in: ProviderConfigCreate, db: Session = Depe
         created_at=now,
         updated_at=now,
     )
-    db.add(provider_config)
+    db.add(pc)
     db.commit()
-    db.refresh(provider_config)
-    return serialize_provider_config(provider_config)
+    db.refresh(pc)
+    return serialize_provider_config(pc)
 
 
 @app.get("/api/provider-configs")
 def list_provider_configs(db: Session = Depends(get_db)):
-    provider_configs = db.query(ProviderConfig).order_by(ProviderConfig.updated_at.desc()).all()
-    return [serialize_provider_config(pc) for pc in provider_configs]
+    items = db.query(ProviderConfig).order_by(ProviderConfig.updated_at.desc()).all()
+    return [serialize_provider_config(p) for p in items]
 
 
 @app.put("/api/provider-configs/{provider_config_id}")
-def update_provider_config(provider_config_id: str, provider_update: ProviderConfigUpdate, db: Session = Depends(get_db)):
-    provider_config = get_provider_config_or_404(db, provider_config_id)
-    if "name" in provider_update.model_fields_set and provider_update.name is not None:
-        provider_config.name = provider_update.name
-    if "base_url" in provider_update.model_fields_set and provider_update.base_url is not None:
-        provider_config.base_url = provider_update.base_url.rstrip("/")
-    if "api_key" in provider_update.model_fields_set:
-        provider_config.api_key = provider_update.api_key
-    if "default_model" in provider_update.model_fields_set and provider_update.default_model is not None:
-        provider_config.default_model = provider_update.default_model
-    provider_config.updated_at = utc_now()
+def update_provider_config(
+    provider_config_id: str,
+    provider_update: ProviderConfigUpdate,
+    db: Session = Depends(get_db),
+):
+    pc = get_provider_config_or_404(db, provider_config_id)
+    fields = provider_update.model_fields_set
+    if "name" in fields and provider_update.name is not None:
+        pc.name = provider_update.name
+    if "base_url" in fields and provider_update.base_url is not None:
+        pc.base_url = provider_update.base_url.rstrip("/")
+    if "api_key" in fields:
+        pc.api_key = provider_update.api_key
+    if "default_model" in fields and provider_update.default_model is not None:
+        pc.default_model = provider_update.default_model
+    pc.updated_at = utc_now()
     db.commit()
-    db.refresh(provider_config)
-    return serialize_provider_config(provider_config)
+    db.refresh(pc)
+    return serialize_provider_config(pc)
 
 
 @app.delete("/api/provider-configs/{provider_config_id}")
 def delete_provider_config(provider_config_id: str, db: Session = Depends(get_db)):
-    provider_config = get_provider_config_or_404(db, provider_config_id)
-    db.delete(provider_config)
+    pc = get_provider_config_or_404(db, provider_config_id)
+    db.delete(pc)
     db.commit()
     return {"status": "deleted", "id": provider_config_id}
 
 
-# --- Sessions ---
+# --- Operators ---
 
-@app.get("/api/conversations")
-async def list_conversations(adapter: ChatAdapter = Depends(get_adapter)):
-    """Proxy: list Chat conversations for the frontend to pick from when creating a session."""
-    try:
-        return await adapter.list_conversations()
-    except httpx.HTTPStatusError as err:
-        raise HTTPException(status_code=err.response.status_code, detail="获取会话列表失败")
+@app.post("/api/operators")
+async def create_operator(
+    operator_in: OperatorCreate,
+    db: Session = Depends(get_db),
+    adapter: ChatAdapter = Depends(get_adapter),
+):
+    if operator_in.provider_config_id:
+        get_provider_config_or_404(db, operator_in.provider_config_id)
 
-
-@app.post("/api/sessions")
-def create_session(session_in: SessionCreate, db: Session = Depends(get_db)):
-    provider_config_id = session_in.provider_config_id
-    if provider_config_id:
-        get_provider_config_or_404(db, provider_config_id)
-    else:
-        first_provider = db.query(ProviderConfig).order_by(ProviderConfig.created_at.asc()).first()
-        provider_config_id = first_provider.id if first_provider else None
-
+    chat_user = await adapter.create_user(operator_in.name)
     now = utc_now()
-    session_record = SessionRecord(
-        id=f"s_{uuid.uuid4().hex[:8]}",
-        adapter_type="chat",
-        adapter_thread_id=session_in.adapter_thread_id,
-        takeover_user_id=session_in.takeover_user_id,
-        profile=session_in.profile,
-        counterpart_profile=session_in.counterpart_profile,
-        provider_config_id=provider_config_id,
+    op = Operator(
+        id=f"op_{uuid.uuid4().hex[:8]}",
+        name=operator_in.name,
+        adapter_identities={"chat": chat_user["id"]},
+        provider_config_id=operator_in.provider_config_id,
         status="active",
         created_at=now,
         updated_at=now,
     )
-    db.add(session_record)
+    db.add(op)
     db.commit()
-    db.refresh(session_record)
-    return build_session_payload(db, session_record)
+    db.refresh(op)
+    return serialize_operator(op, db)
 
 
-@app.get("/api/sessions")
-def list_sessions(db: Session = Depends(get_db)):
-    sessions = db.query(SessionRecord).order_by(SessionRecord.created_at.desc()).all()
-    return [build_session_payload(db, s) for s in sessions]
+@app.get("/api/operators")
+def list_operators(db: Session = Depends(get_db)):
+    ops = db.query(Operator).order_by(Operator.created_at.desc()).all()
+    return [serialize_operator(o, db) for o in ops]
+
+
+@app.get("/api/operators/{operator_id}")
+def get_operator(operator_id: str, db: Session = Depends(get_db)):
+    op = get_operator_or_404(db, operator_id)
+    return serialize_operator(op, db)
+
+
+@app.put("/api/operators/{operator_id}")
+def update_operator(operator_id: str, op_update: OperatorUpdate, db: Session = Depends(get_db)):
+    op = get_operator_or_404(db, operator_id)
+    fields = op_update.model_fields_set
+    if "name" in fields and op_update.name is not None:
+        op.name = op_update.name
+    if "persona_md" in fields:
+        op.persona_md = op_update.persona_md
+    if "provider_config_id" in fields:
+        if op_update.provider_config_id is not None:
+            get_provider_config_or_404(db, op_update.provider_config_id)
+        op.provider_config_id = op_update.provider_config_id
+    if "status" in fields and op_update.status is not None:
+        op.status = op_update.status
+    op.updated_at = utc_now()
+    db.commit()
+    db.refresh(op)
+    return serialize_operator(op, db)
+
+
+@app.delete("/api/operators/{operator_id}")
+def delete_operator(operator_id: str, db: Session = Depends(get_db)):
+    op = get_operator_or_404(db, operator_id)
+    op.status = "deleted"
+    op.updated_at = utc_now()
+    db.commit()
+    return {"status": "deleted", "id": operator_id}
+
+
+# --- Contacts ---
+
+@app.get("/api/operators/{operator_id}/contacts")
+def list_contacts(operator_id: str, db: Session = Depends(get_db)):
+    get_operator_or_404(db, operator_id)
+    items = (
+        db.query(Contact)
+        .filter(Contact.operator_id == operator_id)
+        .order_by(Contact.created_at.desc())
+        .all()
+    )
+    return [serialize_contact(c) for c in items]
+
+
+@app.get("/api/contacts/{contact_id}")
+def get_contact(contact_id: str, db: Session = Depends(get_db)):
+    return serialize_contact(get_contact_or_404(db, contact_id))
+
+
+@app.put("/api/contacts/{contact_id}")
+def update_contact(contact_id: str, contact_update: ContactUpdate, db: Session = Depends(get_db)):
+    contact = get_contact_or_404(db, contact_id)
+    fields = contact_update.model_fields_set
+    if "display_name" in fields and contact_update.display_name is not None:
+        contact.display_name = contact_update.display_name
+    if "card_md" in fields:
+        contact.card_md = contact_update.card_md
+    if "status" in fields and contact_update.status is not None:
+        contact.status = contact_update.status
+    contact.updated_at = utc_now()
+    db.commit()
+    db.refresh(contact)
+    return serialize_contact(contact)
+
+
+# --- Chat Archives ---
+
+@app.post("/api/operators/{operator_id}/chat-archives")
+async def upload_chat_archive(
+    operator_id: str,
+    self_wxid: str = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    adapter: ChatAdapter = Depends(get_adapter),
+):
+    op = get_operator_or_404(db, operator_id)
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
+        contents = await file.read()
+        tmp.write(contents)
+        tmp_path = Path(tmp.name)
+    try:
+        archive = await ingest_archive(
+            db=db,
+            operator=op,
+            self_wxid=self_wxid,
+            src_path=tmp_path,
+            original_filename=file.filename or tmp_path.name,
+            chat_adapter=adapter,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    finally:
+        tmp_path.unlink(missing_ok=True)
+
+    return serialize_archive(archive)
+
+
+@app.get("/api/operators/{operator_id}/chat-archives")
+def list_archives(operator_id: str, db: Session = Depends(get_db)):
+    get_operator_or_404(db, operator_id)
+    items = (
+        db.query(ChatArchive)
+        .filter(ChatArchive.operator_id == operator_id)
+        .order_by(ChatArchive.uploaded_at.desc())
+        .all()
+    )
+    return [serialize_archive(a) for a in items]
+
+
+# --- Distill Jobs ---
+
+@app.post("/api/operators/{operator_id}/distill-jobs")
+def create_distill_job(operator_id: str, db: Session = Depends(get_db)):
+    op = get_operator_or_404(db, operator_id)
+    if not op.provider_config_id:
+        raise HTTPException(status_code=400, detail="Operator 未配置 Provider Config，无法蒸馏")
+    pending = (
+        db.query(DistillJob)
+        .filter(
+            DistillJob.operator_id == operator_id,
+            DistillJob.status.in_(["pending", "running"]),
+        )
+        .first()
+    )
+    if pending:
+        raise HTTPException(status_code=409, detail=f"已有进行中的蒸馏任务 {pending.id}")
+    job = DistillJob(
+        id=f"dj_{uuid.uuid4().hex[:8]}",
+        operator_id=operator_id,
+        status="pending",
+        progress={},
+        created_at=utc_now(),
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    return serialize_distill_job(job)
+
+
+@app.get("/api/operators/{operator_id}/distill-jobs")
+def list_distill_jobs(operator_id: str, db: Session = Depends(get_db)):
+    get_operator_or_404(db, operator_id)
+    jobs = (
+        db.query(DistillJob)
+        .filter(DistillJob.operator_id == operator_id)
+        .order_by(DistillJob.created_at.desc())
+        .all()
+    )
+    return [serialize_distill_job(j) for j in jobs]
+
+
+@app.get("/api/distill-jobs/{job_id}")
+def get_distill_job(job_id: str, db: Session = Depends(get_db)):
+    job = db.query(DistillJob).filter(DistillJob.id == job_id).first()
+    if not job:
+        raise HTTPException(status_code=404, detail="Distill Job 不存在")
+    return serialize_distill_job(job)
+
+
+# --- Sessions (read-only; created internally by ingest) ---
+
+@app.get("/api/operators/{operator_id}/sessions")
+def list_sessions(operator_id: str, db: Session = Depends(get_db)):
+    get_operator_or_404(db, operator_id)
+    sessions = (
+        db.query(SessionRecord)
+        .join(Contact, Contact.id == SessionRecord.contact_id)
+        .filter(Contact.operator_id == operator_id)
+        .order_by(SessionRecord.created_at.desc())
+        .all()
+    )
+    return [serialize_session(s) for s in sessions]
 
 
 @app.get("/api/sessions/{session_id}")
 def get_session(session_id: str, db: Session = Depends(get_db)):
-    session_record = get_session_or_404(db, session_id)
-    return build_session_payload(db, session_record)
+    s = db.query(SessionRecord).filter(SessionRecord.id == session_id).first()
+    if not s:
+        raise HTTPException(status_code=404, detail="Session 不存在")
+    return serialize_session(s)
 
 
-@app.put("/api/sessions/{session_id}")
-def update_session(session_id: str, session_update: SessionUpdate, db: Session = Depends(get_db)):
-    session_record = get_session_or_404(db, session_id)
-    if "profile" in session_update.model_fields_set:
-        session_record.profile = session_update.profile
-    if "counterpart_profile" in session_update.model_fields_set:
-        session_record.counterpart_profile = session_update.counterpart_profile
-    if "provider_config_id" in session_update.model_fields_set:
-        if session_update.provider_config_id is not None:
-            get_provider_config_or_404(db, session_update.provider_config_id)
-        session_record.provider_config_id = session_update.provider_config_id
-    if "status" in session_update.model_fields_set and session_update.status is not None:
-        session_record.status = session_update.status
-    session_record.updated_at = utc_now()
-    db.commit()
-    db.refresh(session_record)
-    return build_session_payload(db, session_record)
-
-
-@app.delete("/api/sessions/{session_id}")
-def delete_session(session_id: str, db: Session = Depends(get_db)):
-    session_record = get_session_or_404(db, session_id)
-    session_record.status = "deleted"
-    session_record.updated_at = utc_now()
-    db.commit()
-    db.refresh(session_record)
-    return build_session_payload(db, session_record)
-
-
-# --- Planned Replies ---
+# --- Planned Replies (long-poll) ---
 
 @app.get("/api/sessions/{session_id}/planned-replies")
 async def get_planned_replies(
@@ -244,14 +455,18 @@ async def get_planned_replies(
     while True:
         db = SessionLocal()
         try:
-            get_session_or_404(db, session_id)
+            s = db.query(SessionRecord).filter(SessionRecord.id == session_id).first()
+            if not s:
+                raise HTTPException(status_code=404, detail="Session 不存在")
             replies = (
-                db.query(RobotMessage)
+                db.query(Message)
                 .filter(
-                    RobotMessage.session_id == session_id,
-                    RobotMessage.status == "scheduled",
+                    Message.contact_id == s.contact_id,
+                    Message.source == "live",
+                    Message.role == "self",
+                    Message.status == "scheduled",
                 )
-                .order_by(RobotMessage.scheduled_for.asc())
+                .order_by(Message.scheduled_for.asc())
                 .all()
             )
             result = [
@@ -277,6 +492,16 @@ async def get_planned_replies(
 
         sleep_time = min(0.2, timeout - elapsed)
         await asyncio.sleep(sleep_time)
+
+
+# --- Chat Conversations passthrough (for debug UI to pick threads) ---
+
+@app.get("/api/conversations")
+async def list_chat_conversations(adapter: ChatAdapter = Depends(get_adapter)):
+    try:
+        return await adapter.list_conversations()
+    except httpx.HTTPStatusError as err:
+        raise HTTPException(status_code=err.response.status_code, detail="获取会话列表失败")
 
 
 # --- Entrypoint ---

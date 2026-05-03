@@ -8,7 +8,14 @@ from sqlalchemy.orm import Session
 
 from chat.db import STORAGE_DIR, SessionLocal, ensure_database, get_db, utc_now
 from chat.models import Conversation, Message, User
-from chat.schemas import ConversationCreate, ConversationUpdate, MessageCreate, UserCreate, UserUpdate
+from chat.schemas import (
+    BulkMessageImport,
+    ConversationCreate,
+    ConversationUpdate,
+    MessageCreate,
+    UserCreate,
+    UserUpdate,
+)
 
 ensure_database()
 
@@ -241,6 +248,45 @@ def send_message(
     db.commit()
     db.refresh(db_msg)
     return {"status": "success", "id": db_msg.id}
+
+
+@app.post("/api/conversations/{conversation_id}/messages/bulk")
+def bulk_import_messages(
+    conversation_id: str,
+    bulk_in: BulkMessageImport,
+    db: Session = Depends(get_db),
+):
+    """Bulk-import historical messages preserving timestamps. Used by Robot to seed simulator."""
+    conv = get_conversation_or_404(db, conversation_id)
+    participants = {conv.user_a_id, conv.user_b_id}
+
+    if not bulk_in.messages:
+        return {"status": "success", "imported": 0}
+
+    inserted_ids = []
+    for item in bulk_in.messages:
+        if item.sender_id not in participants:
+            raise HTTPException(
+                status_code=400,
+                detail=f"发送者 {item.sender_id} 不是该会话的参与者",
+            )
+        ts = item.created_at.replace(tzinfo=None) if item.created_at.tzinfo else item.created_at
+        db_msg = Message(
+            conversation_id=conversation_id,
+            sender_id=item.sender_id,
+            msg_type=item.msg_type,
+            content=item.content,
+            created_at=ts,
+        )
+        db.add(db_msg)
+        db.flush()
+        inserted_ids.append(db_msg.id)
+
+    db.query(Conversation).filter(Conversation.id == conversation_id).update(
+        {"updated_at": utc_now()}
+    )
+    db.commit()
+    return {"status": "success", "imported": len(inserted_ids), "ids": inserted_ids}
 
 
 @app.get("/api/conversations/{conversation_id}/messages")

@@ -10,7 +10,16 @@ from sqlalchemy.orm import Session
 
 from robot.clients import ChatAdapter, ProviderClient
 from robot.db import SessionLocal, utc_now
-from robot.models import LlmLog, ProviderConfig, RobotMessage, SessionRecord
+from robot.distill.pipeline import run_distill_for_operator
+from robot.models import (
+    Contact,
+    DistillJob,
+    LlmLog,
+    Message,
+    Operator,
+    ProviderConfig,
+    SessionRecord,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -86,26 +95,26 @@ def format_beijing_time(dt: Optional[datetime] = None) -> str:
     return f"{beijing.year}年{beijing.month}月{beijing.day}日 {wd} {period}{display_hour}:{beijing.minute:02d}"
 
 
-def build_system_prompt(session_record: SessionRecord) -> str:
+def build_system_prompt(operator: Operator, contact: Contact) -> str:
     parts: list[str] = [SYSTEM_INSTRUCTION]
 
     ctx_lines: list[str] = []
-    if session_record.profile:
-        ctx_lines.append(f"---\n【你的角色画像】\n{session_record.profile}")
-    if session_record.counterpart_profile:
-        ctx_lines.append(f"---\n【当前联系人画像】\n{session_record.counterpart_profile}")
+    if operator.persona_md:
+        ctx_lines.append(f"---\n【你的角色画像】\n{operator.persona_md}")
+    if contact.card_md:
+        ctx_lines.append(f"---\n【当前联系人画像】\n{contact.card_md}")
     ctx_lines.append(f"---\n【当前时间】{format_beijing_time()}")
 
     parts.append("\n".join(ctx_lines))
     return "\n\n".join(parts)
 
 
-def build_chat_history(history: list) -> str:
+def build_chat_history(history: list[Message]) -> str:
     if not history:
         return "（暂无聊天记录，这是第一次对话）"
     lines: list[str] = []
     for msg in history:
-        label = "我" if msg.role == "robot" else "对方"
+        label = "我" if msg.role == "self" else "对方"
         content = msg.content
         if content.startswith("data:"):
             content = "[附件已省略]"
@@ -135,27 +144,6 @@ def parse_llm_response(text: str) -> List[str]:
 
 
 # ---------------------------------------------------------------------------
-# Provider config resolution
-# ---------------------------------------------------------------------------
-
-def get_provider_config(db: Session, session_record: SessionRecord) -> Optional[ProviderConfig]:
-    if session_record.provider_config_id:
-        return db.query(ProviderConfig).filter(
-            ProviderConfig.id == session_record.provider_config_id
-        ).first()
-
-    configs = db.query(ProviderConfig).order_by(ProviderConfig.created_at.asc()).all()
-    if not configs:
-        return None
-    if len(configs) > 1:
-        raise RuntimeError(
-            f"Session {session_record.id} 没有指定 Provider Config，"
-            "且数据库中存在多个 Provider Config，请在 Session 上明确选择一个"
-        )
-    return configs[0]
-
-
-# ---------------------------------------------------------------------------
 # RobotRuntime — 1 scanner + N session loops
 # ---------------------------------------------------------------------------
 
@@ -166,10 +154,14 @@ class RobotRuntime:
         self.provider = ProviderClient(options.request_timeout)
         self._scanner_task: Optional[asyncio.Task[Any]] = None
         self._session_tasks: Dict[str, asyncio.Task[Any]] = {}
+        self._distill_scanner_task: Optional[asyncio.Task[Any]] = None
+        self._distill_tasks: Dict[str, asyncio.Task[Any]] = {}
 
     async def start(self):
-        self._scanner_task = asyncio.get_running_loop().create_task(
-            self._scanner_loop(), name="session-scanner"
+        loop = asyncio.get_running_loop()
+        self._scanner_task = loop.create_task(self._scanner_loop(), name="session-scanner")
+        self._distill_scanner_task = loop.create_task(
+            self._distill_scanner_loop(), name="distill-scanner"
         )
 
     async def stop(self):
@@ -177,12 +169,17 @@ class RobotRuntime:
             self._scanner_task.cancel()
             with suppress(asyncio.CancelledError):
                 await self._scanner_task
-        for task in self._session_tasks.values():
+        if self._distill_scanner_task:
+            self._distill_scanner_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._distill_scanner_task
+        for task in list(self._session_tasks.values()) + list(self._distill_tasks.values()):
             task.cancel()
-        for task in self._session_tasks.values():
+        for task in list(self._session_tasks.values()) + list(self._distill_tasks.values()):
             with suppress(asyncio.CancelledError):
                 await task
         self._session_tasks.clear()
+        self._distill_tasks.clear()
         await self.adapter.close()
         await self.provider.close()
 
@@ -221,18 +218,102 @@ class RobotRuntime:
 
             await asyncio.sleep(5)
 
+    # -- Distill scanner ---------------------------------------------------
+
+    async def _distill_scanner_loop(self):
+        while True:
+            try:
+                db = SessionLocal()
+                try:
+                    pending = (
+                        db.query(DistillJob)
+                        .filter(DistillJob.status == "pending")
+                        .order_by(DistillJob.created_at.asc())
+                        .all()
+                    )
+                    pending_ids = [(j.id, j.operator_id) for j in pending]
+                finally:
+                    db.close()
+
+                # Cleanup finished tasks
+                for jid in list(self._distill_tasks.keys()):
+                    if self._distill_tasks[jid].done():
+                        del self._distill_tasks[jid]
+
+                for job_id, operator_id in pending_ids:
+                    if job_id in self._distill_tasks:
+                        continue
+                    self._distill_tasks[job_id] = asyncio.get_running_loop().create_task(
+                        self._run_distill_job(job_id, operator_id),
+                        name=f"distill-{job_id}",
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error("Distill scanner error: %s", exc)
+
+            await asyncio.sleep(5)
+
+    async def _run_distill_job(self, job_id: str, operator_id: str):
+        # Mark running
+        db = SessionLocal()
+        try:
+            job = db.query(DistillJob).filter(DistillJob.id == job_id).first()
+            if not job or job.status != "pending":
+                return
+            job.status = "running"
+            job.started_at = utc_now()
+            db.commit()
+        finally:
+            db.close()
+
+        def progress_cb(state: Dict[str, int]):
+            d = SessionLocal()
+            try:
+                j = d.query(DistillJob).filter(DistillJob.id == job_id).first()
+                if j:
+                    j.progress = state
+                    d.commit()
+            finally:
+                d.close()
+
+        try:
+            await run_distill_for_operator(
+                operator_id=operator_id,
+                request_timeout=self.options.request_timeout,
+                progress_cb=progress_cb,
+            )
+        except Exception as exc:
+            logger.error("Distill job %s failed: %s", job_id, exc)
+            db = SessionLocal()
+            try:
+                j = db.query(DistillJob).filter(DistillJob.id == job_id).first()
+                if j:
+                    j.status = "failed"
+                    j.error_message = str(exc)
+                    j.finished_at = utc_now()
+                    db.commit()
+            finally:
+                db.close()
+            return
+
+        db = SessionLocal()
+        try:
+            j = db.query(DistillJob).filter(DistillJob.id == job_id).first()
+            if j:
+                j.status = "done"
+                j.finished_at = utc_now()
+                db.commit()
+        finally:
+            db.close()
+
     # -- Session loop ------------------------------------------------------
 
     async def _session_loop(self, session_id: str):
-        db = SessionLocal()
-        try:
-            sr = db.query(SessionRecord).filter(SessionRecord.id == session_id).first()
-            if not sr:
-                return
-            thread_id = sr.adapter_thread_id
-            takeover_user_id = sr.takeover_user_id
-        finally:
-            db.close()
+        ctx = self._load_session_ctx(session_id)
+        if not ctx:
+            return
+        thread_id, contact_id, operator_chat_user_id = ctx
 
         last_id = 0
         try:
@@ -249,82 +330,112 @@ class RobotRuntime:
                     result = await self.adapter.get_messages(thread_id, last_id=last_id, timeout=0)
                     for msg in result.get("messages", []):
                         last_id = msg["id"]
-                        if msg.get("sender_id") != takeover_user_id:
-                            self._store_counterpart_message(session_id, msg.get("content", ""))
+                        if msg.get("sender_id") != operator_chat_user_id:
+                            self._store_counterpart_message(contact_id, msg.get("content", ""))
                 except asyncio.CancelledError:
                     raise
                 except Exception as exc:
                     logger.error("Poll error for session %s: %s", session_id, exc)
 
-                if self._needs_reply(session_id):
+                if self._needs_reply(contact_id):
                     messages = await self._call_llm(session_id)
                     if messages:
-                        msg_ids = self._write_scheduled_messages(session_id, messages)
-                        await self._send_scheduled(session_id, thread_id, takeover_user_id, msg_ids)
+                        msg_ids = self._write_scheduled_messages(contact_id, messages)
+                        await self._send_scheduled(
+                            session_id, thread_id, operator_chat_user_id, msg_ids
+                        )
 
                 await asyncio.sleep(1)
         finally:
-            self._cancel_scheduled(session_id)
+            self._cancel_scheduled(contact_id)
 
     # -- Helpers -----------------------------------------------------------
 
-    def _store_counterpart_message(self, session_id: str, content: str):
+    def _load_session_ctx(self, session_id: str):
+        """Return (thread_id, contact_id, operator_chat_user_id) for the session."""
         db = SessionLocal()
         try:
-            db.add(RobotMessage(
-                session_id=session_id,
+            s = db.query(SessionRecord).filter(SessionRecord.id == session_id).first()
+            if not s:
+                return None
+            contact = db.query(Contact).filter(Contact.id == s.contact_id).first()
+            if not contact:
+                logger.error("Session %s has missing contact %s", session_id, s.contact_id)
+                return None
+            operator = db.query(Operator).filter(Operator.id == contact.operator_id).first()
+            if not operator:
+                logger.error("Contact %s has missing operator %s", contact.id, contact.operator_id)
+                return None
+            chat_user_id = (operator.adapter_identities or {}).get("chat")
+            if not chat_user_id:
+                logger.error("Operator %s missing chat adapter identity", operator.id)
+                return None
+            return s.adapter_thread_id, contact.id, chat_user_id
+        finally:
+            db.close()
+
+    def _store_counterpart_message(self, contact_id: str, content: str):
+        now = utc_now()
+        db = SessionLocal()
+        try:
+            db.add(Message(
+                contact_id=contact_id,
+                source="live",
                 role="counterpart",
                 content=content,
+                timestamp=now,
                 status="sent",
-                created_at=utc_now(),
+                created_at=now,
             ))
             db.commit()
         finally:
             db.close()
 
-    def _needs_reply(self, session_id: str) -> bool:
+    def _needs_reply(self, contact_id: str) -> bool:
         db = SessionLocal()
         try:
             last_msg = (
-                db.query(RobotMessage)
+                db.query(Message)
                 .filter(
-                    RobotMessage.session_id == session_id,
-                    RobotMessage.status == "sent",
+                    Message.contact_id == contact_id,
+                    Message.status == "sent",
                 )
-                .order_by(RobotMessage.id.desc())
+                .order_by(Message.id.desc())
                 .first()
             )
             return last_msg is not None and last_msg.role == "counterpart"
         finally:
             db.close()
 
-    def _cancel_scheduled(self, session_id: str):
+    def _cancel_scheduled(self, contact_id: str):
         db = SessionLocal()
         try:
-            db.query(RobotMessage).filter(
-                RobotMessage.session_id == session_id,
-                RobotMessage.status == "scheduled",
+            db.query(Message).filter(
+                Message.contact_id == contact_id,
+                Message.status == "scheduled",
             ).update({"status": "canceled"}, synchronize_session="fetch")
             db.commit()
         finally:
             db.close()
 
-    def _write_scheduled_messages(self, session_id: str, messages: List[str]) -> List[int]:
+    def _write_scheduled_messages(self, contact_id: str, messages: List[str]) -> List[int]:
         if not messages:
             return []
         now = utc_now()
         db = SessionLocal()
         try:
             msg_ids: List[int] = []
-            cumulative_delay = 0
+            cumulative_delay = 0.0
             for content in messages:
-                delay = max(2, len(content) / TYPING_CHARS_PER_SECOND)
+                delay = max(2.0, len(content) / TYPING_CHARS_PER_SECOND)
                 cumulative_delay += delay
                 scheduled_for = now + timedelta(seconds=cumulative_delay)
-                row = RobotMessage(
-                    session_id=session_id,
-                    role="robot",
+                row = Message(
+                    contact_id=contact_id,
+                    source="live",
+                    role="self",
                     content=content,
+                    timestamp=scheduled_for,
                     status="scheduled",
                     scheduled_for=scheduled_for,
                     created_at=now,
@@ -337,15 +448,20 @@ class RobotRuntime:
         finally:
             db.close()
 
-    async def _send_scheduled(self, session_id: str, thread_id: str, takeover_user_id: str, msg_ids: List[int]):
+    async def _send_scheduled(
+        self,
+        session_id: str,
+        thread_id: str,
+        operator_chat_user_id: str,
+        msg_ids: List[int],
+    ):
         for msg_id in msg_ids:
             db = SessionLocal()
             try:
-                msg = db.query(RobotMessage).filter(RobotMessage.id == msg_id).first()
+                msg = db.query(Message).filter(Message.id == msg_id).first()
                 if not msg or msg.status != "scheduled":
                     continue
                 scheduled_for = msg.scheduled_for
-                content = msg.content
             finally:
                 db.close()
 
@@ -357,17 +473,18 @@ class RobotRuntime:
 
             db = SessionLocal()
             try:
-                msg = db.query(RobotMessage).filter(RobotMessage.id == msg_id).first()
+                msg = db.query(Message).filter(Message.id == msg_id).first()
                 if not msg or msg.status != "scheduled":
                     continue
                 msg.status = "sent"
+                msg.timestamp = utc_now()
                 db.commit()
                 content = msg.content
             finally:
                 db.close()
 
             try:
-                await self.adapter.send_message(thread_id, takeover_user_id, content)
+                await self.adapter.send_message(thread_id, operator_chat_user_id, content)
             except Exception as exc:
                 logger.error("Failed to send reply for session %s: %s", session_id, exc)
 
@@ -376,31 +493,35 @@ class RobotRuntime:
     async def _call_llm(self, session_id: str) -> Optional[List[str]]:
         db = SessionLocal()
         try:
-            session_record = db.query(SessionRecord).filter(
-                SessionRecord.id == session_id
-            ).first()
-            if not session_record or session_record.status != "active":
+            s = db.query(SessionRecord).filter(SessionRecord.id == session_id).first()
+            if not s or s.status != "active":
+                return None
+            contact = db.query(Contact).filter(Contact.id == s.contact_id).first()
+            if not contact:
+                return None
+            operator = db.query(Operator).filter(Operator.id == contact.operator_id).first()
+            if not operator:
                 return None
 
-            provider_config = get_provider_config(db, session_record)
+            provider_config = self._resolve_provider_config(db, operator)
             if not provider_config:
-                logger.warning("No provider config for session %s", session_id)
+                logger.warning("No provider config for operator %s", operator.id)
                 return None
             if not provider_config.api_key:
                 logger.error("Provider config %s missing api_key", provider_config.id)
                 return None
 
             history = (
-                db.query(RobotMessage)
+                db.query(Message)
                 .filter(
-                    RobotMessage.session_id == session_id,
-                    RobotMessage.status == "sent",
+                    Message.contact_id == contact.id,
+                    Message.status == "sent",
                 )
-                .order_by(RobotMessage.id.asc())
+                .order_by(Message.timestamp.asc(), Message.id.asc())
                 .all()
             )
 
-            system_prompt = build_system_prompt(session_record)
+            system_prompt = build_system_prompt(operator, contact)
             chat_history = build_chat_history(history)
 
             llm_messages: List[Dict[str, str]] = [
@@ -422,10 +543,24 @@ class RobotRuntime:
                 )
             except Exception as exc:
                 logger.error("LLM call failed for session %s: %s", session_id, exc)
-                self._log_llm_call(session_id, llm_messages, f"ERROR: {exc}", model)
+                self._log_llm_call(
+                    purpose="reply",
+                    session_id=session_id,
+                    operator_id=None,
+                    request_messages=llm_messages,
+                    response_raw=f"ERROR: {exc}",
+                    model=model,
+                )
                 return None
 
-            self._log_llm_call(session_id, llm_messages, response_text, model)
+            self._log_llm_call(
+                purpose="reply",
+                session_id=session_id,
+                operator_id=None,
+                request_messages=llm_messages,
+                response_raw=response_text,
+                model=model,
+            )
 
             if not response_text or not response_text.strip():
                 logger.warning(
@@ -448,9 +583,27 @@ class RobotRuntime:
 
         return None
 
+    def _resolve_provider_config(self, db: Session, operator: Operator) -> Optional[ProviderConfig]:
+        if operator.provider_config_id:
+            return db.query(ProviderConfig).filter(
+                ProviderConfig.id == operator.provider_config_id
+            ).first()
+        configs = db.query(ProviderConfig).order_by(ProviderConfig.created_at.asc()).all()
+        if not configs:
+            return None
+        if len(configs) > 1:
+            raise RuntimeError(
+                f"Operator {operator.id} 没有指定 Provider Config，"
+                "且数据库中存在多个 Provider Config，请在 Operator 上明确选择一个"
+            )
+        return configs[0]
+
     def _log_llm_call(
         self,
-        session_id: str,
+        *,
+        purpose: str,
+        session_id: Optional[str],
+        operator_id: Optional[str],
         request_messages: List[Dict[str, str]],
         response_raw: str,
         model: Optional[str],
@@ -458,7 +611,9 @@ class RobotRuntime:
         db = SessionLocal()
         try:
             db.add(LlmLog(
+                purpose=purpose,
                 session_id=session_id,
+                operator_id=operator_id,
                 request_messages=json.dumps(request_messages, ensure_ascii=False),
                 response_raw=response_raw,
                 model=model,

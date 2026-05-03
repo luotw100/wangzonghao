@@ -38,7 +38,7 @@ def build_name_map(all_messages: list[list[Message]]) -> dict[str, str]:
     return {wxid: counter.most_common(1)[0][0] for wxid, counter in counts.items()}
 
 
-def _should_keep(msg: Message) -> bool:
+def should_keep(msg: Message) -> bool:
     """Decide whether a message should be kept in the output."""
     msg_type = msg.get("type", "")
 
@@ -61,49 +61,18 @@ def _should_keep(msg: Message) -> bool:
     return False
 
 
-def _format_timestamp(msg: Message) -> str:
-    """Format message timestamp to [YYYY-MM-DD HH:MM:SS]."""
-    formatted = msg.get("formattedTime", "")
-    if formatted:
-        return formatted[:19]
-
+def message_timestamp(msg: Message) -> datetime:
+    """Return the message timestamp as a naive datetime (UTC-equivalent local seconds)."""
     create_time = msg.get("createTime")
     if create_time is not None:
-        dt = datetime.fromtimestamp(create_time)
-        return dt.strftime("%Y-%m-%d %H:%M:%S")
+        return datetime.fromtimestamp(create_time)
+    formatted = msg.get("formattedTime", "")
+    if formatted:
+        return datetime.strptime(formatted[:19], "%Y-%m-%d %H:%M:%S")
+    raise ValueError("消息缺少时间戳（createTime / formattedTime 都没有）")
 
-    return "????-??-?? ??:??:??"
 
-
-def _clean_content(content: str) -> str:
-    """Clean up message content (trim whitespace/newlines)."""
+def clean_content(content: str) -> str:
     return content.strip()
 
 
-def convert_messages(messages: list[Message], name_map: dict[str, str]) -> list[str]:
-    """Convert a list of WeFlow messages to plain text lines.
-
-    Uses name_map (wxid → canonical name) to resolve sender names.
-    Returns a list of formatted lines like:
-        [2025-03-14 11:10:26] 白焕鹏: 明天下午三点不见不散
-    """
-    sorted_msgs = sorted(messages, key=lambda m: m.get("createTime", 0))
-    lines: list[str] = []
-
-    for msg in sorted_msgs:
-        if not _should_keep(msg):
-            continue
-
-        wxid = msg.get("senderUsername", "")
-        if not wxid or "@chatroom" in wxid:
-            continue
-
-        sender = name_map.get(wxid) or msg.get("senderDisplayName") or wxid
-        timestamp = _format_timestamp(msg)
-        content = _clean_content(msg.get("content", ""))
-        if not content:
-            continue
-
-        lines.append(f"[{timestamp}] {sender}: {content}")
-
-    return lines

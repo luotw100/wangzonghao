@@ -1,4 +1,14 @@
-from sqlalchemy import Column, DateTime, Integer, String, Text
+from sqlalchemy import (
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    UniqueConstraint,
+)
 
 from robot.db import Base, utc_now
 
@@ -6,48 +16,126 @@ from robot.db import Base, utc_now
 class ProviderConfig(Base):
     __tablename__ = "provider_configs"
 
-    id            = Column(String, primary_key=True, index=True)                  # 配置主键
-    name          = Column(String, nullable=False)                                # 配置名称，如 "DeepSeek"、"OpenAI"
-    base_url      = Column(String, nullable=False)                                # LLM API 基础地址，如 "https://api.deepseek.com/v1"
-    api_key       = Column(Text, nullable=True)                                   # API 密钥
-    default_model = Column(String, nullable=False)                                # 默认模型名称，如 "deepseek-chat"
+    id            = Column(String, primary_key=True, index=True)
+    name          = Column(String, nullable=False)
+    base_url      = Column(String, nullable=False)
+    api_key       = Column(Text, nullable=True)
+    default_model = Column(String, nullable=False)
     created_at    = Column(DateTime, default=utc_now, nullable=False)
     updated_at    = Column(DateTime, default=utc_now, nullable=False)
 
 
+class Operator(Base):
+    """主播本人。一个真实运营者一个 Operator。"""
+    __tablename__ = "operators"
+
+    id                  = Column(String, primary_key=True, index=True)
+    name                = Column(String, nullable=False)
+    persona_md          = Column(Text, nullable=True)                      # 蒸馏出来的人设
+    adapter_identities  = Column(JSON, nullable=False, default=dict)       # {chat: u_xxx, wechat_wxid_self: wxid_xxx}
+    provider_config_id  = Column(String, ForeignKey("provider_configs.id"), nullable=True, index=True)
+    status              = Column(String, nullable=False, default="active")
+    created_at          = Column(DateTime, default=utc_now, nullable=False)
+    updated_at          = Column(DateTime, default=utc_now, nullable=False)
+
+
+class Contact(Base):
+    """粉丝/联系人。隶属于某个 Operator。"""
+    __tablename__ = "contacts"
+
+    id              = Column(String, primary_key=True, index=True)
+    operator_id     = Column(String, ForeignKey("operators.id"), nullable=False, index=True)
+    display_name    = Column(String, nullable=False)
+    wechat_wxid     = Column(String, nullable=True)               # WeFlow 导出的 wxid
+    chat_user_id    = Column(String, nullable=True)               # chat 模拟器里的 user_id（自动创建）
+    card_md         = Column(Text, nullable=True)                 # 蒸馏出来的卡片
+    status          = Column(String, nullable=False, default="active")
+    created_at      = Column(DateTime, default=utc_now, nullable=False)
+    updated_at      = Column(DateTime, default=utc_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("operator_id", "wechat_wxid", name="uq_contact_operator_wxid"),
+    )
+
+
 class SessionRecord(Base):
+    """连接器：Contact ↔ Adapter Thread。"""
     __tablename__ = "sessions"
 
-    id                   = Column(String, primary_key=True, index=True)            # 会话主键
-    adapter_type         = Column(String, nullable=False, default="chat")          # 消息平台类型，如 "chat"、"wechat"、"feishu"，对应不同的 Adapter 实现
-    adapter_thread_id    = Column(String, index=True, nullable=False)               # 消息平台上的会话 ID，如 Chat 服务的 conversation_id，用于轮询消息和发送回复
-    takeover_user_id     = Column(String, nullable=False)                          # 机器人接管的角色 ID，即冒充哪个用户发言；来自此 ID 的消息会被忽略，只处理对方的消息
-    profile              = Column(Text, nullable=True)                             # 机器人人设 prompt，定义性格、说话风格等，注入 LLM system prompt
-    counterpart_profile  = Column(Text, nullable=True)                             # 对方（聊天对象）的画像描述，帮助机器人更了解对话方
-    provider_config_id   = Column(String, index=True, nullable=True)               # 关联的 LLM 提供商配置 ID，决定使用哪个 API 和模型
-    status               = Column(String, nullable=False, default="active")        # 会话状态："active" 表示机器人正在运行，其他值则停止轮询
-    created_at           = Column(DateTime, default=utc_now, nullable=False)
-    updated_at           = Column(DateTime, default=utc_now, nullable=False)
+    id                = Column(String, primary_key=True, index=True)
+    contact_id        = Column(String, ForeignKey("contacts.id"), nullable=False, index=True)
+    adapter_type      = Column(String, nullable=False, default="chat")
+    adapter_thread_id = Column(String, nullable=False, index=True)
+    status            = Column(String, nullable=False, default="active")  # active | paused | deleted
+    created_at        = Column(DateTime, default=utc_now, nullable=False)
+    updated_at        = Column(DateTime, default=utc_now, nullable=False)
 
 
-class RobotMessage(Base):
-    __tablename__ = "robot_messages"
+class ChatArchive(Base):
+    """上传的 WeFlow 聊天记录 artifact。"""
+    __tablename__ = "chat_archives"
 
-    id            = Column(Integer, primary_key=True, autoincrement=True)  # 消息自增主键
-    session_id    = Column(String, index=True, nullable=False)             # 关联的会话 ID
-    role          = Column(String, nullable=False)                         # 消息角色："counterpart" 为对方发来的，"robot" 为机器人回复的
-    content       = Column(Text, nullable=False)                           # 消息文本内容
-    status        = Column(String, nullable=False, default="sent")         # 消息状态：scheduled（待发送）、sent（已发送）、canceled（已取消）
-    scheduled_for = Column(DateTime, nullable=True)                        # 计划发送时间，用于模拟打字延迟
+    id            = Column(String, primary_key=True, index=True)
+    operator_id   = Column(String, ForeignKey("operators.id"), nullable=False, index=True)
+    filename      = Column(String, nullable=False)
+    file_path     = Column(String, nullable=False)
+    file_hash     = Column(String, nullable=False, index=True)
+    self_wxid     = Column(String, nullable=False)              # 上传时主播指明哪个 wxid 是自己
+    message_count = Column(Integer, nullable=False, default=0)
+    contact_count = Column(Integer, nullable=False, default=0)
+    uploaded_at   = Column(DateTime, default=utc_now, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("operator_id", "file_hash", name="uq_archive_operator_hash"),
+    )
+
+
+class Message(Base):
+    """统一消息表：upload 历史 + live 实时。"""
+    __tablename__ = "messages"
+
+    id              = Column(Integer, primary_key=True, autoincrement=True)
+    contact_id      = Column(String, ForeignKey("contacts.id"), nullable=False, index=True)
+    archive_id      = Column(String, ForeignKey("chat_archives.id"), nullable=True, index=True)
+    source          = Column(String, nullable=False)               # 'upload' | 'live'
+    role            = Column(String, nullable=False)               # 'self' | 'counterpart'
+    sender_name     = Column(String, nullable=True)
+    content         = Column(Text, nullable=False)
+    timestamp       = Column(DateTime, nullable=False, index=True) # 真实消息时间（upload 用历史时间）
+    status          = Column(String, nullable=False, default="sent")  # scheduled | sent | canceled
+    scheduled_for   = Column(DateTime, nullable=True)
+    archive_msg_idx = Column(Integer, nullable=True)               # 在 archive 内的原始位置，幂等去重用
+    created_at      = Column(DateTime, default=utc_now, nullable=False)
+
+    __table_args__ = (
+        Index("idx_msg_contact_ts", "contact_id", "timestamp"),
+        UniqueConstraint("archive_id", "archive_msg_idx", name="uq_msg_archive_idx"),
+    )
+
+
+class DistillJob(Base):
+    """蒸馏任务，由 worker 消费执行。"""
+    __tablename__ = "distill_jobs"
+
+    id            = Column(String, primary_key=True, index=True)
+    operator_id   = Column(String, ForeignKey("operators.id"), nullable=False, index=True)
+    status        = Column(String, nullable=False, default="pending")  # pending | running | done | failed
+    progress      = Column(JSON, nullable=False, default=dict)         # {windows_done, windows_total}
+    error_message = Column(Text, nullable=True)
     created_at    = Column(DateTime, default=utc_now, nullable=False)
+    started_at    = Column(DateTime, nullable=True)
+    finished_at   = Column(DateTime, nullable=True)
 
 
 class LlmLog(Base):
+    """LLM 调用日志，覆盖 reply 和 distill 两类调用。"""
     __tablename__ = "llm_logs"
 
-    id               = Column(Integer, primary_key=True, autoincrement=True)  # 日志自增主键
-    session_id       = Column(String, index=True, nullable=False)             # 关联的会话 ID
-    request_messages = Column(Text, nullable=False)                           # 发送给 LLM 的完整消息列表（JSON）
-    response_raw     = Column(Text, nullable=False)                           # LLM 返回的原始响应文本
-    model            = Column(String, nullable=True)                          # 使用的模型名称
+    id               = Column(Integer, primary_key=True, autoincrement=True)
+    purpose          = Column(String, nullable=False)             # 'reply' | 'distill'
+    session_id       = Column(String, nullable=True, index=True)  # reply 调用
+    operator_id      = Column(String, nullable=True, index=True)  # distill 调用
+    request_messages = Column(Text, nullable=False)
+    response_raw     = Column(Text, nullable=False)
+    model            = Column(String, nullable=True)
     created_at       = Column(DateTime, default=utc_now, nullable=False)

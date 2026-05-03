@@ -1,4 +1,5 @@
-from typing import Optional
+from datetime import datetime
+from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -29,3 +30,14 @@ class MessageCreate(StrictModel):
     sender_id: str
     msg_type: str
     content: str
+
+
+class BulkMessageItem(StrictModel):
+    sender_id: str
+    msg_type: str
+    content: str
+    created_at: datetime  # 必填，用于保留历史时间戳；模拟器场景不可缺省
+
+
+class BulkMessageImport(StrictModel):
+    messages: List[BulkMessageItem]

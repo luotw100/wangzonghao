@@ -81,6 +81,27 @@ class ChatAdapter(BaseAdapter):
             },
         )
 
+    async def create_user(self, name: str) -> Dict[str, Any]:
+        return await self._request("POST", "/users", json_body={"name": name})
+
+    async def create_conversation(
+        self, user_a_id: str, user_b_id: str, title: Optional[str] = None
+    ) -> Dict[str, Any]:
+        body: Dict[str, Any] = {"user_a_id": user_a_id, "user_b_id": user_b_id}
+        if title is not None:
+            body["title"] = title
+        return await self._request("POST", "/conversations", json_body=body)
+
+    async def bulk_import_messages(
+        self, conversation_id: str, messages: List[Dict[str, Any]]
+    ) -> Dict[str, Any]:
+        """Each item: {sender_id, msg_type, content, created_at (ISO 8601)}."""
+        return await self._request(
+            "POST",
+            f"/conversations/{conversation_id}/messages/bulk",
+            json_body={"messages": messages},
+        )
+
 
 class ProviderClient:
     def __init__(self, request_timeout: float):

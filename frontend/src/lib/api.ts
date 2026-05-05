@@ -1,13 +1,37 @@
 const CHAT_BASE = '/api';
 const ROBOT_BASE = '/api/robot';
 
+export class UnauthorizedError extends Error {
+  detail: string;
+  constructor(detail: string) {
+    super(detail);
+    this.detail = detail;
+    this.name = 'UnauthorizedError';
+  }
+}
+
+let unauthorizedHandler: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  unauthorizedHandler = handler;
+}
+
 async function request<T>(url: string, options: RequestInit = {}, timeout = 10000): Promise<T> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeout);
 
   try {
-    const res = await fetch(url, { ...options, signal: controller.signal });
+    const res = await fetch(url, { ...options, signal: controller.signal, credentials: 'same-origin' });
     clearTimeout(timeoutId);
+    if (res.status === 401) {
+      let detail = 'HTTP 401';
+      try {
+        const body = await res.json();
+        if (body?.detail) detail = body.detail;
+      } catch { /* ignore */ }
+      if (unauthorizedHandler) unauthorizedHandler();
+      throw new UnauthorizedError(detail);
+    }
     if (!res.ok) {
       let detail = `HTTP ${res.status}`;
       try {
@@ -62,6 +86,19 @@ export interface Message {
 
 // --- Robot-side types ---
 
+export type AccountRole = 'admin' | 'operator_owner';
+export type AccountStatus = 'pending' | 'active' | 'disabled';
+
+export interface Account {
+  id: string;
+  role: AccountRole;
+  status: AccountStatus;
+  display_name: string | null;
+  email: string | null;
+  created_at: string;
+  last_login_at: string | null;
+}
+
 export interface ProviderConfig {
   id: string;
   name: string;
@@ -73,8 +110,9 @@ export interface ProviderConfig {
   updated_at: string;
 }
 
-export interface Operator {
+export interface Character {
   id: string;
+  account_id: string;
   name: string;
   persona_md: string | null;
   adapter_identities: { chat?: string; wechat_wxid_self?: string };
@@ -87,7 +125,7 @@ export interface Operator {
 
 export interface Contact {
   id: string;
-  operator_id: string;
+  character_id: string;
   display_name: string;
   wechat_wxid: string | null;
   chat_user_id: string | null;
@@ -99,7 +137,7 @@ export interface Contact {
 
 export interface ChatArchive {
   id: string;
-  operator_id: string;
+  character_id: string;
   filename: string;
   self_wxid: string;
   message_count: number;
@@ -116,7 +154,7 @@ export interface DistillJobProgress {
 
 export interface DistillJob {
   id: string;
-  operator_id: string;
+  character_id: string;
   status: 'pending' | 'running' | 'done' | 'failed';
   progress: DistillJobProgress;
   error_message: string | null;
@@ -140,6 +178,58 @@ export interface PlannedReply {
   content: string;
   status: 'scheduled' | 'sent' | 'canceled';
   scheduled_for: string | null;
+}
+
+// --- Robot Auth ---
+
+export function authRequestCode(email: string) {
+  return request<{ status: string; expires_in_seconds: number }>(`${ROBOT_BASE}/auth/request-code`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function authVerifyCode(email: string, code: string) {
+  return request<{ status: string; new_account: boolean; account: Account }>(
+    `${ROBOT_BASE}/auth/verify-code`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, code }),
+    }
+  );
+}
+
+export function authLogout() {
+  return request<{ status: string }>(`${ROBOT_BASE}/auth/logout`, { method: 'POST' });
+}
+
+export function authMe() {
+  return request<Account>(`${ROBOT_BASE}/auth/me`);
+}
+
+// --- Robot Admin ---
+
+export function adminListAccounts(status?: AccountStatus) {
+  const q = status ? `?status=${status}` : '';
+  return request<Account[]>(`${ROBOT_BASE}/admin/accounts${q}`);
+}
+
+export function adminApproveAccount(id: string) {
+  return request<Account>(`${ROBOT_BASE}/admin/accounts/${id}/approve`, { method: 'POST' });
+}
+
+export function adminRejectAccount(id: string) {
+  return request<Account>(`${ROBOT_BASE}/admin/accounts/${id}/reject`, { method: 'POST' });
+}
+
+export function adminDisableAccount(id: string) {
+  return request<Account>(`${ROBOT_BASE}/admin/accounts/${id}/disable`, { method: 'POST' });
+}
+
+export function adminListCharacters() {
+  return request<Character[]>(`${ROBOT_BASE}/admin/characters`);
 }
 
 // --- Chat Users ---
@@ -262,43 +352,43 @@ export function deleteProviderConfig(id: string) {
   return request<void>(`${ROBOT_BASE}/provider-configs/${id}`, { method: 'DELETE' });
 }
 
-// --- Robot: Operators ---
+// --- Robot: Characters ---
 
-export function getOperators() {
-  return request<Operator[]>(`${ROBOT_BASE}/operators`);
+export function getCharacters() {
+  return request<Character[]>(`${ROBOT_BASE}/characters`);
 }
 
-export function getOperator(id: string) {
-  return request<Operator>(`${ROBOT_BASE}/operators/${id}`);
+export function getCharacter(id: string) {
+  return request<Character>(`${ROBOT_BASE}/characters/${id}`);
 }
 
-export function createOperator(data: { name: string; provider_config_id?: string | null }) {
-  return request<Operator>(`${ROBOT_BASE}/operators`, {
+export function createCharacter(data: { name: string; provider_config_id?: string | null }) {
+  return request<Character>(`${ROBOT_BASE}/characters`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 }
 
-export function updateOperator(
+export function updateCharacter(
   id: string,
   data: { name?: string; persona_md?: string | null; provider_config_id?: string | null; status?: string }
 ) {
-  return request<Operator>(`${ROBOT_BASE}/operators/${id}`, {
+  return request<Character>(`${ROBOT_BASE}/characters/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 }
 
-export function deleteOperator(id: string) {
-  return request<{ status: string; id: string }>(`${ROBOT_BASE}/operators/${id}`, { method: 'DELETE' });
+export function deleteCharacter(id: string) {
+  return request<{ status: string; id: string }>(`${ROBOT_BASE}/characters/${id}`, { method: 'DELETE' });
 }
 
 // --- Robot: Contacts ---
 
-export function getContacts(operatorId: string) {
-  return request<Contact[]>(`${ROBOT_BASE}/operators/${operatorId}/contacts`);
+export function getContacts(characterId: string) {
+  return request<Contact[]>(`${ROBOT_BASE}/characters/${characterId}/contacts`);
 }
 
 export function getContact(contactId: string) {
@@ -318,22 +408,27 @@ export function updateContact(
 
 // --- Robot: Chat Archives ---
 
-export function getArchives(operatorId: string) {
-  return request<ChatArchive[]>(`${ROBOT_BASE}/operators/${operatorId}/chat-archives`);
+export function getArchives(characterId: string) {
+  return request<ChatArchive[]>(`${ROBOT_BASE}/characters/${characterId}/chat-archives`);
 }
 
 export async function uploadArchive(
-  operatorId: string,
+  characterId: string,
   file: File,
   selfWxid: string
 ): Promise<ChatArchive> {
   const form = new FormData();
   form.append('self_wxid', selfWxid);
   form.append('file', file);
-  const res = await fetch(`${ROBOT_BASE}/operators/${operatorId}/chat-archives`, {
+  const res = await fetch(`${ROBOT_BASE}/characters/${characterId}/chat-archives`, {
     method: 'POST',
     body: form,
+    credentials: 'same-origin',
   });
+  if (res.status === 401) {
+    if (unauthorizedHandler) unauthorizedHandler();
+    throw new UnauthorizedError('未登录');
+  }
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
     try {
@@ -349,24 +444,24 @@ export async function uploadArchive(
 
 // --- Robot: Distill Jobs ---
 
-export function getDistillJobs(operatorId: string) {
-  return request<DistillJob[]>(`${ROBOT_BASE}/operators/${operatorId}/distill-jobs`);
+export function getDistillJobs(characterId: string) {
+  return request<DistillJob[]>(`${ROBOT_BASE}/characters/${characterId}/distill-jobs`);
 }
 
 export function getDistillJob(jobId: string) {
   return request<DistillJob>(`${ROBOT_BASE}/distill-jobs/${jobId}`);
 }
 
-export function createDistillJob(operatorId: string) {
-  return request<DistillJob>(`${ROBOT_BASE}/operators/${operatorId}/distill-jobs`, {
+export function createDistillJob(characterId: string) {
+  return request<DistillJob>(`${ROBOT_BASE}/characters/${characterId}/distill-jobs`, {
     method: 'POST',
   });
 }
 
 // --- Robot: Sessions (read-only) ---
 
-export function getSessions(operatorId: string) {
-  return request<RobotSession[]>(`${ROBOT_BASE}/operators/${operatorId}/sessions`);
+export function getSessions(characterId: string) {
+  return request<RobotSession[]>(`${ROBOT_BASE}/characters/${characterId}/sessions`);
 }
 
 // --- Planned Replies (long-poll) ---
@@ -384,7 +479,7 @@ export async function getPlannedReplies(
   try {
     const res = await fetch(
       `${ROBOT_BASE}/sessions/${sessionId}/planned-replies?timeout=${serverTimeout}&last_count=${lastCount}`,
-      { signal: controller.signal }
+      { signal: controller.signal, credentials: 'same-origin' }
     );
     clearTimeout(timeoutId);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);

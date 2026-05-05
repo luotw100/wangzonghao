@@ -1,7 +1,7 @@
 """Distill pipeline: per-contact rolling fold.
 
 Reads upload messages from robot.db, runs windows through the fold prompt,
-writes Operator persona_md + Contact card_md back to DB.
+writes Character persona_md + Contact card_md back to DB.
 """
 
 from __future__ import annotations
@@ -26,10 +26,10 @@ from robot.distill.packer import (
     split_sessions,
 )
 from robot.models import (
+    Character,
     Contact,
     LlmLog,
     Message,
-    Operator,
     ProviderConfig,
 )
 
@@ -40,7 +40,7 @@ FOLD_PROMPT = (PROMPTS_DIR / "fold.md").read_text(encoding="utf-8")
 
 # Parser for the two-section fold output
 _PERSONA_RE = re.compile(
-    r"={3,}\s*Operator Persona\s*={3,}\s*(.*?)(?=\n={3,}\s*Contact Card\s*={3,})",
+    r"={3,}\s*Character Persona\s*={3,}\s*(.*?)(?=\n={3,}\s*Contact Card\s*={3,})",
     re.DOTALL,
 )
 _CARD_RE = re.compile(
@@ -57,30 +57,30 @@ ProgressCb = Callable[[Dict[str, int]], None]
 
 
 @dataclass
-class _OperatorCtx:
-    operator_id: str
-    operator_name: str
-    operator_wxid: Optional[str]
+class _CharacterCtx:
+    character_id: str
+    character_name: str
+    character_wxid: Optional[str]
     base_url: str
     api_key: str
     model: str
 
 
-def _load_operator_ctx(db: ORMSession, operator_id: str) -> _OperatorCtx:
-    op = db.query(Operator).filter(Operator.id == operator_id).first()
-    if not op:
-        raise ValueError(f"Operator {operator_id} 不存在")
-    if not op.provider_config_id:
-        raise ValueError(f"Operator {operator_id} 未配置 Provider Config")
-    pc = db.query(ProviderConfig).filter(ProviderConfig.id == op.provider_config_id).first()
+def _load_character_ctx(db: ORMSession, character_id: str) -> _CharacterCtx:
+    ch = db.query(Character).filter(Character.id == character_id).first()
+    if not ch:
+        raise ValueError(f"Character {character_id} 不存在")
+    if not ch.provider_config_id:
+        raise ValueError(f"Character {character_id} 未配置 Provider Config")
+    pc = db.query(ProviderConfig).filter(ProviderConfig.id == ch.provider_config_id).first()
     if not pc:
-        raise ValueError(f"Provider Config {op.provider_config_id} 不存在")
+        raise ValueError(f"Provider Config {ch.provider_config_id} 不存在")
     if not pc.api_key:
         raise ValueError(f"Provider Config {pc.id} 缺少 api_key")
-    return _OperatorCtx(
-        operator_id=op.id,
-        operator_name=op.name,
-        operator_wxid=(op.adapter_identities or {}).get("wechat_wxid_self"),
+    return _CharacterCtx(
+        character_id=ch.id,
+        character_name=ch.name,
+        character_wxid=(ch.adapter_identities or {}).get("wechat_wxid_self"),
         base_url=pc.base_url,
         api_key=pc.api_key,
         model=pc.default_model,
@@ -114,7 +114,7 @@ def _messages_to_text_messages(msgs: List[Message]) -> List[TextMessage]:
 
 def _build_user_message(
     *,
-    op_ctx: _OperatorCtx,
+    ctx: _CharacterCtx,
     contact: Contact,
     window: Window,
     total_windows: int,
@@ -124,8 +124,8 @@ def _build_user_message(
 ) -> str:
     return (
         f"```yaml\n"
-        f"operator_name: {json.dumps(op_ctx.operator_name, ensure_ascii=False)}\n"
-        f"operator_wxid: {json.dumps(op_ctx.operator_wxid or '', ensure_ascii=False)}\n"
+        f"character_name: {json.dumps(ctx.character_name, ensure_ascii=False)}\n"
+        f"character_wxid: {json.dumps(ctx.character_wxid or '', ensure_ascii=False)}\n"
         f"contact_name: {json.dumps(contact.display_name, ensure_ascii=False)}\n"
         f"contact_wxid: {json.dumps(contact.wechat_wxid or '', ensure_ascii=False)}\n"
         f"window: {window.window_id}/{total_windows}\n"
@@ -133,7 +133,7 @@ def _build_user_message(
         f"sessions_in_window: {window.session_count}\n"
         f"total_sessions: {sessions_so_far}\n"
         f"```\n\n"
-        f"===== Operator Persona =====\n{persona_md or '空'}\n\n"
+        f"===== Character Persona =====\n{persona_md or '空'}\n\n"
         f"===== Contact Card =====\n{card_md or '空'}\n\n"
         f"以下是聊天记录：\n\n{window.text}"
     )
@@ -150,7 +150,7 @@ def _parse_fold_output(text: str) -> Tuple[Optional[str], Optional[str]]:
 def _log_llm_call(
     db: ORMSession,
     *,
-    operator_id: str,
+    character_id: str,
     request_messages: List[Dict[str, str]],
     response_raw: str,
     model: str,
@@ -159,7 +159,7 @@ def _log_llm_call(
         LlmLog(
             purpose="distill",
             session_id=None,
-            operator_id=operator_id,
+            character_id=character_id,
             request_messages=json.dumps(request_messages, ensure_ascii=False),
             response_raw=response_raw,
             model=model,
@@ -176,12 +176,12 @@ def _log_llm_call(
 async def _fold_contact(
     *,
     client: ProviderClient,
-    op_ctx: _OperatorCtx,
+    ctx: _CharacterCtx,
     contact_id: str,
     progress_state: Dict[str, int],
     progress_cb: Optional[ProgressCb],
 ) -> None:
-    """Run rolling fold over one contact's history; updates Operator.persona_md + Contact.card_md."""
+    """Run rolling fold over one contact's history; updates Character.persona_md + Contact.card_md."""
     db = SessionLocal()
     try:
         contact = db.query(Contact).filter(Contact.id == contact_id).first()
@@ -205,18 +205,18 @@ async def _fold_contact(
     for window in windows:
         sessions_so_far += window.session_count
 
-        # Reload current state each iteration (job runner may concurrently update other operators)
+        # Reload current state each iteration (job runner may concurrently update other characters)
         db = SessionLocal()
         try:
-            op = db.query(Operator).filter(Operator.id == op_ctx.operator_id).first()
+            ch = db.query(Character).filter(Character.id == ctx.character_id).first()
             ct = db.query(Contact).filter(Contact.id == contact_id).first()
-            persona_md = op.persona_md or ""
+            persona_md = ch.persona_md or ""
             card_md = ct.card_md or ""
         finally:
             db.close()
 
         user_msg = _build_user_message(
-            op_ctx=op_ctx,
+            ctx=ctx,
             contact=ct,
             window=window,
             total_windows=len(windows),
@@ -231,7 +231,7 @@ async def _fold_contact(
 
         try:
             response_text, _usage = await client.complete_chat(
-                op_ctx.base_url, op_ctx.api_key, op_ctx.model, request_messages
+                ctx.base_url, ctx.api_key, ctx.model, request_messages
             )
         except Exception as exc:
             logger.error("Fold LLM call failed for contact %s window %d: %s",
@@ -240,10 +240,10 @@ async def _fold_contact(
             try:
                 _log_llm_call(
                     db,
-                    operator_id=op_ctx.operator_id,
+                    character_id=ctx.character_id,
                     request_messages=request_messages,
                     response_raw=f"ERROR: {exc}",
-                    model=op_ctx.model,
+                    model=ctx.model,
                 )
             finally:
                 db.close()
@@ -253,10 +253,10 @@ async def _fold_contact(
         try:
             _log_llm_call(
                 db,
-                operator_id=op_ctx.operator_id,
+                character_id=ctx.character_id,
                 request_messages=request_messages,
                 response_raw=response_text,
-                model=op_ctx.model,
+                model=ctx.model,
             )
         finally:
             db.close()
@@ -270,11 +270,11 @@ async def _fold_contact(
         else:
             db = SessionLocal()
             try:
-                op = db.query(Operator).filter(Operator.id == op_ctx.operator_id).first()
+                ch = db.query(Character).filter(Character.id == ctx.character_id).first()
                 ct = db.query(Contact).filter(Contact.id == contact_id).first()
                 if new_persona is not None:
-                    op.persona_md = new_persona
-                    op.updated_at = utc_now()
+                    ch.persona_md = new_persona
+                    ch.updated_at = utc_now()
                 if new_card is not None:
                     ct.card_md = new_card
                     ct.updated_at = utc_now()
@@ -291,18 +291,18 @@ async def _fold_contact(
 # Public entry
 # ---------------------------------------------------------------------------
 
-async def run_distill_for_operator(
-    operator_id: str,
+async def run_distill_for_character(
+    character_id: str,
     request_timeout: float,
     progress_cb: Optional[ProgressCb] = None,
 ) -> None:
-    """Run full distill for an operator across all its contacts."""
+    """Run full distill for a character across all its contacts."""
     db = SessionLocal()
     try:
-        op_ctx = _load_operator_ctx(db, operator_id)
+        ctx = _load_character_ctx(db, character_id)
         contacts = (
             db.query(Contact)
-            .filter(Contact.operator_id == operator_id, Contact.status == "active")
+            .filter(Contact.character_id == character_id, Contact.status == "active")
             .order_by(Contact.created_at.asc())
             .all()
         )
@@ -328,7 +328,7 @@ async def run_distill_for_operator(
             contact_ids.append(ct.id)
 
     if total_windows == 0:
-        logger.info("Operator %s 没有可蒸馏的聊天记录", operator_id)
+        logger.info("Character %s 没有可蒸馏的聊天记录", character_id)
         return
 
     progress_state = {
@@ -345,7 +345,7 @@ async def run_distill_for_operator(
         for cid in contact_ids:
             await _fold_contact(
                 client=client,
-                op_ctx=op_ctx,
+                ctx=ctx,
                 contact_id=cid,
                 progress_state=progress_state,
                 progress_cb=progress_cb,
@@ -364,7 +364,7 @@ async def run_distill_for_operator(
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     parser = argparse.ArgumentParser(description="Distill 蒸馏（CLI / 调试用）")
-    parser.add_argument("--operator-id", required=True)
+    parser.add_argument("--character-id", required=True)
     parser.add_argument("--request-timeout", type=float, default=120.0)
     args = parser.parse_args()
 
@@ -374,8 +374,8 @@ def main() -> None:
         print(f"  progress: {state}")
 
     asyncio.run(
-        run_distill_for_operator(
-            operator_id=args.operator_id,
+        run_distill_for_character(
+            character_id=args.character_id,
             request_timeout=args.request_timeout,
             progress_cb=progress_cb,
         )

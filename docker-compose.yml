@@ -25,7 +25,19 @@ services:
   robot-api:
     build:
       context: .
-    command: uv run python -m robot.main --host 0.0.0.0 --port 23457 --chat-api-base-url http://chat:23456/api
+    command: >
+      uv run python -m robot.main
+      --host 0.0.0.0 --port 23457
+      --chat-api-base-url http://chat:23456/api
+      --resend-api-key ${RESEND_API_KEY}
+      --resend-from "${RESEND_FROM}"
+      --admin-emails "${ADMIN_EMAILS}"
+      --cookie-secure ${COOKIE_SECURE}
+    environment:
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      RESEND_FROM: ${RESEND_FROM}
+      ADMIN_EMAILS: ${ADMIN_EMAILS}
+      COOKIE_SECURE: ${COOKIE_SECURE}
     volumes:
       - app-storage:/app/storage
     depends_on:

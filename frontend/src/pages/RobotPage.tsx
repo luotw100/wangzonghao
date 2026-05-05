@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import * as api from '../lib/api';
 import type {
+  Account,
   ChatArchive,
+  Character,
   Contact,
   DistillJob,
-  Operator,
   ProviderConfig,
   RobotSession,
 } from '../lib/api';
@@ -25,36 +26,54 @@ const TABS: { key: TabKey; label: string }[] = [
 
 
 export function RobotPage() {
-  const [operators, setOperators] = useState<Operator[]>([]);
-  const [activeOperatorId, setActiveOperatorId] = useState<string | null>(null);
+  const navigate = useNavigate();
+  const [me, setMe] = useState<Account | null>(null);
+  const [characters, setCharacters] = useState<Character[]>([]);
+  const [activeId, setActiveId] = useState<string | null>(null);
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [tab, setTab] = useState<TabKey>('persona');
   const [error, setError] = useState('');
-  const [showCreateOperator, setShowCreateOperator] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
 
-  const activeOperator = operators.find(o => o.id === activeOperatorId) || null;
+  const active = characters.find(o => o.id === activeId) || null;
 
-  const loadOperators = useCallback(async () => {
-    try { setOperators(await api.getOperators()); } catch (e) { setError(String(e)); }
+  useEffect(() => {
+    api.authMe()
+      .then(setMe)
+      .catch(() => navigate('/login', { replace: true }));
+  }, [navigate]);
+
+  const loadCharacters = useCallback(async () => {
+    try { setCharacters(await api.getCharacters()); } catch (e) { setError(String(e)); }
   }, []);
 
   const loadProviders = useCallback(async () => {
     try { setProviders(await api.getProviderConfigs()); } catch (e) { setError(String(e)); }
   }, []);
 
-  useEffect(() => { loadOperators(); loadProviders(); }, [loadOperators, loadProviders]);
+  useEffect(() => {
+    if (!me) return;
+    loadCharacters(); loadProviders();
+  }, [me, loadCharacters, loadProviders]);
 
   useEffect(() => {
-    if (!activeOperatorId && operators.length > 0) setActiveOperatorId(operators[0].id);
-  }, [operators, activeOperatorId]);
+    if (!activeId && characters.length > 0) setActiveId(characters[0].id);
+  }, [characters, activeId]);
 
-  const refreshOperator = useCallback(async () => {
-    if (!activeOperatorId) return;
+  const refreshActive = useCallback(async () => {
+    if (!activeId) return;
     try {
-      const fresh = await api.getOperator(activeOperatorId);
-      setOperators(prev => prev.map(o => (o.id === fresh.id ? fresh : o)));
+      const fresh = await api.getCharacter(activeId);
+      setCharacters(prev => prev.map(o => (o.id === fresh.id ? fresh : o)));
     } catch (e) { setError(String(e)); }
-  }, [activeOperatorId]);
+  }, [activeId]);
+
+  const handleLogout = async () => {
+    await api.authLogout().catch(() => {});
+    navigate('/login', { replace: true });
+  };
+
+  if (!me) return null;
 
   return (
     <div className="w-full h-dvh flex flex-col bg-bg-primary text-text-primary tech-grid">
@@ -70,23 +89,31 @@ export function RobotPage() {
           </div>
           <div className="w-px h-4 bg-border-glow/30 ml-2" />
           <select
-            value={activeOperatorId ?? ''}
-            onChange={e => setActiveOperatorId(e.target.value || null)}
+            value={activeId ?? ''}
+            onChange={e => setActiveId(e.target.value || null)}
             className="bg-bg-tertiary border border-border-glow/30 rounded-lg px-3 py-1.5 text-sm outline-none focus:border-accent/50"
           >
-            {operators.length === 0 && <option value="">还没有主播</option>}
-            {operators.map(o => (
+            {characters.length === 0 && <option value="">还没有 Character</option>}
+            {characters.map(o => (
               <option key={o.id} value={o.id}>{o.name}</option>
             ))}
           </select>
           <button
-            onClick={() => setShowCreateOperator(true)}
+            onClick={() => setShowCreate(true)}
             className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-border-glow/30 text-text-secondary hover:text-accent hover:border-accent/40 text-xs btn-neon"
           >
-            <IconPlus size={14} /> 新建主播
+            <IconPlus size={14} /> 新建 Character
           </button>
         </div>
-        <Link to="/chat" className="text-xs text-text-secondary hover:text-accent">前往 Chat 调试 →</Link>
+        <div className="flex items-center gap-3 text-xs text-text-secondary">
+          <Link to="/chat" className="hover:text-accent">前往 Chat 调试 →</Link>
+          {me.role === 'admin' && (
+            <Link to="/admin" className="hover:text-accent">Admin →</Link>
+          )}
+          <span className="text-text-tertiary">·</span>
+          <span>{me.email}</span>
+          <button onClick={handleLogout} className="hover:text-accent">退出</button>
+        </div>
       </header>
 
       <div className="flex border-b border-border-glow/20 bg-bg-secondary/40 shrink-0">
@@ -110,39 +137,39 @@ export function RobotPage() {
       )}
 
       <main className="flex-1 overflow-y-auto min-h-0">
-        {!activeOperator ? (
+        {!active ? (
           <div className="h-full flex flex-col items-center justify-center text-center p-8">
             <div className="w-16 h-16 mb-6 rounded-full bg-bg-tertiary flex items-center justify-center laborster-empty-logo">
-              <LaborsterLogo size={32} id="emptyOpGrad" />
+              <LaborsterLogo size={32} id="emptyChGrad" />
             </div>
-            <h3 className="text-xl font-medium mb-2">还没有主播</h3>
-            <p className="text-text-secondary text-sm mb-6">先创建一个 Operator，然后上传聊天记录开始蒸馏</p>
+            <h3 className="text-xl font-medium mb-2">还没有 Character</h3>
+            <p className="text-text-secondary text-sm mb-6">创建一个 Character，然后上传聊天记录开始蒸馏</p>
             <button
-              onClick={() => setShowCreateOperator(true)}
+              onClick={() => setShowCreate(true)}
               className="px-5 py-2 rounded-lg bg-accent/20 text-accent border border-accent/40 hover:bg-accent/30 btn-neon text-sm flex items-center gap-2"
             >
-              <IconPlus /> 新建主播
+              <IconPlus /> 新建 Character
             </button>
           </div>
         ) : (
           <div className="max-w-5xl mx-auto p-4 md:p-6">
             {tab === 'persona' && (
-              <PersonaPanel operator={activeOperator} onSaved={refreshOperator} setError={setError} />
+              <PersonaPanel character={active} onSaved={refreshActive} setError={setError} />
             )}
             {tab === 'contacts' && (
-              <ContactsPanel operator={activeOperator} setError={setError} />
+              <ContactsPanel character={active} setError={setError} />
             )}
             {tab === 'archives' && (
-              <ArchivesPanel operator={activeOperator} setError={setError} />
+              <ArchivesPanel character={active} setError={setError} />
             )}
             {tab === 'distill' && (
-              <DistillPanel operator={activeOperator} setError={setError} />
+              <DistillPanel character={active} setError={setError} />
             )}
             {tab === 'providers' && (
               <ProvidersPanel
-                operator={activeOperator}
+                character={active}
                 providers={providers}
-                onChange={async () => { await loadProviders(); await refreshOperator(); }}
+                onChange={async () => { await loadProviders(); await refreshActive(); }}
                 setError={setError}
               />
             )}
@@ -150,14 +177,14 @@ export function RobotPage() {
         )}
       </main>
 
-      <CreateOperatorModal
-        open={showCreateOperator}
+      <CreateCharacterModal
+        open={showCreate}
         providers={providers}
-        onClose={() => setShowCreateOperator(false)}
-        onCreated={async (op) => {
-          setShowCreateOperator(false);
-          await loadOperators();
-          setActiveOperatorId(op.id);
+        onClose={() => setShowCreate(false)}
+        onCreated={async (c) => {
+          setShowCreate(false);
+          await loadCharacters();
+          setActiveId(c.id);
         }}
         setError={setError}
       />
@@ -171,18 +198,18 @@ export function RobotPage() {
 // ============================================================================
 
 function PersonaPanel({
-  operator, onSaved, setError,
-}: { operator: Operator; onSaved: () => void; setError: (s: string) => void }) {
-  const [draft, setDraft] = useState(operator.persona_md ?? '');
+  character, onSaved, setError,
+}: { character: Character; onSaved: () => void; setError: (s: string) => void }) {
+  const [draft, setDraft] = useState(character.persona_md ?? '');
   const [saving, setSaving] = useState(false);
-  useEffect(() => { setDraft(operator.persona_md ?? ''); }, [operator.id, operator.persona_md]);
+  useEffect(() => { setDraft(character.persona_md ?? ''); }, [character.id, character.persona_md]);
 
-  const dirty = draft !== (operator.persona_md ?? '');
+  const dirty = draft !== (character.persona_md ?? '');
 
   const handleSave = async () => {
     setSaving(true);
     try {
-      await api.updateOperator(operator.id, { persona_md: draft });
+      await api.updateCharacter(character.id, { persona_md: draft });
       onSaved();
     } catch (e) { setError(String(e)); } finally { setSaving(false); }
   };
@@ -195,7 +222,7 @@ function PersonaPanel({
           <p className="text-xs text-text-secondary mt-1">蒸馏后在此校对；运行时直接注入 system prompt。</p>
         </div>
         <div className="text-xs text-text-tertiary">
-          {operator.persona_md ? `更新于 ${formatDate(operator.updated_at)}` : '尚未蒸馏'}
+          {character.persona_md ? `更新于 ${formatDate(character.updated_at)}` : '尚未蒸馏'}
         </div>
       </div>
       <textarea
@@ -207,7 +234,7 @@ function PersonaPanel({
       <div className="mt-3 flex justify-end gap-2">
         <button
           disabled={!dirty || saving}
-          onClick={() => setDraft(operator.persona_md ?? '')}
+          onClick={() => setDraft(character.persona_md ?? '')}
           className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary disabled:opacity-30"
         >还原</button>
         <button
@@ -226,8 +253,8 @@ function PersonaPanel({
 // ============================================================================
 
 function ContactsPanel({
-  operator, setError,
-}: { operator: Operator; setError: (s: string) => void }) {
+  character, setError,
+}: { character: Character; setError: (s: string) => void }) {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [sessions, setSessions] = useState<RobotSession[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
@@ -235,13 +262,13 @@ function ContactsPanel({
   const load = useCallback(async () => {
     try {
       const [cs, ss] = await Promise.all([
-        api.getContacts(operator.id),
-        api.getSessions(operator.id),
+        api.getContacts(character.id),
+        api.getSessions(character.id),
       ]);
       setContacts(cs);
       setSessions(ss);
     } catch (e) { setError(String(e)); }
-  }, [operator.id, setError]);
+  }, [character.id, setError]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -374,8 +401,8 @@ function ContactRow({
 // ============================================================================
 
 function ArchivesPanel({
-  operator, setError,
-}: { operator: Operator; setError: (s: string) => void }) {
+  character, setError,
+}: { character: Character; setError: (s: string) => void }) {
   const [archives, setArchives] = useState<ChatArchive[]>([]);
   const [selfWxid, setSelfWxid] = useState('');
   const [file, setFile] = useState<File | null>(null);
@@ -383,8 +410,8 @@ function ArchivesPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
-    try { setArchives(await api.getArchives(operator.id)); } catch (e) { setError(String(e)); }
-  }, [operator.id, setError]);
+    try { setArchives(await api.getArchives(character.id)); } catch (e) { setError(String(e)); }
+  }, [character.id, setError]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -392,7 +419,7 @@ function ArchivesPanel({
     if (!file || !selfWxid.trim()) return;
     setUploading(true);
     try {
-      await api.uploadArchive(operator.id, file, selfWxid.trim());
+      await api.uploadArchive(character.id, file, selfWxid.trim());
       setFile(null);
       setSelfWxid('');
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -464,14 +491,14 @@ function ArchivesPanel({
 // ============================================================================
 
 function DistillPanel({
-  operator, setError,
-}: { operator: Operator; setError: (s: string) => void }) {
+  character, setError,
+}: { character: Character; setError: (s: string) => void }) {
   const [jobs, setJobs] = useState<DistillJob[]>([]);
   const [creating, setCreating] = useState(false);
 
   const load = useCallback(async () => {
-    try { setJobs(await api.getDistillJobs(operator.id)); } catch (e) { setError(String(e)); }
-  }, [operator.id, setError]);
+    try { setJobs(await api.getDistillJobs(character.id)); } catch (e) { setError(String(e)); }
+  }, [character.id, setError]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -485,7 +512,7 @@ function DistillPanel({
   const handleCreate = async () => {
     setCreating(true);
     try {
-      await api.createDistillJob(operator.id);
+      await api.createDistillJob(character.id);
       await load();
     } catch (e) { setError(String(e)); } finally { setCreating(false); }
   };
@@ -501,9 +528,9 @@ function DistillPanel({
         </div>
         <button
           onClick={handleCreate}
-          disabled={creating || !operator.provider_config_id}
+          disabled={creating || !character.provider_config_id}
           className="px-5 py-2 rounded-lg bg-accent/20 text-accent border border-accent/40 hover:bg-accent/30 disabled:opacity-30 btn-neon text-sm"
-          title={!operator.provider_config_id ? '请先在 Provider tab 选择 Provider' : ''}
+          title={!character.provider_config_id ? '请先在 Provider tab 选择 Provider' : ''}
         >{creating ? '创建中...' : '开始蒸馏'}</button>
       </div>
 
@@ -563,18 +590,18 @@ function DistillJobRow({ job }: { job: DistillJob }) {
 // ============================================================================
 
 function ProvidersPanel({
-  operator, providers, onChange, setError,
+  character, providers, onChange, setError,
 }: {
-  operator: Operator;
+  character: Character;
   providers: ProviderConfig[];
   onChange: () => Promise<void>;
   setError: (s: string) => void;
 }) {
   const [showCreate, setShowCreate] = useState(false);
 
-  const setOperatorProvider = async (pid: string | null) => {
+  const setCharacterProvider = async (pid: string | null) => {
     try {
-      await api.updateOperator(operator.id, { provider_config_id: pid });
+      await api.updateCharacter(character.id, { provider_config_id: pid });
       await onChange();
     } catch (e) { setError(String(e)); }
   };
@@ -593,7 +620,7 @@ function ProvidersPanel({
         <div>
           <h2 className="text-lg font-medium">LLM Provider</h2>
           <p className="text-xs text-text-secondary mt-1">
-            主播当前绑定: <span className="text-accent">{operator.provider_config?.name || '未绑定'}</span>
+            当前 Character 绑定: <span className="text-accent">{character.provider_config?.name || '未绑定'}</span>
           </p>
         </div>
         <button
@@ -609,7 +636,7 @@ function ProvidersPanel({
       ) : (
         <div className="space-y-2">
           {providers.map(p => {
-            const bound = operator.provider_config_id === p.id;
+            const bound = character.provider_config_id === p.id;
             return (
               <div key={p.id} className={cn(
                 'border rounded-xl px-4 py-3 flex items-center justify-between',
@@ -628,7 +655,7 @@ function ProvidersPanel({
                     <span className="text-xs text-accent">已绑定</span>
                   ) : (
                     <button
-                      onClick={() => setOperatorProvider(p.id)}
+                      onClick={() => setCharacterProvider(p.id)}
                       className="text-xs text-text-secondary hover:text-accent"
                     >绑定</button>
                   )}
@@ -659,13 +686,13 @@ function ProvidersPanel({
 // Modals
 // ============================================================================
 
-function CreateOperatorModal({
+function CreateCharacterModal({
   open, providers, onClose, onCreated, setError,
 }: {
   open: boolean;
   providers: ProviderConfig[];
   onClose: () => void;
-  onCreated: (op: Operator) => void;
+  onCreated: (c: Character) => void;
   setError: (s: string) => void;
 }) {
   const [name, setName] = useState('');
@@ -681,24 +708,24 @@ function CreateOperatorModal({
     if (!name.trim()) return;
     setCreating(true);
     try {
-      const op = await api.createOperator({
+      const c = await api.createCharacter({
         name: name.trim(),
         provider_config_id: providerId || null,
       });
-      onCreated(op);
+      onCreated(c);
     } catch (e) { setError(String(e)); } finally { setCreating(false); }
   };
 
   return (
     <Modal open={open} onClose={onClose}>
-      <h3 className="text-lg font-medium mb-4">新建主播</h3>
+      <h3 className="text-lg font-medium mb-4">新建 Character</h3>
       <div className="space-y-3 mb-4">
         <div>
           <label className="text-xs text-text-secondary mb-1 block">姓名</label>
           <input
             value={name}
             onChange={e => setName(e.target.value)}
-            placeholder="主播显示名"
+            placeholder="Character 显示名"
             autoFocus
             className="w-full bg-bg-tertiary border border-border-glow/30 rounded-xl px-4 py-3 text-sm outline-none focus:border-accent/50"
           />

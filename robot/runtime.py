@@ -10,13 +10,13 @@ from sqlalchemy.orm import Session
 
 from robot.clients import ChatAdapter, ProviderClient
 from robot.db import SessionLocal, utc_now
-from robot.distill.pipeline import run_distill_for_operator
+from robot.distill.pipeline import run_distill_for_character
 from robot.models import (
+    Character,
     Contact,
     DistillJob,
     LlmLog,
     Message,
-    Operator,
     ProviderConfig,
     SessionRecord,
 )
@@ -95,12 +95,12 @@ def format_beijing_time(dt: Optional[datetime] = None) -> str:
     return f"{beijing.year}年{beijing.month}月{beijing.day}日 {wd} {period}{display_hour}:{beijing.minute:02d}"
 
 
-def build_system_prompt(operator: Operator, contact: Contact) -> str:
+def build_system_prompt(character: Character, contact: Contact) -> str:
     parts: list[str] = [SYSTEM_INSTRUCTION]
 
     ctx_lines: list[str] = []
-    if operator.persona_md:
-        ctx_lines.append(f"---\n【你的角色画像】\n{operator.persona_md}")
+    if character.persona_md:
+        ctx_lines.append(f"---\n【你的角色画像】\n{character.persona_md}")
     if contact.card_md:
         ctx_lines.append(f"---\n【当前联系人画像】\n{contact.card_md}")
     ctx_lines.append(f"---\n【当前时间】{format_beijing_time()}")
@@ -264,7 +264,7 @@ class RobotRuntime:
                         .order_by(DistillJob.created_at.asc())
                         .all()
                     )
-                    pending_ids = [(j.id, j.operator_id) for j in pending]
+                    pending_ids = [(j.id, j.character_id) for j in pending]
                 finally:
                     db.close()
 
@@ -273,11 +273,11 @@ class RobotRuntime:
                     if self._distill_tasks[jid].done():
                         del self._distill_tasks[jid]
 
-                for job_id, operator_id in pending_ids:
+                for job_id, character_id in pending_ids:
                     if job_id in self._distill_tasks:
                         continue
                     self._distill_tasks[job_id] = asyncio.get_running_loop().create_task(
-                        self._run_distill_job(job_id, operator_id),
+                        self._run_distill_job(job_id, character_id),
                         name=f"distill-{job_id}",
                     )
             except asyncio.CancelledError:
@@ -287,7 +287,7 @@ class RobotRuntime:
 
             await asyncio.sleep(5)
 
-    async def _run_distill_job(self, job_id: str, operator_id: str):
+    async def _run_distill_job(self, job_id: str, character_id: str):
         # Mark running
         db = SessionLocal()
         try:
@@ -311,8 +311,8 @@ class RobotRuntime:
                 d.close()
 
         try:
-            await run_distill_for_operator(
-                operator_id=operator_id,
+            await run_distill_for_character(
+                character_id=character_id,
                 request_timeout=self.options.request_timeout,
                 progress_cb=progress_cb,
             )
@@ -346,7 +346,7 @@ class RobotRuntime:
         ctx = self._load_session_ctx(session_id)
         if not ctx:
             return
-        thread_id, contact_id, operator_chat_user_id = ctx
+        thread_id, contact_id, character_chat_user_id = ctx
 
         last_id = 0
         try:
@@ -363,7 +363,7 @@ class RobotRuntime:
                     result = await self.adapter.get_messages(thread_id, last_id=last_id, timeout=0)
                     for msg in result.get("messages", []):
                         last_id = msg["id"]
-                        if msg.get("sender_id") != operator_chat_user_id:
+                        if msg.get("sender_id") != character_chat_user_id:
                             self._store_counterpart_message(contact_id, msg.get("content", ""))
                 except asyncio.CancelledError:
                     raise
@@ -375,7 +375,7 @@ class RobotRuntime:
                     if messages:
                         msg_ids = self._write_scheduled_messages(contact_id, messages)
                         await self._send_scheduled(
-                            session_id, thread_id, operator_chat_user_id, msg_ids
+                            session_id, thread_id, character_chat_user_id, msg_ids
                         )
 
                 await asyncio.sleep(1)
@@ -385,7 +385,7 @@ class RobotRuntime:
     # -- Helpers -----------------------------------------------------------
 
     def _load_session_ctx(self, session_id: str):
-        """Return (thread_id, contact_id, operator_chat_user_id) for the session."""
+        """Return (thread_id, contact_id, character_chat_user_id) for the session."""
         db = SessionLocal()
         try:
             s = db.query(SessionRecord).filter(SessionRecord.id == session_id).first()
@@ -395,13 +395,13 @@ class RobotRuntime:
             if not contact:
                 logger.error("Session %s has missing contact %s", session_id, s.contact_id)
                 return None
-            operator = db.query(Operator).filter(Operator.id == contact.operator_id).first()
-            if not operator:
-                logger.error("Contact %s has missing operator %s", contact.id, contact.operator_id)
+            character = db.query(Character).filter(Character.id == contact.character_id).first()
+            if not character:
+                logger.error("Contact %s has missing character %s", contact.id, contact.character_id)
                 return None
-            chat_user_id = (operator.adapter_identities or {}).get("chat")
+            chat_user_id = (character.adapter_identities or {}).get("chat")
             if not chat_user_id:
-                logger.error("Operator %s missing chat adapter identity", operator.id)
+                logger.error("Character %s missing chat adapter identity", character.id)
                 return None
             return s.adapter_thread_id, contact.id, chat_user_id
         finally:
@@ -485,7 +485,7 @@ class RobotRuntime:
         self,
         session_id: str,
         thread_id: str,
-        operator_chat_user_id: str,
+        character_chat_user_id: str,
         msg_ids: List[int],
     ):
         for msg_id in msg_ids:
@@ -517,7 +517,7 @@ class RobotRuntime:
                 db.close()
 
             try:
-                await self.adapter.send_message(thread_id, operator_chat_user_id, content)
+                await self.adapter.send_message(thread_id, character_chat_user_id, content)
             except Exception as exc:
                 logger.error("Failed to send reply for session %s: %s", session_id, exc)
 
@@ -532,13 +532,13 @@ class RobotRuntime:
             contact = db.query(Contact).filter(Contact.id == s.contact_id).first()
             if not contact:
                 return None
-            operator = db.query(Operator).filter(Operator.id == contact.operator_id).first()
-            if not operator:
+            character = db.query(Character).filter(Character.id == contact.character_id).first()
+            if not character:
                 return None
 
-            provider_config = self._resolve_provider_config(db, operator)
+            provider_config = self._resolve_provider_config(db, character)
             if not provider_config:
-                logger.warning("No provider config for operator %s", operator.id)
+                logger.warning("No provider config for character %s", character.id)
                 return None
             if not provider_config.api_key:
                 logger.error("Provider config %s missing api_key", provider_config.id)
@@ -554,7 +554,7 @@ class RobotRuntime:
                 .all()
             )
 
-            system_prompt = build_system_prompt(operator, contact)
+            system_prompt = build_system_prompt(character, contact)
             chat_turns = build_chat_turns(history)
 
             llm_messages: List[Dict[str, str]] = [
@@ -579,7 +579,7 @@ class RobotRuntime:
                 self._log_llm_call(
                     purpose="reply",
                     session_id=session_id,
-                    operator_id=None,
+                    character_id=None,
                     request_messages=llm_messages,
                     response_raw=f"ERROR: {exc}",
                     model=model,
@@ -589,7 +589,7 @@ class RobotRuntime:
             self._log_llm_call(
                 purpose="reply",
                 session_id=session_id,
-                operator_id=None,
+                character_id=None,
                 request_messages=llm_messages,
                 response_raw=response_text,
                 model=model,
@@ -616,18 +616,18 @@ class RobotRuntime:
 
         return None
 
-    def _resolve_provider_config(self, db: Session, operator: Operator) -> Optional[ProviderConfig]:
-        if operator.provider_config_id:
+    def _resolve_provider_config(self, db: Session, character: Character) -> Optional[ProviderConfig]:
+        if character.provider_config_id:
             return db.query(ProviderConfig).filter(
-                ProviderConfig.id == operator.provider_config_id
+                ProviderConfig.id == character.provider_config_id
             ).first()
         configs = db.query(ProviderConfig).order_by(ProviderConfig.created_at.asc()).all()
         if not configs:
             return None
         if len(configs) > 1:
             raise RuntimeError(
-                f"Operator {operator.id} 没有指定 Provider Config，"
-                "且数据库中存在多个 Provider Config，请在 Operator 上明确选择一个"
+                f"Character {character.id} 没有指定 Provider Config，"
+                "且数据库中存在多个 Provider Config，请在 Character 上明确选择一个"
             )
         return configs[0]
 
@@ -636,7 +636,7 @@ class RobotRuntime:
         *,
         purpose: str,
         session_id: Optional[str],
-        operator_id: Optional[str],
+        character_id: Optional[str],
         request_messages: List[Dict[str, str]],
         response_raw: str,
         model: Optional[str],
@@ -646,7 +646,7 @@ class RobotRuntime:
             db.add(LlmLog(
                 purpose=purpose,
                 session_id=session_id,
-                operator_id=operator_id,
+                character_id=character_id,
                 request_messages=json.dumps(request_messages, ensure_ascii=False),
                 response_raw=response_raw,
                 model=model,

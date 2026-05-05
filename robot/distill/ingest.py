@@ -11,7 +11,6 @@ import hashlib
 import json
 import shutil
 import uuid
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 
@@ -26,10 +25,10 @@ from robot.distill.converter import (
     should_keep,
 )
 from robot.models import (
+    Character,
     ChatArchive,
     Contact,
     Message,
-    Operator,
     SessionRecord,
 )
 
@@ -45,8 +44,8 @@ def file_hash(path: Path) -> str:
     return h.hexdigest()[:16]
 
 
-def _persist_upload(operator_id: str, archive_id: str, src_path: Path) -> Path:
-    dest_dir = UPLOADS_DIR / operator_id
+def _persist_upload(character_id: str, archive_id: str, src_path: Path) -> Path:
+    dest_dir = UPLOADS_DIR / character_id
     dest_dir.mkdir(exist_ok=True)
     dest_path = dest_dir / f"{archive_id}.json"
     shutil.copyfile(src_path, dest_path)
@@ -69,7 +68,7 @@ def _identify_counterpart(name_map: Dict[str, str], self_wxid: str) -> str:
 
 async def _ensure_contact(
     db: ORMSession,
-    operator: Operator,
+    character: Character,
     counterpart_wxid: str,
     counterpart_name: str,
     chat_adapter: ChatAdapter,
@@ -77,7 +76,7 @@ async def _ensure_contact(
     contact = (
         db.query(Contact)
         .filter(
-            Contact.operator_id == operator.id,
+            Contact.character_id == character.id,
             Contact.wechat_wxid == counterpart_wxid,
         )
         .first()
@@ -88,7 +87,7 @@ async def _ensure_contact(
     chat_user = await chat_adapter.create_user(counterpart_name)
     contact = Contact(
         id=f"ct_{uuid.uuid4().hex[:8]}",
-        operator_id=operator.id,
+        character_id=character.id,
         display_name=counterpart_name,
         wechat_wxid=counterpart_wxid,
         chat_user_id=chat_user["id"],
@@ -101,7 +100,7 @@ async def _ensure_contact(
 
 async def _ensure_session(
     db: ORMSession,
-    operator: Operator,
+    character: Character,
     contact: Contact,
     chat_adapter: ChatAdapter,
 ) -> SessionRecord:
@@ -116,17 +115,17 @@ async def _ensure_session(
     if session:
         return session
 
-    operator_chat_user_id = operator.adapter_identities.get("chat")
-    if not operator_chat_user_id:
+    character_chat_user_id = character.adapter_identities.get("chat")
+    if not character_chat_user_id:
         raise ValueError(
-            f"Operator {operator.id} 没有 chat user。"
-            "Operator 创建时应自动绑定 chat user，请检查初始化逻辑。"
+            f"Character {character.id} 没有 chat user。"
+            "Character 创建时应自动绑定 chat user，请检查初始化逻辑。"
         )
 
     conv = await chat_adapter.create_conversation(
-        user_a_id=operator_chat_user_id,
+        user_a_id=character_chat_user_id,
         user_b_id=contact.chat_user_id,
-        title=f"{operator.name} ↔ {contact.display_name}",
+        title=f"{character.name} ↔ {contact.display_name}",
     )
     session = SessionRecord(
         id=f"s_{uuid.uuid4().hex[:8]}",
@@ -151,7 +150,7 @@ def _is_first_archive_for_contact(db: ORMSession, contact_id: str) -> bool:
 
 async def ingest_archive(
     db: ORMSession,
-    operator: Operator,
+    character: Character,
     self_wxid: str,
     src_path: Path,
     original_filename: str,
@@ -173,7 +172,7 @@ async def ingest_archive(
     hash_hex = file_hash(src_path)
     duplicate = (
         db.query(ChatArchive)
-        .filter(ChatArchive.operator_id == operator.id, ChatArchive.file_hash == hash_hex)
+        .filter(ChatArchive.character_id == character.id, ChatArchive.file_hash == hash_hex)
         .first()
     )
     if duplicate:
@@ -181,14 +180,14 @@ async def ingest_archive(
 
     # 3. Persist file
     archive_id = f"a_{uuid.uuid4().hex[:8]}"
-    dest_path = _persist_upload(operator.id, archive_id, src_path)
+    dest_path = _persist_upload(character.id, archive_id, src_path)
 
     # 4. Upsert contact + session (creates chat user/conversation if needed)
-    contact = await _ensure_contact(db, operator, counterpart_wxid, counterpart_name, chat_adapter)
-    session = await _ensure_session(db, operator, contact, chat_adapter)
+    contact = await _ensure_contact(db, character, counterpart_wxid, counterpart_name, chat_adapter)
+    session = await _ensure_session(db, character, contact, chat_adapter)
 
     seed_chat = _is_first_archive_for_contact(db, contact.id)
-    operator_chat_user_id = operator.adapter_identities["chat"]
+    character_chat_user_id = character.adapter_identities["chat"]
 
     # 5. Convert + insert messages, build chat bulk payload
     bulk_payload: List[Dict[str, Any]] = []
@@ -228,7 +227,7 @@ async def ingest_archive(
 
         if seed_chat:
             bulk_payload.append({
-                "sender_id": operator_chat_user_id if is_self else contact.chat_user_id,
+                "sender_id": character_chat_user_id if is_self else contact.chat_user_id,
                 "msg_type": "text",
                 "content": content,
                 "created_at": ts.isoformat(),
@@ -236,7 +235,7 @@ async def ingest_archive(
 
     archive = ChatArchive(
         id=archive_id,
-        operator_id=operator.id,
+        character_id=character.id,
         filename=original_filename,
         file_path=str(dest_path),
         file_hash=hash_hex,

@@ -2,16 +2,16 @@
 
 ## 角色
 
-你是为某位主播（**Operator**）建立人设和粉丝档案的分析师。
+你是为某位主播（**Character**）建立人设和粉丝档案的分析师。
 
 每次调用，你会收到：
 
-1. **谁是 Operator**（明确指定的姓名/wxid）。
-2. **当前已有的 Operator Persona**（首次为空）。
+1. **谁是 Character**（明确指定的姓名/wxid）。
+2. **当前已有的 Character Persona**（首次为空）。
 3. **当前已有的 Contact Card**（一份；首次为空）。
-4. 一段新的聊天窗口（Operator 与该 Contact 的对话）。
+4. 一段新的聊天窗口（Character 与该 Contact 的对话）。
 
-你的任务：根据新证据**更新** Operator Persona 与 Contact Card，输出**完整覆盖版本**（不是 diff）。
+你的任务：根据新证据**更新** Character Persona 与 Contact Card，输出**完整覆盖版本**（不是 diff）。
 
 输出会**直接覆盖**之前的版本，所以已经成立、不该丢的信息必须每次都重写出来。
 
@@ -22,8 +22,8 @@
 ### 1. 元数据
 
 ```yaml
-operator_name: "罗腾伟"           # 主播本人的姓名/最常用称呼
-operator_wxid: "wxid_xxx"          # 主播的 wxid
+character_name: "罗腾伟"           # 主播本人的姓名/最常用称呼
+character_wxid: "wxid_xxx"          # 主播的 wxid
 contact_name: "白焕鹏"             # 当前粉丝的姓名/最常用称呼
 contact_wxid: "wxid_yyy"           # 当前粉丝的 wxid
 window: 3/15
@@ -35,7 +35,7 @@ total_sessions: 36
 ### 2. 当前 Persona / Card
 
 ```
-===== Operator Persona =====
+===== Character Persona =====
 （当前 persona_md 内容，或 "空"）
 
 ===== Contact Card =====
@@ -63,9 +63,9 @@ total_sessions: 36
 严格按以下两段输出，**前后不要有任何额外文字**：
 
 ```
-===== Operator Persona =====
+===== Character Persona =====
 
-# {operator_name} 的人设档案 (processed: {N} sessions)
+# {character_name} 的人设档案 (processed: {N} sessions)
 
 ## 风格
 
@@ -97,7 +97,7 @@ total_sessions: 36
 （按时间线追加，新旧都保留）
 
 ### 关系网
-- {Operator 提到过的家人/朋友/同事}
+- {Character 提到过的家人/朋友/同事}
 
 ### 偏好与价值观
 - {当前有效的消费观、兴趣、口味、职业观等}（≤10 条，每条 ≤20 字）
@@ -115,7 +115,7 @@ relationship_tier: "{陌生 | 低频 | 中频 | 高频 | 重点}"
 key_traits:
   - "{2-5 个简短标签，如：已婚、50岁左右、抖音粉丝转微信}"
 shared_facts:
-  - "{Operator 明确告诉过这个 Contact 的事，避免下次穿帮}"
+  - "{Character 明确告诉过这个 Contact 的事，避免下次穿帮}"
 notes: |
   {长尾兜底，自由文本}
   - {重要但不属于上面字段的信息}
@@ -125,7 +125,7 @@ notes: |
 
 ## 更新规则
 
-### Operator Persona
+### Character Persona
 
 **风格部分**：
 1. **口头禅**：逐 session 统计。本窗口某 session 里出现 → 计数 +1；未出现 → 不变。新发现的口头禅以 `[1/N]` 加入。`[xxx]` 微信表情**不是**口头禅。
@@ -150,7 +150,7 @@ notes: |
 
 **processed 计数**：每次累加本窗口的 sessions_in_window。
 
-**信息源**：Persona 反映的是 **Operator 自己**——只看主播自己说的话和透露的信息。粉丝问"你住哪"，主播答"上海"，那就是主播的居住地证据；粉丝单方面说自己"我住北京"则不写入主播的 Persona。
+**信息源**：Persona 反映的是 **Character 自己**——只看主播自己说的话和透露的信息。粉丝问"你住哪"，主播答"上海"，那就是主播的居住地证据；粉丝单方面说自己"我住北京"则不写入主播的 Persona。
 
 ### Contact Card
 
@@ -164,7 +164,7 @@ notes: |
   - `重点`：核心关系（兄弟、闺蜜、月榜大哥等）
   - 有矛盾时取最近 30 天表现。
 - **key_traits**：2-5 个简短标签，反映粉丝的关键身份/特征（"已婚"、"上海某国企"、"50岁左右"、"抖音粉丝转微信"等）。是关于**粉丝本人**的，不是关于双方关系的。
-- **shared_facts**：列出 Operator 在对话中**主动告诉过这个 Contact** 的关于自己的事实（"我说过下个月去苏州"、"我说过我妹妹在读研"）。这是穿帮高发区，必须显式记录。如果 Operator 对不同粉丝说了不一样的话，每个粉丝的 card 各记自己的版本。
+- **shared_facts**：列出 Character 在对话中**主动告诉过这个 Contact** 的关于自己的事实（"我说过下个月去苏州"、"我说过我妹妹在读研"）。这是穿帮高发区，必须显式记录。如果 Character 对不同粉丝说了不一样的话，每个粉丝的 card 各记自己的版本。
 - **notes**：自由文本兜底，记录任何不属于上述字段但重要的信息。
 
 ---

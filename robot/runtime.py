@@ -109,17 +109,50 @@ def build_system_prompt(operator: Operator, contact: Contact) -> str:
     return "\n\n".join(parts)
 
 
-def build_chat_history(history: list[Message]) -> str:
+def _normalize_content(content: str) -> str:
+    if content.startswith("data:"):
+        return "[附件已省略]"
+    return content
+
+
+def build_chat_turns(history: list[Message]) -> list[Dict[str, str]]:
+    """将历史消息合并成多轮 chat-completions 格式。
+
+    - 连续同 role 合并成一个 turn
+    - user (counterpart) 用纯文本，多句以 \\n 拼接
+    - assistant (self) 用 JSON `{"messages": [...]}`，与系统提示中规定的输出格式保持一致
+    """
     if not history:
-        return "（暂无聊天记录，这是第一次对话）"
-    lines: list[str] = []
+        return []
+
+    turns: list[Dict[str, str]] = []
+    cur_role: Optional[str] = None
+    cur_buffer: list[str] = []
+
+    def flush():
+        if not cur_buffer:
+            return
+        if cur_role == "self":
+            turns.append({
+                "role": "assistant",
+                "content": json.dumps({"messages": cur_buffer}, ensure_ascii=False),
+            })
+        else:
+            turns.append({
+                "role": "user",
+                "content": "\n".join(cur_buffer),
+            })
+
     for msg in history:
-        label = "我" if msg.role == "self" else "对方"
-        content = msg.content
-        if content.startswith("data:"):
-            content = "[附件已省略]"
-        lines.append(f"{label}: {content}")
-    return "\n".join(lines)
+        content = _normalize_content(msg.content)
+        if msg.role != cur_role:
+            flush()
+            cur_role = msg.role
+            cur_buffer = [content]
+        else:
+            cur_buffer.append(content)
+    flush()
+    return turns
 
 
 # ---------------------------------------------------------------------------
@@ -522,11 +555,11 @@ class RobotRuntime:
             )
 
             system_prompt = build_system_prompt(operator, contact)
-            chat_history = build_chat_history(history)
+            chat_turns = build_chat_turns(history)
 
             llm_messages: List[Dict[str, str]] = [
                 {"role": "system", "content": system_prompt},
-                {"role": "user", "content": chat_history},
+                *chat_turns,
             ]
 
             base_url = provider_config.base_url

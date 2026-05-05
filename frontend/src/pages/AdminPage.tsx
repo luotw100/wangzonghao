@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as api from '../lib/api';
 import type { Account, Character } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { LaborsterLogo } from '../components/Icons';
 import { cn, formatDate } from '../lib/utils';
 
@@ -15,24 +16,12 @@ const TABS: { key: Tab; label: string }[] = [
 
 export function AdminPage() {
   const navigate = useNavigate();
-  const [me, setMe] = useState<Account | null>(null);
+  const { account: me, logout } = useAuth();
   const [tab, setTab] = useState<Tab>('pending');
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    api.authMe()
-      .then(acc => {
-        if (acc.role !== 'admin') {
-          navigate('/robot', { replace: true });
-        } else {
-          setMe(acc);
-        }
-      })
-      .catch(() => navigate('/login', { replace: true }));
-  }, [navigate]);
-
   const handleLogout = async () => {
-    await api.authLogout().catch(() => {});
+    await logout();
     navigate('/login', { replace: true });
   };
 

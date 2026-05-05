@@ -6,32 +6,36 @@ import { RobotPage } from './pages/RobotPage';
 import { LoginPage } from './pages/LoginPage';
 import { AdminPage } from './pages/AdminPage';
 import { setUnauthorizedHandler } from './lib/api';
+import { AuthProvider, RedirectIfAuthed, RequireAuth, useAuth } from './lib/auth';
 
 function UnauthorizedRedirect() {
   const navigate = useNavigate();
+  const { refresh } = useAuth();
   useEffect(() => {
     setUnauthorizedHandler(() => {
-      // Avoid bouncing if already on /login
+      refresh();
       if (window.location.pathname !== '/login') {
         navigate('/login', { replace: true });
       }
     });
     return () => setUnauthorizedHandler(null);
-  }, [navigate]);
+  }, [navigate, refresh]);
   return null;
 }
 
 export default function App() {
   return (
     <BrowserRouter>
-      <UnauthorizedRedirect />
-      <Routes>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/chat" element={<ChatPage />} />
-        <Route path="/robot" element={<RobotPage />} />
-        <Route path="/admin" element={<AdminPage />} />
-      </Routes>
+      <AuthProvider>
+        <UnauthorizedRedirect />
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/login" element={<RedirectIfAuthed><LoginPage /></RedirectIfAuthed>} />
+          <Route path="/chat" element={<ChatPage />} />
+          <Route path="/robot" element={<RequireAuth><RobotPage /></RequireAuth>} />
+          <Route path="/admin" element={<RequireAuth role="admin"><AdminPage /></RequireAuth>} />
+        </Routes>
+      </AuthProvider>
     </BrowserRouter>
   );
 }

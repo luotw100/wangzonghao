@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import * as api from '../lib/api';
 import type {
-  Account,
   ChatArchive,
   Character,
   Contact,
@@ -10,6 +9,7 @@ import type {
   ProviderConfig,
   RobotSession,
 } from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { IconArrowLeft, IconClose, IconPlus, LaborsterLogo } from '../components/Icons';
 import { Modal } from '../components/Modal';
 import { cn, formatDate } from '../lib/utils';
@@ -27,7 +27,7 @@ const TABS: { key: TabKey; label: string }[] = [
 
 export function RobotPage() {
   const navigate = useNavigate();
-  const [me, setMe] = useState<Account | null>(null);
+  const { account: me, logout } = useAuth();
   const [characters, setCharacters] = useState<Character[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
@@ -36,12 +36,6 @@ export function RobotPage() {
   const [showCreate, setShowCreate] = useState(false);
 
   const active = characters.find(o => o.id === activeId) || null;
-
-  useEffect(() => {
-    api.authMe()
-      .then(setMe)
-      .catch(() => navigate('/login', { replace: true }));
-  }, [navigate]);
 
   const loadCharacters = useCallback(async () => {
     try { setCharacters(await api.getCharacters()); } catch (e) { setError(String(e)); }
@@ -52,9 +46,8 @@ export function RobotPage() {
   }, []);
 
   useEffect(() => {
-    if (!me) return;
     loadCharacters(); loadProviders();
-  }, [me, loadCharacters, loadProviders]);
+  }, [loadCharacters, loadProviders]);
 
   useEffect(() => {
     if (!activeId && characters.length > 0) setActiveId(characters[0].id);
@@ -69,7 +62,7 @@ export function RobotPage() {
   }, [activeId]);
 
   const handleLogout = async () => {
-    await api.authLogout().catch(() => {});
+    await logout();
     navigate('/login', { replace: true });
   };
 

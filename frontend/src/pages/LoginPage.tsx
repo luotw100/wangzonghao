@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as api from '../lib/api';
+import { useAuth } from '../lib/auth';
 import { LaborsterLogo } from '../components/Icons';
 
 type Step = 'email' | 'code';
 
 export function LoginPage() {
   const navigate = useNavigate();
+  const { refresh } = useAuth();
   const [step, setStep] = useState<Step>('email');
   const [email, setEmail] = useState('');
   const [code, setCode] = useState('');
@@ -14,16 +16,6 @@ export function LoginPage() {
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [resendIn, setResendIn] = useState(0);
-
-  // Already logged in? redirect by role.
-  useEffect(() => {
-    api.authMe()
-      .then(account => {
-        if (account.role === 'admin') navigate('/admin', { replace: true });
-        else navigate('/robot', { replace: true });
-      })
-      .catch(() => { /* not logged in, stay */ });
-  }, [navigate]);
 
   useEffect(() => {
     if (resendIn <= 0) return;
@@ -61,6 +53,7 @@ export function LoginPage() {
     setBusy(true);
     try {
       const r = await api.authVerifyCode(email.trim(), code.trim());
+      await refresh();
       if (r.account.role === 'admin') navigate('/admin', { replace: true });
       else navigate('/robot', { replace: true });
     } catch (err) {

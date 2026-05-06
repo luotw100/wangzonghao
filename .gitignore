@@ -7,9 +7,11 @@ __pycache__/
 .idea/
 
 storage/
+.tmp/
 
 .env
 
 # Frontend
-frontend/node_modules/
-frontend/dist/
+**/node_modules/
+**/dist/
+*.tsbuildinfo

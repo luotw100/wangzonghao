@@ -6,6 +6,64 @@ Laborster 是一个**通用拟人化私聊接管服务**：让 AI 替你的主�
 
 ---
 
+## 当前重构状态
+
+仓库正在被拆分成两个**完全独立的项目**，目前共用一个 git 仓库只是为了管理方便：
+
+- [`services/chat/`](services/chat/) — Chat 服务（独立项目）：自带 `api/pyproject.toml` + `uv.lock`、独立 Dockerfile、独立 `compose.yaml`、独立前端 `web/`，不依赖仓库根目录的任何文件。
+- 根目录 + [`robot/`](robot/) + [`frontend/`](frontend/) — Robot 服务（待迁移）：长期目标也会被拆成独立项目，目前仍在根目录。
+
+长期目标是 `平台(A) <-> 本地客户端(B) <-> Robot(C)`：微信 / 飞书 / QQ / Chat 都属于 A，未来新开发的主播电脑客户端 B 是唯一桥梁，Robot 不直接连真实平台。
+
+### 启动 Chat 服务
+
+Chat 是独立项目，从 `services/chat/` 起：
+
+```bash
+cd services/chat
+CHAT_HTTP_PORT=23458 docker compose up -d --build
+
+# 创建账号（首次）
+CHAT_HTTP_PORT=23458 docker compose exec -T chat-api \
+  uv run python -m chat.cli create-account \
+  --username demo --password demo123 --display-name 演示账号
+```
+
+打开 http://localhost:23458 ，用 `demo / demo123` 登录。
+
+本地不用 docker：
+
+```bash
+cd services/chat/api
+CHAT_STORAGE_DIR=$PWD/.storage uv run uvicorn chat.main:app --host 0.0.0.0 --port 23456
+
+# 另开终端启动 web
+cd services/chat/web && npm install && npm run dev
+```
+
+### Chat 账号管理 CLI
+
+```bash
+cd services/chat/api
+CHAT_STORAGE_DIR=$PWD/.storage uv run python -m chat.cli create-account \
+  --username anchor --password secret123 --display-name 主播
+
+CHAT_STORAGE_DIR=$PWD/.storage uv run python -m chat.cli list-accounts
+CHAT_STORAGE_DIR=$PWD/.storage uv run python -m chat.cli reset-password --username anchor --password newpass
+```
+
+### 启动 Robot 服务
+
+Robot 仍在仓库根目录，需要先有一个跑着的 Chat 服务。最简单的方式：先按上面把 Chat 起到 `host:23458`，再起 Robot：
+
+```bash
+CHAT_API_BASE_URL=http://host.docker.internal:23458/api docker compose up -d --build
+```
+
+打开 http://localhost:23456 看 Robot 控制台。
+
+---
+
 ## 数据模型
 
 三个核心原语：
@@ -64,14 +122,15 @@ graph TB
     ROBOT_WORKER -->|reply + distill| LLM
 ```
 
-四个容器：
+两个独立项目下的容器：
 
-| 容器 | 角色 |
-| --- | --- |
-| `nginx` | 静态资源 + 反向代理 |
-| `chat` | 通用聊天 Adapter，**充当微信模拟器**——上传历史聊天会自动注入此处，调试者可继续在 Chat UI 里扮演粉丝聊天 |
-| `robot-api` | Robot 领域 API（Operator / Contact / Archive / Distill / Provider） |
-| `robot-worker` | 1 Session Scanner + 1 Distill Scanner + N Session Loop。所有耗时的事都在这里 |
+| 容器 | 所属项目 | 角色 |
+| --- | --- | --- |
+| `chat-web` (nginx) | services/chat | Chat 静态资源 + 反代到 chat-api |
+| `chat-api` | services/chat | 通用聊天 Adapter，**充当微信模拟器**——上传历史聊天会自动注入此处，调试者可继续在 Chat UI 里扮演粉丝聊天 |
+| `nginx` | 根目录 (Robot) | Robot 静态资源 + 反代到 robot-api |
+| `robot-api` | 根目录 (Robot) | Robot 领域 API（Operator / Contact / Archive / Distill / Provider） |
+| `robot-worker` | 根目录 (Robot) | 1 Session Scanner + 1 Distill Scanner + N Session Loop。所有耗时的事都在这里 |
 
 ---
 
@@ -157,15 +216,25 @@ graph TB
 
 ## 快速开始
 
-### Docker Compose
+### 1. 起 Chat（独立项目，先起）
 
 ```bash
-docker compose up -d --build
+cd services/chat
+CHAT_HTTP_PORT=23458 docker compose up -d --build
+CHAT_HTTP_PORT=23458 docker compose exec -T chat-api \
+  uv run python -m chat.cli create-account \
+  --username demo --password demo123 --display-name 演示账号
 ```
 
-打开 http://localhost:23456 。
+Chat Lab 在 http://localhost:23458 。
 
-四个服务：`nginx`, `chat`, `robot-api`, `robot-worker`。`storage/` 目录持久化两个 SQLite DB 和上传的 archive。
+### 2. 起 Robot（仍在仓库根目录）
+
+```bash
+CHAT_API_BASE_URL=http://host.docker.internal:23458/api docker compose up -d --build
+```
+
+Robot 控制台在 http://localhost:23456 。`storage/` 目录持久化 robot.db 和上传的 archive。
 
 ### 第一次使用
 
@@ -181,17 +250,21 @@ docker compose up -d --build
 
 | 服务 | 必填参数 |
 | --- | --- |
+| `chat-api` | 环境变量 `CHAT_STORAGE_DIR`（监听 `0.0.0.0:23456`） |
 | `robot-api` | `--host`, `--port`, `--chat-api-base-url` |
 | `robot-worker` | `--chat-api-base-url`, `--request-timeout` |
-| `chat` | (无；监听 `0.0.0.0:23456`) |
 
 ### 本地开发（不用 docker）
 
 ```bash
-# Chat
-uv run uvicorn chat.main:app --host 0.0.0.0 --port 23456
+# Chat (在 services/chat/api/ 下，独立项目)
+cd services/chat/api
+CHAT_STORAGE_DIR=$PWD/.storage uv run uvicorn chat.main:app --host 0.0.0.0 --port 23456
 
-# Robot API
+# Chat 前端（另开终端）
+cd services/chat/web && npm install && npm run dev
+
+# Robot API（仓库根目录）
 uv run python -m robot.main \
   --host 127.0.0.1 --port 23457 \
   --chat-api-base-url http://127.0.0.1:23456/api
@@ -201,7 +274,7 @@ uv run python -m robot.worker \
   --chat-api-base-url http://127.0.0.1:23456/api \
   --request-timeout 120
 
-# Frontend
+# Robot 前端
 cd frontend && npm install && npm run dev
 ```
 
@@ -216,10 +289,10 @@ uv run python -m robot.distill.pipeline \
 
 ## 持久化
 
-`storage/` 目录（被 docker bind-mount）：
+两个项目各自有独立的 storage：
 
-- `chat.db`, `robot.db`
-- `uploads/{operator_id}/{archive_id}.json`：上传的 WeFlow 原始文件，保留以便未来 prompt 改动后重蒸
+- **Chat**：`services/chat/` 部署起来后，`chat-storage` docker volume（compose 里定义），里面是 `chat.db` + 附件。
+- **Robot**：仓库根目录 `storage/`（docker bind-mount），里面是 `robot.db` + `uploads/{operator_id}/{archive_id}.json`（上传的 WeFlow 原始文件，保留以便未来 prompt 改动后重蒸）。
 
 ---
 

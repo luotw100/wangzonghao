@@ -1,0 +1,25 @@
+services:
+  chat-web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    ports:
+      - "${CHAT_HTTP_PORT:?CHAT_HTTP_PORT is required}:23456"
+    volumes:
+      - chat-storage:/app/storage:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - chat-api
+    restart: unless-stopped
+
+  chat-api:
+    build:
+      context: ./api
+    environment:
+      CHAT_STORAGE_DIR: /app/storage
+    volumes:
+      - chat-storage:/app/storage
+    restart: unless-stopped
+
+volumes:
+  chat-storage:

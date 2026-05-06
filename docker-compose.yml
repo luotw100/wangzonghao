@@ -9,17 +9,8 @@ services:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - app-storage:/app/storage:ro
     depends_on:
-      - chat
       - robot-api
       - robot-worker
-    restart: unless-stopped
-
-  chat:
-    build:
-      context: .
-    command: uv run uvicorn chat.main:app --host 0.0.0.0 --port 23456
-    volumes:
-      - app-storage:/app/storage
     restart: unless-stopped
 
   robot-api:
@@ -28,7 +19,7 @@ services:
     command: >
       uv run python -m robot.main
       --host 0.0.0.0 --port 23457
-      --chat-api-base-url http://chat:23456/api
+      --chat-api-base-url ${CHAT_API_BASE_URL:?CHAT_API_BASE_URL is required (e.g. http://host.docker.internal:23458/api)}
       --resend-api-key ${RESEND_API_KEY}
       --resend-from "${RESEND_FROM}"
       --admin-emails "${ADMIN_EMAILS}"
@@ -40,18 +31,21 @@ services:
       COOKIE_SECURE: ${COOKIE_SECURE}
     volumes:
       - app-storage:/app/storage
-    depends_on:
-      - chat
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   robot-worker:
     build:
       context: .
-    command: uv run python -m robot.worker --chat-api-base-url http://chat:23456/api --request-timeout 120
+    command: >
+      uv run python -m robot.worker
+      --chat-api-base-url ${CHAT_API_BASE_URL:?CHAT_API_BASE_URL is required (e.g. http://host.docker.internal:23458/api)}
+      --request-timeout 120
     volumes:
       - app-storage:/app/storage
-    depends_on:
-      - chat
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
 volumes:

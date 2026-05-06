@@ -1,12 +1,16 @@
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-STORAGE_DIR = BASE_DIR / "storage"
-STORAGE_DIR.mkdir(exist_ok=True)
+storage_dir_value = os.environ.get("CHAT_STORAGE_DIR")
+if not storage_dir_value:
+    raise RuntimeError("CHAT_STORAGE_DIR is required")
+
+STORAGE_DIR = Path(storage_dir_value).resolve()
+STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = STORAGE_DIR / "chat.db"
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 

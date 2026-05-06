@@ -12,10 +12,8 @@ RUN pip install --no-cache-dir uv -i http://mirrors.aliyun.com/pypi/simple --tru
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-COPY chat ./chat
 COPY robot ./robot
 
 RUN mkdir -p /app/storage/attachments
 
-EXPOSE 23456
 EXPOSE 23457

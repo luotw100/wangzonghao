@@ -1,0 +1,10 @@
+[project]
+name = "laborster-chat"
+version = "0.1.0"
+description = "Laborster Chat — independent chat service (debug platform / WeChat simulator)"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.135.3",
+    "sqlalchemy>=2.0.49",
+    "uvicorn>=0.44.0",
+]

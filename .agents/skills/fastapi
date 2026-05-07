@@ -1,1 +1,1 @@
-../../.venv/lib/python3.12/site-packages/fastapi/.agents/skills/fastapi
+../../services/chat/api/.venv/lib/python3.12/site-packages/fastapi/.agents/skills/fastapi/

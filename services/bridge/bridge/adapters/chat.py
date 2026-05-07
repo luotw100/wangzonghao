@@ -14,9 +14,24 @@ from typing import AsyncIterator, Dict, List, Optional
 
 import httpx
 
-from bridge.adapters.base import Adapter, IncomingMessage
+from bridge.adapters.base import Adapter, IncomingMessage, register_adapter
 
 logger = logging.getLogger(__name__)
+
+
+def _required(d: dict, key: str) -> str:
+    v = d.get(key)
+    if not v:
+        raise SystemExit(f"chat adapter inbox config requires '{key}'")
+    return str(v)
+
+
+def _build_chat_adapter(raw_config: dict) -> Adapter:
+    return ChatAdapter(
+        base_url=_required(raw_config, "chat_base_url"),
+        username=_required(raw_config, "chat_username"),
+        password=_required(raw_config, "chat_password"),
+    )
 
 
 def _parse_iso(s: str) -> datetime:
@@ -159,10 +174,13 @@ class ChatAdapter(Adapter):
         platform_msg_id = str(r.json().get("id"))
         # Pre-bump our cursor so we don't immediately re-yield our own send.
         # The next poll will see the message but skip it (or yield it once,
-        # which is fine — Robot dedups by external_id).
+        # which is fine — Studio dedups by external_id).
         return platform_msg_id
 
     async def close(self) -> None:
         if self._http is not None:
             await self._http.aclose()
             self._http = None
+
+
+register_adapter("chat", _build_chat_adapter)

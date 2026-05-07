@@ -1,14 +1,16 @@
 """Bridge daemon entry point.
 
-Configuration via env vars (set in docker compose / `.env`):
+Reads its config from a TOML file (default ~/.bridge/config.toml). The
+file enumerates the daemon's Studio token and the inboxes it knows how
+to serve, with platform-specific credentials per inbox.
 
-    ROBOT_URL           e.g. http://robot-api:23457
-    BRIDGE_TOKEN        b_token issued by Robot when the inbox was created
-    BRIDGE_HOSTNAME     human-readable label, defaults to socket.gethostname()
-    PLATFORM            'chat' (only one supported in v1)
-    CHAT_BASE_URL       e.g. http://chat-api:23456 (when PLATFORM=chat)
-    CHAT_USERNAME       chat account username (this is the streamer's chat login)
-    CHAT_PASSWORD       chat account password
+Usage:
+    BRIDGE_CONFIG=/path/to/bridge.toml uv run python -m bridge.main
+
+See bridge/config.py for the file format.
+
+Adapters self-register via side-effect import; we list them explicitly
+here so the registry is populated regardless of config order.
 """
 
 from __future__ import annotations
@@ -17,46 +19,24 @@ import asyncio
 import logging
 import os
 import signal
-import socket
 import sys
-from typing import Optional
 
-from bridge.adapters.base import Adapter
-from bridge.adapters.chat import ChatAdapter
-from bridge.robot_client import RobotClient
-from bridge.runtime import BridgeRuntime, RuntimeOptions
+# Side-effect imports: adapters call register_adapter() at module load.
+import bridge.adapters.chat  # noqa: F401
+
+from bridge.config import default_config_path, load_config
+from bridge.runtime import BridgeRuntime
+from bridge.studio_client import StudioClient
 
 logger = logging.getLogger("bridge")
 
 
-def _required(name: str) -> str:
-    v = os.environ.get(name)
-    if not v:
-        raise SystemExit(f"missing required env: {name}")
-    return v
-
-
-def _build_adapter(platform: str) -> Adapter:
-    if platform == "chat":
-        return ChatAdapter(
-            base_url=_required("CHAT_BASE_URL"),
-            username=_required("CHAT_USERNAME"),
-            password=_required("CHAT_PASSWORD"),
-        )
-    raise SystemExit(f"unsupported platform: {platform}")
-
-
 async def _run() -> None:
-    robot_url = _required("ROBOT_URL")
-    b_token = _required("BRIDGE_TOKEN")
-    platform = _required("PLATFORM")
-    hostname = os.environ.get("BRIDGE_HOSTNAME") or socket.gethostname()
-
-    adapter = _build_adapter(platform)
-    robot = RobotClient(base_url=robot_url, b_token=b_token)
-    runtime = BridgeRuntime(
-        robot=robot, adapter=adapter, options=RuntimeOptions(hostname=hostname),
-    )
+    cfg_path = default_config_path()
+    logger.info("loading config from %s", cfg_path)
+    cfg = load_config(cfg_path)
+    studio = StudioClient(base_url=cfg.studio_url, token=cfg.token)
+    runtime = BridgeRuntime(studio=studio, config=cfg)
 
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -65,8 +45,7 @@ async def _run() -> None:
     try:
         await runtime.run()
     finally:
-        await adapter.close()
-        await robot.close()
+        await studio.close()
 
 
 def main() -> None:

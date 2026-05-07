@@ -1,30 +1,25 @@
 # Bridge daemon compose — meant to run on the streamer's PC.
 #
-# For local dev we point at chat / robot via host.docker.internal. In
-# production each B instance lives wherever the platform login lives
-# (e.g. the same PC as the streamer's WeChat).
+# A single Bridge daemon multiplexes N inboxes (one or more platform logins
+# co-located on this machine). Configuration lives in a local TOML file
+# (NOT env vars), so platform credentials never travel through Studio.
 #
-# Required environment variables (typically in a .env file next to this):
-#   ROBOT_URL=http://host.docker.internal:23457
-#   BRIDGE_TOKEN=<paste from Robot UI when adding the inbox>
-#   BRIDGE_HOSTNAME=alice-mbp
-#   PLATFORM=chat
-#   CHAT_BASE_URL=http://host.docker.internal:23458
-#   CHAT_USERNAME=alice
-#   CHAT_PASSWORD=...
+# Setup:
+#   1. Copy bridge.toml.example -> bridge.toml in this directory
+#   2. Fill in studio_url + token (from Studio UI) and per-inbox blocks
+#   3. docker compose up --build
+#
+# When Studio runs in another compose on the same host, point studio_url
+# at host.docker.internal:<published-port> in your bridge.toml.
 
 services:
   bridge:
     build:
       context: .
+    volumes:
+      - ./bridge.toml:/app/bridge.toml:ro
     environment:
-      ROBOT_URL: ${ROBOT_URL:?ROBOT_URL is required}
-      BRIDGE_TOKEN: ${BRIDGE_TOKEN:?BRIDGE_TOKEN is required}
-      BRIDGE_HOSTNAME: ${BRIDGE_HOSTNAME:-bridge-host}
-      PLATFORM: ${PLATFORM:-chat}
-      CHAT_BASE_URL: ${CHAT_BASE_URL:-http://host.docker.internal:23458}
-      CHAT_USERNAME: ${CHAT_USERNAME:?CHAT_USERNAME is required}
-      CHAT_PASSWORD: ${CHAT_PASSWORD:?CHAT_PASSWORD is required}
+      BRIDGE_CONFIG: /app/bridge.toml
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     extra_hosts:
       - "host.docker.internal:host-gateway"

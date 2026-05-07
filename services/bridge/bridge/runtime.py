@@ -1,14 +1,19 @@
-"""Bridge runtime — three concurrent loops + handshake.
+"""Bridge daemon runtime — multi-adapter, single connection to Studio.
 
-The bridge's only job at runtime is to act as a courier between platform A
-(via an Adapter) and Robot (C). It owns no policy, no LLM, no persona.
+One Bridge daemon runs N adapters in parallel (one per inbox listed in the
+TOML config that Studio also confirms). All adapters' incoming streams are
+multiplexed into one outbound POST queue; one outbound long-poll task
+fan-outs to the right adapter based on inbox_id.
 
 Loops:
-- heartbeat_loop: tells Robot "I'm alive" so the inbox stays online in UI.
-- inbound_loop: streams messages from the adapter, batches them, POSTs to
-  /api/bridge/incoming. Dedup is Robot's job (external_id collisions).
-- outbound_loop: long-polls /api/bridge/outbound, sends each chunk via
-  the adapter with a typing-speed delay, ACKs the outbound.
+- heartbeat_loop: pings Studio every N seconds; receives current
+  authoritative inbox set, reconciles adapters (start new / stop dropped).
+- per-adapter inbound loops: stream incoming → tag with inbox_id → push
+  to a shared queue → batched POST to /api/bridge/incoming.
+- inbound_pump_loop: drains the shared queue with brief coalescing.
+- outbound_loop: long-polls /api/bridge/outbound (returns rows for ALL
+  inboxes under this bridge), dispatches each to its inbox's adapter
+  with typing-speed delay between chunks.
 """
 
 from __future__ import annotations
@@ -17,79 +22,177 @@ import asyncio
 import logging
 from contextlib import suppress
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
-from bridge.adapters.base import Adapter, IncomingMessage
-from bridge.robot_client import RobotClient
+from bridge.adapters.base import Adapter, IncomingMessage, build_adapter
+from bridge.config import BridgeConfig, InboxConfig, find_inbox
+from bridge.studio_client import StudioClient
 
 logger = logging.getLogger(__name__)
 
 
-# Outbound pacing: simulate typing speed. Each chunk waits chars/CPS seconds
-# (clamped) before sending; the first chunk also waits a small think-pause.
+# Outbound pacing
 TYPING_CHARS_PER_SECOND = 6.0
 TYPING_MIN_DELAY = 1.0
 TYPING_MAX_DELAY = 12.0
 THINK_DELAY = 1.5
 
 HEARTBEAT_INTERVAL = 15.0
-INBOUND_BATCH_LINGER = 0.4   # wait briefly to coalesce multi-msg arrivals
+INBOUND_BATCH_LINGER = 0.4
 INBOUND_BATCH_MAX = 30
 OUTBOUND_LONG_POLL_TIMEOUT = 30
 
 
-@dataclass(frozen=True)
-class RuntimeOptions:
-    hostname: str
+@dataclass
+class _AdapterEntry:
+    inbox_id: str
+    adapter: Adapter
+    platform_self_id: Optional[str]
+    inbound_task: Optional[asyncio.Task[Any]]
 
 
 class BridgeRuntime:
-    def __init__(self, *, robot: RobotClient, adapter: Adapter, options: RuntimeOptions) -> None:
-        self._robot = robot
-        self._adapter = adapter
-        self._options = options
+    def __init__(self, *, studio: StudioClient, config: BridgeConfig) -> None:
+        self._studio = studio
+        self._config = config
+        self._adapters: Dict[str, _AdapterEntry] = {}
+        self._inbound_queue: asyncio.Queue[Tuple[str, IncomingMessage]] = asyncio.Queue()
         self._cursor: int = 0
-        self._tasks: List[asyncio.Task[Any]] = []
         self._stop = asyncio.Event()
+        self._loop_tasks: List[asyncio.Task[Any]] = []
 
     async def run(self) -> None:
-        platform_self_id = await self._adapter.login()
-        info = await self._robot.handshake(
-            hostname=self._options.hostname,
-            platform_self_id=platform_self_id,
-        )
-        self._cursor = int(info.get("last_seq", 0))
-        logger.info("handshake ok: inbox=%s account=%s last_seq=%s",
-                    info.get("inbox_id"), info.get("account_id"), self._cursor)
+        # Spin up an adapter per inbox declared in the local config and log in
+        # to obtain platform_self_id. We hand the resulting list to handshake
+        # so Studio can rebind Inbox.bridge_id → us and stamp platform_self_id.
+        for inbox_cfg in self._config.inboxes:
+            await self._spawn_adapter(inbox_cfg)
 
-        # Push catch-up batch from the adapter (idempotent on Robot side).
-        catchup = await self._adapter.list_initial_messages(since_ms=0)
-        if catchup:
-            await self._push_batch(catchup)
+        info = await self._studio.handshake(
+            hostname=self._config.hostname,
+            inboxes=[
+                {"inbox_id": e.inbox_id, "platform_self_id": e.platform_self_id or ""}
+                for e in self._adapters.values()
+                if e.platform_self_id is not None
+            ],
+        )
+        self._cursor = int(info.get("cursor", 0))
+        served_ids = {ix["id"] for ix in info.get("inboxes", [])}
+        logger.info(
+            "handshake ok: bridge=%s account=%s served=%d cursor=%d",
+            info.get("bridge_id"), info.get("account_id"), len(served_ids), self._cursor,
+        )
+
+        # Drop adapters Studio refused to bind (e.g. inbox_id is bound to a
+        # different bridge in the UI, or doesn't belong to this account).
+        for inbox_id in list(self._adapters.keys()):
+            if inbox_id not in served_ids:
+                logger.warning("inbox %s not served by Studio; dropping local adapter", inbox_id)
+                await self._stop_adapter(inbox_id)
+
+        # Push catch-up batch from each adapter (idempotent on Studio side).
+        await self._push_initial_catchup()
 
         loop = asyncio.get_running_loop()
-        self._tasks = [
+        self._loop_tasks = [
             loop.create_task(self._heartbeat_loop(), name="heartbeat"),
-            loop.create_task(self._inbound_loop(), name="inbound"),
+            loop.create_task(self._inbound_pump_loop(), name="inbound-pump"),
             loop.create_task(self._outbound_loop(), name="outbound"),
         ]
         try:
             await self._stop.wait()
         finally:
-            for t in self._tasks:
+            for t in self._loop_tasks:
                 t.cancel()
-            for t in self._tasks:
+            for t in self._loop_tasks:
                 with suppress(asyncio.CancelledError):
                     await t
+            await self._stop_all_adapters()
 
     def stop(self) -> None:
         self._stop.set()
 
-    # --- helpers --------------------------------------------------------
+    # --- adapter lifecycle ----------------------------------------------
+
+    async def _spawn_adapter(self, inbox_cfg: InboxConfig) -> None:
+        adapter = build_adapter(inbox_cfg.platform, inbox_cfg.raw)
+        try:
+            platform_self_id = await adapter.login()
+        except Exception as exc:
+            logger.error("adapter login failed for inbox %s (%s): %s",
+                         inbox_cfg.inbox_id, inbox_cfg.platform, exc)
+            with suppress(Exception):
+                await adapter.close()
+            return
+        entry = _AdapterEntry(
+            inbox_id=inbox_cfg.inbox_id,
+            adapter=adapter,
+            platform_self_id=platform_self_id,
+            inbound_task=None,
+        )
+        loop = asyncio.get_running_loop()
+        entry.inbound_task = loop.create_task(
+            self._adapter_inbound_loop(inbox_cfg.inbox_id, adapter),
+            name=f"inbound-{inbox_cfg.inbox_id}",
+        )
+        self._adapters[inbox_cfg.inbox_id] = entry
+        logger.info("adapter up: inbox=%s platform=%s self=%s",
+                    inbox_cfg.inbox_id, inbox_cfg.platform, platform_self_id)
+
+    async def _stop_adapter(self, inbox_id: str) -> None:
+        entry = self._adapters.pop(inbox_id, None)
+        if not entry:
+            return
+        if entry.inbound_task:
+            entry.inbound_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await entry.inbound_task
+        with suppress(Exception):
+            await entry.adapter.close()
+        logger.info("adapter down: inbox=%s", inbox_id)
+
+    async def _stop_all_adapters(self) -> None:
+        for inbox_id in list(self._adapters.keys()):
+            await self._stop_adapter(inbox_id)
+
+    # --- per-adapter inbound feed --------------------------------------
+
+    async def _adapter_inbound_loop(self, inbox_id: str, adapter: Adapter) -> None:
+        try:
+            async for msg in adapter.stream_incoming():
+                await self._inbound_queue.put((inbox_id, msg))
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.error("adapter inbound loop crashed (inbox=%s): %s", inbox_id, exc)
+
+    async def _push_initial_catchup(self) -> None:
+        for inbox_id, entry in self._adapters.items():
+            try:
+                msgs = await entry.adapter.list_initial_messages(since_ms=0)
+            except Exception as exc:
+                logger.error("initial catchup failed for inbox=%s: %s", inbox_id, exc)
+                continue
+            if msgs:
+                await self._push_batch([(inbox_id, m) for m in msgs])
+
+    async def _push_batch(self, batch: List[Tuple[str, IncomingMessage]]) -> None:
+        if not batch:
+            return
+        payload = [self._to_payload(inbox_id, m) for inbox_id, m in batch]
+        try:
+            res = await self._studio.push_incoming(payload)
+            logger.info(
+                "inbound: pushed %d (accepted=%s deduped=%s rejected=%s)",
+                len(batch), res.get("accepted"), res.get("deduped"), res.get("rejected"),
+            )
+        except Exception as exc:
+            logger.error("inbound push failed: %s", exc)
 
     @staticmethod
-    def _to_payload(m: IncomingMessage) -> Dict[str, Any]:
+    def _to_payload(inbox_id: str, m: IncomingMessage) -> Dict[str, Any]:
         return {
+            "inbox_id": inbox_id,
             "peer_platform_id": m.peer_id,
             "peer_display_name": m.peer_display_name,
             "platform_msg_id": m.platform_msg_id,
@@ -98,22 +201,38 @@ class BridgeRuntime:
             "sent_at": m.sent_at.isoformat(),
         }
 
-    async def _push_batch(self, batch: List[IncomingMessage]) -> None:
-        if not batch:
-            return
-        try:
-            res = await self._robot.push_incoming([self._to_payload(m) for m in batch])
-            logger.info("inbound: pushed %d (accepted=%s deduped=%s)",
-                        len(batch), res.get("accepted"), res.get("deduped"))
-        except Exception as exc:
-            logger.error("inbound push failed: %s", exc)
+    # --- inbound pump --------------------------------------------------
 
-    # --- loops ----------------------------------------------------------
+    async def _inbound_pump_loop(self) -> None:
+        while not self._stop.is_set():
+            try:
+                first = await self._inbound_queue.get()
+            except asyncio.CancelledError:
+                return
+            batch: List[Tuple[str, IncomingMessage]] = [first]
+            # Coalesce briefly
+            deadline_t = asyncio.get_running_loop().time() + INBOUND_BATCH_LINGER
+            while len(batch) < INBOUND_BATCH_MAX:
+                remaining = deadline_t - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    break
+                try:
+                    item = await asyncio.wait_for(self._inbound_queue.get(), timeout=remaining)
+                except asyncio.TimeoutError:
+                    break
+                except asyncio.CancelledError:
+                    break
+                batch.append(item)
+            await self._push_batch(batch)
+
+    # --- heartbeat + sync ----------------------------------------------
 
     async def _heartbeat_loop(self) -> None:
         while not self._stop.is_set():
             try:
-                await self._robot.heartbeat()
+                resp = await self._studio.heartbeat()
+                served = {ix["id"] for ix in resp.get("inboxes", [])}
+                await self._reconcile_adapters(served)
             except Exception as exc:
                 logger.warning("heartbeat failed: %s", exc)
             try:
@@ -121,32 +240,32 @@ class BridgeRuntime:
             except asyncio.TimeoutError:
                 pass
 
-    async def _inbound_loop(self) -> None:
-        batch: List[IncomingMessage] = []
-        try:
-            async for msg in self._adapter.stream_incoming():
-                batch.append(msg)
-                if len(batch) >= INBOUND_BATCH_MAX:
-                    await self._push_batch(batch)
-                    batch = []
-                    continue
-                # Linger briefly to coalesce simultaneous arrivals
-                try:
-                    await asyncio.wait_for(asyncio.sleep(INBOUND_BATCH_LINGER), timeout=INBOUND_BATCH_LINGER)
-                except asyncio.TimeoutError:
-                    pass
-                if batch:
-                    await self._push_batch(batch)
-                    batch = []
-        except asyncio.CancelledError:
-            if batch:
-                await self._push_batch(batch)
-            raise
+    async def _reconcile_adapters(self, served_ids: set[str]) -> None:
+        """Stop adapters Studio no longer serves; (re)start ones that appeared."""
+        # Stop dropped
+        for inbox_id in list(self._adapters.keys()):
+            if inbox_id not in served_ids:
+                logger.info("inbox %s no longer served; stopping adapter", inbox_id)
+                await self._stop_adapter(inbox_id)
+        # Start newly-served ones (must have local config)
+        for inbox_id in served_ids:
+            if inbox_id in self._adapters:
+                continue
+            ic = find_inbox(self._config, inbox_id)
+            if ic is None:
+                logger.warning(
+                    "inbox %s served by Studio but missing from local TOML; "
+                    "add an [[inboxes]] block and reload bridge", inbox_id,
+                )
+                continue
+            await self._spawn_adapter(ic)
+
+    # --- outbound ------------------------------------------------------
 
     async def _outbound_loop(self) -> None:
         while not self._stop.is_set():
             try:
-                items = await self._robot.long_poll_outbound(
+                items = await self._studio.long_poll_outbound(
                     cursor=self._cursor, timeout_seconds=OUTBOUND_LONG_POLL_TIMEOUT,
                 )
             except Exception as exc:
@@ -155,20 +274,29 @@ class BridgeRuntime:
                 continue
 
             for item in items:
-                seq = int(item["seq"])
-                if seq <= self._cursor:
-                    continue  # already saw this
+                obid = int(item["id"])
+                if obid <= self._cursor:
+                    continue
                 await self._dispatch_outbound(item)
-                self._cursor = seq
+                self._cursor = obid
 
     async def _dispatch_outbound(self, item: Dict[str, Any]) -> None:
-        outbound_id = item["id"]
+        outbound_id = int(item["id"])
+        inbox_id = str(item.get("inbox_id"))
         platform_peer_id = item.get("peer_platform_id")
         chunks = item.get("chunks", [])
-        if not platform_peer_id:
-            await self._robot.ack_outbound(
+
+        entry = self._adapters.get(inbox_id)
+        if entry is None:
+            await self._studio.ack_outbound(
                 outbound_id, result="failed",
-                reason=f"missing peer_platform_id for contact {item.get('contact_id')}",
+                reason=f"no live adapter for inbox {inbox_id}",
+            )
+            return
+        if not platform_peer_id:
+            await self._studio.ack_outbound(
+                outbound_id, result="failed",
+                reason="missing peer_platform_id",
             )
             return
 
@@ -182,13 +310,17 @@ class BridgeRuntime:
                 delay = self._chunk_delay(content, is_first=first)
                 first = False
                 await asyncio.sleep(delay)
-                last_msg_id = await self._adapter.send_text(platform_peer_id, content)
+                last_msg_id = await entry.adapter.send_text(platform_peer_id, content)
         except Exception as exc:
-            logger.error("outbound %s send failed: %s", outbound_id, exc)
-            await self._robot.ack_outbound(outbound_id, result="failed", reason=str(exc)[:500])
+            logger.error("outbound %d send failed (inbox=%s): %s", outbound_id, inbox_id, exc)
+            await self._studio.ack_outbound(
+                outbound_id, result="failed", reason=str(exc)[:500]
+            )
             return
 
-        await self._robot.ack_outbound(outbound_id, result="sent", platform_msg_id=last_msg_id)
+        await self._studio.ack_outbound(
+            outbound_id, result="sent", platform_msg_id=last_msg_id,
+        )
 
     @staticmethod
     def _chunk_delay(content: str, *, is_first: bool) -> float:
@@ -196,8 +328,4 @@ class BridgeRuntime:
         delay = n / TYPING_CHARS_PER_SECOND
         if is_first:
             delay += THINK_DELAY
-        if delay < TYPING_MIN_DELAY:
-            delay = TYPING_MIN_DELAY
-        if delay > TYPING_MAX_DELAY:
-            delay = TYPING_MAX_DELAY
-        return delay
+        return max(TYPING_MIN_DELAY, min(TYPING_MAX_DELAY, delay))

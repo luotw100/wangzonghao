@@ -1,0 +1,40 @@
+# Bridge daemon config (TOML).
+#
+# Drop this file at one of:
+#   - $BRIDGE_CONFIG (env override)
+#   - ./bridge.toml (cwd, also what compose mounts)
+#   - ~/.bridge/config.toml
+#
+# Studio is the source of truth for "which inbox is bound to which bridge"
+# (Inbox.bridge_id, set in the UI). The TOML below provides per-inbox
+# credentials keyed by inbox_id; the daemon only spawns adapters for
+# inboxes Studio actually returns from /handshake or /heartbeat.
+
+[bridge]
+studio_url = "http://localhost:23457"
+token = "<paste from Studio UI when you create a Bridge>"
+hostname = "alice-mbp"   # optional; defaults to socket.gethostname()
+
+
+# --- Per-inbox blocks. One block per inbox this daemon serves. ----------
+
+# Chat sandbox example: needs username + password.
+[[inboxes]]
+inbox_id = "ib_xxx"             # the id Studio shows when you create the inbox
+platform = "chat"
+chat_base_url = "http://localhost:23456"
+chat_username = "alice"
+chat_password = "Alice123"
+
+# WeChat example (future): the daemon will hook into the running desktop
+# client; no credentials are stored here.
+# [[inboxes]]
+# inbox_id = "ib_yyy"
+# platform = "wechat"
+
+# Feishu example (future): app-credentials live here.
+# [[inboxes]]
+# inbox_id = "ib_zzz"
+# platform = "feishu"
+# feishu_app_id = "..."
+# feishu_app_secret = "..."

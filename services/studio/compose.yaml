@@ -1,0 +1,33 @@
+services:
+  studio-web:
+    build:
+      context: ./web
+    ports:
+      - 23457:23457
+    volumes:
+      - ./storage:/app/storage:ro
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - studio-api
+    restart: unless-stopped
+
+  studio-api:
+    build:
+      context: ./api
+    environment:
+      STUDIO_STORAGE_DIR: /app/storage
+    volumes:
+      - ./storage:/app/storage
+    restart: unless-stopped
+
+  studio-worker:
+    build:
+      context: ./api
+    command: ["uv", "run", "python", "-m", "studio.worker", "--request-timeout", "120"]
+    environment:
+      STUDIO_STORAGE_DIR: /app/storage
+    volumes:
+      - ./storage:/app/storage
+    depends_on:
+      - studio-api
+    restart: unless-stopped

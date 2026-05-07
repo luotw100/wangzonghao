@@ -4,7 +4,7 @@ services:
       context: ./web
       dockerfile: Dockerfile
     ports:
-      - "${CHAT_HTTP_PORT:?CHAT_HTTP_PORT is required}:23456"
+      - 23456:23456
     volumes:
       - chat-storage:/app/storage:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro

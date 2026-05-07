@@ -1,7 +1,8 @@
 """Ingest WeFlow JSON exports into robot.db.
 
-Flow per archive:
-    parse → identify self/counterpart wxids → upsert Contact → write Messages
+Archive is account-level content. At ingest time the caller specifies which
+inbox the archive belongs to and which wxid in the archive is "self". Contacts
+and messages are written under that inbox.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session as ORMSession
 
-from robot.db import STORAGE_DIR
+from robot.db import STORAGE_DIR, utc_now
 from robot.distill.converter import (
     build_name_map,
     clean_content,
@@ -23,9 +24,9 @@ from robot.distill.converter import (
     should_keep,
 )
 from robot.models import (
-    Character,
-    ChatArchive,
+    Archive,
     Contact,
+    Inbox,
     Message,
 )
 
@@ -41,8 +42,8 @@ def file_hash(path: Path) -> str:
     return h.hexdigest()[:16]
 
 
-def _persist_upload(character_id: str, archive_id: str, src_path: Path) -> Path:
-    dest_dir = UPLOADS_DIR / character_id
+def _persist_upload(account_id: str, archive_id: str, src_path: Path) -> Path:
+    dest_dir = UPLOADS_DIR / account_id
     dest_dir.mkdir(exist_ok=True)
     dest_path = dest_dir / f"{archive_id}.json"
     shutil.copyfile(src_path, dest_path)
@@ -52,7 +53,7 @@ def _persist_upload(character_id: str, archive_id: str, src_path: Path) -> Path:
 def _identify_counterpart(name_map: Dict[str, str], self_wxid: str) -> str:
     if self_wxid not in name_map:
         raise ValueError(
-            f"指定的主播 wxid '{self_wxid}' 不在聊天记录中。"
+            f"指定的 self_wxid '{self_wxid}' 不在聊天记录中。"
             f"可见 wxid: {sorted(name_map.keys())}"
         )
     counterparts = [w for w in name_map if w != self_wxid]
@@ -65,27 +66,29 @@ def _identify_counterpart(name_map: Dict[str, str], self_wxid: str) -> str:
 
 def _ensure_contact(
     db: ORMSession,
-    character: Character,
+    inbox: Inbox,
     counterpart_wxid: str,
     counterpart_name: str,
 ) -> Contact:
     contact = (
         db.query(Contact)
-        .filter(
-            Contact.character_id == character.id,
-            Contact.wechat_wxid == counterpart_wxid,
-        )
+        .filter(Contact.inbox_id == inbox.id, Contact.peer_platform_id == counterpart_wxid)
         .first()
     )
     if contact:
         return contact
-
+    now = utc_now()
     contact = Contact(
         id=f"ct_{uuid.uuid4().hex[:8]}",
-        character_id=character.id,
+        inbox_id=inbox.id,
+        peer_platform_id=counterpart_wxid,
         display_name=counterpart_name,
-        wechat_wxid=counterpart_wxid,
+        card_md=None,
+        persona_id=inbox.default_persona_id,
+        autoreply_enabled=False,
         status="active",
+        last_seen_platform_msg_id=None,
+        created_at=now, updated_at=now,
     )
     db.add(contact)
     db.flush()
@@ -94,11 +97,12 @@ def _ensure_contact(
 
 async def ingest_archive(
     db: ORMSession,
-    character: Character,
+    account_id: str,
+    inbox: Inbox,
     self_wxid: str,
     src_path: Path,
     original_filename: str,
-) -> ChatArchive:
+) -> Archive:
     """Ingest one WeFlow JSON file. Idempotent on file_hash; fails on duplicates."""
     with src_path.open("r", encoding="utf-8") as f:
         data = json.load(f)
@@ -112,20 +116,21 @@ async def ingest_archive(
 
     hash_hex = file_hash(src_path)
     duplicate = (
-        db.query(ChatArchive)
-        .filter(ChatArchive.character_id == character.id, ChatArchive.file_hash == hash_hex)
+        db.query(Archive)
+        .filter(Archive.account_id == account_id, Archive.file_hash == hash_hex)
         .first()
     )
     if duplicate:
         raise ValueError(f"该文件已上传过 (archive {duplicate.id})")
 
     archive_id = f"a_{uuid.uuid4().hex[:8]}"
-    dest_path = _persist_upload(character.id, archive_id, src_path)
+    dest_path = _persist_upload(account_id, archive_id, src_path)
 
-    contact = _ensure_contact(db, character, counterpart_wxid, counterpart_name)
+    contact = _ensure_contact(db, inbox, counterpart_wxid, counterpart_name)
 
     msg_count = 0
     sorted_raw = sorted(raw_messages, key=lambda m: m.get("createTime") or 0)
+    now = utc_now()
     for idx, raw in enumerate(sorted_raw):
         if not should_keep(raw):
             continue
@@ -142,32 +147,28 @@ async def ingest_archive(
 
         is_self = wxid == self_wxid
         sender_name = name_map.get(wxid, wxid)
-
-        db.add(
-            Message(
-                contact_id=contact.id,
-                archive_id=archive_id,
-                role="self" if is_self else "counterpart",
-                sender_name=sender_name,
-                content=content,
-                timestamp=ts,
-                archive_msg_idx=idx,
-            )
-        )
+        external_id = f"archive:{archive_id}:{idx}"
+        db.add(Message(
+            contact_id=contact.id,
+            archive_id=archive_id,
+            external_id=external_id,
+            source="archive",
+            role="self" if is_self else "counterpart",
+            sender_name=sender_name,
+            content=content,
+            timestamp=ts,
+            archive_msg_idx=idx,
+            created_at=now,
+        ))
         msg_count += 1
 
-    archive = ChatArchive(
-        id=archive_id,
-        character_id=character.id,
-        filename=original_filename,
-        file_path=str(dest_path),
-        file_hash=hash_hex,
-        self_wxid=self_wxid,
-        message_count=msg_count,
-        contact_count=1,
+    archive = Archive(
+        id=archive_id, account_id=account_id, inbox_id=inbox.id,
+        filename=original_filename, file_path=str(dest_path), file_hash=hash_hex,
+        self_wxid=self_wxid, message_count=msg_count, contact_count=1,
+        uploaded_at=now,
     )
     db.add(archive)
-    db.flush()
     db.commit()
     db.refresh(archive)
     return archive

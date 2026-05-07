@@ -28,8 +28,10 @@ def create_account(args: argparse.Namespace) -> None:
             username=args.username,
             password_hash=hash_password(args.password),
             display_name=args.display_name,
+            status="active",
             created_at=now,
             updated_at=now,
+            last_login_at=None,
         )
         db.add(account)
         db.commit()

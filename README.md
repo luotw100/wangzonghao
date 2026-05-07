@@ -1,93 +1,126 @@
 # Laborster
 
-Laborster 是一个**通用拟人化私聊接管服务**：让 AI 替你的主播 / 销售 / 自由职业者，在长期私聊场景里自动回复联系人，保温关系。
+Laborster 是一个**通用拟人化私聊接管服务**：让 AI 替主播 / 销售 / 自由职业者，在长期私聊里自动回复，保温关系。
 
-> 当前阶段聚焦「主播-粉丝」场景，命名上保持中性（Character / Contact）以兼容未来扩展。详细产品定位与规则参见 [AGENTS.md](./AGENTS.md)。
+> 命名上保持中性（Persona / Inbox / Contact）以兼容未来扩展。详细产品定位与规则见 [AGENTS.md](./AGENTS.md)。
 
 ---
 
-## 仓库结构
+## 系统由三部分组成
 
-仓库已经被拆成两个**完全独立的项目**，共用一个 git 仓库只是为了管理方便。各自有自己的 `pyproject.toml` / `uv.lock` / `Dockerfile` / `compose.yaml` / `nginx.conf` / 前端 web/，互不依赖：
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   A · 平台       │ ←→  │   B · Bridge     │ ←→  │   C · Robot      │
+│  WeChat/Chat/...│     │  本地 daemon     │     │  云端，人设/卡片  │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+```
 
-| 项目 | 路径 | 角色 |
+| 角色 | 是什么 | 干什么 | 不干什么 |
+| --- | --- | --- | --- |
+| **A** | 真实聊天平台（微信、飞书、QQ，以及我们的 Chat sandbox） | 收发消息 | — |
+| **B** | 跑在主播 PC 上的桥接 daemon | 接管一个平台号、收发消息、模拟打字、缓存离线 | 不调 LLM、不存人设、不蒸馏 |
+| **C** | 云端服务（本仓库的 robot） | 人设 / 卡片管理、蒸馏、生成回复、把待发回复排进 outbound 队列 | 不直连任何平台 |
+
+仓库结构里两个独立项目：
+
+- [services/chat/](services/chat/) — Chat sandbox（充当 A 的可控版本，方便 dogfood 整条链路）
+- [services/robot/](services/robot/) — Robot (C)。Bridge (B) 单独项目，等 chat 协议跑通后再加 [services/bridge/]
+
+---
+
+## C 的核心概念
+
+| 概念 | 一句话 | 数量 |
 | --- | --- | --- |
-| **Chat** | [services/chat/](services/chat/) | 通用聊天 Adapter（微信模拟器） |
-| **Robot** | [services/robot/](services/robot/) | Character / Contact / Distill / LLM Provider 管理 |
+| **Account** | 登录 Robot 后台的账号（一个人 / 一个团队），CLI 创建 | 1 |
+| **Persona** | 人设 — 纯内容资产（markdown），多个 Inbox 可共享同一个 | N / Account |
+| **Inbox** | 接管号 — 一个平台号 = 一个 Bridge daemon | N / Account |
+| **Contact** | 接管号下的某个对方（粉丝、客户），有自己的关系卡 | N / Inbox |
+| **ProviderConfig** | LLM 后端配置池 | N / Account |
+| **Archive** | 上传的 WeFlow JSON 历史聊天 | N / Account |
+| **DistillJob** | 把一个 Inbox 的历史蒸出 persona + 每个 contact 的卡片 | N / Account |
 
-长期目标是 `平台(A) <-> 本地客户端(B) <-> Robot(C)`：微信 / 飞书 / QQ / Chat 都属于 A，未来新开发的本地客户端 B 是唯一桥梁，Robot 不直接连真实平台。**当前 Chat 和 Robot 互不通信**——历史的 robot↔chat 直连接口已经全部下线，等 B 上线时通过 B 重接。
+**关键**：Persona 跟 Inbox **解耦**。一个运营管 5 个微信号 = 5 个 Inbox，可以全部用同一个 persona，也可以一号一人设。粒度：每个 Contact 还能 override 用别的人设；每个 Contact 还能单独开关 autoreply。
 
 ---
 
-## Chat 服务
+## 设计原则
 
-### 启动
+**没有"幽灵默认值"。** DB 不存任何 column-level default；所有字段在创建时由调用方显式传入。前端要给"默认选项"，就拉全部可能的值，把视觉默认显式发出来——后端不替用户做选择。
+
+**B 永远不做策略决定。** B 只做平台收发 + 物理拟人（打字延迟）。是否回复、用哪个人设、回什么内容，全部 C 决定。这样 B 多平台扩展时（chat → wechat → feishu）只是写新 adapter，C 不用动。
+
+**C 不直连平台。** C 不再有 ChatAdapter / 各平台 SDK 之类。所有"跟平台说话"经过 B。这样 C 单元化、好部署、好测试。
+
+**Inbox 1:1 Bridge daemon。** 每个接管号生成一个一次性 token，主播复制到本地 Bridge 启动命令里。token 永不过期，丢了或换机器就在后台 revoke + 重发。同一个 Inbox 同一时刻只允许一个 Bridge 在线。
+
+---
+
+## 典型场景
+
+**单主播 alice：1 个人设、1～2 个平台**
+- 1 个 Persona（自己）
+- 2 个 Inbox（alice@chat、alice@wechat），各跑一个 B
+- 后台一键开关 autoreply，按需调
+
+**MCN 运营 op：管 5 个微信号、各自人设**
+- 5 个 Persona（lily, emma, sophia, amy, zoe）
+- 5 个 Inbox，各一台 PC（微信桌面端单设备登录约束）、各一个 B、各绑各的默认 persona
+- 5 个号下的 contacts 互不干扰
+
+**MCN 运营 op2：1 个号上跑多人设**
+- 1 个 Inbox
+- 多个 Persona
+- 部分 contacts override 用别的人设
+
+---
+
+## 怎么跑起来
+
+### Chat sandbox（独立项目）
 
 ```bash
 cd services/chat
-CHAT_HTTP_PORT=23458 docker compose up -d --build
-```
-
-打开 http://localhost:23458 。
-
-### 账号管理（CLI）
-
-```bash
-cd services/chat
-CHAT_HTTP_PORT=23458 docker compose exec -T chat-api \
-  uv run python -m chat.cli create-account \
+docker compose up -d --build
+docker compose exec -T chat-api uv run python -m chat.cli create-account \
   --username demo --password demo123 --display-name 演示账号
-
-CHAT_HTTP_PORT=23458 docker compose exec -T chat-api \
-  uv run python -m chat.cli list-accounts
-
-CHAT_HTTP_PORT=23458 docker compose exec -T chat-api \
-  uv run python -m chat.cli reset-password --username demo --password 新密码
 ```
+打开 http://localhost:23456 用 demo / demo123 登录。
 
-### 本地裸跑
-
-```bash
-cd services/chat/api
-CHAT_STORAGE_DIR=$PWD/.storage uv run uvicorn chat.main:app --host 0.0.0.0 --port 23456
-
-# 另开终端起前端
-cd services/chat/web && npm install && npm run dev
-```
-
-⚠️ Docker volume `chat-storage` 与本地 `.storage/` 是完全分开的两份 DB。
-
----
-
-## Robot 服务
-
-### 启动
+### Robot（独立项目）
 
 ```bash
 cd services/robot
-ROBOT_HTTP_PORT=23457 docker compose up -d --build
-```
-
-打开 http://localhost:23457 。
-
-### 账号管理（CLI）
-
-跟 Chat 完全同构：
-
-```bash
-cd services/robot
-ROBOT_HTTP_PORT=23457 docker compose exec -T robot-api \
-  uv run python -m robot.cli create-account \
+docker compose up -d --build
+docker compose exec -T robot-api uv run python -m robot.cli create-account \
   --username alice --password Alice123 --display-name 主播小A
+```
+打开 http://localhost:23457 用 alice / Alice123 登录。
 
-ROBOT_HTTP_PORT=23457 docker compose exec -T robot-api \
-  uv run python -m robot.cli list-accounts
+后台操作顺序（推荐）：
+1. 「Provider」tab → 新建一个 LLM Provider
+2. 「人设」tab → 新建至少一个人设
+3. 「接管号」tab → 新建一个接管号 → **复制 token**（窗口关闭后无法再看到）
+4. （未来）在自己 PC 上跑 Bridge daemon，把 token 喂进去
+5. 「聊天档案」tab → 上传 WeFlow JSON（指明哪个 wxid 是"我" + 落地到哪个接管号）
+6. 「蒸馏」tab → 选 接管号 + 目标人设 + Provider → 开蒸 → 后台会更新 persona 和每个 contact 的卡片
 
-ROBOT_HTTP_PORT=23457 docker compose exec -T robot-api \
-  uv run python -m robot.cli reset-password --username alice --password 新密码
+### 账号 CLI
+
+```bash
+# Robot 账号
+cd services/robot
+docker compose exec -T robot-api uv run python -m robot.cli list-accounts
+docker compose exec -T robot-api uv run python -m robot.cli reset-password --username alice --password 新密码
+
+# Chat 账号（语法完全同构）
+cd services/chat
+docker compose exec -T chat-api uv run python -m chat.cli list-accounts
 ```
 
-### 本地裸跑
+⚠️ Docker 起的服务跟本地裸跑的服务是**两份独立的存储**（docker volume vs `services/*/storage/`）。账号互不可见，要在哪边管账号就用对应的命令。
+
+### 本地裸跑（不开 docker）
 
 ```bash
 # Robot API
@@ -100,109 +133,35 @@ ROBOT_STORAGE_DIR=$PWD/../storage uv run python -m robot.worker --request-timeou
 
 # Robot 前端
 cd services/robot/web && npm install && npm run dev
+
+# Chat API / 前端类似
 ```
 
-存储目录在 `services/robot/storage/`，docker compose bind-mount，宿主机能直接 `cat storage/robot.db` / 看 `storage/uploads/`。
+---
+
+## 现状
+
+- ✅ Chat sandbox 完整可用
+- ✅ Robot 后端：账号 / Persona / Inbox / Contact / Archive / Distill 全部齐
+- ✅ Robot 后端：Bridge 协议骨架（handshake / heartbeat / incoming / outbound long-poll / ack）
+- ✅ Robot 前端：5 个 tab 的最小 CRUD UI
+- ⏳ Bridge daemon (B) 本身：未开始（下一步）
+- ⏳ Reply LLM brain（接 B 的 incoming → 写 outbound）：未开始
+- ⏳ 真微信 adapter：等 chat sandbox 路径全部跑通之后再加
 
 ---
 
-## 数据模型
+## 持久化
 
-三个核心原语（在 Robot 里）：
-
-| 原语 | 数量 | 角色 |
-| --- | --- | --- |
-| **Character** | 1 / Account | 主播本人。包含 Persona（风格 + 生活情境） |
-| **Contact** | N / Character | 粉丝。包含 Card（备注名 / 关系档位 / 共享过的事实 等） |
-| **ChatArchive** | N / Character | 上传的 WeFlow 聊天记录原文，蒸馏读它 |
-
-**Persona 和 Card 怎么来**：上传历史聊天 → 蒸馏（rolling fold over LLM）→ 自动生成 → 主播校对。
-
-未来 Robot 会把 Persona + Card + 完整对话历史一起喂给 LLM，由 B（本地客户端）把回复转发回真实聊天平台。
-
----
-
-## 数据库
-
-### Chat: `chat.db`（在 chat docker volume）
-
-| 表 | 说明 |
+| 项目 | 存储 |
 | --- | --- |
-| `chat_accounts` | Chat 登录账号 |
-| `chat_auth_sessions` | 登录会话 |
-| `chat_contacts` | 每个账号的本地联系人 |
-| `chat_conversations` | 一对一会话 |
-| `chat_messages` | 实时消息 + bulk-import 历史 |
-
-### Robot: `robot.db`（在 services/robot/storage/）
-
-| 表 | 说明 |
-| --- | --- |
-| `accounts` | Robot 登录账号（CLI 管理） |
-| `auth_sessions` | Bearer token sessions |
-| `provider_configs` | LLM Provider |
-| `characters` | 主播本人。`wechat_wxid_self` 字段告诉蒸馏哪条消息是 self |
-| `contacts` | 粉丝。`(character_id, wechat_wxid)` 唯一 |
-| `chat_archives` | 上传的 WeFlow 文件清单（保留原始文件路径，便于重蒸） |
-| `messages` | 历史消息（蒸馏的输入） |
-| `distill_jobs` | 蒸馏任务（pending/running/done/failed + progress JSON） |
-| `llm_logs` | LLM 调用日志（目前只有 distill） |
-
----
-
-## API 速览
-
-### Chat (`/api/*`)
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| POST | `/auth/login` | username/password 登录，返回 token |
-| GET | `/auth/me` | 当前账号 |
-| POST | `/auth/logout` | 登出 |
-| GET/POST/PUT/DELETE | `/contacts` | 联系人 CRUD |
-| GET/POST/PUT/DELETE | `/conversations` | 会话 CRUD |
-| GET | `/conversations/{id}/messages?last_id=&timeout=` | 长轮询拉消息 |
-| POST | `/conversations/{id}/messages` | 发消息 |
-| POST | `/conversations/{id}/messages/bulk` | bulk import（保留历史 timestamp） |
-
-### Robot (`/api/*`)
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| POST | `/auth/login` | username/password 登录，返回 token |
-| GET | `/auth/me` | 当前账号 |
-| POST | `/auth/logout` | 登出 |
-| GET/POST/PUT/DELETE | `/provider-configs` | Provider CRUD |
-| GET/POST | `/characters` | Character CRUD |
-| GET/PUT/DELETE | `/characters/{id}` | 单个 Character |
-| GET | `/characters/{id}/contacts` | 列出该 Character 的粉丝 |
-| GET/PUT | `/contacts/{id}` | Contact 读 / 改备注名 / Card |
-| GET/POST | `/characters/{id}/chat-archives` | multipart 上传 + 列表 |
-| GET/POST | `/characters/{id}/distill-jobs` | 触发蒸馏 + 列表 |
-| GET | `/distill-jobs/{id}` | 查蒸馏进度 |
-
----
-
-## 主播 Onboarding 流程
-
-```
-1. CLI 创建一个 Robot 账号
-2. 用账号登录 Robot 后台
-3. Provider tab → 新建 Provider Config
-4. 顶部「新建主播」→ 填名字、self_wxid、绑 Provider
-5. 「档案」抽屉 → 上传 WeFlow JSON（指明 self_wxid）
-   ↓
-   robot-api 解析文件 → 写 robot.db (Contact + messages)
-6. 「蒸馏」抽屉 → 「开始蒸馏」→ 等几分钟（worker 后台跑）
-7. 「人设」/ 联系人卡片 → 校对自动生成的 Persona / Cards
-8. 等 B 上线后接回真实聊天平台
-```
+| Chat | docker volume `chat-storage`（chat.db + 附件） |
+| Robot | bind-mount `services/robot/storage/`（robot.db + uploads/） |
 
 ---
 
 ## 设计备注
 
-- **Robot ↔ 平台之间不再直连**：早期 Robot 直接调 Chat 的接口（创建 chat user / bulk-import / poll），实质把 Chat 当成"微信模拟器"。这条路在重构中已经全部下线，未来由 B 桥接。
-- **三原语严格分离**：Character 的人设和 Contact 的卡片是不同生命周期的资产。Robot 现在没有 Session 表，连接器逻辑全部移交 B。
-- **蒸馏的产出是非对称的**：一份 Character Persona 全 Character 共享，N 份 Contact Card 各属各的粉丝。fold prompt（[services/robot/api/robot/distill/prompts/fold.md](services/robot/api/robot/distill/prompts/fold.md)）按这个形态写。
-- **目前未实现 / 未来再做**：B（本地客户端）、live reply 链路、search-tool（基于 corpus 的事实召回）、Playbook、增量蒸馏、多 adapter（真实微信 / 企微 / 飞书）。
+- **没有"角色"这一层概念**：早期把"人设"和"平台身份"塞在同一张表（character），导致 MCN 一上多号就崩。现在 Persona 和 Inbox 严格分开。
+- **Robot 不再回看真平台**：早期 Robot 直接调 Chat 接口创建 user / bulk-import / poll，把 Chat 当成"微信模拟器"。这条路下线了，由未来的 Bridge 桥接。这也是"先做 Chat sandbox adapter"路径的合理性来源——Chat sandbox 重新变成**真实平台 A 的简化版**，Bridge 把它和真微信一视同仁。
+- **不存默认值**：每条 INSERT 显式赋值。这样将来 schema 演化、字段重命名、字段语义变更，都能在 git diff 里看清——而不是依赖 sqlalchemy 的某行 `default=False` 在某次重启时悄悄改掉行为。

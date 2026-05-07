@@ -93,33 +93,56 @@ export interface ProviderConfig {
   updated_at: string;
 }
 
-export interface Character {
+export interface Persona {
   id: string;
   account_id: string;
   name: string;
   persona_md: string | null;
-  wechat_wxid_self: string | null;
-  provider_config_id: string | null;
-  provider_config: ProviderConfig | null;
-  status: string;
+  status: 'active' | 'archived';
   created_at: string;
   updated_at: string;
+}
+
+export type BridgeStatus = 'paired_pending' | 'online' | 'offline' | 'revoked';
+
+export interface Inbox {
+  id: string;
+  account_id: string;
+  platform: string;
+  display_name: string;
+  default_persona_id: string;
+  enabled: boolean;
+  platform_self_id: string | null;
+  hostname: string | null;
+  b_status: BridgeStatus;
+  last_seen_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// Returned only on inbox creation / token regeneration; one-time display.
+export interface InboxWithToken extends Inbox {
+  b_token: string;
 }
 
 export interface Contact {
   id: string;
-  character_id: string;
+  inbox_id: string;
+  peer_platform_id: string;
   display_name: string;
-  wechat_wxid: string | null;
   card_md: string | null;
-  status: string;
+  persona_id: string;
+  autoreply_enabled: boolean;
+  status: 'active' | 'archived';
+  last_seen_platform_msg_id: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface ChatArchive {
+export interface Archive {
   id: string;
-  character_id: string;
+  account_id: string;
+  inbox_id: string;
   filename: string;
   self_wxid: string;
   message_count: number;
@@ -136,7 +159,10 @@ export interface DistillJobProgress {
 
 export interface DistillJob {
   id: string;
-  character_id: string;
+  account_id: string;
+  source_inbox_id: string;
+  target_persona_id: string;
+  provider_config_id: string;
   status: 'pending' | 'running' | 'done' | 'failed';
   progress: DistillJobProgress;
   error_message: string | null;
@@ -197,54 +223,87 @@ export function deleteProviderConfig(id: string) {
   return request<void>(`/provider-configs/${id}`, { method: 'DELETE' });
 }
 
-// --- Characters ---
+// --- Personas ---
 
-export function getCharacters() {
-  return request<Character[]>('/characters');
+export function getPersonas() {
+  return request<Persona[]>('/personas');
 }
 
-export function getCharacter(id: string) {
-  return request<Character>(`/characters/${id}`);
+export function getPersona(id: string) {
+  return request<Persona>(`/personas/${id}`);
 }
 
-export function createCharacter(data: {
-  name: string;
-  wechat_wxid_self?: string | null;
-  provider_config_id?: string | null;
-}) {
-  return request<Character>('/characters', {
+export function createPersona(data: { name: string; persona_md: string | null }) {
+  return request<Persona>('/personas', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 }
 
-export function updateCharacter(
+export function updatePersona(
   id: string,
-  data: {
-    name?: string;
-    persona_md?: string | null;
-    wechat_wxid_self?: string | null;
-    provider_config_id?: string | null;
-    status?: string;
-  }
+  data: { name?: string; persona_md?: string | null; status?: 'active' | 'archived' }
 ) {
-  return request<Character>(`/characters/${id}`, {
+  return request<Persona>(`/personas/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 }
 
-export function deleteCharacter(id: string) {
-  return request<{ status: string; id: string }>(`/characters/${id}`, { method: 'DELETE' });
+export function deletePersona(id: string) {
+  return request<{ status: string; id: string }>(`/personas/${id}`, { method: 'DELETE' });
+}
+
+// --- Inboxes (接管号) ---
+
+export function getInboxes() {
+  return request<Inbox[]>('/inboxes');
+}
+
+export function getInbox(id: string) {
+  return request<Inbox>(`/inboxes/${id}`);
+}
+
+// Returns InboxWithToken — token shown once, store it client-side.
+export function createInbox(data: {
+  platform: string;
+  display_name: string;
+  default_persona_id: string;
+  enabled: boolean;
+}) {
+  return request<InboxWithToken>('/inboxes', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateInbox(
+  id: string,
+  data: { display_name?: string; default_persona_id?: string; enabled?: boolean }
+) {
+  return request<Inbox>(`/inboxes/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export function deleteInbox(id: string) {
+  return request<{ status: string; id: string }>(`/inboxes/${id}`, { method: 'DELETE' });
+}
+
+export function regenerateInboxToken(id: string) {
+  return request<InboxWithToken>(`/inboxes/${id}/regenerate-token`, { method: 'POST' });
+}
+
+export function getInboxContacts(id: string) {
+  return request<Contact[]>(`/inboxes/${id}/contacts`);
 }
 
 // --- Contacts ---
-
-export function getContacts(characterId: string) {
-  return request<Contact[]>(`/characters/${characterId}/contacts`);
-}
 
 export function getContact(contactId: string) {
   return request<Contact>(`/contacts/${contactId}`);
@@ -252,7 +311,13 @@ export function getContact(contactId: string) {
 
 export function updateContact(
   contactId: string,
-  data: { display_name?: string; card_md?: string | null; status?: string }
+  data: {
+    display_name?: string;
+    card_md?: string | null;
+    persona_id?: string;
+    autoreply_enabled?: boolean;
+    status?: 'active' | 'archived';
+  }
 ) {
   return request<Contact>(`/contacts/${contactId}`, {
     method: 'PUT',
@@ -261,28 +326,25 @@ export function updateContact(
   });
 }
 
-// --- Chat Archives ---
+// --- Archives (account-level, dispatched to a specified inbox at upload) ---
 
-export function getArchives(characterId: string) {
-  return request<ChatArchive[]>(`/characters/${characterId}/chat-archives`);
+export function getArchives() {
+  return request<Archive[]>('/archives');
 }
 
 export async function uploadArchive(
-  characterId: string,
-  file: File,
-  selfWxid: string
-): Promise<ChatArchive> {
+  inboxId: string,
+  selfWxid: string,
+  file: File
+): Promise<Archive> {
   const form = new FormData();
+  form.append('inbox_id', inboxId);
   form.append('self_wxid', selfWxid);
   form.append('file', file);
   const headers = new Headers();
   const token = getToken();
   if (token) headers.set('Authorization', `Bearer ${token}`);
-  const res = await fetch(`${API_BASE}/characters/${characterId}/chat-archives`, {
-    method: 'POST',
-    headers,
-    body: form,
-  });
+  const res = await fetch(`${API_BASE}/archives`, { method: 'POST', headers, body: form });
   if (res.status === 401) {
     setToken(null);
     if (unauthorizedHandler) unauthorizedHandler();
@@ -301,16 +363,22 @@ export async function uploadArchive(
 
 // --- Distill Jobs ---
 
-export function getDistillJobs(characterId: string) {
-  return request<DistillJob[]>(`/characters/${characterId}/distill-jobs`);
+export function getDistillJobs() {
+  return request<DistillJob[]>('/distill-jobs');
 }
 
 export function getDistillJob(jobId: string) {
   return request<DistillJob>(`/distill-jobs/${jobId}`);
 }
 
-export function createDistillJob(characterId: string) {
-  return request<DistillJob>(`/characters/${characterId}/distill-jobs`, {
+export function createDistillJob(data: {
+  source_inbox_id: string;
+  target_persona_id: string;
+  provider_config_id: string;
+}) {
+  return request<DistillJob>('/distill-jobs', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
   });
 }

@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 from robot.db import SessionLocal, utc_now
-from robot.distill.pipeline import run_distill_for_character
+from robot.distill.pipeline import run_distill
 from robot.models import DistillJob
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,10 @@ class RobotRuntime:
                         .order_by(DistillJob.created_at.asc())
                         .all()
                     )
-                    pending_ids = [(j.id, j.character_id) for j in pending]
+                    pending_ids = [
+                        (j.id, j.source_inbox_id, j.target_persona_id, j.provider_config_id)
+                        for j in pending
+                    ]
                 finally:
                     db.close()
 
@@ -66,11 +69,13 @@ class RobotRuntime:
                     if self._distill_tasks[jid].done():
                         del self._distill_tasks[jid]
 
-                for job_id, character_id in pending_ids:
+                for job_id, source_inbox_id, target_persona_id, provider_config_id in pending_ids:
                     if job_id in self._distill_tasks:
                         continue
                     self._distill_tasks[job_id] = asyncio.get_running_loop().create_task(
-                        self._run_distill_job(job_id, character_id),
+                        self._run_distill_job(
+                            job_id, source_inbox_id, target_persona_id, provider_config_id
+                        ),
                         name=f"distill-{job_id}",
                     )
             except asyncio.CancelledError:
@@ -80,7 +85,13 @@ class RobotRuntime:
 
             await asyncio.sleep(5)
 
-    async def _run_distill_job(self, job_id: str, character_id: str):
+    async def _run_distill_job(
+        self,
+        job_id: str,
+        source_inbox_id: str,
+        target_persona_id: str,
+        provider_config_id: str,
+    ):
         db = SessionLocal()
         try:
             job = db.query(DistillJob).filter(DistillJob.id == job_id).first()
@@ -103,8 +114,10 @@ class RobotRuntime:
                 d.close()
 
         try:
-            await run_distill_for_character(
-                character_id=character_id,
+            await run_distill(
+                source_inbox_id=source_inbox_id,
+                target_persona_id=target_persona_id,
+                provider_config_id=provider_config_id,
                 request_timeout=self.options.request_timeout,
                 progress_cb=progress_cb,
             )

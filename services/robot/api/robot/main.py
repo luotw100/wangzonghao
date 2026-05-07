@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from typing import Annotated, Any, Dict, Optional
@@ -11,34 +13,45 @@ from fastapi import (
     Form,
     Header,
     HTTPException,
+    Query,
     UploadFile,
     status,
 )
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from robot.auth_utils import hash_token, new_session_token, verify_password
-from robot.db import ensure_database, get_db, utc_now
+from robot.auth_utils import hash_password, hash_token, new_session_token, verify_password
+from robot.db import SessionLocal, ensure_database, get_db, utc_now
 from robot.distill.ingest import ingest_archive
 from robot.models import (
     Account,
+    Archive,
     AuthSession,
-    Character,
-    ChatArchive,
     Contact,
     DistillJob,
+    Inbox,
+    Message,
+    OutboundMessage,
+    Persona,
     ProviderConfig,
 )
 from robot.schemas import (
-    CharacterCreate,
-    CharacterUpdate,
+    BridgeHandshake,
+    BridgeIncomingBatch,
+    BridgeOutboundAck,
     ContactUpdate,
+    DistillJobCreate,
+    InboxCreate,
+    InboxUpdate,
     LoginRequest,
+    OutboundCreate,
+    PersonaCreate,
+    PersonaUpdate,
     ProviderConfigCreate,
     ProviderConfigUpdate,
 )
 
 logger = logging.getLogger(__name__)
-
 ensure_database()
 
 app = FastAPI(title="Laborster Robot API")
@@ -47,54 +60,65 @@ DbDep = Annotated[Session, Depends(get_db)]
 
 
 # ---------------------------------------------------------------------------
-# Auth dependency
-# ---------------------------------------------------------------------------
-
-def get_auth_session(
-    db: DbDep,
-    authorization: Annotated[Optional[str], Header()] = None,
-) -> AuthSession:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="缺少登录令牌"
-        )
-    token = authorization.removeprefix("Bearer ").strip()
-    auth_session = (
-        db.query(AuthSession)
-        .filter(AuthSession.id == hash_token(token))
-        .first()
-    )
-    if not auth_session:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已失效"
-        )
-    account = db.query(Account).filter(Account.id == auth_session.account_id).first()
-    if not account or account.status != "active":
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已失效"
-        )
-    auth_session.last_seen_at = utc_now()
-    db.commit()
-    return auth_session
-
-
-AuthSessionDep = Annotated[AuthSession, Depends(get_auth_session)]
-
-
-def current_account(auth_session: AuthSessionDep, db: DbDep) -> Account:
-    return db.query(Account).filter(Account.id == auth_session.account_id).first()
-
-
-CurrentAccountDep = Annotated[Account, Depends(current_account)]
-
-
-# ---------------------------------------------------------------------------
-# Helpers / serializers
+# Helpers
 # ---------------------------------------------------------------------------
 
 def new_id(prefix: str, size: int = 8) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:size]}"
 
+
+def extract_bearer(authorization: Optional[str]) -> str:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="缺少令牌"
+        )
+    return authorization.removeprefix("Bearer ").strip()
+
+
+# ---------------------------------------------------------------------------
+# User auth dependency
+# ---------------------------------------------------------------------------
+
+def get_account(
+    db: DbDep,
+    authorization: Annotated[Optional[str], Header()] = None,
+) -> Account:
+    token = extract_bearer(authorization)
+    s = db.query(AuthSession).filter(AuthSession.id == hash_token(token)).first()
+    if not s:
+        raise HTTPException(status_code=401, detail="登录已失效")
+    account = db.query(Account).filter(Account.id == s.account_id).first()
+    if not account or account.status != "active":
+        raise HTTPException(status_code=401, detail="登录已失效")
+    s.last_seen_at = utc_now()
+    db.commit()
+    return account
+
+
+CurrentAccountDep = Annotated[Account, Depends(get_account)]
+
+
+# ---------------------------------------------------------------------------
+# Bridge auth dependency — Bearer matches inbox.b_token_hash
+# ---------------------------------------------------------------------------
+
+def get_bridge_inbox(
+    db: DbDep,
+    authorization: Annotated[Optional[str], Header()] = None,
+) -> Inbox:
+    token = extract_bearer(authorization)
+    inbox = db.query(Inbox).filter(Inbox.b_token_hash == hash_token(token)).first()
+    if not inbox or inbox.b_status == "revoked":
+        raise HTTPException(status_code=401, detail="无效的 bridge 令牌")
+    return inbox
+
+
+BridgeInboxDep = Annotated[Inbox, Depends(get_bridge_inbox)]
+
+
+# ---------------------------------------------------------------------------
+# Serializers
+# ---------------------------------------------------------------------------
 
 def mask_api_key(api_key: Optional[str]) -> Optional[str]:
     if not api_key:
@@ -104,120 +128,123 @@ def mask_api_key(api_key: Optional[str]) -> Optional[str]:
     return f"{api_key[:4]}...{api_key[-4:]}"
 
 
-def serialize_provider_config(provider_config: ProviderConfig) -> Dict[str, Any]:
+def s_account(a: Account) -> Dict[str, Any]:
     return {
-        "id": provider_config.id,
-        "name": provider_config.name,
-        "base_url": provider_config.base_url,
-        "default_model": provider_config.default_model,
-        "has_api_key": bool(provider_config.api_key),
-        "api_key_preview": mask_api_key(provider_config.api_key),
-        "created_at": provider_config.created_at,
-        "updated_at": provider_config.updated_at,
+        "id": a.id, "username": a.username, "display_name": a.display_name,
+        "status": a.status, "created_at": a.created_at, "last_login_at": a.last_login_at,
     }
 
 
-def serialize_character(ch: Character, db: Session) -> Dict[str, Any]:
-    pc = None
-    if ch.provider_config_id:
-        pc = db.query(ProviderConfig).filter(ProviderConfig.id == ch.provider_config_id).first()
+def s_provider(p: ProviderConfig) -> Dict[str, Any]:
     return {
-        "id": ch.id,
-        "account_id": ch.account_id,
-        "name": ch.name,
-        "persona_md": ch.persona_md,
-        "wechat_wxid_self": ch.wechat_wxid_self,
-        "provider_config_id": ch.provider_config_id,
-        "provider_config": serialize_provider_config(pc) if pc else None,
-        "status": ch.status,
-        "created_at": ch.created_at,
-        "updated_at": ch.updated_at,
+        "id": p.id, "name": p.name, "base_url": p.base_url,
+        "default_model": p.default_model,
+        "has_api_key": bool(p.api_key), "api_key_preview": mask_api_key(p.api_key),
+        "created_at": p.created_at, "updated_at": p.updated_at,
     }
 
 
-def serialize_contact(contact: Contact) -> Dict[str, Any]:
+def s_persona(p: Persona) -> Dict[str, Any]:
     return {
-        "id": contact.id,
-        "character_id": contact.character_id,
-        "display_name": contact.display_name,
-        "wechat_wxid": contact.wechat_wxid,
-        "card_md": contact.card_md,
-        "status": contact.status,
-        "created_at": contact.created_at,
-        "updated_at": contact.updated_at,
+        "id": p.id, "account_id": p.account_id, "name": p.name,
+        "persona_md": p.persona_md, "status": p.status,
+        "created_at": p.created_at, "updated_at": p.updated_at,
     }
 
 
-def serialize_archive(archive: ChatArchive) -> Dict[str, Any]:
+def s_inbox(i: Inbox) -> Dict[str, Any]:
     return {
-        "id": archive.id,
-        "character_id": archive.character_id,
-        "filename": archive.filename,
-        "self_wxid": archive.self_wxid,
-        "message_count": archive.message_count,
-        "contact_count": archive.contact_count,
-        "uploaded_at": archive.uploaded_at,
+        "id": i.id, "account_id": i.account_id, "platform": i.platform,
+        "display_name": i.display_name, "default_persona_id": i.default_persona_id,
+        "enabled": i.enabled, "platform_self_id": i.platform_self_id,
+        "hostname": i.hostname, "b_status": i.b_status,
+        "last_seen_at": i.last_seen_at,
+        "created_at": i.created_at, "updated_at": i.updated_at,
     }
 
 
-def serialize_distill_job(job: DistillJob) -> Dict[str, Any]:
+def s_contact(c: Contact) -> Dict[str, Any]:
     return {
-        "id": job.id,
-        "character_id": job.character_id,
-        "status": job.status,
-        "progress": job.progress or {},
-        "error_message": job.error_message,
-        "created_at": job.created_at,
-        "started_at": job.started_at,
-        "finished_at": job.finished_at,
+        "id": c.id, "inbox_id": c.inbox_id, "peer_platform_id": c.peer_platform_id,
+        "display_name": c.display_name, "card_md": c.card_md,
+        "persona_id": c.persona_id, "autoreply_enabled": c.autoreply_enabled,
+        "status": c.status, "last_seen_platform_msg_id": c.last_seen_platform_msg_id,
+        "created_at": c.created_at, "updated_at": c.updated_at,
     }
 
 
-def serialize_account(acc: Account) -> Dict[str, Any]:
+def s_archive(a: Archive) -> Dict[str, Any]:
     return {
-        "id": acc.id,
-        "username": acc.username,
-        "display_name": acc.display_name,
-        "status": acc.status,
-        "created_at": acc.created_at,
-        "last_login_at": acc.last_login_at,
+        "id": a.id, "account_id": a.account_id, "inbox_id": a.inbox_id,
+        "filename": a.filename, "self_wxid": a.self_wxid,
+        "message_count": a.message_count, "contact_count": a.contact_count,
+        "uploaded_at": a.uploaded_at,
     }
 
 
-def get_provider_config_or_404(db: Session, provider_config_id: str) -> ProviderConfig:
-    pc = db.query(ProviderConfig).filter(ProviderConfig.id == provider_config_id).first()
-    if not pc:
-        raise HTTPException(status_code=404, detail="Provider Config 不存在")
-    return pc
+def s_distill_job(j: DistillJob) -> Dict[str, Any]:
+    return {
+        "id": j.id, "account_id": j.account_id,
+        "source_inbox_id": j.source_inbox_id, "target_persona_id": j.target_persona_id,
+        "provider_config_id": j.provider_config_id, "status": j.status,
+        "progress": j.progress, "error_message": j.error_message,
+        "created_at": j.created_at, "started_at": j.started_at, "finished_at": j.finished_at,
+    }
 
 
-def get_character_or_404(db: Session, character_id: str) -> Character:
-    ch = db.query(Character).filter(Character.id == character_id).first()
-    if not ch:
-        raise HTTPException(status_code=404, detail="Character 不存在")
-    return ch
-
-
-def get_contact_or_404(db: Session, contact_id: str) -> Contact:
-    contact = db.query(Contact).filter(Contact.id == contact_id).first()
-    if not contact:
-        raise HTTPException(status_code=404, detail="Contact 不存在")
-    return contact
-
-
-def ensure_character_owner(account: Account, character: Character) -> None:
-    if character.account_id != account.id:
-        raise HTTPException(status_code=403, detail="无权访问该 Character")
-
-
-def ensure_contact_owner(account: Account, contact: Contact, db: Session) -> None:
-    ch = db.query(Character).filter(Character.id == contact.character_id).first()
-    if not ch or ch.account_id != account.id:
-        raise HTTPException(status_code=403, detail="无权访问该 Contact")
+def s_outbound(o: OutboundMessage) -> Dict[str, Any]:
+    return {
+        "id": o.id, "seq": o.seq, "inbox_id": o.inbox_id, "contact_id": o.contact_id,
+        "chunks": o.chunks, "status": o.status, "created_at": o.created_at,
+        "delivered_at": o.delivered_at, "failed_reason": o.failed_reason,
+    }
 
 
 # ---------------------------------------------------------------------------
-# Health + Auth endpoints
+# Lookups + ownership checks
+# ---------------------------------------------------------------------------
+
+def get_account_provider(db: Session, account_id: str, provider_id: str) -> ProviderConfig:
+    p = db.query(ProviderConfig).filter(
+        ProviderConfig.id == provider_id, ProviderConfig.account_id == account_id
+    ).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Provider Config 不存在")
+    return p
+
+
+def get_account_persona(db: Session, account_id: str, persona_id: str) -> Persona:
+    p = db.query(Persona).filter(
+        Persona.id == persona_id, Persona.account_id == account_id
+    ).first()
+    if not p:
+        raise HTTPException(status_code=404, detail="Persona 不存在")
+    return p
+
+
+def get_account_inbox(db: Session, account_id: str, inbox_id: str) -> Inbox:
+    i = db.query(Inbox).filter(
+        Inbox.id == inbox_id, Inbox.account_id == account_id
+    ).first()
+    if not i:
+        raise HTTPException(status_code=404, detail="Inbox 不存在")
+    return i
+
+
+def get_account_contact(db: Session, account_id: str, contact_id: str) -> Contact:
+    c = (
+        db.query(Contact)
+        .join(Inbox, Inbox.id == Contact.inbox_id)
+        .filter(Contact.id == contact_id, Inbox.account_id == account_id)
+        .first()
+    )
+    if not c:
+        raise HTTPException(status_code=404, detail="Contact 不存在")
+    return c
+
+
+# ---------------------------------------------------------------------------
+# Health + Auth
 # ---------------------------------------------------------------------------
 
 @app.get("/api/health")
@@ -227,341 +254,527 @@ def health() -> Dict[str, str]:
 
 @app.post("/api/auth/login")
 def login(login_in: LoginRequest, db: DbDep):
-    account = db.query(Account).filter(Account.username == login_in.username).first()
-    if not account or account.status != "active":
+    a = db.query(Account).filter(Account.username == login_in.username).first()
+    if not a or a.status != "active":
         raise HTTPException(status_code=401, detail="用户名或密码错误")
-    if not verify_password(login_in.password, account.password_hash):
+    if not verify_password(login_in.password, a.password_hash):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
-
     token = new_session_token()
     now = utc_now()
-    auth_session = AuthSession(
-        id=hash_token(token),
-        account_id=account.id,
-        created_at=now,
-        last_seen_at=now,
-    )
-    account.last_login_at = now
-    account.updated_at = now
-    db.add(auth_session)
+    db.add(AuthSession(id=hash_token(token), account_id=a.id, created_at=now, last_seen_at=now))
+    a.last_login_at = now
+    a.updated_at = now
     db.commit()
-    db.refresh(account)
-    return {"token": token, "account": serialize_account(account)}
+    db.refresh(a)
+    return {"token": token, "account": s_account(a)}
 
 
 @app.post("/api/auth/logout")
-def logout(auth_session: AuthSessionDep, db: DbDep):
-    db.delete(auth_session)
+def logout(account: CurrentAccountDep, db: DbDep, authorization: Annotated[Optional[str], Header()] = None):
+    token = extract_bearer(authorization)
+    db.query(AuthSession).filter(AuthSession.id == hash_token(token)).delete()
     db.commit()
     return {"status": "ok"}
 
 
 @app.get("/api/auth/me")
 def me(account: CurrentAccountDep):
-    return serialize_account(account)
+    return s_account(account)
 
 
 # ---------------------------------------------------------------------------
-# Provider Configs (shared across all logged-in accounts)
+# Provider Configs
 # ---------------------------------------------------------------------------
-
-@app.post("/api/provider-configs")
-def create_provider_config(
-    provider_in: ProviderConfigCreate,
-    db: DbDep,
-    _account: CurrentAccountDep,
-):
-    now = utc_now()
-    pc = ProviderConfig(
-        id=new_id("p"),
-        name=provider_in.name,
-        base_url=provider_in.base_url.rstrip("/"),
-        api_key=provider_in.api_key,
-        default_model=provider_in.default_model,
-        created_at=now,
-        updated_at=now,
-    )
-    db.add(pc)
-    db.commit()
-    db.refresh(pc)
-    return serialize_provider_config(pc)
-
 
 @app.get("/api/provider-configs")
-def list_provider_configs(db: DbDep, _account: CurrentAccountDep):
-    items = db.query(ProviderConfig).order_by(ProviderConfig.updated_at.desc()).all()
-    return [serialize_provider_config(p) for p in items]
-
-
-@app.put("/api/provider-configs/{provider_config_id}")
-def update_provider_config(
-    provider_config_id: str,
-    provider_update: ProviderConfigUpdate,
-    db: DbDep,
-    _account: CurrentAccountDep,
-):
-    pc = get_provider_config_or_404(db, provider_config_id)
-    fields = provider_update.model_fields_set
-    if "name" in fields and provider_update.name is not None:
-        pc.name = provider_update.name
-    if "base_url" in fields and provider_update.base_url is not None:
-        pc.base_url = provider_update.base_url.rstrip("/")
-    if "api_key" in fields:
-        pc.api_key = provider_update.api_key
-    if "default_model" in fields and provider_update.default_model is not None:
-        pc.default_model = provider_update.default_model
-    pc.updated_at = utc_now()
-    db.commit()
-    db.refresh(pc)
-    return serialize_provider_config(pc)
-
-
-@app.delete("/api/provider-configs/{provider_config_id}")
-def delete_provider_config(
-    provider_config_id: str,
-    db: DbDep,
-    _account: CurrentAccountDep,
-):
-    pc = get_provider_config_or_404(db, provider_config_id)
-    db.delete(pc)
-    db.commit()
-    return {"status": "deleted", "id": provider_config_id}
-
-
-# ---------------------------------------------------------------------------
-# Characters
-# ---------------------------------------------------------------------------
-
-@app.post("/api/characters")
-def create_character(
-    character_in: CharacterCreate,
-    db: DbDep,
-    account: CurrentAccountDep,
-):
-    if character_in.provider_config_id:
-        get_provider_config_or_404(db, character_in.provider_config_id)
-    now = utc_now()
-    ch = Character(
-        id=new_id("ch"),
-        account_id=account.id,
-        name=character_in.name,
-        wechat_wxid_self=character_in.wechat_wxid_self,
-        provider_config_id=character_in.provider_config_id,
-        status="active",
-        created_at=now,
-        updated_at=now,
-    )
-    db.add(ch)
-    db.commit()
-    db.refresh(ch)
-    return serialize_character(ch, db)
-
-
-@app.get("/api/characters")
-def list_characters(db: DbDep, account: CurrentAccountDep):
+def list_providers(db: DbDep, account: CurrentAccountDep):
     items = (
-        db.query(Character)
-        .filter(Character.account_id == account.id)
-        .order_by(Character.created_at.desc())
+        db.query(ProviderConfig)
+        .filter(ProviderConfig.account_id == account.id)
+        .order_by(ProviderConfig.updated_at.desc())
         .all()
     )
-    return [serialize_character(o, db) for o in items]
+    return [s_provider(p) for p in items]
 
 
-@app.get("/api/characters/{character_id}")
-def get_character(character_id: str, db: DbDep, account: CurrentAccountDep):
-    ch = get_character_or_404(db, character_id)
-    ensure_character_owner(account, ch)
-    return serialize_character(ch, db)
-
-
-@app.put("/api/characters/{character_id}")
-def update_character(
-    character_id: str,
-    ch_update: CharacterUpdate,
-    db: DbDep,
-    account: CurrentAccountDep,
-):
-    ch = get_character_or_404(db, character_id)
-    ensure_character_owner(account, ch)
-    fields = ch_update.model_fields_set
-    if "name" in fields and ch_update.name is not None:
-        ch.name = ch_update.name
-    if "persona_md" in fields:
-        ch.persona_md = ch_update.persona_md
-    if "wechat_wxid_self" in fields:
-        ch.wechat_wxid_self = ch_update.wechat_wxid_self
-    if "provider_config_id" in fields:
-        if ch_update.provider_config_id is not None:
-            get_provider_config_or_404(db, ch_update.provider_config_id)
-        ch.provider_config_id = ch_update.provider_config_id
-    if "status" in fields and ch_update.status is not None:
-        ch.status = ch_update.status
-    ch.updated_at = utc_now()
+@app.post("/api/provider-configs")
+def create_provider(payload: ProviderConfigCreate, db: DbDep, account: CurrentAccountDep):
+    now = utc_now()
+    p = ProviderConfig(
+        id=new_id("p"), account_id=account.id,
+        name=payload.name, base_url=payload.base_url.rstrip("/"),
+        api_key=payload.api_key, default_model=payload.default_model,
+        created_at=now, updated_at=now,
+    )
+    db.add(p)
     db.commit()
-    db.refresh(ch)
-    return serialize_character(ch, db)
+    db.refresh(p)
+    return s_provider(p)
 
 
-@app.delete("/api/characters/{character_id}")
-def delete_character(
-    character_id: str,
-    db: DbDep,
-    account: CurrentAccountDep,
+@app.put("/api/provider-configs/{provider_id}")
+def update_provider(
+    provider_id: str, payload: ProviderConfigUpdate, db: DbDep, account: CurrentAccountDep
 ):
-    ch = get_character_or_404(db, character_id)
-    ensure_character_owner(account, ch)
-    ch.status = "deleted"
-    ch.updated_at = utc_now()
+    p = get_account_provider(db, account.id, provider_id)
+    fields = payload.model_fields_set
+    if "name" in fields and payload.name is not None: p.name = payload.name
+    if "base_url" in fields and payload.base_url is not None: p.base_url = payload.base_url.rstrip("/")
+    if "api_key" in fields: p.api_key = payload.api_key
+    if "default_model" in fields and payload.default_model is not None: p.default_model = payload.default_model
+    p.updated_at = utc_now()
     db.commit()
-    return {"status": "deleted", "id": character_id}
+    db.refresh(p)
+    return s_provider(p)
+
+
+@app.delete("/api/provider-configs/{provider_id}")
+def delete_provider(provider_id: str, db: DbDep, account: CurrentAccountDep):
+    p = get_account_provider(db, account.id, provider_id)
+    db.delete(p)
+    db.commit()
+    return {"status": "deleted", "id": provider_id}
 
 
 # ---------------------------------------------------------------------------
-# Contacts
+# Personas
 # ---------------------------------------------------------------------------
 
-@app.get("/api/characters/{character_id}/contacts")
-def list_contacts(character_id: str, db: DbDep, account: CurrentAccountDep):
-    ch = get_character_or_404(db, character_id)
-    ensure_character_owner(account, ch)
+@app.get("/api/personas")
+def list_personas(db: DbDep, account: CurrentAccountDep):
+    items = (
+        db.query(Persona)
+        .filter(Persona.account_id == account.id)
+        .order_by(Persona.created_at.desc())
+        .all()
+    )
+    return [s_persona(p) for p in items]
+
+
+@app.post("/api/personas")
+def create_persona(payload: PersonaCreate, db: DbDep, account: CurrentAccountDep):
+    now = utc_now()
+    p = Persona(
+        id=new_id("ps"), account_id=account.id,
+        name=payload.name, persona_md=payload.persona_md,
+        status="active", created_at=now, updated_at=now,
+    )
+    db.add(p)
+    db.commit()
+    db.refresh(p)
+    return s_persona(p)
+
+
+@app.get("/api/personas/{persona_id}")
+def get_persona(persona_id: str, db: DbDep, account: CurrentAccountDep):
+    return s_persona(get_account_persona(db, account.id, persona_id))
+
+
+@app.put("/api/personas/{persona_id}")
+def update_persona(persona_id: str, payload: PersonaUpdate, db: DbDep, account: CurrentAccountDep):
+    p = get_account_persona(db, account.id, persona_id)
+    fields = payload.model_fields_set
+    if "name" in fields and payload.name is not None: p.name = payload.name
+    if "persona_md" in fields: p.persona_md = payload.persona_md
+    if "status" in fields and payload.status is not None: p.status = payload.status
+    p.updated_at = utc_now()
+    db.commit()
+    db.refresh(p)
+    return s_persona(p)
+
+
+@app.delete("/api/personas/{persona_id}")
+def delete_persona(persona_id: str, db: DbDep, account: CurrentAccountDep):
+    p = get_account_persona(db, account.id, persona_id)
+    in_use = db.query(Inbox).filter(Inbox.default_persona_id == p.id).first()
+    if in_use:
+        raise HTTPException(status_code=409, detail=f"Persona 仍被 inbox {in_use.id} 引用，请先解绑")
+    in_contact = db.query(Contact).filter(Contact.persona_id == p.id).first()
+    if in_contact:
+        raise HTTPException(status_code=409, detail=f"Persona 仍被 contact {in_contact.id} 引用")
+    db.delete(p)
+    db.commit()
+    return {"status": "deleted", "id": persona_id}
+
+
+# ---------------------------------------------------------------------------
+# Inboxes (= 接管号; 1:1 with bridge daemon)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/inboxes")
+def list_inboxes(db: DbDep, account: CurrentAccountDep):
+    items = (
+        db.query(Inbox)
+        .filter(Inbox.account_id == account.id)
+        .order_by(Inbox.created_at.desc())
+        .all()
+    )
+    return [s_inbox(i) for i in items]
+
+
+@app.post("/api/inboxes")
+def create_inbox(payload: InboxCreate, db: DbDep, account: CurrentAccountDep):
+    get_account_persona(db, account.id, payload.default_persona_id)  # validate
+    now = utc_now()
+    raw_token = new_session_token()
+    inbox = Inbox(
+        id=new_id("ib"), account_id=account.id,
+        platform=payload.platform, display_name=payload.display_name,
+        default_persona_id=payload.default_persona_id, enabled=payload.enabled,
+        platform_self_id=None, hostname=None,
+        b_token_hash=hash_token(raw_token), b_status="paired_pending",
+        last_seen_at=None, created_at=now, updated_at=now,
+    )
+    db.add(inbox)
+    db.commit()
+    db.refresh(inbox)
+    payload_out = s_inbox(inbox)
+    payload_out["b_token"] = raw_token  # only returned on creation
+    return payload_out
+
+
+@app.get("/api/inboxes/{inbox_id}")
+def get_inbox(inbox_id: str, db: DbDep, account: CurrentAccountDep):
+    return s_inbox(get_account_inbox(db, account.id, inbox_id))
+
+
+@app.put("/api/inboxes/{inbox_id}")
+def update_inbox(inbox_id: str, payload: InboxUpdate, db: DbDep, account: CurrentAccountDep):
+    inbox = get_account_inbox(db, account.id, inbox_id)
+    fields = payload.model_fields_set
+    if "display_name" in fields and payload.display_name is not None:
+        inbox.display_name = payload.display_name
+    if "default_persona_id" in fields and payload.default_persona_id is not None:
+        get_account_persona(db, account.id, payload.default_persona_id)
+        inbox.default_persona_id = payload.default_persona_id
+    if "enabled" in fields and payload.enabled is not None:
+        inbox.enabled = payload.enabled
+    inbox.updated_at = utc_now()
+    db.commit()
+    db.refresh(inbox)
+    return s_inbox(inbox)
+
+
+@app.delete("/api/inboxes/{inbox_id}")
+def delete_inbox(inbox_id: str, db: DbDep, account: CurrentAccountDep):
+    inbox = get_account_inbox(db, account.id, inbox_id)
+    inbox.b_status = "revoked"
+    inbox.updated_at = utc_now()
+    # Cancel all pending outbound for this inbox
+    db.query(OutboundMessage).filter(
+        OutboundMessage.inbox_id == inbox.id, OutboundMessage.status == "pending"
+    ).update({"status": "canceled"})
+    db.commit()
+    return {"status": "revoked", "id": inbox_id}
+
+
+@app.post("/api/inboxes/{inbox_id}/regenerate-token")
+def regenerate_inbox_token(inbox_id: str, db: DbDep, account: CurrentAccountDep):
+    inbox = get_account_inbox(db, account.id, inbox_id)
+    raw_token = new_session_token()
+    inbox.b_token_hash = hash_token(raw_token)
+    inbox.b_status = "paired_pending"
+    inbox.updated_at = utc_now()
+    db.commit()
+    db.refresh(inbox)
+    out = s_inbox(inbox)
+    out["b_token"] = raw_token
+    return out
+
+
+@app.get("/api/inboxes/{inbox_id}/contacts")
+def list_inbox_contacts(inbox_id: str, db: DbDep, account: CurrentAccountDep):
+    inbox = get_account_inbox(db, account.id, inbox_id)
     items = (
         db.query(Contact)
-        .filter(Contact.character_id == character_id)
-        .order_by(Contact.created_at.desc())
+        .filter(Contact.inbox_id == inbox.id)
+        .order_by(Contact.updated_at.desc())
         .all()
     )
-    return [serialize_contact(c) for c in items]
+    return [s_contact(c) for c in items]
 
+
+@app.post("/api/inboxes/{inbox_id}/outbound")
+def seed_outbound(inbox_id: str, payload: OutboundCreate, db: DbDep, account: CurrentAccountDep):
+    """Manual outbound seeding (dogfood while LLM brain isn't wired yet)."""
+    inbox = get_account_inbox(db, account.id, inbox_id)
+    contact = get_account_contact(db, account.id, payload.contact_id)
+    if contact.inbox_id != inbox.id:
+        raise HTTPException(status_code=400, detail="Contact 不属于该 inbox")
+    last_seq = (
+        db.query(func.max(OutboundMessage.seq))
+        .filter(OutboundMessage.inbox_id == inbox.id)
+        .scalar()
+    ) or 0
+    o = OutboundMessage(
+        id=new_id("ob"), seq=last_seq + 1, inbox_id=inbox.id, contact_id=contact.id,
+        chunks=[c.model_dump() for c in payload.chunks],
+        status="pending", delivered_at=None, failed_reason=None, created_at=utc_now(),
+    )
+    db.add(o)
+    db.commit()
+    db.refresh(o)
+    return s_outbound(o)
+
+
+# ---------------------------------------------------------------------------
+# Contacts (account-scoped lookup, but contact lives under an inbox)
+# ---------------------------------------------------------------------------
 
 @app.get("/api/contacts/{contact_id}")
 def get_contact(contact_id: str, db: DbDep, account: CurrentAccountDep):
-    contact = get_contact_or_404(db, contact_id)
-    ensure_contact_owner(account, contact, db)
-    return serialize_contact(contact)
+    return s_contact(get_account_contact(db, account.id, contact_id))
 
 
 @app.put("/api/contacts/{contact_id}")
-def update_contact(
-    contact_id: str,
-    contact_update: ContactUpdate,
-    db: DbDep,
-    account: CurrentAccountDep,
-):
-    contact = get_contact_or_404(db, contact_id)
-    ensure_contact_owner(account, contact, db)
-    fields = contact_update.model_fields_set
-    if "display_name" in fields and contact_update.display_name is not None:
-        contact.display_name = contact_update.display_name
-    if "card_md" in fields:
-        contact.card_md = contact_update.card_md
-    if "status" in fields and contact_update.status is not None:
-        contact.status = contact_update.status
-    contact.updated_at = utc_now()
+def update_contact(contact_id: str, payload: ContactUpdate, db: DbDep, account: CurrentAccountDep):
+    c = get_account_contact(db, account.id, contact_id)
+    fields = payload.model_fields_set
+    if "display_name" in fields and payload.display_name is not None: c.display_name = payload.display_name
+    if "card_md" in fields: c.card_md = payload.card_md
+    if "persona_id" in fields and payload.persona_id is not None:
+        get_account_persona(db, account.id, payload.persona_id)
+        c.persona_id = payload.persona_id
+    if "autoreply_enabled" in fields and payload.autoreply_enabled is not None:
+        c.autoreply_enabled = payload.autoreply_enabled
+    if "status" in fields and payload.status is not None: c.status = payload.status
+    c.updated_at = utc_now()
     db.commit()
-    db.refresh(contact)
-    return serialize_contact(contact)
+    db.refresh(c)
+    return s_contact(c)
 
 
 # ---------------------------------------------------------------------------
-# Chat Archives
+# Archives (account-level upload; ingest dispatches to specified inbox)
 # ---------------------------------------------------------------------------
 
-@app.post("/api/characters/{character_id}/chat-archives")
-async def upload_chat_archive(
-    character_id: str,
+@app.get("/api/archives")
+def list_archives(db: DbDep, account: CurrentAccountDep):
+    items = (
+        db.query(Archive)
+        .filter(Archive.account_id == account.id)
+        .order_by(Archive.uploaded_at.desc())
+        .all()
+    )
+    return [s_archive(a) for a in items]
+
+
+@app.post("/api/archives")
+async def upload_archive(
     db: DbDep,
     account: CurrentAccountDep,
+    inbox_id: str = Form(...),
     self_wxid: str = Form(...),
     file: UploadFile = File(...),
 ):
-    ch = get_character_or_404(db, character_id)
-    ensure_character_owner(account, ch)
-
+    inbox = get_account_inbox(db, account.id, inbox_id)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
         contents = await file.read()
         tmp.write(contents)
         tmp_path = Path(tmp.name)
     try:
         archive = await ingest_archive(
-            db=db,
-            character=ch,
-            self_wxid=self_wxid,
-            src_path=tmp_path,
+            db=db, account_id=account.id, inbox=inbox,
+            self_wxid=self_wxid, src_path=tmp_path,
             original_filename=file.filename or tmp_path.name,
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     finally:
         tmp_path.unlink(missing_ok=True)
+    return s_archive(archive)
 
-    return serialize_archive(archive)
 
+# ---------------------------------------------------------------------------
+# Distill Jobs (account-level, explicit source inbox + target persona + provider)
+# ---------------------------------------------------------------------------
 
-@app.get("/api/characters/{character_id}/chat-archives")
-def list_archives(character_id: str, db: DbDep, account: CurrentAccountDep):
-    ch = get_character_or_404(db, character_id)
-    ensure_character_owner(account, ch)
+@app.get("/api/distill-jobs")
+def list_distill_jobs(db: DbDep, account: CurrentAccountDep):
     items = (
-        db.query(ChatArchive)
-        .filter(ChatArchive.character_id == character_id)
-        .order_by(ChatArchive.uploaded_at.desc())
+        db.query(DistillJob)
+        .filter(DistillJob.account_id == account.id)
+        .order_by(DistillJob.created_at.desc())
         .all()
     )
-    return [serialize_archive(a) for a in items]
+    return [s_distill_job(j) for j in items]
 
 
-# ---------------------------------------------------------------------------
-# Distill Jobs
-# ---------------------------------------------------------------------------
-
-@app.post("/api/characters/{character_id}/distill-jobs")
-def create_distill_job(character_id: str, db: DbDep, account: CurrentAccountDep):
-    ch = get_character_or_404(db, character_id)
-    ensure_character_owner(account, ch)
-    if not ch.provider_config_id:
-        raise HTTPException(status_code=400, detail="Character 未配置 Provider Config，无法蒸馏")
+@app.post("/api/distill-jobs")
+def create_distill_job(payload: DistillJobCreate, db: DbDep, account: CurrentAccountDep):
+    get_account_inbox(db, account.id, payload.source_inbox_id)
+    get_account_persona(db, account.id, payload.target_persona_id)
+    get_account_provider(db, account.id, payload.provider_config_id)
     pending = (
         db.query(DistillJob)
         .filter(
-            DistillJob.character_id == character_id,
+            DistillJob.account_id == account.id,
+            DistillJob.target_persona_id == payload.target_persona_id,
             DistillJob.status.in_(["pending", "running"]),
         )
         .first()
     )
     if pending:
-        raise HTTPException(status_code=409, detail=f"已有进行中的蒸馏任务 {pending.id}")
-    job = DistillJob(
-        id=new_id("dj"),
-        character_id=character_id,
-        status="pending",
-        progress={},
-        created_at=utc_now(),
+        raise HTTPException(status_code=409, detail=f"该 persona 已有进行中的蒸馏任务 {pending.id}")
+    j = DistillJob(
+        id=new_id("dj"), account_id=account.id,
+        source_inbox_id=payload.source_inbox_id,
+        target_persona_id=payload.target_persona_id,
+        provider_config_id=payload.provider_config_id,
+        status="pending", progress={}, error_message=None,
+        created_at=utc_now(), started_at=None, finished_at=None,
     )
-    db.add(job)
+    db.add(j)
     db.commit()
-    db.refresh(job)
-    return serialize_distill_job(job)
-
-
-@app.get("/api/characters/{character_id}/distill-jobs")
-def list_distill_jobs(character_id: str, db: DbDep, account: CurrentAccountDep):
-    ch = get_character_or_404(db, character_id)
-    ensure_character_owner(account, ch)
-    jobs = (
-        db.query(DistillJob)
-        .filter(DistillJob.character_id == character_id)
-        .order_by(DistillJob.created_at.desc())
-        .all()
-    )
-    return [serialize_distill_job(j) for j in jobs]
+    db.refresh(j)
+    return s_distill_job(j)
 
 
 @app.get("/api/distill-jobs/{job_id}")
 def get_distill_job(job_id: str, db: DbDep, account: CurrentAccountDep):
-    job = db.query(DistillJob).filter(DistillJob.id == job_id).first()
-    if not job:
+    j = (
+        db.query(DistillJob)
+        .filter(DistillJob.id == job_id, DistillJob.account_id == account.id)
+        .first()
+    )
+    if not j:
         raise HTTPException(status_code=404, detail="Distill Job 不存在")
-    ch = get_character_or_404(db, job.character_id)
-    ensure_character_owner(account, ch)
-    return serialize_distill_job(job)
+    return s_distill_job(j)
+
+
+# ---------------------------------------------------------------------------
+# Bridge protocol (B ↔ C)
+# ---------------------------------------------------------------------------
+
+@app.post("/api/bridge/handshake")
+def bridge_handshake(payload: BridgeHandshake, db: DbDep, inbox: BridgeInboxDep):
+    inbox.hostname = payload.hostname
+    inbox.platform_self_id = payload.platform_self_id
+    inbox.b_status = "online"
+    now = utc_now()
+    inbox.last_seen_at = now
+    inbox.updated_at = now
+    db.commit()
+    last_seq = (
+        db.query(func.max(OutboundMessage.seq))
+        .filter(OutboundMessage.inbox_id == inbox.id)
+        .scalar()
+    ) or 0
+    return {
+        "inbox_id": inbox.id, "account_id": inbox.account_id,
+        "platform": inbox.platform, "enabled": inbox.enabled,
+        "last_seq": last_seq,
+    }
+
+
+@app.post("/api/bridge/heartbeat")
+def bridge_heartbeat(db: DbDep, inbox: BridgeInboxDep):
+    inbox.last_seen_at = utc_now()
+    if inbox.b_status != "online":
+        inbox.b_status = "online"
+    db.commit()
+    return {"ok": True}
+
+
+@app.post("/api/bridge/incoming")
+def bridge_incoming(payload: BridgeIncomingBatch, db: DbDep, inbox: BridgeInboxDep):
+    accepted = 0
+    deduped = 0
+    now = utc_now()
+    for m in payload.messages:
+        contact = (
+            db.query(Contact)
+            .filter(Contact.inbox_id == inbox.id, Contact.peer_platform_id == m.peer_platform_id)
+            .first()
+        )
+        if not contact:
+            contact = Contact(
+                id=new_id("ct"), inbox_id=inbox.id,
+                peer_platform_id=m.peer_platform_id,
+                display_name=m.peer_display_name or m.peer_platform_id,
+                card_md=None,
+                persona_id=inbox.default_persona_id,
+                autoreply_enabled=False,
+                status="active",
+                last_seen_platform_msg_id=None,
+                created_at=now, updated_at=now,
+            )
+            db.add(contact)
+            db.flush()
+        external_id = f"live:{m.platform_msg_id}"
+        existing = (
+            db.query(Message)
+            .filter(Message.contact_id == contact.id, Message.external_id == external_id)
+            .first()
+        )
+        if existing:
+            deduped += 1
+            continue
+        ts = m.sent_at.replace(tzinfo=None) if m.sent_at.tzinfo else m.sent_at
+        db.add(Message(
+            contact_id=contact.id, archive_id=None,
+            external_id=external_id, source="live",
+            role=m.role, sender_name=None, content=m.content,
+            timestamp=ts, archive_msg_idx=None, created_at=now,
+        ))
+        contact.last_seen_platform_msg_id = m.platform_msg_id
+        contact.updated_at = now
+        accepted += 1
+    inbox.last_seen_at = now
+    db.commit()
+    return {"accepted": accepted, "deduped": deduped}
+
+
+@app.get("/api/bridge/outbound")
+async def bridge_outbound(
+    inbox: BridgeInboxDep,
+    cursor: int = Query(0, ge=0),
+    timeout: int = Query(0, ge=0, le=60),
+):
+    deadline = time.time() + timeout
+    while True:
+        db = SessionLocal()
+        try:
+            rows = (
+                db.query(OutboundMessage)
+                .filter(
+                    OutboundMessage.inbox_id == inbox.id,
+                    OutboundMessage.seq > cursor,
+                    OutboundMessage.status == "pending",
+                )
+                .order_by(OutboundMessage.seq.asc())
+                .limit(50)
+                .all()
+            )
+            payload = [s_outbound(o) for o in rows]
+        finally:
+            db.close()
+        if payload:
+            return payload
+        if time.time() >= deadline:
+            return payload
+        await asyncio.sleep(min(0.5, max(0.1, deadline - time.time())))
+
+
+@app.post("/api/bridge/outbound/{outbound_id}/ack")
+def bridge_outbound_ack(
+    outbound_id: str, payload: BridgeOutboundAck, db: DbDep, inbox: BridgeInboxDep
+):
+    o = (
+        db.query(OutboundMessage)
+        .filter(OutboundMessage.id == outbound_id, OutboundMessage.inbox_id == inbox.id)
+        .first()
+    )
+    if not o:
+        raise HTTPException(status_code=404, detail="Outbound 不存在")
+    if o.status != "pending":
+        return {"status": o.status}  # idempotent ack
+    now = utc_now()
+    if payload.result == "sent":
+        o.status = "delivered"
+        o.delivered_at = now
+    else:
+        o.status = "failed"
+        o.failed_reason = payload.reason
+    db.commit()
+    return {"status": o.status}

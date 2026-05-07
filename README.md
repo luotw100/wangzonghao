@@ -2,185 +2,151 @@
 
 Laborster 是一个**通用拟人化私聊接管服务**：让 AI 替你的主播 / 销售 / 自由职业者，在长期私聊场景里自动回复联系人，保温关系。
 
-> 当前阶段聚焦「主播-粉丝」场景，命名上保持中性（Operator / Contact）以兼容未来扩展。详细产品定位与规则参见 [AGENTS.md](./AGENTS.md)。
+> 当前阶段聚焦「主播-粉丝」场景，命名上保持中性（Character / Contact）以兼容未来扩展。详细产品定位与规则参见 [AGENTS.md](./AGENTS.md)。
 
 ---
 
-## 当前重构状态
+## 仓库结构
 
-仓库正在被拆分成两个**完全独立的项目**，目前共用一个 git 仓库只是为了管理方便：
+仓库已经被拆成两个**完全独立的项目**，共用一个 git 仓库只是为了管理方便。各自有自己的 `pyproject.toml` / `uv.lock` / `Dockerfile` / `compose.yaml` / `nginx.conf` / 前端 web/，互不依赖：
 
-- [`services/chat/`](services/chat/) — Chat 服务（独立项目）：自带 `api/pyproject.toml` + `uv.lock`、独立 Dockerfile、独立 `compose.yaml`、独立前端 `web/`，不依赖仓库根目录的任何文件。
-- 根目录 + [`robot/`](robot/) + [`frontend/`](frontend/) — Robot 服务（待迁移）：长期目标也会被拆成独立项目，目前仍在根目录。
+| 项目 | 路径 | 角色 |
+| --- | --- | --- |
+| **Chat** | [services/chat/](services/chat/) | 通用聊天 Adapter（微信模拟器） |
+| **Robot** | [services/robot/](services/robot/) | Character / Contact / Distill / LLM Provider 管理 |
 
-长期目标是 `平台(A) <-> 本地客户端(B) <-> Robot(C)`：微信 / 飞书 / QQ / Chat 都属于 A，未来新开发的主播电脑客户端 B 是唯一桥梁，Robot 不直接连真实平台。
+长期目标是 `平台(A) <-> 本地客户端(B) <-> Robot(C)`：微信 / 飞书 / QQ / Chat 都属于 A，未来新开发的本地客户端 B 是唯一桥梁，Robot 不直接连真实平台。**当前 Chat 和 Robot 互不通信**——历史的 robot↔chat 直连接口已经全部下线，等 B 上线时通过 B 重接。
 
-### 启动 Chat 服务
+---
 
-Chat 是独立项目，从 `services/chat/` 起：
+## Chat 服务
+
+### 启动
 
 ```bash
 cd services/chat
 CHAT_HTTP_PORT=23458 docker compose up -d --build
+```
 
-# 创建账号（首次）
+打开 http://localhost:23458 。
+
+### 账号管理（CLI）
+
+```bash
+cd services/chat
 CHAT_HTTP_PORT=23458 docker compose exec -T chat-api \
   uv run python -m chat.cli create-account \
   --username demo --password demo123 --display-name 演示账号
+
+CHAT_HTTP_PORT=23458 docker compose exec -T chat-api \
+  uv run python -m chat.cli list-accounts
+
+CHAT_HTTP_PORT=23458 docker compose exec -T chat-api \
+  uv run python -m chat.cli reset-password --username demo --password 新密码
 ```
 
-打开 http://localhost:23458 ，用 `demo / demo123` 登录。
-
-本地不用 docker：
+### 本地裸跑
 
 ```bash
 cd services/chat/api
 CHAT_STORAGE_DIR=$PWD/.storage uv run uvicorn chat.main:app --host 0.0.0.0 --port 23456
 
-# 另开终端启动 web
+# 另开终端起前端
 cd services/chat/web && npm install && npm run dev
 ```
 
-### Chat 账号管理 CLI
+⚠️ Docker volume `chat-storage` 与本地 `.storage/` 是完全分开的两份 DB。
+
+---
+
+## Robot 服务
+
+### 启动
 
 ```bash
-cd services/chat/api
-CHAT_STORAGE_DIR=$PWD/.storage uv run python -m chat.cli create-account \
-  --username anchor --password secret123 --display-name 主播
-
-CHAT_STORAGE_DIR=$PWD/.storage uv run python -m chat.cli list-accounts
-CHAT_STORAGE_DIR=$PWD/.storage uv run python -m chat.cli reset-password --username anchor --password newpass
+cd services/robot
+ROBOT_HTTP_PORT=23457 docker compose up -d --build
 ```
 
-### 启动 Robot 服务
+打开 http://localhost:23457 。
 
-Robot 仍在仓库根目录，需要先有一个跑着的 Chat 服务。最简单的方式：先按上面把 Chat 起到 `host:23458`，再起 Robot：
+### 账号管理（CLI）
+
+跟 Chat 完全同构：
 
 ```bash
-CHAT_API_BASE_URL=http://host.docker.internal:23458/api docker compose up -d --build
+cd services/robot
+ROBOT_HTTP_PORT=23457 docker compose exec -T robot-api \
+  uv run python -m robot.cli create-account \
+  --username alice --password Alice123 --display-name 主播小A
+
+ROBOT_HTTP_PORT=23457 docker compose exec -T robot-api \
+  uv run python -m robot.cli list-accounts
+
+ROBOT_HTTP_PORT=23457 docker compose exec -T robot-api \
+  uv run python -m robot.cli reset-password --username alice --password 新密码
 ```
 
-打开 http://localhost:23456 看 Robot 控制台。
+### 本地裸跑
+
+```bash
+# Robot API
+cd services/robot/api
+ROBOT_STORAGE_DIR=$PWD/../storage uv run uvicorn robot.main:app --host 0.0.0.0 --port 23457
+
+# Robot Worker（蒸馏后台进程）
+cd services/robot/api
+ROBOT_STORAGE_DIR=$PWD/../storage uv run python -m robot.worker --request-timeout 120
+
+# Robot 前端
+cd services/robot/web && npm install && npm run dev
+```
+
+存储目录在 `services/robot/storage/`，docker compose bind-mount，宿主机能直接 `cat storage/robot.db` / 看 `storage/uploads/`。
 
 ---
 
 ## 数据模型
 
-三个核心原语：
+三个核心原语（在 Robot 里）：
 
 | 原语 | 数量 | 角色 |
 | --- | --- | --- |
-| **Operator** | 1 / 账号 | 主播本人。包含 Persona（风格 + 生活情境） |
-| **Contact** | N / Operator | 粉丝。包含 Card（备注名 / 关系档位 / 共享过的事实 等） |
-| **Conversation** | 每个 Contact 一段 | 真实聊天历史，原始数据；蒸馏读它，运行时也读它 |
+| **Character** | 1 / Account | 主播本人。包含 Persona（风格 + 生活情境） |
+| **Contact** | N / Character | 粉丝。包含 Card（备注名 / 关系档位 / 共享过的事实 等） |
+| **ChatArchive** | N / Character | 上传的 WeFlow 聊天记录原文，蒸馏读它 |
 
-**Persona 和 Card 怎么来**：上传历史聊天 → 蒸馏（rolling fold over LLM）→ 自动生成 → 主播校对。运行时把 Persona + Card + 完整对话历史一起喂给 LLM，生成拟人回复。
+**Persona 和 Card 怎么来**：上传历史聊天 → 蒸馏（rolling fold over LLM）→ 自动生成 → 主播校对。
 
----
-
-## 架构
-
-```mermaid
-graph TB
-    subgraph Browser
-        FE["Frontend<br/>React + Tailwind"]
-    end
-
-    subgraph Nginx[":23456"]
-        NG_STATIC["/ → 静态"]
-        NG_CHAT["/api/* → Chat"]
-        NG_ROBOT["/api/robot/* → Robot API"]
-    end
-
-    subgraph Backend
-        CHAT["Chat Service<br/>(微信模拟器)"]
-        ROBOT_API["Robot API"]
-        ROBOT_WORKER["Robot Worker<br/>(Session + Distill)"]
-    end
-
-    subgraph Storage
-        CHAT_DB[("chat.db")]
-        ROBOT_DB[("robot.db")]
-        UPLOADS[("storage/uploads/")]
-    end
-
-    subgraph External
-        LLM["LLM Provider"]
-    end
-
-    FE -->|HTTP| Nginx
-    NG_STATIC --> FE
-    NG_CHAT --> CHAT
-    NG_ROBOT --> ROBOT_API
-
-    CHAT --> CHAT_DB
-    ROBOT_API --> ROBOT_DB
-    ROBOT_API --> UPLOADS
-    ROBOT_API -->|创建 user/conversation/bulk-import| CHAT
-    ROBOT_WORKER --> ROBOT_DB
-    ROBOT_WORKER -->|轮询 + 发送| CHAT
-    ROBOT_WORKER -->|reply + distill| LLM
-```
-
-两个独立项目下的容器：
-
-| 容器 | 所属项目 | 角色 |
-| --- | --- | --- |
-| `chat-web` (nginx) | services/chat | Chat 静态资源 + 反代到 chat-api |
-| `chat-api` | services/chat | 通用聊天 Adapter，**充当微信模拟器**——上传历史聊天会自动注入此处，调试者可继续在 Chat UI 里扮演粉丝聊天 |
-| `nginx` | 根目录 (Robot) | Robot 静态资源 + 反代到 robot-api |
-| `robot-api` | 根目录 (Robot) | Robot 领域 API（Operator / Contact / Archive / Distill / Provider） |
-| `robot-worker` | 根目录 (Robot) | 1 Session Scanner + 1 Distill Scanner + N Session Loop。所有耗时的事都在这里 |
-
----
-
-## 主播 Onboarding 流程
-
-```
-1. 创建 Operator（自动绑一个 chat 模拟器 user）
-2. 配置 Provider Config
-3. 上传 WeFlow JSON 聊天记录（指明 self_wxid）
-   ↓
-   robot-api 一次性完成：
-     - 解析 → 写 robot.db (Contact + Session + messages)
-     - 给粉丝创建 chat 模拟器 user
-     - 创建 chat 模拟器 conversation
-     - bulk-import 历史聊天到 chat（保留原始 timestamp）
-4. 触发蒸馏 Job
-   ↓
-   robot-worker 后台跑：
-     - 每个 Contact 切 session/window
-     - rolling fold 更新 operator.persona_md + contact.card_md
-5. 主播在 RobotPage 校对 Persona / Cards
-6. 在 Chat UI 切换到粉丝身份继续聊天 → Worker 自动回复
-```
-
-历史聊天和实时聊天**进同一张 messages 表**（用 `source` 字段区分），蒸馏和运行时都能看到全量上下文。
+未来 Robot 会把 Persona + Card + 完整对话历史一起喂给 LLM，由 B（本地客户端）把回复转发回真实聊天平台。
 
 ---
 
 ## 数据库
 
-### chat.db
+### Chat: `chat.db`（在 chat docker volume）
 
 | 表 | 说明 |
 | --- | --- |
-| `users` | chat 用户（Operator 和 Contact 都在这里有对应 shadow user） |
-| `conversations` | chat 会话 |
-| `messages` | chat 消息（包括 ingest 时 bulk-import 的历史） |
+| `chat_accounts` | Chat 登录账号 |
+| `chat_auth_sessions` | 登录会话 |
+| `chat_contacts` | 每个账号的本地联系人 |
+| `chat_conversations` | 一对一会话 |
+| `chat_messages` | 实时消息 + bulk-import 历史 |
 
-### robot.db
+### Robot: `robot.db`（在 services/robot/storage/）
 
 | 表 | 说明 |
 | --- | --- |
+| `accounts` | Robot 登录账号（CLI 管理） |
+| `auth_sessions` | Bearer token sessions |
 | `provider_configs` | LLM Provider |
-| `operators` | 主播本人。`adapter_identities` JSON 存各 adapter 上的身份 |
-| `contacts` | 粉丝。`(operator_id, wechat_wxid)` 唯一 |
-| `sessions` | 纯连接器：Contact ↔ adapter_thread_id |
+| `characters` | 主播本人。`wechat_wxid_self` 字段告诉蒸馏哪条消息是 self |
+| `contacts` | 粉丝。`(character_id, wechat_wxid)` 唯一 |
 | `chat_archives` | 上传的 WeFlow 文件清单（保留原始文件路径，便于重蒸） |
-| `messages` | 统一消息表（upload + live） |
+| `messages` | 历史消息（蒸馏的输入） |
 | `distill_jobs` | 蒸馏任务（pending/running/done/failed + progress JSON） |
-| `llm_logs` | LLM 调用日志（reply / distill 共用） |
+| `llm_logs` | LLM 调用日志（目前只有 distill） |
 
 ---
 
@@ -190,116 +156,53 @@ graph TB
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| POST | `/users` | 创建 user |
-| GET/PUT/DELETE | `/users/{id}` | 用户 CRUD |
-| POST | `/conversations` | 创建会话 |
+| POST | `/auth/login` | username/password 登录，返回 token |
+| GET | `/auth/me` | 当前账号 |
+| POST | `/auth/logout` | 登出 |
+| GET/POST/PUT/DELETE | `/contacts` | 联系人 CRUD |
+| GET/POST/PUT/DELETE | `/conversations` | 会话 CRUD |
 | GET | `/conversations/{id}/messages?last_id=&timeout=` | 长轮询拉消息 |
 | POST | `/conversations/{id}/messages` | 发消息 |
-| **POST** | **`/conversations/{id}/messages/bulk`** | **bulk import（保留历史 timestamp）** |
+| POST | `/conversations/{id}/messages/bulk` | bulk import（保留历史 timestamp） |
 
-### Robot (`/api/robot/*`)
+### Robot (`/api/*`)
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| GET/POST | `/provider-configs` | Provider CRUD |
-| GET/POST | `/operators` | Operator CRUD（POST 自动建 chat user） |
-| GET/PUT | `/operators/{id}` | 单个 Operator（PUT 改 persona_md / provider 等） |
-| GET | `/operators/{id}/contacts` | 列出该 Operator 的粉丝 |
-| PUT | `/contacts/{id}` | 改备注名 / Card |
-| GET/POST | `/operators/{id}/chat-archives` | multipart 上传 + 列表 |
-| GET/POST | `/operators/{id}/distill-jobs` | 触发蒸馏 + 列表 |
+| POST | `/auth/login` | username/password 登录，返回 token |
+| GET | `/auth/me` | 当前账号 |
+| POST | `/auth/logout` | 登出 |
+| GET/POST/PUT/DELETE | `/provider-configs` | Provider CRUD |
+| GET/POST | `/characters` | Character CRUD |
+| GET/PUT/DELETE | `/characters/{id}` | 单个 Character |
+| GET | `/characters/{id}/contacts` | 列出该 Character 的粉丝 |
+| GET/PUT | `/contacts/{id}` | Contact 读 / 改备注名 / Card |
+| GET/POST | `/characters/{id}/chat-archives` | multipart 上传 + 列表 |
+| GET/POST | `/characters/{id}/distill-jobs` | 触发蒸馏 + 列表 |
 | GET | `/distill-jobs/{id}` | 查蒸馏进度 |
-| GET | `/operators/{id}/sessions` | 看 Session 列表（read-only） |
-| GET | `/sessions/{id}/planned-replies?last_count=&timeout=` | 长轮询查待发消息 |
 
 ---
 
-## 快速开始
+## 主播 Onboarding 流程
 
-### 1. 起 Chat（独立项目，先起）
-
-```bash
-cd services/chat
-CHAT_HTTP_PORT=23458 docker compose up -d --build
-CHAT_HTTP_PORT=23458 docker compose exec -T chat-api \
-  uv run python -m chat.cli create-account \
-  --username demo --password demo123 --display-name 演示账号
 ```
-
-Chat Lab 在 http://localhost:23458 。
-
-### 2. 起 Robot（仍在仓库根目录）
-
-```bash
-CHAT_API_BASE_URL=http://host.docker.internal:23458/api docker compose up -d --build
+1. CLI 创建一个 Robot 账号
+2. 用账号登录 Robot 后台
+3. Provider tab → 新建 Provider Config
+4. 顶部「新建主播」→ 填名字、self_wxid、绑 Provider
+5. 「档案」抽屉 → 上传 WeFlow JSON（指明 self_wxid）
+   ↓
+   robot-api 解析文件 → 写 robot.db (Contact + messages)
+6. 「蒸馏」抽屉 → 「开始蒸馏」→ 等几分钟（worker 后台跑）
+7. 「人设」/ 联系人卡片 → 校对自动生成的 Persona / Cards
+8. 等 B 上线后接回真实聊天平台
 ```
-
-Robot 控制台在 http://localhost:23456 。`storage/` 目录持久化 robot.db 和上传的 archive。
-
-### 第一次使用
-
-1. 进 RobotPage → Provider tab → 新建 Provider Config（base_url + api_key + model）
-2. 顶部「新建主播」→ 填名字、选 Provider
-3. 切到「聊天记录」tab → 填 self_wxid（在导出文件里要存在）→ 选文件 → 上传
-4. 切到「蒸馏」tab → 「开始蒸馏」→ 等几分钟（可看进度）
-5. 切到「人设」tab → 校对自动生成的人设
-6. 切到「联系人」tab → 校对每个粉丝的 Card
-7. 切到 ChatPage → 选刚自动创建的会话 → 切换为粉丝身份发消息 → 等 Worker 回复
-
-### 启动参数
-
-| 服务 | 必填参数 |
-| --- | --- |
-| `chat-api` | 环境变量 `CHAT_STORAGE_DIR`（监听 `0.0.0.0:23456`） |
-| `robot-api` | `--host`, `--port`, `--chat-api-base-url` |
-| `robot-worker` | `--chat-api-base-url`, `--request-timeout` |
-
-### 本地开发（不用 docker）
-
-```bash
-# Chat (在 services/chat/api/ 下，独立项目)
-cd services/chat/api
-CHAT_STORAGE_DIR=$PWD/.storage uv run uvicorn chat.main:app --host 0.0.0.0 --port 23456
-
-# Chat 前端（另开终端）
-cd services/chat/web && npm install && npm run dev
-
-# Robot API（仓库根目录）
-uv run python -m robot.main \
-  --host 127.0.0.1 --port 23457 \
-  --chat-api-base-url http://127.0.0.1:23456/api
-
-# Robot Worker
-uv run python -m robot.worker \
-  --chat-api-base-url http://127.0.0.1:23456/api \
-  --request-timeout 120
-
-# Robot 前端
-cd frontend && npm install && npm run dev
-```
-
-蒸馏也可以脱离 worker 直接跑（调试用）：
-
-```bash
-uv run python -m robot.distill.pipeline \
-  --operator-id op_xxxxxxxx --request-timeout 120
-```
-
----
-
-## 持久化
-
-两个项目各自有独立的 storage：
-
-- **Chat**：`services/chat/` 部署起来后，`chat-storage` docker volume（compose 里定义），里面是 `chat.db` + 附件。
-- **Robot**：仓库根目录 `storage/`（docker bind-mount），里面是 `robot.db` + `uploads/{operator_id}/{archive_id}.json`（上传的 WeFlow 原始文件，保留以便未来 prompt 改动后重蒸）。
 
 ---
 
 ## 设计备注
 
-- **「微信模拟器」是关键设计**：上传聊天记录时，**双写**到 robot.db（蒸馏用）和 chat.db（调试用），调试场景和真实微信场景代码路径完全同构。未来接微信只是换一个 Adapter，业务逻辑零改动。
-- **三原语严格分离**：Operator 的人设和 Contact 的卡片是不同生命周期的资产，不要把它们塞进 Session。Session 只是 (Contact × adapter thread) 的连接器。
-- **故障恢复天然**：Worker 重启后扫 active sessions 重建即可，无需任务表。Session Loop 启动取当前 `last_id` 自然跳过 backlog（包括 ingest bulk-import 的历史）。
-- **蒸馏的产出是非对称的**：一份 Operator Persona 全 Operator 共享，N 份 Contact Card 各属各的粉丝。fold prompt（[robot/distill/prompts/fold.md](robot/distill/prompts/fold.md)）按这个形态写。
-- **目前未实现 / 未来再做**：search-tool（基于 corpus 的事实召回）、Playbook（按场景定制 SYSTEM_INSTRUCTION）、增量蒸馏、多 adapter（真实微信 / 企微 / 飞书）。
+- **Robot ↔ 平台之间不再直连**：早期 Robot 直接调 Chat 的接口（创建 chat user / bulk-import / poll），实质把 Chat 当成"微信模拟器"。这条路在重构中已经全部下线，未来由 B 桥接。
+- **三原语严格分离**：Character 的人设和 Contact 的卡片是不同生命周期的资产。Robot 现在没有 Session 表，连接器逻辑全部移交 B。
+- **蒸馏的产出是非对称的**：一份 Character Persona 全 Character 共享，N 份 Contact Card 各属各的粉丝。fold prompt（[services/robot/api/robot/distill/prompts/fold.md](services/robot/api/robot/distill/prompts/fold.md)）按这个形态写。
+- **目前未实现 / 未来再做**：B（本地客户端）、live reply 链路、search-tool（基于 corpus 的事实召回）、Playbook、增量蒸馏、多 adapter（真实微信 / 企微 / 飞书）。

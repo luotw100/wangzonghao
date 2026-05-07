@@ -1,0 +1,12 @@
+[project]
+name = "laborster-robot"
+version = "0.1.0"
+description = "Laborster Robot — independent character / persona / distill service"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.135.3",
+    "sqlalchemy>=2.0.49",
+    "uvicorn>=0.44.0",
+    "httpx>=0.27.0",
+    "python-multipart>=0.0.26",
+]

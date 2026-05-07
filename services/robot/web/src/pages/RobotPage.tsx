@@ -92,7 +92,7 @@ export function RobotPage() {
       <main style={{ flex: 1, overflow: 'auto', padding: '20px 22px' }}>
         {tab === 'inboxes' && (
           <InboxesView
-            inboxes={inboxes} personas={personas}
+            inboxes={inboxes} personas={personas} providers={providers}
             onChanged={loadAll} setError={setError}
             onTokenIssued={(ib) => setTokenJustIssued({ inbox: ib })}
           />
@@ -118,9 +118,10 @@ function tabLabel(t: Tab): string {
 // Inboxes view
 // ---------------------------------------------------------------------------
 
-function InboxesView({ inboxes, personas, onChanged, setError, onTokenIssued }: {
+function InboxesView({ inboxes, personas, providers, onChanged, setError, onTokenIssued }: {
   inboxes: Inbox[];
   personas: Persona[];
+  providers: ProviderConfig[];
   onChanged: () => void;
   setError: (s: string) => void;
   onTokenIssued: (ib: InboxWithToken) => void;
@@ -149,7 +150,7 @@ function InboxesView({ inboxes, personas, onChanged, setError, onTokenIssued }: 
                     {!ib.enabled && <span className="chip warn">disabled</span>}
                   </div>
                   <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
-                    self: {ib.platform_self_id || '—'} · host: {ib.hostname || '—'} · default persona: {personaName(personas, ib.default_persona_id)}
+                    self: {ib.platform_self_id || '—'} · host: {ib.hostname || '—'} · default persona: {personaName(personas, ib.default_persona_id)} · reply provider: {providerName(providers, ib.reply_provider_config_id)}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
@@ -188,6 +189,7 @@ function InboxesView({ inboxes, personas, onChanged, setError, onTokenIssued }: 
       {showCreate && (
         <CreateInboxModal
           personas={personas}
+          providers={providers}
           onClose={() => setShowCreate(false)}
           onCreated={(ib) => { setShowCreate(false); onTokenIssued(ib); onChanged(); }}
           setError={setError}
@@ -195,6 +197,11 @@ function InboxesView({ inboxes, personas, onChanged, setError, onTokenIssued }: 
       )}
     </div>
   );
+}
+
+function providerName(providers: ProviderConfig[], id: string | null): string {
+  if (!id) return '未绑定';
+  return providers.find(p => p.id === id)?.name || id;
 }
 
 function StatusDot({ status }: { status: Inbox['b_status'] }) {
@@ -238,8 +245,9 @@ function InboxContacts({ inboxId, personas, setError, onChanged }: { inboxId: st
   );
 }
 
-function CreateInboxModal({ personas, onClose, onCreated, setError }: {
+function CreateInboxModal({ personas, providers, onClose, onCreated, setError }: {
   personas: Persona[];
+  providers: ProviderConfig[];
   onClose: () => void;
   onCreated: (ib: InboxWithToken) => void;
   setError: (s: string) => void;
@@ -247,6 +255,7 @@ function CreateInboxModal({ personas, onClose, onCreated, setError }: {
   const [platform, setPlatform] = useState('chat');
   const [displayName, setDisplayName] = useState('');
   const [defaultPersonaId, setDefaultPersonaId] = useState(personas[0]?.id ?? '');
+  const [replyProviderId, setReplyProviderId] = useState<string>('');
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
   const handle = async () => {
@@ -257,6 +266,7 @@ function CreateInboxModal({ personas, onClose, onCreated, setError }: {
         platform: platform.trim(),
         display_name: displayName.trim(),
         default_persona_id: defaultPersonaId,
+        reply_provider_config_id: replyProviderId || null,
         enabled,
       });
       onCreated(ib);
@@ -278,6 +288,12 @@ function CreateInboxModal({ personas, onClose, onCreated, setError }: {
       <FormField label="默认人设">
         <select value={defaultPersonaId} onChange={e => setDefaultPersonaId(e.target.value)} className="select">
           {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+      </FormField>
+      <FormField label="自动回复用的 Provider (可空)">
+        <select value={replyProviderId} onChange={e => setReplyProviderId(e.target.value)} className="select">
+          <option value="">（不绑定，autoreply 不会触发）</option>
+          {providers.map(p => <option key={p.id} value={p.id}>{p.name} ({p.default_model})</option>)}
         </select>
       </FormField>
       <FormField label="">

@@ -97,19 +97,20 @@ class Persona(Base):
 class Inbox(Base):
     __tablename__ = "inboxes"
 
-    id                  = Column(String, primary_key=True, index=True)
-    account_id          = Column(String, ForeignKey("accounts.id"), nullable=False, index=True)
-    platform            = Column(String, nullable=False)       # 'chat' | 'wechat' | ...
-    display_name        = Column(String, nullable=False)
-    default_persona_id  = Column(String, ForeignKey("personas.id"), nullable=False)
-    enabled             = Column(Boolean, nullable=False)      # master switch
-    platform_self_id    = Column(String, nullable=True)        # B reports on handshake
-    hostname            = Column(String, nullable=True)        # B reports on handshake
-    b_token_hash        = Column(String, nullable=False, unique=True, index=True)
-    b_status            = Column(String, nullable=False)       # 'paired_pending'|'online'|'offline'|'revoked'
-    last_seen_at        = Column(DateTime, nullable=True)
-    created_at          = Column(DateTime, nullable=False)
-    updated_at          = Column(DateTime, nullable=False)
+    id                       = Column(String, primary_key=True, index=True)
+    account_id               = Column(String, ForeignKey("accounts.id"), nullable=False, index=True)
+    platform                 = Column(String, nullable=False)       # 'chat' | 'wechat' | ...
+    display_name             = Column(String, nullable=False)
+    default_persona_id       = Column(String, ForeignKey("personas.id"), nullable=False)
+    reply_provider_config_id = Column(String, ForeignKey("provider_configs.id"), nullable=True)
+    enabled                  = Column(Boolean, nullable=False)      # master switch
+    platform_self_id         = Column(String, nullable=True)        # B reports on handshake
+    hostname                 = Column(String, nullable=True)        # B reports on handshake
+    b_token_hash             = Column(String, nullable=False, unique=True, index=True)
+    b_status                 = Column(String, nullable=False)       # 'paired_pending'|'online'|'offline'|'revoked'
+    last_seen_at             = Column(DateTime, nullable=True)
+    created_at               = Column(DateTime, nullable=False)
+    updated_at               = Column(DateTime, nullable=False)
 
 
 # ---------------------------------------------------------------------------
@@ -129,6 +130,7 @@ class Contact(Base):
     card_md                     = Column(Text, nullable=True)
     persona_id                  = Column(String, ForeignKey("personas.id"), nullable=False)
     autoreply_enabled           = Column(Boolean, nullable=False)
+    pending_reply               = Column(Boolean, nullable=False)   # set true when new counterpart msg lands; ReplyScanner clears
     status                      = Column(String, nullable=False)   # 'active' | 'archived'
     last_seen_platform_msg_id   = Column(String, nullable=True)
     created_at                  = Column(DateTime, nullable=False)

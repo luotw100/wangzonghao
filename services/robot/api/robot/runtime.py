@@ -1,8 +1,17 @@
-"""Robot worker runtime — distill scanner only.
+"""Robot worker runtime.
 
-The session-loop / chat-poll path is intentionally absent: live reply is the
-responsibility of the future B (local-client bridge), not Robot. Robot only
-runs distillation jobs in the background.
+Two scanners run side-by-side:
+- DistillScanner: picks up DistillJob rows in 'pending' state and runs the
+  rolling fold pipeline.
+- ReplyScanner: picks up Contacts with pending_reply=True, gates them
+  through robot.reply._decide(), and (if all gates pass + quiet-period
+  elapsed) calls the LLM and queues outbound chunks.
+
+Both scanners are simple poll loops (5s tick); concurrency is bounded by
+in-flight task dictionaries to avoid double-processing the same row.
+
+Robot does not hold any long-lived platform connection. Live message I/O
+is the Bridge daemon's job; runtime only reads/writes robot.db.
 """
 
 import asyncio
@@ -11,9 +20,11 @@ from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
+from robot.clients import ProviderClient
 from robot.db import SessionLocal, utc_now
 from robot.distill.pipeline import run_distill
 from robot.models import DistillJob
+from robot.reply import list_pending_contact_ids, maybe_reply
 
 logger = logging.getLogger(__name__)
 
@@ -28,24 +39,38 @@ class RobotRuntime:
         self.options = options
         self._distill_scanner_task: Optional[asyncio.Task[Any]] = None
         self._distill_tasks: Dict[str, asyncio.Task[Any]] = {}
+        self._reply_scanner_task: Optional[asyncio.Task[Any]] = None
+        self._reply_tasks: Dict[str, asyncio.Task[Any]] = {}
+        self._reply_provider: Optional[ProviderClient] = None
 
     async def start(self):
         loop = asyncio.get_running_loop()
+        self._reply_provider = ProviderClient(request_timeout=self.options.request_timeout)
         self._distill_scanner_task = loop.create_task(
             self._distill_scanner_loop(), name="distill-scanner"
         )
+        self._reply_scanner_task = loop.create_task(
+            self._reply_scanner_loop(), name="reply-scanner"
+        )
 
     async def stop(self):
-        if self._distill_scanner_task:
-            self._distill_scanner_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._distill_scanner_task
-        for task in list(self._distill_tasks.values()):
+        for t in (self._distill_scanner_task, self._reply_scanner_task):
+            if t:
+                t.cancel()
+                with suppress(asyncio.CancelledError):
+                    await t
+        in_flight = list(self._distill_tasks.values()) + list(self._reply_tasks.values())
+        for task in in_flight:
             task.cancel()
-        for task in list(self._distill_tasks.values()):
+        for task in in_flight:
             with suppress(asyncio.CancelledError):
                 await task
         self._distill_tasks.clear()
+        self._reply_tasks.clear()
+        if self._reply_provider:
+            await self._reply_provider.close()
+
+    # --- Distill --------------------------------------------------------
 
     async def _distill_scanner_loop(self):
         while True:
@@ -144,3 +169,34 @@ class RobotRuntime:
                 db.commit()
         finally:
             db.close()
+
+    # --- Reply ----------------------------------------------------------
+
+    async def _reply_scanner_loop(self):
+        while True:
+            try:
+                pending = list_pending_contact_ids()
+                # Reap finished tasks
+                for cid in list(self._reply_tasks.keys()):
+                    if self._reply_tasks[cid].done():
+                        del self._reply_tasks[cid]
+                for cid in pending:
+                    if cid in self._reply_tasks:
+                        continue
+                    self._reply_tasks[cid] = asyncio.get_running_loop().create_task(
+                        self._run_reply(cid), name=f"reply-{cid}"
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error("Reply scanner error: %s", exc)
+
+            await asyncio.sleep(2)
+
+    async def _run_reply(self, contact_id: str):
+        try:
+            assert self._reply_provider is not None
+            status = await maybe_reply(self._reply_provider, contact_id)
+            logger.info("Reply [%s] %s", contact_id, status)
+        except Exception as exc:
+            logger.error("Reply task for %s crashed: %s", contact_id, exc)

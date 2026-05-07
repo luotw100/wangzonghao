@@ -156,6 +156,7 @@ def s_inbox(i: Inbox) -> Dict[str, Any]:
     return {
         "id": i.id, "account_id": i.account_id, "platform": i.platform,
         "display_name": i.display_name, "default_persona_id": i.default_persona_id,
+        "reply_provider_config_id": i.reply_provider_config_id,
         "enabled": i.enabled, "platform_self_id": i.platform_self_id,
         "hostname": i.hostname, "b_status": i.b_status,
         "last_seen_at": i.last_seen_at,
@@ -168,6 +169,7 @@ def s_contact(c: Contact) -> Dict[str, Any]:
         "id": c.id, "inbox_id": c.inbox_id, "peer_platform_id": c.peer_platform_id,
         "display_name": c.display_name, "card_md": c.card_md,
         "persona_id": c.persona_id, "autoreply_enabled": c.autoreply_enabled,
+        "pending_reply": c.pending_reply,
         "status": c.status, "last_seen_platform_msg_id": c.last_seen_platform_msg_id,
         "created_at": c.created_at, "updated_at": c.updated_at,
     }
@@ -192,9 +194,10 @@ def s_distill_job(j: DistillJob) -> Dict[str, Any]:
     }
 
 
-def s_outbound(o: OutboundMessage) -> Dict[str, Any]:
+def s_outbound(o: OutboundMessage, peer_platform_id: Optional[str] = None) -> Dict[str, Any]:
     return {
         "id": o.id, "seq": o.seq, "inbox_id": o.inbox_id, "contact_id": o.contact_id,
+        "peer_platform_id": peer_platform_id,
         "chunks": o.chunks, "status": o.status, "created_at": o.created_at,
         "delivered_at": o.delivered_at, "failed_reason": o.failed_reason,
     }
@@ -414,13 +417,17 @@ def list_inboxes(db: DbDep, account: CurrentAccountDep):
 
 @app.post("/api/inboxes")
 def create_inbox(payload: InboxCreate, db: DbDep, account: CurrentAccountDep):
-    get_account_persona(db, account.id, payload.default_persona_id)  # validate
+    get_account_persona(db, account.id, payload.default_persona_id)
+    if payload.reply_provider_config_id is not None:
+        get_account_provider(db, account.id, payload.reply_provider_config_id)
     now = utc_now()
     raw_token = new_session_token()
     inbox = Inbox(
         id=new_id("ib"), account_id=account.id,
         platform=payload.platform, display_name=payload.display_name,
-        default_persona_id=payload.default_persona_id, enabled=payload.enabled,
+        default_persona_id=payload.default_persona_id,
+        reply_provider_config_id=payload.reply_provider_config_id,
+        enabled=payload.enabled,
         platform_self_id=None, hostname=None,
         b_token_hash=hash_token(raw_token), b_status="paired_pending",
         last_seen_at=None, created_at=now, updated_at=now,
@@ -429,7 +436,7 @@ def create_inbox(payload: InboxCreate, db: DbDep, account: CurrentAccountDep):
     db.commit()
     db.refresh(inbox)
     payload_out = s_inbox(inbox)
-    payload_out["b_token"] = raw_token  # only returned on creation
+    payload_out["b_token"] = raw_token
     return payload_out
 
 
@@ -447,6 +454,11 @@ def update_inbox(inbox_id: str, payload: InboxUpdate, db: DbDep, account: Curren
     if "default_persona_id" in fields and payload.default_persona_id is not None:
         get_account_persona(db, account.id, payload.default_persona_id)
         inbox.default_persona_id = payload.default_persona_id
+    if "reply_provider_config_id" in fields and payload.reply_provider_config_id is not None:
+        get_account_provider(db, account.id, payload.reply_provider_config_id)
+        inbox.reply_provider_config_id = payload.reply_provider_config_id
+    if payload.clear_reply_provider:
+        inbox.reply_provider_config_id = None
     if "enabled" in fields and payload.enabled is not None:
         inbox.enabled = payload.enabled
     inbox.updated_at = utc_now()
@@ -514,7 +526,7 @@ def seed_outbound(inbox_id: str, payload: OutboundCreate, db: DbDep, account: Cu
     db.add(o)
     db.commit()
     db.refresh(o)
-    return s_outbound(o)
+    return s_outbound(o, peer_platform_id=contact.peer_platform_id)
 
 
 # ---------------------------------------------------------------------------
@@ -695,6 +707,7 @@ def bridge_incoming(payload: BridgeIncomingBatch, db: DbDep, inbox: BridgeInboxD
                 card_md=None,
                 persona_id=inbox.default_persona_id,
                 autoreply_enabled=False,
+                pending_reply=False,
                 status="active",
                 last_seen_platform_msg_id=None,
                 created_at=now, updated_at=now,
@@ -719,6 +732,14 @@ def bridge_incoming(payload: BridgeIncomingBatch, db: DbDep, inbox: BridgeInboxD
         ))
         contact.last_seen_platform_msg_id = m.platform_msg_id
         contact.updated_at = now
+        # Trigger reply only on counterpart messages, when both inbox-level
+        # and contact-level autoreply are enabled. Worker decides timing.
+        if (
+            m.role == "counterpart"
+            and inbox.enabled
+            and contact.autoreply_enabled
+        ):
+            contact.pending_reply = True
         accepted += 1
     inbox.last_seen_at = now
     db.commit()
@@ -746,7 +767,12 @@ async def bridge_outbound(
                 .limit(50)
                 .all()
             )
-            payload = [s_outbound(o) for o in rows]
+            contact_ids = list({o.contact_id for o in rows})
+            peer_map: Dict[str, str] = {}
+            if contact_ids:
+                peers = db.query(Contact.id, Contact.peer_platform_id).filter(Contact.id.in_(contact_ids)).all()
+                peer_map = {cid: peer for cid, peer in peers}
+            payload = [s_outbound(o, peer_platform_id=peer_map.get(o.contact_id)) for o in rows]
         finally:
             db.close()
         if payload:

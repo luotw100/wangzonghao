@@ -111,6 +111,7 @@ export interface Inbox {
   platform: string;
   display_name: string;
   default_persona_id: string;
+  reply_provider_config_id: string | null;
   enabled: boolean;
   platform_self_id: string | null;
   hostname: string | null;
@@ -133,6 +134,7 @@ export interface Contact {
   card_md: string | null;
   persona_id: string;
   autoreply_enabled: boolean;
+  pending_reply: boolean;
   status: 'active' | 'archived';
   last_seen_platform_msg_id: string | null;
   created_at: string;
@@ -271,6 +273,7 @@ export function createInbox(data: {
   platform: string;
   display_name: string;
   default_persona_id: string;
+  reply_provider_config_id: string | null;
   enabled: boolean;
 }) {
   return request<InboxWithToken>('/inboxes', {
@@ -282,7 +285,13 @@ export function createInbox(data: {
 
 export function updateInbox(
   id: string,
-  data: { display_name?: string; default_persona_id?: string; enabled?: boolean }
+  data: {
+    display_name?: string;
+    default_persona_id?: string;
+    reply_provider_config_id?: string;
+    clear_reply_provider?: boolean;
+    enabled?: boolean;
+  }
 ) {
   return request<Inbox>(`/inboxes/${id}`, {
     method: 'PUT',

@@ -50,13 +50,16 @@ class InboxCreate(StrictModel):
     platform: str
     display_name: str
     default_persona_id: str
+    reply_provider_config_id: Optional[str]
     enabled: bool
 
 
 class InboxUpdate(StrictModel):
     display_name: Optional[str] = None
     default_persona_id: Optional[str] = None
+    reply_provider_config_id: Optional[str] = None
     enabled: Optional[bool] = None
+    clear_reply_provider: Optional[bool] = None  # explicit way to set the FK back to null
 
 
 # --- Contacts ---

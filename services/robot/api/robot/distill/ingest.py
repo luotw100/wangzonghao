@@ -86,6 +86,7 @@ def _ensure_contact(
         card_md=None,
         persona_id=inbox.default_persona_id,
         autoreply_enabled=False,
+        pending_reply=False,
         status="active",
         last_seen_platform_msg_id=None,
         created_at=now, updated_at=now,

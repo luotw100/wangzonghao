@@ -1,0 +1,31 @@
+# Bridge daemon compose — meant to run on the streamer's PC.
+#
+# For local dev we point at chat / robot via host.docker.internal. In
+# production each B instance lives wherever the platform login lives
+# (e.g. the same PC as the streamer's WeChat).
+#
+# Required environment variables (typically in a .env file next to this):
+#   ROBOT_URL=http://host.docker.internal:23457
+#   BRIDGE_TOKEN=<paste from Robot UI when adding the inbox>
+#   BRIDGE_HOSTNAME=alice-mbp
+#   PLATFORM=chat
+#   CHAT_BASE_URL=http://host.docker.internal:23458
+#   CHAT_USERNAME=alice
+#   CHAT_PASSWORD=...
+
+services:
+  bridge:
+    build:
+      context: .
+    environment:
+      ROBOT_URL: ${ROBOT_URL:?ROBOT_URL is required}
+      BRIDGE_TOKEN: ${BRIDGE_TOKEN:?BRIDGE_TOKEN is required}
+      BRIDGE_HOSTNAME: ${BRIDGE_HOSTNAME:-bridge-host}
+      PLATFORM: ${PLATFORM:-chat}
+      CHAT_BASE_URL: ${CHAT_BASE_URL:-http://host.docker.internal:23458}
+      CHAT_USERNAME: ${CHAT_USERNAME:?CHAT_USERNAME is required}
+      CHAT_PASSWORD: ${CHAT_PASSWORD:?CHAT_PASSWORD is required}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

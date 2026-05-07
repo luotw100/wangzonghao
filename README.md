@@ -21,10 +21,11 @@ Laborster 是一个**通用拟人化私聊接管服务**：让 AI 替主播 / �
 | **B** | 跑在主播 PC 上的桥接 daemon | 接管一个平台号、收发消息、模拟打字、缓存离线 | 不调 LLM、不存人设、不蒸馏 |
 | **C** | 云端服务（本仓库的 robot） | 人设 / 卡片管理、蒸馏、生成回复、把待发回复排进 outbound 队列 | 不直连任何平台 |
 
-仓库结构里两个独立项目：
+仓库结构里**三个独立项目**：
 
 - [services/chat/](services/chat/) — Chat sandbox（充当 A 的可控版本，方便 dogfood 整条链路）
-- [services/robot/](services/robot/) — Robot (C)。Bridge (B) 单独项目，等 chat 协议跑通后再加 [services/bridge/]
+- [services/robot/](services/robot/) — Robot (C)
+- [services/bridge/](services/bridge/) — Bridge daemon (B)。本来跑在主播 PC 上，dev 时也可在本机跑
 
 ---
 
@@ -105,6 +106,38 @@ docker compose exec -T robot-api uv run python -m robot.cli create-account \
 5. 「聊天档案」tab → 上传 WeFlow JSON（指明哪个 wxid 是"我" + 落地到哪个接管号）
 6. 「蒸馏」tab → 选 接管号 + 目标人设 + Provider → 开蒸 → 后台会更新 persona 和每个 contact 的卡片
 
+### Bridge daemon（独立项目）
+
+Bridge 是接管号对应的本地 daemon。一个 B = 一个 (人 / 平台号) 对。每次新建一个接管号，Robot 后台会一次性显示 token，复制到本地后启动：
+
+```bash
+cd services/bridge
+ROBOT_URL=http://localhost:23457 \
+BRIDGE_TOKEN=<从 Robot 后台复制> \
+BRIDGE_HOSTNAME=alice-mbp \
+PLATFORM=chat \
+CHAT_BASE_URL=http://localhost:23458 \
+CHAT_USERNAME=alice \
+CHAT_PASSWORD=Alice123 \
+  uv run python -m bridge.main
+```
+
+或 docker：
+
+```bash
+cd services/bridge
+# 把上面的环境变量写入 .env，然后：
+docker compose up --build
+```
+
+跑起来后 Bridge 会：
+1. 用 chat 账号 (`CHAT_USERNAME` / `CHAT_PASSWORD`) 登录 Chat sandbox（platform A）
+2. 用 `BRIDGE_TOKEN` 跟 Robot 握手，把所属 inbox 状态切到 online
+3. 长轮询 chat 的所有会话 → 实时推到 Robot 的 `/api/bridge/incoming`
+4. 长轮询 Robot 的 `/api/bridge/outbound` → 调用 chat 发消息（按字数模拟打字延迟）
+
+Robot worker 那边的 ReplyScanner 看到 contact.pending_reply=true 时就会调 LLM、写 outbound chunks，整条链路自动闭环。
+
 ### 账号 CLI
 
 ```bash
@@ -142,12 +175,12 @@ cd services/robot/web && npm install && npm run dev
 ## 现状
 
 - ✅ Chat sandbox 完整可用
-- ✅ Robot 后端：账号 / Persona / Inbox / Contact / Archive / Distill 全部齐
-- ✅ Robot 后端：Bridge 协议骨架（handshake / heartbeat / incoming / outbound long-poll / ack）
-- ✅ Robot 前端：5 个 tab 的最小 CRUD UI
-- ⏳ Bridge daemon (B) 本身：未开始（下一步）
-- ⏳ Reply LLM brain（接 B 的 incoming → 写 outbound）：未开始
-- ⏳ 真微信 adapter：等 chat sandbox 路径全部跑通之后再加
+- ✅ Robot 后端：账号 / Persona / Inbox / Contact / Archive / Distill 全齐
+- ✅ Bridge 协议（handshake / heartbeat / incoming / outbound long-poll / ack）
+- ✅ Reply LLM brain：ReplyScanner + 静默期防抖 + chunks 写 outbound
+- ✅ Bridge daemon (B)：services/bridge/，含 chat sandbox adapter
+- ✅ Robot 前端：5 个 tab 的最小 CRUD UI（含 reply provider 绑定）
+- ⏳ 真微信 adapter：等 chat sandbox 路径线上跑稳定之后再加
 
 ---
 

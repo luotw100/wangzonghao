@@ -3,7 +3,7 @@ services:
     build:
       context: ./web
     ports:
-      - "${ROBOT_HTTP_PORT:?ROBOT_HTTP_PORT is required}:23457"
+      - 23457:23457
     volumes:
       - ./storage:/app/storage:ro
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro

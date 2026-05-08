@@ -23,7 +23,6 @@ from dataclasses import dataclass
 from datetime import timedelta
 from typing import Dict, List, Optional
 
-from sqlalchemy import func
 from sqlalchemy.orm import Session as ORMSession
 
 from studio.clients import ProviderClient
@@ -205,15 +204,6 @@ def _parse_chunks(raw: str) -> List[str]:
     return out
 
 
-def _next_seq(db: ORMSession, inbox_id: str) -> int:
-    last = (
-        db.query(func.max(OutboundMessage.seq))
-        .filter(OutboundMessage.inbox_id == inbox_id)
-        .scalar()
-    )
-    return (last or 0) + 1
-
-
 async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
     """Run one reply attempt for one contact. Returns a short status string for logging."""
     # Phase 1: decide (read-only)
@@ -290,10 +280,7 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
             return "contact gone"
 
         if chunks:
-            seq = _next_seq(db, ctx.inbox_id)
             ob = OutboundMessage(
-                id=f"ob_{ctx.contact_id[-6:]}_{seq:05d}",
-                seq=seq,
                 inbox_id=ctx.inbox_id,
                 contact_id=ctx.contact_id,
                 chunks=[{"content": ch, "msg_type": "text"} for ch in chunks],

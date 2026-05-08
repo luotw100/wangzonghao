@@ -126,7 +126,7 @@ export interface Inbox {
   bridge_id: string | null;
   platform: string;
   display_name: string;
-  default_persona_id: string;
+  default_persona_id: string | null;
   reply_provider_config_id: string | null;
   enabled: boolean;
   platform_self_id: string | null;
@@ -140,7 +140,7 @@ export interface Contact {
   peer_platform_id: string;
   display_name: string;
   card_md: string | null;
-  persona_id: string;
+  persona_id: string | null;
   autoreply_enabled: boolean;
   pending_reply: boolean;
   status: 'active' | 'archived';
@@ -158,6 +158,26 @@ export interface Archive {
   message_count: number;
   contact_count: number;
   uploaded_at: string;
+}
+
+export interface Message {
+  id: number;
+  contact_id: string;
+  archive_id: string | null;
+  external_id: string;
+  source: 'archive' | 'live';
+  role: 'self' | 'counterpart';
+  sender_name: string | null;
+  content: string;
+  timestamp: string;
+  created_at: string;
+}
+
+export interface ConversationSummary {
+  contact: Contact;
+  inbox: Inbox;
+  latest_message: Message | null;
+  message_count: number;
 }
 
 export interface DistillJobProgress {
@@ -286,7 +306,7 @@ export function getInbox(id: string) { return request<Inbox>(`/inboxes/${id}`); 
 export function createInbox(data: {
   platform: string;
   display_name: string;
-  default_persona_id: string;
+  default_persona_id: string | null;
   bridge_id: string | null;
   reply_provider_config_id: string | null;
   enabled: boolean;
@@ -326,6 +346,12 @@ export function getInboxContacts(id: string) {
 
 export function getContact(contactId: string) {
   return request<Contact>(`/contacts/${contactId}`);
+}
+export function getConversations() {
+  return request<ConversationSummary[]>('/conversations');
+}
+export function getContactMessages(contactId: string, limit = 200) {
+  return request<Message[]>(`/contacts/${contactId}/messages?limit=${limit}`);
 }
 export function updateContact(
   contactId: string,

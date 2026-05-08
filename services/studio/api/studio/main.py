@@ -184,6 +184,15 @@ def s_contact(c: Contact) -> Dict[str, Any]:
     }
 
 
+def s_message(m: Message) -> Dict[str, Any]:
+    return {
+        "id": m.id, "contact_id": m.contact_id, "archive_id": m.archive_id,
+        "external_id": m.external_id, "source": m.source, "role": m.role,
+        "sender_name": m.sender_name, "content": m.content,
+        "timestamp": m.timestamp, "created_at": m.created_at,
+    }
+
+
 def s_archive(a: Archive) -> Dict[str, Any]:
     return {
         "id": a.id, "account_id": a.account_id, "inbox_id": a.inbox_id,
@@ -498,7 +507,8 @@ def list_inboxes(db: DbDep, account: CurrentAccountDep):
 
 @app.post("/api/inboxes")
 def create_inbox(payload: InboxCreate, db: DbDep, account: CurrentAccountDep):
-    get_account_persona(db, account.id, payload.default_persona_id)
+    if payload.default_persona_id is not None:
+        get_account_persona(db, account.id, payload.default_persona_id)
     if payload.bridge_id is not None:
         get_account_bridge(db, account.id, payload.bridge_id)
     if payload.reply_provider_config_id is not None:
@@ -592,6 +602,58 @@ def seed_outbound(inbox_id: str, payload: OutboundCreate, db: DbDep, account: Cu
 @app.get("/api/contacts/{contact_id}")
 def get_contact(contact_id: str, db: DbDep, account: CurrentAccountDep):
     return s_contact(get_account_contact(db, account.id, contact_id))
+
+
+@app.get("/api/conversations")
+def list_conversations(db: DbDep, account: CurrentAccountDep):
+    rows = (
+        db.query(Contact, Inbox)
+        .join(Inbox, Inbox.id == Contact.inbox_id)
+        .filter(Inbox.account_id == account.id)
+        .all()
+    )
+    out: List[Dict[str, Any]] = []
+    for contact, inbox in rows:
+        latest = (
+            db.query(Message)
+            .filter(Message.contact_id == contact.id)
+            .order_by(Message.timestamp.desc(), Message.id.desc())
+            .first()
+        )
+        message_count = db.query(Message).filter(Message.contact_id == contact.id).count()
+        out.append({
+            "contact": s_contact(contact),
+            "inbox": s_inbox(inbox),
+            "latest_message": s_message(latest) if latest else None,
+            "message_count": message_count,
+        })
+    out.sort(
+        key=lambda item: (
+            item["latest_message"]["timestamp"] if item["latest_message"] else item["contact"]["updated_at"],
+            item["contact"]["id"],
+        ),
+        reverse=True,
+    )
+    return out
+
+
+@app.get("/api/contacts/{contact_id}/messages")
+def list_contact_messages(
+    contact_id: str,
+    db: DbDep,
+    account: CurrentAccountDep,
+    limit: int = Query(200, ge=1, le=500),
+):
+    contact = get_account_contact(db, account.id, contact_id)
+    rows = (
+        db.query(Message)
+        .filter(Message.contact_id == contact.id)
+        .order_by(Message.timestamp.desc(), Message.id.desc())
+        .limit(limit)
+        .all()
+    )
+    rows.reverse()
+    return [s_message(m) for m in rows]
 
 
 @app.put("/api/contacts/{contact_id}")
@@ -722,7 +784,8 @@ def bridge_handshake(payload: BridgeHandshake, db: DbDep, bridge: BridgeDep):
 
     Bridge no longer claims inbox_id — it just reports which platform identities
     it successfully authenticated as. Studio looks up an existing Inbox or
-    creates one bound to this bridge with the account's first Persona as default.
+    creates one bound to this bridge. Persona/provider configuration is optional
+    at discovery time; auto-reply remains disabled until the user configures it.
     """
     now = utc_now()
     bridge.hostname = payload.hostname
@@ -756,20 +819,13 @@ def bridge_handshake(payload: BridgeHandshake, db: DbDep, bridge: BridgeDep):
             served.append(inbox)
             continue
 
-        if not default_persona:
-            logger.warning(
-                "bridge %s claimed (%s, %s) but account %s has no Persona; skipping",
-                bridge.id, claim.platform, claim.platform_self_id, bridge.account_id,
-            )
-            continue
-
         inbox = Inbox(
             id=new_id("ib"),
             account_id=bridge.account_id,
             bridge_id=bridge.id,
             platform=claim.platform,
             display_name=f"{claim.platform_self_id}@{claim.platform}",
-            default_persona_id=default_persona.id,
+            default_persona_id=default_persona.id if default_persona else None,
             reply_provider_config_id=None,
             enabled=True,
             platform_self_id=claim.platform_self_id,

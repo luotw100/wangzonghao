@@ -59,7 +59,7 @@ class BridgeUpdate(StrictModel):
 class InboxCreate(StrictModel):
     platform: str
     display_name: str
-    default_persona_id: str
+    default_persona_id: Optional[str]
     bridge_id: Optional[str]
     reply_provider_config_id: Optional[str]
     enabled: bool

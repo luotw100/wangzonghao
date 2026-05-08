@@ -6,14 +6,16 @@ import type {
   Bridge,
   BridgeWithToken,
   Contact,
+  ConversationSummary,
   DistillJob,
   Inbox,
+  Message,
   Persona,
   ProviderConfig,
 } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
-type Tab = 'bridges' | 'inboxes' | 'personas' | 'providers' | 'archives' | 'distill';
+type Tab = 'bridges' | 'inboxes' | 'conversations' | 'personas' | 'providers' | 'archives' | 'distill';
 
 export function StudioPage() {
   const navigate = useNavigate();
@@ -64,7 +66,7 @@ export function StudioPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span className="font-brand" style={{ fontSize: 18, color: 'var(--accent)' }}>Laborster Studio</span>
           <nav style={{ display: 'flex', gap: 8 }}>
-            {(['bridges', 'inboxes', 'personas', 'providers', 'archives', 'distill'] as Tab[]).map(t => (
+            {(['bridges', 'inboxes', 'conversations', 'personas', 'providers', 'archives', 'distill'] as Tab[]).map(t => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -107,6 +109,12 @@ export function StudioPage() {
             onChanged={loadAll} setError={setError}
           />
         )}
+        {tab === 'conversations' && (
+          <ConversationsView
+            personas={personas} providers={providers}
+            onChanged={loadAll} setError={setError}
+          />
+        )}
         {tab === 'personas' && <PersonasView personas={personas} onChanged={loadAll} setError={setError} />}
         {tab === 'providers' && <ProvidersView providers={providers} onChanged={loadAll} setError={setError} />}
         {tab === 'archives' && <ArchivesView archives={archives} inboxes={inboxes} onChanged={loadAll} setError={setError} />}
@@ -126,7 +134,7 @@ export function StudioPage() {
 
 function tabLabel(t: Tab): string {
   return ({
-    bridges: 'Bridges', inboxes: '接管号', personas: '人设',
+    bridges: 'Bridges', inboxes: '接管号', conversations: '会话', personas: '人设',
     providers: 'Provider', archives: '聊天档案', distill: '蒸馏',
   } as const)[t];
 }
@@ -400,8 +408,12 @@ function InboxCard({ inbox: ib, bridges, personas, providers, onChanged, setErro
         </div>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
           <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>默认人设
-            <select value={ib.default_persona_id} className="select" style={{ marginLeft: 6 }}
-                    onChange={async e => { try { await api.updateInbox(ib.id, { default_persona_id: e.target.value }); onChanged(); } catch (err) { setError(String(err)); } }}>
+            <select value={ib.default_persona_id ?? ''} className="select" style={{ marginLeft: 6 }}
+                    onChange={async e => {
+                      if (!e.target.value) return;
+                      try { await api.updateInbox(ib.id, { default_persona_id: e.target.value }); onChanged(); } catch (err) { setError(String(err)); }
+                    }}>
+              <option value="">（未选 → 新粉丝默认无人设）</option>
               {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </label>
@@ -433,17 +445,17 @@ function InboxCard({ inbox: ib, bridges, personas, providers, onChanged, setErro
           未选回复 Provider — 自动回复永远不会触发。
         </div>
       )}
-      <InboxContacts inboxId={ib.id} personas={personas} setError={setError} onChanged={onChanged} />
+      <InboxContacts inbox={ib} personas={personas} setError={setError} onChanged={onChanged} />
     </div>
   );
 }
 
-function InboxContacts({ inboxId, personas, setError, onChanged }: { inboxId: string; personas: Persona[]; setError: (s: string) => void; onChanged: () => void }) {
+function InboxContacts({ inbox, personas, setError, onChanged }: { inbox: Inbox; personas: Persona[]; setError: (s: string) => void; onChanged: () => void }) {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const reload = useCallback(() => {
-    api.getInboxContacts(inboxId).then(setContacts).catch(e => setError(String(e)));
-  }, [inboxId, setError]);
+    api.getInboxContacts(inbox.id).then(setContacts).catch(e => setError(String(e)));
+  }, [inbox.id, setError]);
   useEffect(() => { reload(); }, [reload]);
 
   if (contacts.length === 0) {
@@ -457,6 +469,7 @@ function InboxContacts({ inboxId, personas, setError, onChanged }: { inboxId: st
           key={c.id}
           contact={c}
           personas={personas}
+          inboxReady={inbox.enabled && Boolean(inbox.reply_provider_config_id)}
           expanded={expandedId === c.id}
           onToggle={() => setExpandedId(prev => prev === c.id ? null : c.id)}
           onChanged={() => { reload(); onChanged(); }}
@@ -467,9 +480,10 @@ function InboxContacts({ inboxId, personas, setError, onChanged }: { inboxId: st
   );
 }
 
-function ContactRow({ contact: c, personas, expanded, onToggle, onChanged, setError }: {
+function ContactRow({ contact: c, personas, inboxReady, expanded, onToggle, onChanged, setError }: {
   contact: Contact;
   personas: Persona[];
+  inboxReady: boolean;
   expanded: boolean;
   onToggle: () => void;
   onChanged: () => void;
@@ -493,14 +507,24 @@ function ContactRow({ contact: c, personas, expanded, onToggle, onChanged, setEr
         </span>
         <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
           人设
-          <select value={c.persona_id} className="select" style={{ minWidth: 110 }}
-                  onChange={async e => { try { await api.updateContact(c.id, { persona_id: e.target.value }); onChanged(); } catch (err) { setError(String(err)); } }}>
+          <select value={c.persona_id ?? ''} className="select" style={{ minWidth: 110 }}
+                  onChange={async e => {
+                    if (!e.target.value) return;
+                    try { await api.updateContact(c.id, { persona_id: e.target.value }); onChanged(); } catch (err) { setError(String(err)); }
+                  }}>
+            <option value="">（未选）</option>
             {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         </label>
         <label className="mono" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
           <input type="checkbox" checked={c.autoreply_enabled}
-                 onChange={async e => { try { await api.updateContact(c.id, { autoreply_enabled: e.target.checked }); onChanged(); } catch (err) { setError(String(err)); } }} />
+                 onChange={async e => {
+                   if (e.target.checked && (!inboxReady || !c.persona_id)) {
+                     setError('需要先给接管号选择 Provider，并给这个粉丝选择人设，才能开启自动回复。');
+                     return;
+                   }
+                   try { await api.updateContact(c.id, { autoreply_enabled: e.target.checked }); onChanged(); } catch (err) { setError(String(err)); }
+                 }} />
           自动回复
         </label>
       </div>
@@ -509,6 +533,11 @@ function ContactRow({ contact: c, personas, expanded, onToggle, onChanged, setEr
           <div className="ink-3" style={{ fontSize: 11 }}>
             平台 ID：<span className="mono">{c.peer_platform_id}</span>
           </div>
+          {(!inboxReady || !c.persona_id) && (
+            <div className="mono" style={{ fontSize: 11, color: 'var(--warn)' }}>
+              需要先给接管号选择 Provider，并给这个粉丝选择人设，才能开启自动回复。
+            </div>
+          )}
           <label className="ink-3" style={{ fontSize: 11 }}>关系卡（card_md）— 简单写下你跟这个人的关系，AI 回复时会读到</label>
           <textarea
             className="input mono"
@@ -534,6 +563,178 @@ function ContactRow({ contact: c, personas, expanded, onToggle, onChanged, setEr
       )}
     </div>
   );
+}
+
+// ---------------------------------------------------------------------------
+// Conversations
+// ---------------------------------------------------------------------------
+
+function ConversationsView({ personas, providers, onChanged, setError }: {
+  personas: Persona[];
+  providers: ProviderConfig[];
+  onChanged: () => void;
+  setError: (s: string) => void;
+}) {
+  const [items, setItems] = useState<ConversationSummary[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      const next = await api.getConversations();
+      setItems(next);
+      setSelectedId(prev => prev ?? next[0]?.contact.id ?? null);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [setError]);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  const selected = items.find(item => item.contact.id === selectedId) ?? null;
+  const inboxReady = Boolean(selected?.inbox.enabled && selected.inbox.reply_provider_config_id);
+
+  const reloadMessages = useCallback(async () => {
+    if (!selectedId) {
+      setMessages([]);
+      return;
+    }
+    try { setMessages(await api.getContactMessages(selectedId)); }
+    catch (e) { setError(String(e)); }
+  }, [selectedId, setError]);
+
+  useEffect(() => { reloadMessages(); }, [reloadMessages]);
+
+  const patchContact = async (contactId: string, patch: Parameters<typeof api.updateContact>[1]) => {
+    try {
+      await api.updateContact(contactId, patch);
+      await reload();
+      await reloadMessages();
+      onChanged();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  return (
+    <div>
+      <SectionHeader title="会话" hint="按接管号聚合所有粉丝会话。这里用于观察 channel 会话，并给单个粉丝开启/关闭接管。">
+        <button className="btn btn-sm btn-ghost" onClick={reload}>{loading ? '刷新中…' : '刷新'}</button>
+      </SectionHeader>
+      {items.length === 0 ? (
+        <Empty>还没有会话。Bridge 发现 chat 会话并推送第一批消息后，这里会自动出现。</Empty>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) minmax(0, 1fr)', gap: 12, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gap: 8 }}>
+            {items.map(item => (
+              <button
+                key={item.contact.id}
+                className="card"
+                onClick={() => setSelectedId(item.contact.id)}
+                style={{
+                  padding: 12,
+                  textAlign: 'left',
+                  borderColor: selectedId === item.contact.id ? 'var(--brass-line)' : 'var(--line-subtle)',
+                  background: selectedId === item.contact.id ? 'var(--brass-soft)' : 'var(--panel)',
+                }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                  <strong style={{ fontSize: 13 }}>{item.contact.display_name}</strong>
+                  <span className="chip muted">{item.message_count} 条</span>
+                </div>
+                <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
+                  {item.inbox.platform} · {item.inbox.platform_self_id || '—'}
+                </div>
+                <div className="ink-2" style={{ fontSize: 12, marginTop: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {item.latest_message ? `${item.latest_message.role === 'self' ? '我' : '对方'}：${item.latest_message.content}` : '暂无消息'}
+                </div>
+                <div className="mono ink-3" style={{ fontSize: 10, marginTop: 4 }}>
+                  {item.latest_message ? formatDateTime(item.latest_message.timestamp) : formatDateTime(item.contact.updated_at)}
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <div className="card" style={{ padding: 16, minHeight: 420 }}>
+            {!selected ? <Empty>请选择一个会话。</Empty> : (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', borderBottom: '1px solid var(--line-subtle)', paddingBottom: 12, marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{selected.contact.display_name}</div>
+                    <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
+                      {selected.inbox.display_name} · {selected.inbox.platform} · 粉丝 ID {selected.contact.peer_platform_id}
+                    </div>
+                    {!inboxReady && (
+                      <div className="mono" style={{ fontSize: 11, color: 'var(--warn)', marginTop: 6 }}>
+                        接管号未选择 Provider 或已停用；不会自动回复。
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>人设
+                      <select value={selected.contact.persona_id ?? ''} className="select" style={{ marginLeft: 6 }}
+                              onChange={e => { if (e.target.value) patchContact(selected.contact.id, { persona_id: e.target.value }); }}>
+                        <option value="">（未选）</option>
+                        {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                    </label>
+                    <label className="mono" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <input type="checkbox" checked={selected.contact.autoreply_enabled}
+                             onChange={e => {
+                               if (e.target.checked && (!inboxReady || !selected.contact.persona_id)) {
+                                 setError('需要先给接管号选择 Provider，并给这个粉丝选择人设，才能开启自动回复。');
+                                 return;
+                               }
+                               patchContact(selected.contact.id, { autoreply_enabled: e.target.checked });
+                             }} />
+                      自动回复
+                    </label>
+                    <span className="chip muted">Provider {providers.find(p => p.id === selected.inbox.reply_provider_config_id)?.name ?? '未选'}</span>
+                  </div>
+                </div>
+
+                {messages.length === 0 ? <Empty>暂无消息。</Empty> : (
+                  <div style={{ display: 'grid', gap: 8, maxHeight: '62dvh', overflow: 'auto', paddingRight: 4 }}>
+                    {messages.map(m => (
+                      <div key={m.id} style={{ display: 'flex', justifyContent: m.role === 'self' ? 'flex-end' : 'flex-start' }}>
+                        <div style={{ maxWidth: '76%' }}>
+                          <div className="mono ink-3" style={{ fontSize: 10, textAlign: m.role === 'self' ? 'right' : 'left', marginBottom: 3 }}>
+                            {m.role === 'self' ? '我' : selected.contact.display_name} · {formatDateTime(m.timestamp)} · {m.source}
+                          </div>
+                          <div style={{
+                            padding: '8px 10px',
+                            borderRadius: 12,
+                            background: m.role === 'self' ? 'var(--brass-soft)' : 'var(--panel-2)',
+                            border: '1px solid var(--line-subtle)',
+                            whiteSpace: 'pre-wrap',
+                            fontSize: 13,
+                            lineHeight: 1.5,
+                          }}>
+                            {m.content}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString();
 }
 
 // ---------------------------------------------------------------------------

@@ -122,7 +122,7 @@ class Inbox(Base):
     bridge_id                = Column(String, ForeignKey("bridges.id"), nullable=True, index=True)
     platform                 = Column(String, nullable=False)     # 'chat' | 'wechat' | ...
     display_name             = Column(String, nullable=False)
-    default_persona_id       = Column(String, ForeignKey("personas.id"), nullable=False)
+    default_persona_id       = Column(String, ForeignKey("personas.id"), nullable=True)
     reply_provider_config_id = Column(String, ForeignKey("provider_configs.id"), nullable=True)
     enabled                  = Column(Boolean, nullable=False)
     platform_self_id         = Column(String, nullable=True)        # Bridge reports per inbox on handshake
@@ -145,7 +145,7 @@ class Contact(Base):
     peer_platform_id            = Column(String, nullable=False)
     display_name                = Column(String, nullable=False)
     card_md                     = Column(Text, nullable=True)
-    persona_id                  = Column(String, ForeignKey("personas.id"), nullable=False)
+    persona_id                  = Column(String, ForeignKey("personas.id"), nullable=True)
     autoreply_enabled           = Column(Boolean, nullable=False)
     pending_reply               = Column(Boolean, nullable=False)
     status                      = Column(String, nullable=False)    # 'active' | 'archived'

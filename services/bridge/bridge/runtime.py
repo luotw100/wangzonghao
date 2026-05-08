@@ -113,7 +113,7 @@ class BridgeRuntime:
         )
 
         # 3) Bind each prelogged adapter to its assigned inbox_id; drop any
-        # that Studio refused (e.g. account has no Persona yet).
+        # that Studio refused because the identity is invalid for this account.
         loop = asyncio.get_running_loop()
         for claim, adapter, self_id in prelogged:
             assigned = served_by_key.get((claim.platform, self_id))

@@ -27,6 +27,7 @@ from studio.models import (
     Archive,
     AuthSession,
     Bridge,
+    BridgeSession,
     Contact,
     DistillJob,
     Inbox,
@@ -36,11 +37,9 @@ from studio.models import (
     ProviderConfig,
 )
 from studio.schemas import (
-    BridgeCreate,
     BridgeHandshake,
     BridgeIncomingBatch,
     BridgeOutboundAck,
-    BridgeUpdate,
     ContactUpdate,
     DistillJobCreate,
     InboxCreate,
@@ -109,9 +108,14 @@ def get_authed_bridge(
     authorization: Annotated[Optional[str], Header()] = None,
 ) -> Bridge:
     token = extract_bearer(authorization)
-    bridge = db.query(Bridge).filter(Bridge.token_hash == hash_token(token)).first()
-    if not bridge or bridge.status == "revoked":
+    session = db.query(BridgeSession).filter(BridgeSession.id == hash_token(token)).first()
+    if not session:
         raise HTTPException(status_code=401, detail="无效的 bridge 令牌")
+    bridge = db.query(Bridge).filter(Bridge.id == session.bridge_id).first()
+    if not bridge or bridge.status == "revoked":
+        raise HTTPException(status_code=401, detail="bridge 已被撤销")
+    session.last_seen_at = utc_now()
+    db.commit()
     return bridge
 
 
@@ -157,7 +161,7 @@ def s_persona(p: Persona) -> Dict[str, Any]:
 def s_bridge(b: Bridge) -> Dict[str, Any]:
     return {
         "id": b.id, "account_id": b.account_id, "display_name": b.display_name,
-        "status": b.status, "hostname": b.hostname, "last_seen_at": b.last_seen_at,
+        "hostname": b.hostname, "status": b.status, "last_seen_at": b.last_seen_at,
         "created_at": b.created_at, "updated_at": b.updated_at,
     }
 
@@ -177,7 +181,9 @@ def s_contact(c: Contact) -> Dict[str, Any]:
     return {
         "id": c.id, "inbox_id": c.inbox_id, "peer_platform_id": c.peer_platform_id,
         "display_name": c.display_name, "card_md": c.card_md,
-        "persona_id": c.persona_id, "autoreply_enabled": c.autoreply_enabled,
+        "persona_id": c.persona_id,
+        "reply_provider_config_id": c.reply_provider_config_id,
+        "autoreply_enabled": c.autoreply_enabled,
         "pending_reply": c.pending_reply,
         "status": c.status, "last_seen_platform_msg_id": c.last_seen_platform_msg_id,
         "created_at": c.created_at, "updated_at": c.updated_at,
@@ -422,72 +428,39 @@ def delete_persona(persona_id: str, db: DbDep, account: CurrentAccountDep):
 
 
 # ---------------------------------------------------------------------------
-# Bridges
+# Bridges (read-only from the UI; auto-provisioned on bridge handshake)
 # ---------------------------------------------------------------------------
 
 @app.get("/api/bridges")
 def list_bridges(db: DbDep, account: CurrentAccountDep):
     items = (
-        db.query(Bridge).filter(Bridge.account_id == account.id)
+        db.query(Bridge)
+        .filter(Bridge.account_id == account.id, Bridge.status != "revoked")
         .order_by(Bridge.created_at.desc()).all()
     )
     return [s_bridge(b) for b in items]
 
 
-@app.post("/api/bridges")
-def create_bridge(payload: BridgeCreate, db: DbDep, account: CurrentAccountDep):
-    now = utc_now()
-    raw_token = new_session_token()
-    b = Bridge(
-        id=new_id("br"), account_id=account.id, display_name=payload.display_name,
-        token_hash=hash_token(raw_token), status="paired_pending",
-        hostname=None, last_seen_at=None, created_at=now, updated_at=now,
-    )
-    db.add(b); db.commit(); db.refresh(b)
-    out = s_bridge(b)
-    out["token"] = raw_token   # one-time display
-    return out
-
-
-@app.put("/api/bridges/{bridge_id}")
-def update_bridge(bridge_id: str, payload: BridgeUpdate, db: DbDep, account: CurrentAccountDep):
-    b = get_account_bridge(db, account.id, bridge_id)
-    fields = payload.model_fields_set
-    if "display_name" in fields and payload.display_name is not None:
-        b.display_name = payload.display_name
-    b.updated_at = utc_now()
-    db.commit(); db.refresh(b)
-    return s_bridge(b)
-
-
-@app.post("/api/bridges/{bridge_id}/regenerate-token")
-def regenerate_bridge_token(bridge_id: str, db: DbDep, account: CurrentAccountDep):
-    b = get_account_bridge(db, account.id, bridge_id)
-    raw_token = new_session_token()
-    b.token_hash = hash_token(raw_token)
-    b.status = "paired_pending"
-    b.last_seen_at = None
-    b.updated_at = utc_now()
-    db.commit(); db.refresh(b)
-    out = s_bridge(b)
-    out["token"] = raw_token
-    return out
-
-
 @app.delete("/api/bridges/{bridge_id}")
 def delete_bridge(bridge_id: str, db: DbDep, account: CurrentAccountDep):
+    """Revoke a bridge: marks it revoked, kills its sessions, unbinds inboxes,
+    cancels pending outbound. Daemon will get 401 on next call.
+    """
     b = get_account_bridge(db, account.id, bridge_id)
-    b.status = "revoked"
-    b.updated_at = utc_now()
-    # Detach inboxes; they become unbound until rebound.
-    db.query(Inbox).filter(Inbox.bridge_id == b.id).update({Inbox.bridge_id: None})
-    # Cancel any outbound for those inboxes.
     inbox_ids = [r[0] for r in db.query(Inbox.id).filter(Inbox.bridge_id == b.id).all()]
     if inbox_ids:
         db.query(OutboundMessage).filter(
             OutboundMessage.inbox_id.in_(inbox_ids),
             OutboundMessage.status == "pending",
         ).update({OutboundMessage.status: "canceled"}, synchronize_session=False)
+        db.query(Inbox).filter(Inbox.bridge_id == b.id).update(
+            {Inbox.bridge_id: None}, synchronize_session=False
+        )
+    db.query(BridgeSession).filter(BridgeSession.bridge_id == b.id).delete(
+        synchronize_session=False
+    )
+    b.status = "revoked"
+    b.updated_at = utc_now()
     db.commit()
     return {"status": "revoked", "id": bridge_id}
 
@@ -665,6 +638,11 @@ def update_contact(contact_id: str, payload: ContactUpdate, db: DbDep, account: 
     if "persona_id" in fields and payload.persona_id is not None:
         get_account_persona(db, account.id, payload.persona_id)
         c.persona_id = payload.persona_id
+    if "reply_provider_config_id" in fields and payload.reply_provider_config_id is not None:
+        get_account_provider(db, account.id, payload.reply_provider_config_id)
+        c.reply_provider_config_id = payload.reply_provider_config_id
+    if payload.clear_reply_provider:
+        c.reply_provider_config_id = None
     if "autoreply_enabled" in fields and payload.autoreply_enabled is not None:
         c.autoreply_enabled = payload.autoreply_enabled
     if "status" in fields and payload.status is not None: c.status = payload.status
@@ -759,11 +737,11 @@ def get_distill_job(job_id: str, db: DbDep, account: CurrentAccountDep):
 # ---------------------------------------------------------------------------
 # Bridge protocol (Bridge daemon ↔ Studio)
 #
-# A Bridge daemon owns a token; it claims to serve a list of inboxes (defined
-# in its local TOML). Handshake validates each inbox belongs to this bridge's
-# account and rebinds them to this bridge (Inbox.bridge_id). Studio returns
-# the authoritative list of inboxes the bridge should service, plus the
-# starting outbound cursor.
+# A daemon authenticates on every handshake by sending its Studio account
+# credentials + hostname. Studio upserts a Bridge row keyed by
+# (account_id, hostname), wipes any prior session for that bridge, and mints
+# a fresh BridgeSession token. The token is used for /api/bridge/heartbeat,
+# /incoming, /outbound, /outbound/.../ack — that's the entire surface.
 # ---------------------------------------------------------------------------
 
 def _serialize_bridge_inbox_view(i: Inbox) -> Dict[str, Any]:
@@ -779,23 +757,61 @@ def _serialize_bridge_inbox_view(i: Inbox) -> Dict[str, Any]:
 
 
 @app.post("/api/bridge/handshake")
-def bridge_handshake(payload: BridgeHandshake, db: DbDep, bridge: BridgeDep):
-    """Auto-upsert an Inbox per (platform, platform_self_id) the bridge logged into.
+def bridge_handshake(payload: BridgeHandshake, db: DbDep):
+    """Login + register + report served inboxes, in one call.
 
-    Bridge no longer claims inbox_id — it just reports which platform identities
-    it successfully authenticated as. Studio looks up an existing Inbox or
-    creates one bound to this bridge. Persona/provider configuration is optional
-    at discovery time; auto-reply remains disabled until the user configures it.
+    1. Verify Studio account credentials.
+    2. Upsert Bridge by (account_id, hostname).
+    3. Wipe prior BridgeSession rows for this bridge; mint a fresh token.
+    4. Upsert an Inbox per (platform, platform_self_id) the bridge logged into.
+    5. Return the token + authoritative inbox list + outbound cursor.
     """
+    account = (
+        db.query(Account).filter(Account.username == payload.username).first()
+    )
+    if not account or account.status != "active" or not verify_password(
+        payload.password, account.password_hash
+    ):
+        raise HTTPException(status_code=401, detail="Studio 账号或密码错误")
+
     now = utc_now()
-    bridge.hostname = payload.hostname
-    bridge.last_seen_at = now
-    bridge.status = "online"
-    bridge.updated_at = now
+    bridge = (
+        db.query(Bridge)
+        .filter(Bridge.account_id == account.id, Bridge.hostname == payload.hostname)
+        .first()
+    )
+    if bridge is None:
+        bridge = Bridge(
+            id=new_id("br"),
+            account_id=account.id,
+            hostname=payload.hostname,
+            display_name=payload.hostname,
+            status="online",
+            last_seen_at=now,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(bridge)
+        db.flush()
+    else:
+        bridge.status = "online"
+        bridge.last_seen_at = now
+        bridge.updated_at = now
+
+    db.query(BridgeSession).filter(BridgeSession.bridge_id == bridge.id).delete(
+        synchronize_session=False
+    )
+    raw_token = new_session_token()
+    db.add(BridgeSession(
+        id=hash_token(raw_token),
+        bridge_id=bridge.id,
+        created_at=now,
+        last_seen_at=now,
+    ))
 
     default_persona = (
         db.query(Persona)
-        .filter(Persona.account_id == bridge.account_id, Persona.status == "active")
+        .filter(Persona.account_id == account.id, Persona.status == "active")
         .order_by(Persona.created_at.asc())
         .first()
     )
@@ -805,15 +821,13 @@ def bridge_handshake(payload: BridgeHandshake, db: DbDep, bridge: BridgeDep):
         inbox = (
             db.query(Inbox)
             .filter(
-                Inbox.account_id == bridge.account_id,
+                Inbox.account_id == account.id,
                 Inbox.platform == claim.platform,
                 Inbox.platform_self_id == claim.platform_self_id,
             )
             .first()
         )
         if inbox:
-            # Existing identity — rebind to this bridge so UI never goes
-            # stale when the user moves a login to a different machine.
             inbox.bridge_id = bridge.id
             inbox.updated_at = now
             served.append(inbox)
@@ -821,7 +835,7 @@ def bridge_handshake(payload: BridgeHandshake, db: DbDep, bridge: BridgeDep):
 
         inbox = Inbox(
             id=new_id("ib"),
-            account_id=bridge.account_id,
+            account_id=account.id,
             bridge_id=bridge.id,
             platform=claim.platform,
             display_name=f"{claim.platform_self_id}@{claim.platform}",
@@ -836,21 +850,25 @@ def bridge_handshake(payload: BridgeHandshake, db: DbDep, bridge: BridgeDep):
         db.flush()
         served.append(inbox)
 
-    last_outbound_id = (
-        db.query(OutboundMessage.id)
-        .filter(
-            OutboundMessage.inbox_id.in_([i.id for i in served]) if served else False,
-            OutboundMessage.status != "pending",
+    if served:
+        last_outbound_id = (
+            db.query(OutboundMessage.id)
+            .filter(
+                OutboundMessage.inbox_id.in_([i.id for i in served]),
+                OutboundMessage.status != "pending",
+            )
+            .order_by(OutboundMessage.id.desc())
+            .first()
         )
-        .order_by(OutboundMessage.id.desc())
-        .first()
-    )
-    cursor = last_outbound_id[0] if last_outbound_id else 0
+        cursor = last_outbound_id[0] if last_outbound_id else 0
+    else:
+        cursor = 0
     db.commit()
 
     return {
+        "token": raw_token,
         "bridge_id": bridge.id,
-        "account_id": bridge.account_id,
+        "account_id": account.id,
         "inboxes": [_serialize_bridge_inbox_view(i) for i in served],
         "cursor": cursor,
         "no_persona": not default_persona,
@@ -905,6 +923,7 @@ def bridge_incoming(payload: BridgeIncomingBatch, db: DbDep, bridge: BridgeDep):
                 peer_platform_id=m.peer_platform_id,
                 display_name=m.peer_display_name or m.peer_platform_id,
                 card_md=None, persona_id=inbox.default_persona_id,
+                reply_provider_config_id=inbox.reply_provider_config_id,
                 autoreply_enabled=False, pending_reply=False,
                 status="active", last_seen_platform_msg_id=None,
                 created_at=now, updated_at=now,

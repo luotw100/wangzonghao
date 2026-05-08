@@ -1,16 +1,17 @@
 """Bridge daemon entry point.
 
-Zero config files. Everything is on the CLI:
+No persistent token. The daemon authenticates against Studio with the
+streamer's Studio account credentials (the same login used in the web UI)
+plus the local hostname; Studio auto-provisions a Bridge row keyed by
+(account, hostname) and mints a fresh session token at every handshake.
 
     bridge \\
-      --token=BRIDGE_TOKEN \\
+      --studio-username=alice \\
+      --studio-password=... \\
       --chat-inbox 'base_url=https://chat.laborster.com,username=alice,password=...' \\
       --chat-inbox 'base_url=https://chat.laborster.com,username=alice2,password=...'
 
-The Studio URL is hardcoded; the daemon never needs to know any inbox_id —
-each `--chat-inbox` is just a chat platform login. Studio resolves
-`(platform, platform_self_id)` to its own internal inbox_id during handshake
-and auto-creates an Inbox row if one doesn't exist yet.
+Pass --studio-url to point at a non-prod Studio (defaults to the cloud).
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ from bridge.studio_client import StudioClient
 
 logger = logging.getLogger("bridge")
 
-STUDIO_URL = "https://studio.laborster.com"
+DEFAULT_STUDIO_URL = "https://studio.laborster.com"
 
 
 def _parse_chat_inbox(raw: str) -> Dict[str, str]:
@@ -62,7 +63,14 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         description="Laborster Bridge daemon. Connects local chat platform "
                     "logins to Studio.",
     )
-    p.add_argument("--token", required=True, help="Bridge token from Studio.")
+    p.add_argument("--studio-username", required=True,
+                   help="Your Studio account username (same as the web login).")
+    p.add_argument("--studio-password", required=True,
+                   help="Your Studio account password.")
+    p.add_argument("--studio-url", default=DEFAULT_STUDIO_URL,
+                   help=f"Studio base URL (default: {DEFAULT_STUDIO_URL}).")
+    p.add_argument("--hostname", default=None,
+                   help="Identifier for this PC (defaults to socket.gethostname()).")
     p.add_argument(
         "--chat-inbox", action="append", default=[], dest="chat_inboxes",
         help="Repeat for each chat account, e.g. "
@@ -71,15 +79,20 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     return p
 
 
-async def _run(claims: List[InboxClaim]) -> None:
+async def _run(
+    *,
+    studio_url: str,
+    username: str,
+    password: str,
+    hostname: str,
+    claims: List[InboxClaim],
+) -> None:
     if not claims:
         logger.warning("no --chat-inbox given; bridge will idle (only heartbeats).")
-    studio = StudioClient(base_url=STUDIO_URL, token=os.environ["BRIDGE_TOKEN"])
-    runtime = BridgeRuntime(
-        studio=studio,
-        hostname=socket.gethostname(),
-        claims=claims,
+    studio = StudioClient(
+        base_url=studio_url, username=username, password=password,
     )
+    runtime = BridgeRuntime(studio=studio, hostname=hostname, claims=claims)
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, runtime.stop)
@@ -95,13 +108,19 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
     args = _build_arg_parser().parse_args()
-    os.environ["BRIDGE_TOKEN"] = args.token  # avoid leaking via argv to subprocesses
     claims: List[InboxClaim] = [
         InboxClaim(platform="chat", raw=_parse_chat_inbox(spec))
         for spec in args.chat_inboxes
     ]
+    hostname = args.hostname or socket.gethostname()
     try:
-        asyncio.run(_run(claims))
+        asyncio.run(_run(
+            studio_url=args.studio_url,
+            username=args.studio_username,
+            password=args.studio_password,
+            hostname=hostname,
+            claims=claims,
+        ))
     except KeyboardInterrupt:
         logger.info("bridge stopped (KeyboardInterrupt)")
         sys.exit(0)

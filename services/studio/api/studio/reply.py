@@ -115,10 +115,11 @@ def _decide(db: ORMSession, contact_id: str) -> _ReplyDecision:
     inbox = db.query(Inbox).filter(Inbox.id == contact.inbox_id).first()
     if not inbox or not inbox.enabled:
         return _ReplyDecision("inbox disabled", None, [])
-    if not inbox.reply_provider_config_id:
-        return _ReplyDecision("inbox 未绑定 reply_provider", None, [])
+    provider_id = contact.reply_provider_config_id or inbox.reply_provider_config_id
+    if not provider_id:
+        return _ReplyDecision("contact/inbox 未绑定 reply_provider", None, [])
 
-    pc = db.query(ProviderConfig).filter(ProviderConfig.id == inbox.reply_provider_config_id).first()
+    pc = db.query(ProviderConfig).filter(ProviderConfig.id == provider_id).first()
     if not pc or not pc.api_key:
         return _ReplyDecision("provider 缺失或没 api_key", None, [])
 

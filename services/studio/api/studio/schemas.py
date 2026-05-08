@@ -44,14 +44,7 @@ class PersonaUpdate(StrictModel):
     status: Optional[Literal["active", "archived"]] = None
 
 
-# --- Bridges (Cloudflare-tunnel-style daemons) ---
-
-class BridgeCreate(StrictModel):
-    display_name: str
-
-
-class BridgeUpdate(StrictModel):
-    display_name: Optional[str] = None
+# --- Bridges (auto-provisioned daemons; users only ever read/revoke them) ---
 
 
 # --- Inboxes ---
@@ -81,6 +74,8 @@ class ContactUpdate(StrictModel):
     display_name: Optional[str] = None
     card_md: Optional[str] = None
     persona_id: Optional[str] = None
+    reply_provider_config_id: Optional[str] = None
+    clear_reply_provider: Optional[bool] = None
     autoreply_enabled: Optional[bool] = None
     status: Optional[Literal["active", "archived"]] = None
 
@@ -113,8 +108,16 @@ class BridgeHandshakeInbox(StrictModel):
 
 
 class BridgeHandshake(StrictModel):
+    """Initial handshake — also serves as login.
+
+    The bridge presents Studio account credentials + hostname; Studio
+    upserts a Bridge row keyed by (account, hostname) and mints a fresh
+    session token used for subsequent /api/bridge/* calls.
+    """
+    username: str
+    password: str
     hostname: str
-    inboxes: list[BridgeHandshakeInbox]   # platform logins this bridge has authenticated; Studio resolves to its own inbox_id
+    inboxes: list[BridgeHandshakeInbox]
 
 
 class BridgeIncomingMessage(StrictModel):

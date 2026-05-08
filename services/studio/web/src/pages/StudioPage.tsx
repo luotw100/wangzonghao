@@ -4,7 +4,6 @@ import * as api from '../lib/api';
 import type {
   Archive,
   Bridge,
-  BridgeWithToken,
   Contact,
   ConversationSummary,
   DistillJob,
@@ -15,12 +14,12 @@ import type {
 } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
-type Tab = 'bridges' | 'inboxes' | 'conversations' | 'personas' | 'providers' | 'archives' | 'distill';
+type Tab = 'takeover' | 'bridges' | 'personas' | 'providers' | 'archives' | 'distill';
 
 export function StudioPage() {
   const navigate = useNavigate();
   const { account: me, logout } = useAuth();
-  const [tab, setTab] = useState<Tab>('bridges');
+  const [tab, setTab] = useState<Tab>('takeover');
   const [bridges, setBridges] = useState<Bridge[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [inboxes, setInboxes] = useState<Inbox[]>([]);
@@ -28,7 +27,6 @@ export function StudioPage() {
   const [archives, setArchives] = useState<Archive[]>([]);
   const [jobs, setJobs] = useState<DistillJob[]>([]);
   const [error, setError] = useState('');
-  const [tokenJustIssued, setTokenJustIssued] = useState<{ bridge: BridgeWithToken } | null>(null);
 
   const loadAll = useCallback(async () => {
     try {
@@ -66,7 +64,7 @@ export function StudioPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span className="font-brand" style={{ fontSize: 18, color: 'var(--accent)' }}>Laborster Studio</span>
           <nav style={{ display: 'flex', gap: 8 }}>
-            {(['bridges', 'inboxes', 'conversations', 'personas', 'providers', 'archives', 'distill'] as Tab[]).map(t => (
+            {(['takeover', 'bridges', 'personas', 'providers', 'archives', 'distill'] as Tab[]).map(t => (
               <button
                 key={t}
                 onClick={() => setTab(t)}
@@ -96,480 +94,39 @@ export function StudioPage() {
       )}
 
       <main style={{ flex: 1, overflow: 'auto', padding: '20px 22px' }}>
-        {tab === 'bridges' && (
-          <BridgesView
-            bridges={bridges} inboxes={inboxes}
-            onChanged={loadAll} setError={setError}
-            onTokenIssued={(br) => setTokenJustIssued({ bridge: br })}
-          />
-        )}
-        {tab === 'inboxes' && (
-          <InboxesView
+        {tab === 'takeover' && (
+          <TakeoverView
             inboxes={inboxes} bridges={bridges} personas={personas} providers={providers}
             onChanged={loadAll} setError={setError}
           />
         )}
-        {tab === 'conversations' && (
-          <ConversationsView
-            personas={personas} providers={providers}
-            onChanged={loadAll} setError={setError}
-          />
+        {tab === 'bridges' && (
+          <BridgesView bridges={bridges} inboxes={inboxes} onChanged={loadAll} setError={setError} />
         )}
         {tab === 'personas' && <PersonasView personas={personas} onChanged={loadAll} setError={setError} />}
         {tab === 'providers' && <ProvidersView providers={providers} onChanged={loadAll} setError={setError} />}
         {tab === 'archives' && <ArchivesView archives={archives} inboxes={inboxes} onChanged={loadAll} setError={setError} />}
         {tab === 'distill' && <DistillView jobs={jobs} inboxes={inboxes} personas={personas} providers={providers} onChanged={loadAll} setError={setError} />}
       </main>
-
-      {tokenJustIssued && (
-        <BridgeCommandModal
-          bridge={tokenJustIssued.bridge}
-          token={tokenJustIssued.bridge.token}
-          onClose={() => setTokenJustIssued(null)}
-        />
-      )}
     </div>
   );
 }
 
 function tabLabel(t: Tab): string {
   return ({
-    bridges: 'Bridges', inboxes: '接管号', conversations: '会话', personas: '人设',
+    takeover: '接管', bridges: 'Bridges', personas: '人设',
     providers: 'Provider', archives: '聊天档案', distill: '蒸馏',
   } as const)[t];
 }
 
 // ---------------------------------------------------------------------------
-// Bridges
+// Takeover — primary view: contacts, grouped by inbox, with per-contact and
+// inbox-level config inline.
 // ---------------------------------------------------------------------------
 
-function BridgesView({ bridges, inboxes, onChanged, setError, onTokenIssued }: {
-  bridges: Bridge[];
-  inboxes: Inbox[];
-  onChanged: () => void;
-  setError: (s: string) => void;
-  onTokenIssued: (br: BridgeWithToken) => void;
-}) {
-  const [showCreate, setShowCreate] = useState(false);
-  const [showCommandFor, setShowCommandFor] = useState<Bridge | null>(null);
-  const inboxesByBridge = useMemo(() => {
-    const m: Record<string, Inbox[]> = {};
-    for (const ib of inboxes) {
-      if (ib.bridge_id) {
-        if (!m[ib.bridge_id]) m[ib.bridge_id] = [];
-        m[ib.bridge_id].push(ib);
-      }
-    }
-    return m;
-  }, [inboxes]);
-  return (
-    <div>
-      <SectionHeader title="Bridges" hint="一台主播的 PC 跑一个 Bridge。新建后这里会给一条启动命令，复制走就能跑。">
-        <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>+ 新建 Bridge</button>
-      </SectionHeader>
-      {bridges.length === 0 ? <Empty>还没有 Bridge。建一个，会给你一条直接跑的启动命令。</Empty> : (
-        <div style={{ display: 'grid', gap: 10 }}>
-          {bridges.map(br => (
-            <div key={br.id} className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                <div>
-                  <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <StatusDot status={br.status} />
-                    {br.display_name}
-                  </div>
-                  <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
-                    {br.status === 'online' ? `在线 · 主机 ${br.hostname || '—'}` : br.status === 'paired_pending' ? '等待首次连接' : br.status}
-                    {' · '}最后心跳 {br.last_seen_at ?? '—'}
-                    {' · '}承载 {(inboxesByBridge[br.id] || []).length} 个接管号
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="btn btn-sm btn-ghost" onClick={() => setShowCommandFor(br)}>启动命令</button>
-                  <button className="btn btn-sm btn-ghost" onClick={async () => {
-                    if (!confirm('重新生成 token 会让旧 token 失效（已运行的 bridge 心跳会失败），确认？')) return;
-                    try {
-                      const fresh = await api.regenerateBridgeToken(br.id);
-                      onTokenIssued(fresh);
-                      onChanged();
-                    } catch (e) { setError(String(e)); }
-                  }}>重发 token</button>
-                  <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={async () => {
-                    if (!confirm('确认 revoke 这个 Bridge？所有 inbox 会从它身上脱钩。')) return;
-                    try { await api.deleteBridge(br.id); onChanged(); } catch (e) { setError(String(e)); }
-                  }}>revoke</button>
-                </div>
-              </div>
-              {(inboxesByBridge[br.id] || []).length > 0 && (
-                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line-subtle)' }}>
-                  {(inboxesByBridge[br.id] || []).map(ib => (
-                    <div key={ib.id} className="mono" style={{ fontSize: 11, color: 'var(--ink-2)' }}>
-                      ↳ {ib.platform} · {ib.platform_self_id || '—'} · {ib.display_name} · {ib.enabled ? 'enabled' : 'disabled'}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-      {showCreate && (
-        <CreateBridgeModal
-          onClose={() => setShowCreate(false)}
-          onCreated={(br) => { setShowCreate(false); onTokenIssued(br); onChanged(); }}
-          setError={setError}
-        />
-      )}
-      {showCommandFor && (
-        <BridgeCommandModal
-          bridge={showCommandFor}
-          token={null}
-          onClose={() => setShowCommandFor(null)}
-        />
-      )}
-    </div>
-  );
-}
-
-function StatusDot({ status }: { status: Bridge['status'] }) {
-  const color =
-    status === 'online' ? 'var(--accent)' :
-    status === 'paired_pending' ? 'var(--warn)' :
-    status === 'revoked' ? 'var(--danger)' : 'var(--ink-3)';
-  return <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: color }} />;
-}
-
-function CreateBridgeModal({ onClose, onCreated, setError }: {
-  onClose: () => void;
-  onCreated: (br: BridgeWithToken) => void;
-  setError: (s: string) => void;
-}) {
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const handle = async () => {
-    if (!name.trim()) return;
-    setBusy(true);
-    try { onCreated(await api.createBridge({ display_name: name.trim() })); }
-    catch (e) { setError(String(e)); } finally { setBusy(false); }
-  };
-  return (
-    <ModalShell onClose={onClose} title="新建 Bridge">
-      <FormField label="显示名 (主播自己的标记，e.g. alice-mbp)">
-        <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="alice-mbp" autoFocus />
-      </FormField>
-      <p className="ink-3" style={{ fontSize: 12, margin: '0 0 12px' }}>
-        创建后会给你一条 <b>包含 token 的启动命令</b>。命令在你机器上跑，密码不传 Studio。
-        关闭命令窗口后 token 就只能重发，命令本身随时能再生成（密码部分要重填）。
-      </p>
-      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建 Bridge'} disabled={busy || !name.trim()} />
-    </ModalShell>
-  );
-}
-
-interface ChatInboxDraft {
-  base_url: string;
-  username: string;
-  password: string;
-}
-
-function BridgeCommandModal({ bridge, token, onClose }: {
-  bridge: Bridge;
-  token: string | null;     // present only right after creation/regenerate
-  onClose: () => void;
-}) {
-  const [drafts, setDrafts] = useState<ChatInboxDraft[]>([
-    { base_url: 'https://chat.laborster.com', username: '', password: '' },
-  ]);
-  const [copied, setCopied] = useState(false);
-
-  const tokenSlot = token ?? '<你保存的 token>';
-  const lines: string[] = [
-    'docker compose run --rm bridge \\',
-    `  --token=${tokenSlot} \\`,
-    ...drafts.flatMap((d, i) => {
-      const url = d.base_url || '<base_url>';
-      const u = d.username || '<username>';
-      const p = d.password || '<password>';
-      const isLast = i === drafts.length - 1;
-      const seg = `  --chat-inbox 'base_url=${url},username=${u},password=${p}'${isLast ? '' : ' \\'}`;
-      return [seg];
-    }),
-  ];
-  const command = lines.join('\n');
-
-  const update = (idx: number, patch: Partial<ChatInboxDraft>) => {
-    setDrafts(prev => prev.map((d, i) => i === idx ? { ...d, ...patch } : d));
-  };
-
-  return (
-    <ModalShell onClose={onClose} title={`Bridge 启动命令 · ${bridge.display_name}`}>
-      <p className="ink-2" style={{ fontSize: 13, marginBottom: 12 }}>
-        勾选要让这台 Bridge 登录的 chat 账号，命令会在下方实时拼好。<b>密码不会上传到 Studio</b> ——
-        全部留在你浏览器里，复制走的命令也只会跑在你自己的机器上。
-        {token && <span style={{ color: 'var(--warn)' }}> Token 只在本次窗口里完整显示，关掉就只能再重发。</span>}
-      </p>
-
-      <div style={{ display: 'grid', gap: 10, marginBottom: 12 }}>
-        {drafts.map((d, i) => (
-          <div key={i} className="card" style={{ padding: 12 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span className="mono ink-3" style={{ fontSize: 12 }}>chat 登录 #{i + 1}</span>
-              {drafts.length > 1 && (
-                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }}
-                        onClick={() => setDrafts(prev => prev.filter((_, j) => j !== i))}>移除</button>
-              )}
-            </div>
-            <div style={{ display: 'grid', gap: 6 }}>
-              <input className="input" value={d.base_url} onChange={e => update(i, { base_url: e.target.value })}
-                     placeholder="base_url" />
-              <input className="input" value={d.username} onChange={e => update(i, { username: e.target.value })}
-                     placeholder="username" />
-              <input className="input" value={d.password} onChange={e => update(i, { password: e.target.value })}
-                     placeholder="password (留空 → 命令里给占位符自己填)" type="text" />
-            </div>
-          </div>
-        ))}
-        <button className="btn btn-sm btn-ghost"
-                onClick={() => setDrafts(prev => [...prev, { base_url: 'https://chat.laborster.com', username: '', password: '' }])}>
-          + 再加一个 chat 账号
-        </button>
-      </div>
-
-      <pre className="card mono" style={{ padding: 14, fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginBottom: 12 }}>{command}</pre>
-
-      <ModalActions
-        onCancel={onClose}
-        onConfirm={async () => {
-          try { await navigator.clipboard.writeText(command); setCopied(true); setTimeout(() => setCopied(false), 1200); }
-          catch { /* user can still select & copy manually */ }
-        }}
-        confirmLabel={copied ? '已复制' : '复制命令'}
-      />
-    </ModalShell>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Inboxes
-// ---------------------------------------------------------------------------
-
-function InboxesView({ inboxes, bridges, personas, providers, onChanged, setError }: {
+function TakeoverView({ inboxes, bridges, personas, providers, onChanged, setError }: {
   inboxes: Inbox[];
   bridges: Bridge[];
-  personas: Persona[];
-  providers: ProviderConfig[];
-  onChanged: () => void;
-  setError: (s: string) => void;
-}) {
-  return (
-    <div>
-      <SectionHeader title="接管号" hint="启动 Bridge 时登录的每个 chat 账号会自动出现在这里。点开看粉丝、给粉丝开自动回复。" />
-      {inboxes.length === 0 ? (
-        <Empty>
-          还没有接管号。先去「Bridges」建一个 Bridge、复制启动命令，跑起来后这里会自动出现你登录进去的 chat 账号。
-        </Empty>
-      ) : (
-        <div style={{ display: 'grid', gap: 10 }}>
-          {inboxes.map(ib => (
-            <InboxCard
-              key={ib.id} inbox={ib} bridges={bridges} personas={personas} providers={providers}
-              onChanged={onChanged} setError={setError}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function InboxCard({ inbox: ib, bridges, personas, providers, onChanged, setError }: {
-  inbox: Inbox;
-  bridges: Bridge[];
-  personas: Persona[];
-  providers: ProviderConfig[];
-  onChanged: () => void;
-  setError: (s: string) => void;
-}) {
-  const bridge = bridges.find(b => b.id === ib.bridge_id) || null;
-  const online = bridge?.status === 'online';
-  return (
-    <div className="card" style={{ padding: '14px 16px' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
-        <div style={{ flex: 1, minWidth: 280 }}>
-          <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: online ? 'var(--accent)' : 'var(--ink-3)' }} />
-            {ib.display_name}
-            <span className="chip muted">{ib.platform}</span>
-            {bridge && <span className="chip muted">运行于 {bridge.display_name}</span>}
-            {!ib.enabled && <span className="chip warn">已停用</span>}
-          </div>
-          <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
-            平台 ID：{ib.platform_self_id || '—'}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
-          <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>默认人设
-            <select value={ib.default_persona_id ?? ''} className="select" style={{ marginLeft: 6 }}
-                    onChange={async e => {
-                      if (!e.target.value) return;
-                      try { await api.updateInbox(ib.id, { default_persona_id: e.target.value }); onChanged(); } catch (err) { setError(String(err)); }
-                    }}>
-              <option value="">（未选 → 新粉丝默认无人设）</option>
-              {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </label>
-          <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>回复 Provider
-            <select value={ib.reply_provider_config_id ?? ''} className="select" style={{ marginLeft: 6 }}
-                    onChange={async e => {
-                      try {
-                        if (e.target.value) await api.updateInbox(ib.id, { reply_provider_config_id: e.target.value });
-                        else await api.updateInbox(ib.id, { clear_reply_provider: true });
-                        onChanged();
-                      } catch (err) { setError(String(err)); }
-                    }}>
-              <option value="">（未选 → 不会自动回复）</option>
-              {providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-          </label>
-          <button className="btn btn-sm btn-ghost" onClick={async () => {
-            try { await api.updateInbox(ib.id, { enabled: !ib.enabled }); onChanged(); }
-            catch (e) { setError(String(e)); }
-          }}>{ib.enabled ? '停用' : '启用'}</button>
-          <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={async () => {
-            if (!confirm('确认删除这个接管号？所有 pending outbound 会被取消。下次 Bridge 重连还会自动重建。')) return;
-            try { await api.deleteInbox(ib.id); onChanged(); } catch (e) { setError(String(e)); }
-          }}>删除</button>
-        </div>
-      </div>
-      {!ib.reply_provider_config_id && (
-        <div className="mono" style={{ fontSize: 11, marginTop: 8, color: 'var(--warn)' }}>
-          未选回复 Provider — 自动回复永远不会触发。
-        </div>
-      )}
-      <InboxContacts inbox={ib} personas={personas} setError={setError} onChanged={onChanged} />
-    </div>
-  );
-}
-
-function InboxContacts({ inbox, personas, setError, onChanged }: { inbox: Inbox; personas: Persona[]; setError: (s: string) => void; onChanged: () => void }) {
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const reload = useCallback(() => {
-    api.getInboxContacts(inbox.id).then(setContacts).catch(e => setError(String(e)));
-  }, [inbox.id, setError]);
-  useEffect(() => { reload(); }, [reload]);
-
-  if (contacts.length === 0) {
-    return <div className="ink-3" style={{ fontSize: 12, marginTop: 12 }}>暂无粉丝 — 第一条消息进来时这里会自动出现联系人卡。</div>;
-  }
-  return (
-    <div style={{ marginTop: 12, borderTop: '1px solid var(--line-subtle)', paddingTop: 12, display: 'grid', gap: 4 }}>
-      <div className="ink-3" style={{ fontSize: 11, marginBottom: 4 }}>粉丝 · {contacts.length}</div>
-      {contacts.map(c => (
-        <ContactRow
-          key={c.id}
-          contact={c}
-          personas={personas}
-          inboxReady={inbox.enabled && Boolean(inbox.reply_provider_config_id)}
-          expanded={expandedId === c.id}
-          onToggle={() => setExpandedId(prev => prev === c.id ? null : c.id)}
-          onChanged={() => { reload(); onChanged(); }}
-          setError={setError}
-        />
-      ))}
-    </div>
-  );
-}
-
-function ContactRow({ contact: c, personas, inboxReady, expanded, onToggle, onChanged, setError }: {
-  contact: Contact;
-  personas: Persona[];
-  inboxReady: boolean;
-  expanded: boolean;
-  onToggle: () => void;
-  onChanged: () => void;
-  setError: (s: string) => void;
-}) {
-  const [draftCard, setDraftCard] = useState(c.card_md ?? '');
-  const [savingCard, setSavingCard] = useState(false);
-  useEffect(() => { setDraftCard(c.card_md ?? ''); }, [c.card_md]);
-
-  const cardPreview = (c.card_md ?? '').replace(/\s+/g, ' ').slice(0, 60);
-
-  return (
-    <div style={{ borderBottom: '1px dashed var(--line-subtle)', paddingBottom: 6 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0' }}>
-        <button className="btn btn-sm btn-ghost" onClick={onToggle} style={{ minWidth: 18, padding: '0 4px' }}>
-          {expanded ? '▾' : '▸'}
-        </button>
-        <span style={{ fontSize: 13, flex: 1, minWidth: 0 }}>
-          <span style={{ fontWeight: 500 }}>{c.display_name}</span>
-          {cardPreview && <span className="ink-3" style={{ fontSize: 11, marginLeft: 8 }}>· {cardPreview}{(c.card_md ?? '').length > 60 ? '…' : ''}</span>}
-        </span>
-        <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
-          人设
-          <select value={c.persona_id ?? ''} className="select" style={{ minWidth: 110 }}
-                  onChange={async e => {
-                    if (!e.target.value) return;
-                    try { await api.updateContact(c.id, { persona_id: e.target.value }); onChanged(); } catch (err) { setError(String(err)); }
-                  }}>
-            <option value="">（未选）</option>
-            {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-        </label>
-        <label className="mono" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
-          <input type="checkbox" checked={c.autoreply_enabled}
-                 onChange={async e => {
-                   if (e.target.checked && (!inboxReady || !c.persona_id)) {
-                     setError('需要先给接管号选择 Provider，并给这个粉丝选择人设，才能开启自动回复。');
-                     return;
-                   }
-                   try { await api.updateContact(c.id, { autoreply_enabled: e.target.checked }); onChanged(); } catch (err) { setError(String(err)); }
-                 }} />
-          自动回复
-        </label>
-      </div>
-      {expanded && (
-        <div style={{ paddingLeft: 26, paddingRight: 4, paddingBottom: 8, display: 'grid', gap: 6 }}>
-          <div className="ink-3" style={{ fontSize: 11 }}>
-            平台 ID：<span className="mono">{c.peer_platform_id}</span>
-          </div>
-          {(!inboxReady || !c.persona_id) && (
-            <div className="mono" style={{ fontSize: 11, color: 'var(--warn)' }}>
-              需要先给接管号选择 Provider，并给这个粉丝选择人设，才能开启自动回复。
-            </div>
-          )}
-          <label className="ink-3" style={{ fontSize: 11 }}>关系卡（card_md）— 简单写下你跟这个人的关系，AI 回复时会读到</label>
-          <textarea
-            className="input mono"
-            style={{ minHeight: 90, fontSize: 12 }}
-            value={draftCard}
-            onChange={e => setDraftCard(e.target.value)}
-            placeholder="例如：北京大学生，喜欢户外，去年送过我一袋茶叶，叫我「alice 姐」"
-          />
-          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-            {draftCard !== (c.card_md ?? '') && (
-              <button className="btn btn-sm btn-ghost"
-                      onClick={() => setDraftCard(c.card_md ?? '')}>放弃修改</button>
-            )}
-            <button className="btn btn-sm btn-primary" disabled={savingCard || draftCard === (c.card_md ?? '')}
-                    onClick={async () => {
-                      setSavingCard(true);
-                      try { await api.updateContact(c.id, { card_md: draftCard }); onChanged(); }
-                      catch (err) { setError(String(err)); }
-                      finally { setSavingCard(false); }
-                    }}>{savingCard ? '保存中…' : '保存'}</button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Conversations
-// ---------------------------------------------------------------------------
-
-function ConversationsView({ personas, providers, onChanged, setError }: {
   personas: Persona[];
   providers: ProviderConfig[];
   onChanged: () => void;
@@ -596,7 +153,13 @@ function ConversationsView({ personas, providers, onChanged, setError }: {
   useEffect(() => { reload(); }, [reload]);
 
   const selected = items.find(item => item.contact.id === selectedId) ?? null;
-  const inboxReady = Boolean(selected?.inbox.enabled && selected.inbox.reply_provider_config_id);
+  const selectedInbox = useMemo(() => {
+    if (!selected) return null;
+    return inboxes.find(ib => ib.id === selected.inbox.id) ?? selected.inbox;
+  }, [selected, inboxes]);
+  const selectedBridge = selectedInbox
+    ? bridges.find(b => b.id === selectedInbox.bridge_id) ?? null
+    : null;
 
   const reloadMessages = useCallback(async () => {
     if (!selectedId) {
@@ -608,6 +171,34 @@ function ConversationsView({ personas, providers, onChanged, setError }: {
   }, [selectedId, setError]);
 
   useEffect(() => { reloadMessages(); }, [reloadMessages]);
+
+  const grouped = useMemo(() => {
+    const m: Record<string, ConversationSummary[]> = {};
+    for (const item of items) {
+      const key = item.inbox.id;
+      if (!m[key]) m[key] = [];
+      m[key].push(item);
+    }
+    return m;
+  }, [items]);
+
+  const inboxOrder = useMemo(() => {
+    const seen = new Set<string>();
+    const ordered: Inbox[] = [];
+    for (const item of items) {
+      if (seen.has(item.inbox.id)) continue;
+      seen.add(item.inbox.id);
+      const fresh = inboxes.find(ib => ib.id === item.inbox.id) ?? item.inbox;
+      ordered.push(fresh);
+    }
+    for (const ib of inboxes) {
+      if (!seen.has(ib.id)) {
+        seen.add(ib.id);
+        ordered.push(ib);
+      }
+    }
+    return ordered;
+  }, [items, inboxes]);
 
   const patchContact = async (contactId: string, patch: Parameters<typeof api.updateContact>[1]) => {
     try {
@@ -622,108 +213,289 @@ function ConversationsView({ personas, providers, onChanged, setError }: {
 
   return (
     <div>
-      <SectionHeader title="会话" hint="按接管号聚合所有粉丝会话。这里用于观察 channel 会话，并给单个粉丝开启/关闭接管。">
+      <SectionHeader title="接管" hint="所有需要 AI 接管的会话都在这里。每个粉丝独立配置人设 / Provider / 自动回复；每个接管号有一组默认值。">
         <button className="btn btn-sm btn-ghost" onClick={reload}>{loading ? '刷新中…' : '刷新'}</button>
       </SectionHeader>
-      {items.length === 0 ? (
-        <Empty>还没有会话。Bridge 发现 chat 会话并推送第一批消息后，这里会自动出现。</Empty>
+      {inboxOrder.length === 0 ? (
+        <Empty>
+          还没有任何接管号。在主播 PC 上跑 bridge daemon（用 Studio 账号密码登录），它登进的每个 chat 账号会自动出现在这里。
+        </Empty>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(280px, 360px) minmax(0, 1fr)', gap: 12, alignItems: 'start' }}>
-          <div style={{ display: 'grid', gap: 8 }}>
-            {items.map(item => (
-              <button
-                key={item.contact.id}
-                className="card"
-                onClick={() => setSelectedId(item.contact.id)}
-                style={{
-                  padding: 12,
-                  textAlign: 'left',
-                  borderColor: selectedId === item.contact.id ? 'var(--brass-line)' : 'var(--line-subtle)',
-                  background: selectedId === item.contact.id ? 'var(--brass-soft)' : 'var(--panel)',
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-                  <strong style={{ fontSize: 13 }}>{item.contact.display_name}</strong>
-                  <span className="chip muted">{item.message_count} 条</span>
-                </div>
-                <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
-                  {item.inbox.platform} · {item.inbox.platform_self_id || '—'}
-                </div>
-                <div className="ink-2" style={{ fontSize: 12, marginTop: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {item.latest_message ? `${item.latest_message.role === 'self' ? '我' : '对方'}：${item.latest_message.content}` : '暂无消息'}
-                </div>
-                <div className="mono ink-3" style={{ fontSize: 10, marginTop: 4 }}>
-                  {item.latest_message ? formatDateTime(item.latest_message.timestamp) : formatDateTime(item.contact.updated_at)}
-                </div>
-              </button>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 380px) minmax(0, 1fr)', gap: 12, alignItems: 'start' }}>
+          <div style={{ display: 'grid', gap: 12 }}>
+            {inboxOrder.map(ib => (
+              <InboxGroup
+                key={ib.id}
+                inbox={ib}
+                bridge={bridges.find(b => b.id === ib.bridge_id) ?? null}
+                conversations={grouped[ib.id] ?? []}
+                selectedId={selectedId}
+                onSelect={setSelectedId}
+                personas={personas}
+                providers={providers}
+                onChanged={onChanged}
+                onLocalRefresh={reload}
+                setError={setError}
+              />
             ))}
           </div>
 
           <div className="card" style={{ padding: 16, minHeight: 420 }}>
-            {!selected ? <Empty>请选择一个会话。</Empty> : (
-              <>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start', flexWrap: 'wrap', borderBottom: '1px solid var(--line-subtle)', paddingBottom: 12, marginBottom: 12 }}>
-                  <div>
-                    <div style={{ fontWeight: 600 }}>{selected.contact.display_name}</div>
-                    <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
-                      {selected.inbox.display_name} · {selected.inbox.platform} · 粉丝 ID {selected.contact.peer_platform_id}
-                    </div>
-                    {!inboxReady && (
-                      <div className="mono" style={{ fontSize: 11, color: 'var(--warn)', marginTop: 6 }}>
-                        接管号未选择 Provider 或已停用；不会自动回复。
-                      </div>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                    <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>人设
-                      <select value={selected.contact.persona_id ?? ''} className="select" style={{ marginLeft: 6 }}
-                              onChange={e => { if (e.target.value) patchContact(selected.contact.id, { persona_id: e.target.value }); }}>
-                        <option value="">（未选）</option>
-                        {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                      </select>
-                    </label>
-                    <label className="mono" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <input type="checkbox" checked={selected.contact.autoreply_enabled}
-                             onChange={e => {
-                               if (e.target.checked && (!inboxReady || !selected.contact.persona_id)) {
-                                 setError('需要先给接管号选择 Provider，并给这个粉丝选择人设，才能开启自动回复。');
-                                 return;
-                               }
-                               patchContact(selected.contact.id, { autoreply_enabled: e.target.checked });
-                             }} />
-                      自动回复
-                    </label>
-                    <span className="chip muted">Provider {providers.find(p => p.id === selected.inbox.reply_provider_config_id)?.name ?? '未选'}</span>
-                  </div>
-                </div>
-
-                {messages.length === 0 ? <Empty>暂无消息。</Empty> : (
-                  <div style={{ display: 'grid', gap: 8, maxHeight: '62dvh', overflow: 'auto', paddingRight: 4 }}>
-                    {messages.map(m => (
-                      <div key={m.id} style={{ display: 'flex', justifyContent: m.role === 'self' ? 'flex-end' : 'flex-start' }}>
-                        <div style={{ maxWidth: '76%' }}>
-                          <div className="mono ink-3" style={{ fontSize: 10, textAlign: m.role === 'self' ? 'right' : 'left', marginBottom: 3 }}>
-                            {m.role === 'self' ? '我' : selected.contact.display_name} · {formatDateTime(m.timestamp)} · {m.source}
-                          </div>
-                          <div style={{
-                            padding: '8px 10px',
-                            borderRadius: 12,
-                            background: m.role === 'self' ? 'var(--brass-soft)' : 'var(--panel-2)',
-                            border: '1px solid var(--line-subtle)',
-                            whiteSpace: 'pre-wrap',
-                            fontSize: 13,
-                            lineHeight: 1.5,
-                          }}>
-                            {m.content}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </>
+            {!selected || !selectedInbox ? <Empty>请从左侧选一个粉丝。</Empty> : (
+              <ContactDetail
+                contact={selected.contact}
+                inbox={selectedInbox}
+                bridge={selectedBridge}
+                messages={messages}
+                personas={personas}
+                providers={providers}
+                onPatch={patchContact}
+              />
             )}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, personas, providers, onChanged, onLocalRefresh, setError }: {
+  inbox: Inbox;
+  bridge: Bridge | null;
+  conversations: ConversationSummary[];
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+  personas: Persona[];
+  providers: ProviderConfig[];
+  onChanged: () => void;
+  onLocalRefresh: () => void;
+  setError: (s: string) => void;
+}) {
+  const [showSettings, setShowSettings] = useState(false);
+  const online = bridge?.status === 'online';
+  return (
+    <div className="card" style={{ padding: '12px 14px', display: 'grid', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
+          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: online ? 'var(--accent)' : 'var(--ink-3)' }} />
+          <strong style={{ fontSize: 13 }}>{inbox.display_name}</strong>
+          <span className="chip muted">{inbox.platform}</span>
+          {!inbox.enabled && <span className="chip warn">已停用</span>}
+          {bridge && <span className="mono ink-3" style={{ fontSize: 11 }}>{bridge.hostname}</span>}
+        </div>
+        <button className="btn btn-sm btn-ghost" onClick={() => setShowSettings(v => !v)}>
+          {showSettings ? '收起' : '默认值'}
+        </button>
+      </div>
+
+      {showSettings && (
+        <InboxDefaults
+          inbox={inbox} personas={personas} providers={providers}
+          onChanged={() => { onChanged(); onLocalRefresh(); }}
+          setError={setError}
+        />
+      )}
+
+      {conversations.length === 0 ? (
+        <div className="ink-3" style={{ fontSize: 12, padding: '8px 4px' }}>
+          暂无粉丝 — 收到第一条消息时会自动出现。
+        </div>
+      ) : (
+        <div style={{ display: 'grid', gap: 6 }}>
+          {conversations.map(item => (
+            <button
+              key={item.contact.id}
+              className="card"
+              onClick={() => onSelect(item.contact.id)}
+              style={{
+                padding: '10px 12px',
+                textAlign: 'left',
+                borderColor: selectedId === item.contact.id ? 'var(--brass-line)' : 'var(--line-subtle)',
+                background: selectedId === item.contact.id ? 'var(--brass-soft)' : 'var(--panel)',
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                <strong style={{ fontSize: 13 }}>{item.contact.display_name}</strong>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {item.contact.autoreply_enabled
+                    ? <span className="chip live">接管中</span>
+                    : <span className="chip muted">手动</span>}
+                  <span className="chip muted">{item.message_count}</span>
+                </div>
+              </div>
+              <div className="ink-2" style={{ fontSize: 12, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {item.latest_message ? `${item.latest_message.role === 'self' ? '我' : '对方'}：${item.latest_message.content}` : '暂无消息'}
+              </div>
+              <div className="mono ink-3" style={{ fontSize: 10, marginTop: 4 }}>
+                {item.latest_message ? formatDateTime(item.latest_message.timestamp) : formatDateTime(item.contact.updated_at)}
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function InboxDefaults({ inbox, personas, providers, onChanged, setError }: {
+  inbox: Inbox;
+  personas: Persona[];
+  providers: ProviderConfig[];
+  onChanged: () => void;
+  setError: (s: string) => void;
+}) {
+  return (
+    <div style={{ display: 'grid', gap: 6, padding: '8px 10px', background: 'var(--panel-2)', borderRadius: 8, border: '1px solid var(--line-subtle)' }}>
+      <div className="mono ink-3" style={{ fontSize: 11 }}>
+        新粉丝默认（已存在的粉丝不受影响）
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+        <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>默认人设
+          <select value={inbox.default_persona_id ?? ''} className="select" style={{ marginLeft: 6, marginTop: 2 }}
+                  onChange={async e => {
+                    if (!e.target.value) return;
+                    try { await api.updateInbox(inbox.id, { default_persona_id: e.target.value }); onChanged(); } catch (err) { setError(String(err)); }
+                  }}>
+            <option value="">（未选）</option>
+            {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>
+        <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>默认 Provider
+          <select value={inbox.reply_provider_config_id ?? ''} className="select" style={{ marginLeft: 6, marginTop: 2 }}
+                  onChange={async e => {
+                    try {
+                      if (e.target.value) await api.updateInbox(inbox.id, { reply_provider_config_id: e.target.value });
+                      else await api.updateInbox(inbox.id, { clear_reply_provider: true });
+                      onChanged();
+                    } catch (err) { setError(String(err)); }
+                  }}>
+            <option value="">（未选）</option>
+            {providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </label>
+      </div>
+      <div>
+        <button className="btn btn-sm btn-ghost" onClick={async () => {
+          try { await api.updateInbox(inbox.id, { enabled: !inbox.enabled }); onChanged(); }
+          catch (e) { setError(String(e)); }
+        }}>{inbox.enabled ? '停用整个接管号' : '启用整个接管号'}</button>
+      </div>
+    </div>
+  );
+}
+
+function ContactDetail({ contact, inbox, bridge, messages, personas, providers, onPatch }: {
+  contact: Contact;
+  inbox: Inbox;
+  bridge: Bridge | null;
+  messages: Message[];
+  personas: Persona[];
+  providers: ProviderConfig[];
+  onPatch: (contactId: string, patch: Parameters<typeof api.updateContact>[1]) => Promise<void>;
+}) {
+  const [draftCard, setDraftCard] = useState(contact.card_md ?? '');
+  const [savingCard, setSavingCard] = useState(false);
+  useEffect(() => { setDraftCard(contact.card_md ?? ''); }, [contact.id, contact.card_md]);
+
+  const effectiveProviderId = contact.reply_provider_config_id ?? inbox.reply_provider_config_id;
+  const inboxLive = inbox.enabled && Boolean(bridge && bridge.status === 'online');
+  const canAutoreply = inboxLive && Boolean(effectiveProviderId) && Boolean(contact.persona_id);
+
+  return (
+    <div style={{ display: 'grid', gap: 14 }}>
+      <div style={{ borderBottom: '1px solid var(--line-subtle)', paddingBottom: 12 }}>
+        <div style={{ fontWeight: 600, fontSize: 16 }}>{contact.display_name}</div>
+        <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
+          {inbox.display_name} · {inbox.platform} · 粉丝平台 ID {contact.peer_platform_id}
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gap: 8, padding: 12, background: 'var(--panel-2)', borderRadius: 8, border: '1px solid var(--line-subtle)' }}>
+        <div className="mono ink-3" style={{ fontSize: 11 }}>这个粉丝的接管设置</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+          <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>人设
+            <select value={contact.persona_id ?? ''} className="select" style={{ marginLeft: 6 }}
+                    onChange={e => { if (e.target.value) onPatch(contact.id, { persona_id: e.target.value }); }}>
+              <option value="">（未选）</option>
+              {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>
+          <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>Provider
+            <select
+              value={contact.reply_provider_config_id ?? ''}
+              className="select" style={{ marginLeft: 6 }}
+              onChange={e => {
+                if (e.target.value) onPatch(contact.id, { reply_provider_config_id: e.target.value });
+                else onPatch(contact.id, { clear_reply_provider: true });
+              }}
+            >
+              <option value="">
+                跟随接管号默认（{providers.find(p => p.id === inbox.reply_provider_config_id)?.name ?? '未选'}）
+              </option>
+              {providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>
+          <label className="mono" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={contact.autoreply_enabled} disabled={!canAutoreply && !contact.autoreply_enabled}
+                   onChange={e => onPatch(contact.id, { autoreply_enabled: e.target.checked })} />
+            自动接管
+          </label>
+        </div>
+        {!canAutoreply && (
+          <div className="mono" style={{ fontSize: 11, color: 'var(--warn)' }}>
+            {!bridge && '— 这个接管号没绑定在线 Bridge；'}
+            {bridge && bridge.status !== 'online' && `— Bridge ${bridge.hostname} 离线；`}
+            {!inbox.enabled && '— 接管号已停用；'}
+            {!effectiveProviderId && '— 没有可用的 Provider；'}
+            {!contact.persona_id && '— 没有人设；'}
+            自动接管启不来。
+          </div>
+        )}
+
+        <label className="ink-3" style={{ fontSize: 11 }}>关系卡（card_md）— 简单写下你跟这个人的关系，AI 回复时会读到</label>
+        <textarea
+          className="input mono"
+          style={{ minHeight: 90, fontSize: 12 }}
+          value={draftCard}
+          onChange={e => setDraftCard(e.target.value)}
+          placeholder="例如：北京大学生，喜欢户外，去年送过我一袋茶叶，叫我「alice 姐」"
+        />
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+          {draftCard !== (contact.card_md ?? '') && (
+            <button className="btn btn-sm btn-ghost"
+                    onClick={() => setDraftCard(contact.card_md ?? '')}>放弃修改</button>
+          )}
+          <button className="btn btn-sm btn-primary" disabled={savingCard || draftCard === (contact.card_md ?? '')}
+                  onClick={async () => {
+                    setSavingCard(true);
+                    try { await onPatch(contact.id, { card_md: draftCard }); }
+                    finally { setSavingCard(false); }
+                  }}>{savingCard ? '保存中…' : '保存关系卡'}</button>
+        </div>
+      </div>
+
+      {messages.length === 0 ? <Empty>暂无消息。</Empty> : (
+        <div style={{ display: 'grid', gap: 8, maxHeight: '52dvh', overflow: 'auto', paddingRight: 4 }}>
+          {messages.map(m => (
+            <div key={m.id} style={{ display: 'flex', justifyContent: m.role === 'self' ? 'flex-end' : 'flex-start' }}>
+              <div style={{ maxWidth: '76%' }}>
+                <div className="mono ink-3" style={{ fontSize: 10, textAlign: m.role === 'self' ? 'right' : 'left', marginBottom: 3 }}>
+                  {m.role === 'self' ? '我' : contact.display_name} · {formatDateTime(m.timestamp)} · {m.source}
+                </div>
+                <div style={{
+                  padding: '8px 10px',
+                  borderRadius: 12,
+                  background: m.role === 'self' ? 'var(--brass-soft)' : 'var(--panel-2)',
+                  border: '1px solid var(--line-subtle)',
+                  whiteSpace: 'pre-wrap',
+                  fontSize: 13,
+                  lineHeight: 1.5,
+                }}>
+                  {m.content}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -738,6 +510,79 @@ function formatDateTime(value: string | null | undefined): string {
 }
 
 // ---------------------------------------------------------------------------
+// Bridges — read-only status; `revoke` button is the only mutation.
+// ---------------------------------------------------------------------------
+
+function BridgesView({ bridges, inboxes, onChanged, setError }: {
+  bridges: Bridge[];
+  inboxes: Inbox[];
+  onChanged: () => void;
+  setError: (s: string) => void;
+}) {
+  const inboxesByBridge = useMemo(() => {
+    const m: Record<string, Inbox[]> = {};
+    for (const ib of inboxes) {
+      if (ib.bridge_id) {
+        if (!m[ib.bridge_id]) m[ib.bridge_id] = [];
+        m[ib.bridge_id].push(ib);
+      }
+    }
+    return m;
+  }, [inboxes]);
+
+  return (
+    <div>
+      <SectionHeader title="Bridges" hint="主播 PC 上跑的 daemon。带着 Studio 账号密码起来就会自动出现，按 (账号 + hostname) 标识。" />
+      {bridges.length === 0 ? (
+        <Empty>
+          还没有 Bridge。在主播的 PC 上 <span className="mono">docker compose run --rm bridge --studio-username=... --studio-password=... --chat-inbox '...'</span>，它会自动注册到这里。
+        </Empty>
+      ) : (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {bridges.map(br => (
+            <div key={br.id} className="card" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <StatusDot status={br.status} />
+                    {br.hostname}
+                  </div>
+                  <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
+                    {br.status === 'online' ? '在线' : br.status}
+                    {' · '}最后心跳 {formatDateTime(br.last_seen_at)}
+                    {' · '}承载 {(inboxesByBridge[br.id] || []).length} 个接管号
+                  </div>
+                </div>
+                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={async () => {
+                  if (!confirm(`确认 revoke ${br.hostname}？所有该机器上的接管号会从它身上脱钩，daemon 下次调用会被 401。`)) return;
+                  try { await api.deleteBridge(br.id); onChanged(); } catch (e) { setError(String(e)); }
+                }}>revoke</button>
+              </div>
+              {(inboxesByBridge[br.id] || []).length > 0 && (
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line-subtle)' }}>
+                  {(inboxesByBridge[br.id] || []).map(ib => (
+                    <div key={ib.id} className="mono" style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+                      ↳ {ib.platform} · {ib.platform_self_id || '—'} · {ib.display_name} · {ib.enabled ? 'enabled' : 'disabled'}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatusDot({ status }: { status: Bridge['status'] }) {
+  const color =
+    status === 'online' ? 'var(--accent)' :
+    status === 'revoked' ? 'var(--danger)' : 'var(--ink-3)';
+  return <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: color }} />;
+}
+
+// ---------------------------------------------------------------------------
 // Personas
 // ---------------------------------------------------------------------------
 
@@ -746,7 +591,7 @@ function PersonasView({ personas, onChanged, setError }: { personas: Persona[]; 
   const [editing, setEditing] = useState<Persona | null>(null);
   return (
     <div>
-      <SectionHeader title="人设 · Personas" hint="人设是内容资产，可被任意接管号引用">
+      <SectionHeader title="人设 · Personas" hint="人设是内容资产，可被任意接管号 / 粉丝引用">
         <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>+ 新建人设</button>
       </SectionHeader>
       {personas.length === 0 ? <Empty>还没有人设。</Empty> : (
@@ -870,7 +715,7 @@ function CreateProviderModal({ onClose, onCreated, setError }: { onClose: () => 
   return (
     <ModalShell onClose={onClose} title="新建 Provider Config">
       <FormField label="名称"><input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="例如 Deepseek" autoFocus /></FormField>
-      <FormField label="base_url"><input className="input mono" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://api.deepseek.com/v1" /></FormField>
+      <FormField label="base_url"><input className="input mono" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://api.deepseek.com" /></FormField>
       <FormField label="api_key"><input className="input mono" type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} /></FormField>
       <FormField label="default_model"><input className="input mono" value={model} onChange={e => setModel(e.target.value)} placeholder="deepseek-chat" /></FormField>
       <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建'} disabled={busy || !name.trim() || !baseUrl.trim() || !model.trim()} />
@@ -900,7 +745,7 @@ function ArchivesView({ archives, inboxes, onChanged, setError }: { archives: Ar
   return (
     <div>
       <SectionHeader title="聊天档案 · Archives" hint="WeFlow JSON 上传 → 落到指定接管号下，作为蒸馏来源" />
-      {inboxes.length === 0 ? <Empty>还没有接管号，请先创建。</Empty> : (
+      {inboxes.length === 0 ? <Empty>还没有接管号 — bridge daemon 一旦登入 chat 账号就会自动出现。</Empty> : (
         <div className="card" style={{ padding: 16, marginBottom: 18 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
             <FormField label="目标接管号">

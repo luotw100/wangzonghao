@@ -103,21 +103,17 @@ export interface Persona {
   updated_at: string;
 }
 
-export type BridgeStatus = 'paired_pending' | 'online' | 'offline' | 'revoked';
+export type BridgeStatus = 'online' | 'offline' | 'revoked';
 
 export interface Bridge {
   id: string;
   account_id: string;
   display_name: string;
+  hostname: string;
   status: BridgeStatus;
-  hostname: string | null;
   last_seen_at: string | null;
   created_at: string;
   updated_at: string;
-}
-
-export interface BridgeWithToken extends Bridge {
-  token: string;
 }
 
 export interface Inbox {
@@ -141,6 +137,7 @@ export interface Contact {
   display_name: string;
   card_md: string | null;
   persona_id: string | null;
+  reply_provider_config_id: string | null;
   autoreply_enabled: boolean;
   pending_reply: boolean;
   status: 'active' | 'archived';
@@ -275,55 +272,21 @@ export function deletePersona(id: string) {
   return request<{ status: string; id: string }>(`/personas/${id}`, { method: 'DELETE' });
 }
 
-// --- Bridges ---
+// --- Bridges (read-only + revoke; auto-provisioned by daemon handshake) ---
 
 export function getBridges() { return request<Bridge[]>('/bridges'); }
-export function createBridge(data: { display_name: string }) {
-  return request<BridgeWithToken>('/bridges', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-}
-export function updateBridge(id: string, data: { display_name?: string }) {
-  return request<Bridge>(`/bridges/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-}
 export function deleteBridge(id: string) {
   return request<{ status: string; id: string }>(`/bridges/${id}`, { method: 'DELETE' });
 }
-export function regenerateBridgeToken(id: string) {
-  return request<BridgeWithToken>(`/bridges/${id}/regenerate-token`, { method: 'POST' });
-}
 
-// --- Inboxes ---
+// --- Inboxes (read + edit defaults; never created/deleted from UI) ---
 
 export function getInboxes() { return request<Inbox[]>('/inboxes'); }
-export function getInbox(id: string) { return request<Inbox>(`/inboxes/${id}`); }
-export function createInbox(data: {
-  platform: string;
-  display_name: string;
-  default_persona_id: string | null;
-  bridge_id: string | null;
-  reply_provider_config_id: string | null;
-  enabled: boolean;
-}) {
-  return request<Inbox>('/inboxes', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-}
 export function updateInbox(
   id: string,
   data: {
     display_name?: string;
     default_persona_id?: string;
-    bridge_id?: string;
-    clear_bridge?: boolean;
     reply_provider_config_id?: string;
     clear_reply_provider?: boolean;
     enabled?: boolean;
@@ -335,18 +298,9 @@ export function updateInbox(
     body: JSON.stringify(data),
   });
 }
-export function deleteInbox(id: string) {
-  return request<{ status: string; id: string }>(`/inboxes/${id}`, { method: 'DELETE' });
-}
-export function getInboxContacts(id: string) {
-  return request<Contact[]>(`/inboxes/${id}/contacts`);
-}
 
 // --- Contacts ---
 
-export function getContact(contactId: string) {
-  return request<Contact>(`/contacts/${contactId}`);
-}
 export function getConversations() {
   return request<ConversationSummary[]>('/conversations');
 }
@@ -359,6 +313,8 @@ export function updateContact(
     display_name?: string;
     card_md?: string | null;
     persona_id?: string;
+    reply_provider_config_id?: string;
+    clear_reply_provider?: boolean;
     autoreply_enabled?: boolean;
     status?: 'active' | 'archived';
   },

@@ -90,22 +90,35 @@ class Persona(Base):
 
 
 # ---------------------------------------------------------------------------
-# Bridge — a registered daemon (Cloudflare-tunnel style: one per PC,
-# multiplexes N adapters / inboxes via a single connection).
+# Bridge — a registered daemon. Auto-provisioned on first handshake, keyed by
+# (account_id, hostname). The bridge identifies itself by sending its Studio
+# account credentials on handshake; Studio mints a session token that the
+# bridge uses for subsequent /api/bridge/* calls.
 # ---------------------------------------------------------------------------
 
 class Bridge(Base):
     __tablename__ = "bridges"
+    __table_args__ = (
+        UniqueConstraint("account_id", "hostname", name="uq_bridge_account_hostname"),
+    )
 
     id              = Column(String, primary_key=True, index=True)
     account_id      = Column(String, ForeignKey("accounts.id"), nullable=False, index=True)
+    hostname        = Column(String, nullable=False)
     display_name    = Column(String, nullable=False)
-    token_hash      = Column(String, nullable=False, unique=True, index=True)
-    status          = Column(String, nullable=False)         # 'paired_pending' | 'online' | 'offline' | 'revoked'
-    hostname        = Column(String, nullable=True)
+    status          = Column(String, nullable=False)         # 'online' | 'offline' | 'revoked'
     last_seen_at    = Column(DateTime, nullable=True)
     created_at      = Column(DateTime, nullable=False)
     updated_at      = Column(DateTime, nullable=False)
+
+
+class BridgeSession(Base):
+    __tablename__ = "bridge_sessions"
+
+    id           = Column(String, primary_key=True, index=True)   # token sha256
+    bridge_id    = Column(String, ForeignKey("bridges.id"), nullable=False, index=True)
+    created_at   = Column(DateTime, nullable=False)
+    last_seen_at = Column(DateTime, nullable=False)
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +159,7 @@ class Contact(Base):
     display_name                = Column(String, nullable=False)
     card_md                     = Column(Text, nullable=True)
     persona_id                  = Column(String, ForeignKey("personas.id"), nullable=True)
+    reply_provider_config_id    = Column(String, ForeignKey("provider_configs.id"), nullable=True)
     autoreply_enabled           = Column(Boolean, nullable=False)
     pending_reply               = Column(Boolean, nullable=False)
     status                      = Column(String, nullable=False)    # 'active' | 'archived'

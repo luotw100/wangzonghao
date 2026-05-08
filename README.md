@@ -31,21 +31,23 @@ Laborster 是一个**通用拟人化私聊接管服务**：让 AI 替主播 / �
 
 ## Studio 的核心概念
 
+UI 上你只直接接触 **接管 / 人设 / Provider / 聊天档案 / 蒸馏** 这几个 tab。Inbox 和 Bridge 仍然存在于 DB / 协议里，但都是 daemon 第一次握手时自动出现，不需要在 UI 上手工建。
+
 | 概念 | 一句话 | 数量 |
 | --- | --- | --- |
 | **Account** | Studio 后台的登录账号，CLI 创建 | 1 |
-| **Persona** | 人设 — 纯内容资产（markdown），多个 Inbox 可共享 | N / Account |
-| **Bridge** | 注册在云端的 daemon 实例，跑在主播 PC 上 | N / Account |
-| **Inbox** | 接管号 — 一个 Channel 上的身份；绑给某个 Bridge 来跑 | N / Account |
-| **Contact** | 接管号下的某个对方，有自己的关系卡 | N / Inbox |
+| **Persona** | 人设 — 纯内容资产（markdown），多个 Contact / Inbox 可共享 | N / Account |
 | **ProviderConfig** | LLM 后端配置池 | N / Account |
 | **Archive** | 上传的 WeFlow JSON 历史聊天 | N / Account |
-| **DistillJob** | 把一个 Inbox 的历史蒸出 Persona + 各 Contact 卡片 | N / Account |
+| **DistillJob** | 把一个接管号的历史蒸出 Persona + 各 Contact 卡片 | N / Account |
+| **Inbox**（自动） | 一个 Channel 上的身份（一个 wxid / chat user）；bridge 登入时自动出现 | N / Account |
+| **Bridge**（自动） | 主播 PC 上的 daemon；按 (account, hostname) 自动注册 | N / Account |
+| **Contact** | 接管号下的某个粉丝；UI 上叫"接管"，每个独立设 Persona / Provider / autoreply | N / Inbox |
 
 **关键拆分：**
-- *Bridge ↔ Inbox 是 1:N。* 一台主播 PC 一个 Bridge daemon，可以同时服务这台机器上的多个平台账号（微信 + 飞书 + chat 全装在一台 Mac 上常见）。
-- *Persona 跟 Inbox 解耦。* 一个运营管 5 个微信号 = 5 个 Inbox（可能挂在 5 台 PC、5 个 Bridge 上）；这 5 个 Inbox 可以全部用同一个 Persona，也可以一号一人设。
-- *粒度还可以再细：* 每个 Contact 都能 override 用别的人设；每个 Contact 都能单独开关 autoreply。
+- *Contact 是接管单元。* 每个 Contact 独立选 Persona、独立选 Provider、独立开关 autoreply。它的 Inbox 只决定"消息从哪个号收发"。
+- *Inbox 提供默认值。* 新粉丝进入时继承 Inbox 的默认 Persona / Provider；之后两边各改各的。
+- *Bridge ↔ Inbox 是 1:N。* 一台主播 PC 一个 Bridge daemon，可以同时服务这台机器上的多个平台账号。
 
 ---
 
@@ -57,7 +59,7 @@ Laborster 是一个**通用拟人化私聊接管服务**：让 AI 替主播 / �
 
 **Studio 不直连任何 Channel。** Studio 不再有任何平台 SDK / 客户端代码。所有"跟平台说话"都经过 Bridge。这样 Studio 干净、好部署、好测试。
 
-**Bridge 用 TOML 配置，凭据本地存。** 跟 Cloudflare Tunnel 同构：Studio UI 控制"哪个 Inbox 绑给哪个 Bridge"；本地 `bridge.toml` 提供每个 Inbox 的平台凭据（chat 密码、飞书 app_secret、微信 hook 路径等）。Studio 永远看不到这些凭据。
+**Bridge 不持有长期凭据。** Bridge daemon 没有任何持久 token；每次起来都用主播的 Studio 账号密码 + hostname 重新换 session token。Bridge 行按 (account, hostname) 自动 upsert，没有"先在 UI 建 Bridge → 拷 token"的流程。平台凭据（chat 用户名密码、未来微信 hook 路径等）通过 CLI 参数传入，留在主播本机，永远不会上传 Studio。
 
 ---
 
@@ -101,36 +103,32 @@ Studio 后台在 http://localhost:23457 。
 后台操作顺序（推荐）：
 1. **Provider** tab → 新建 LLM Provider
 2. **人设** tab → 新建至少一个人设
-3. **Bridges** tab → 新建一个 Bridge → 复制窗口里显示的整段 TOML（含 token）
-4. **接管号** tab → 新建 Inbox → 选 platform、默认人设、绑定到刚才那个 Bridge
-5. 在 Bridge 的 TOML 里加这个 Inbox 的 `[[inboxes]]` 配置块（含平台凭据）
-6. 启动 Bridge daemon（见下）
-7. **聊天档案** tab → 上传 WeFlow JSON（指明哪个 wxid 是"我" + 落地到哪个接管号）
-8. **蒸馏** tab → 选 接管号 + 目标人设 + Provider → 开蒸
+3. 在主播 PC 上启动 Bridge daemon（见下）—— Bridge / Inbox 会自动出现在 Studio
+4. **接管** tab → 选粉丝、设人设 / Provider / 开 autoreply、写关系卡
+5. **聊天档案** tab → 上传 WeFlow JSON（指明哪个 wxid 是"我" + 落地到哪个接管号）
+6. **蒸馏** tab → 选 接管号 + 目标人设 + Provider → 开蒸
 
 ### 3. Bridge daemon
 
-复制 `services/bridge/bridge.toml.example` 到 `bridge.toml`，填入 Studio UI 给的 token + 各 Inbox 的凭据，然后：
+直接拿主播的 Studio 账号密码 + 该机器要登的 chat 账号起来：
 
 ```bash
 cd services/bridge
-docker compose up --build
+docker compose run --rm bridge \
+  --studio-username=demo --studio-password=demo123 \
+  --studio-url=http://host.docker.internal:23457 \
+  --chat-inbox 'base_url=http://host.docker.internal:23456,username=alice,password=Alice123'
 ```
 
-或本机裸跑（不用 docker）：
-
-```bash
-cd services/bridge
-BRIDGE_CONFIG=$PWD/bridge.toml uv run python -m bridge.main
-```
+- 默认连云端 `https://studio.laborster.com`，本地联调用 `--studio-url` 覆盖。
+- 想让一个 Bridge 同时挂多个 chat 账号：再加一行 `--chat-inbox '...'`。
 
 启动后 Bridge 会：
-1. 读 TOML，知道自己应该 serve 哪些 Inbox
-2. 跟 Studio 握手，Studio 把 `Inbox.bridge_id` 鉴权 / 绑定到这个 Bridge，并返回它实际可服务的 Inbox 列表
-3. 为每个 Inbox 起一个 adapter（chat → 登录 chat 账号；未来 wechat → hook 桌面客户端）
-4. 同时跑 heartbeat / inbound / outbound 三个循环——所有 Inbox 共享一条到 Studio 的连接
+1. 用账号密码 + hostname 调 `/api/bridge/handshake`，按 (account, hostname) upsert Bridge 行，发回一次性 session token。
+2. 报告它登入的每个 chat 账号，Studio 自动 upsert Inbox。
+3. 之后所有 heartbeat / inbound / outbound 都用 session token；bridge 重启 = 重新 handshake = 新 token。
 
-如果你在 Studio UI 里把某个 Inbox 改绑给别的 Bridge，下次心跳时本机 Bridge 会自动停掉对应 adapter。
+撤掉一个 Bridge：在 web 「Bridges」tab 点 revoke，daemon 下次调用会被 401，需要重启才能复活（拿新 token）。
 
 ---
 
@@ -156,19 +154,19 @@ docker compose exec -T chat-api uv run python -m chat.cli list-accounts
 | 项目 | 存储 |
 | --- | --- |
 | Chat | docker volume `chat-storage`（chat.db + 附件） |
-| Studio | bind-mount `services/studio/storage/`（studio.db + uploads/） |
-| Bridge | 无服务端持久化；TOML 本地保存 |
+| Studio | docker volume `studio-storage`（studio.db + uploads/） |
+| Bridge | 无任何持久化；CLI 参数即全部状态 |
 
 ---
 
 ## 现状
 
 - ✅ Chat sandbox 完整可用
-- ✅ Studio：Account / Persona / Bridge / Inbox / Contact / Archive / Distill 全齐
-- ✅ Bridge 协议：handshake / heartbeat（带 inbox 同步）/ incoming / outbound 长轮询 / ack
-- ✅ Reply LLM brain：ReplyScanner + 静默期防抖 + chunks 写 outbound
-- ✅ Bridge daemon：TOML 配置，Cloudflare-tunnel 风格多 adapter 多路复用
-- ✅ Studio 前端：6 个 tab（Bridges / Inboxes / Personas / Providers / Archives / Distill）
+- ✅ Studio：Account / Persona / Inbox（自动）/ Bridge（自动）/ Contact / Archive / Distill 全齐
+- ✅ Bridge 协议：账号密码握手 / heartbeat（带 inbox 同步）/ incoming / outbound 长轮询 / ack
+- ✅ Reply LLM brain：ReplyScanner + 静默期防抖 + chunks 写 outbound + per-contact provider override
+- ✅ Bridge daemon：零配置 CLI，多 adapter 共享一条到 Studio 的连接
+- ✅ Studio 前端：6 个 tab（接管 / Bridges / 人设 / Provider / 聊天档案 / 蒸馏）
 - ⏳ 真微信 adapter：等 chat sandbox 路径线上跑稳之后再加
 - ⏳ Bridge 本地离线缓存（断网时落盘 incoming，下次连上再推）
 - ⏳ Studio Bridge `offline` 自动转换（心跳 N 秒不到自动切 offline）
@@ -177,7 +175,7 @@ docker compose exec -T chat-api uv run python -m chat.cli list-accounts
 
 ## 设计备注
 
-- **Cloudflare-tunnel 形状的 Bridge：** 一台机器一个 daemon、一个 token、一份 TOML，多 Channel 多路复用。换机器就 revoke 旧 Bridge + 新建一个，所有 Inbox 重新绑过去。
+- **Bridge 自注册：** 没有"先在 UI 建 Bridge → 拷 token"。每次握手就是一次 Studio 账号登录，按 (account, hostname) upsert Bridge 行。daemon 连续重启拿新 token，状态最少。
 - **Studio 不直连 Channel：** 早期 Studio 直接调 Chat 接口创建 user / bulk-import / poll，把 Chat 当微信模拟器。这条路下线了，由 Bridge 桥接。Chat sandbox 现在跟未来真微信完全对称——Bridge 把它们一视同仁。
 - **不存默认值：** 每条 INSERT 显式赋值。schema 演化、字段重命名、字段语义变更都能在 git diff 里看清——而不是依赖 sqlalchemy 的某行 `default=False` 在某次重启时悄悄改掉行为。
 - **三个独立项目：** services/chat、services/studio、services/bridge 各有自己的 `pyproject.toml`、`uv.lock`、`Dockerfile`、`compose.yaml`，互不依赖。

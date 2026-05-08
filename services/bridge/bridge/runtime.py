@@ -1,19 +1,12 @@
 """Bridge daemon runtime — multi-adapter, single connection to Studio.
 
-One Bridge daemon runs N adapters in parallel (one per inbox listed in the
-TOML config that Studio also confirms). All adapters' incoming streams are
-multiplexed into one outbound POST queue; one outbound long-poll task
-fan-outs to the right adapter based on inbox_id.
-
-Loops:
-- heartbeat_loop: pings Studio every N seconds; receives current
-  authoritative inbox set, reconciles adapters (start new / stop dropped).
-- per-adapter inbound loops: stream incoming → tag with inbox_id → push
-  to a shared queue → batched POST to /api/bridge/incoming.
-- inbound_pump_loop: drains the shared queue with brief coalescing.
-- outbound_loop: long-polls /api/bridge/outbound (returns rows for ALL
-  inboxes under this bridge), dispatches each to its inbox's adapter
-  with typing-speed delay between chunks.
+The daemon is given an opaque list of platform login claims (e.g. chat
+username/password tuples) on the CLI. It logs each one in to obtain a
+`platform_self_id`, then handshakes Studio with `(platform, platform_self_id)`
+pairs. Studio owns the inbox_id (auto-creating an Inbox if it's the first
+time we've seen this self_id under this account) and returns the resolved
+mapping. The daemon then opens an inbound stream per inbox and shares one
+outbound long-poll across them.
 """
 
 from __future__ import annotations
@@ -21,11 +14,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from bridge.adapters.base import Adapter, IncomingMessage, build_adapter
-from bridge.config import BridgeConfig, InboxConfig, find_inbox
 from bridge.studio_client import StudioClient
 
 logger = logging.getLogger(__name__)
@@ -43,18 +35,33 @@ INBOUND_BATCH_MAX = 30
 OUTBOUND_LONG_POLL_TIMEOUT = 30
 
 
+@dataclass(frozen=True)
+class InboxClaim:
+    """One chat-platform login the user asked us to run."""
+    platform: str
+    raw: Dict[str, str]
+
+
 @dataclass
 class _AdapterEntry:
     inbox_id: str
+    platform: str
+    platform_self_id: str
     adapter: Adapter
-    platform_self_id: Optional[str]
-    inbound_task: Optional[asyncio.Task[Any]]
+    inbound_task: Optional[asyncio.Task[Any]] = None
 
 
 class BridgeRuntime:
-    def __init__(self, *, studio: StudioClient, config: BridgeConfig) -> None:
+    def __init__(
+        self,
+        *,
+        studio: StudioClient,
+        hostname: str,
+        claims: List[InboxClaim],
+    ) -> None:
         self._studio = studio
-        self._config = config
+        self._hostname = hostname
+        self._claims = claims
         self._adapters: Dict[str, _AdapterEntry] = {}
         self._inbound_queue: asyncio.Queue[Tuple[str, IncomingMessage]] = asyncio.Queue()
         self._cursor: int = 0
@@ -62,38 +69,80 @@ class BridgeRuntime:
         self._loop_tasks: List[asyncio.Task[Any]] = []
 
     async def run(self) -> None:
-        # Spin up an adapter per inbox declared in the local config and log in
-        # to obtain platform_self_id. We hand the resulting list to handshake
-        # so Studio can rebind Inbox.bridge_id → us and stamp platform_self_id.
-        for inbox_cfg in self._config.inboxes:
-            await self._spawn_adapter(inbox_cfg)
+        # 1) Log into each platform claim → get platform_self_id.
+        prelogged: List[Tuple[InboxClaim, Adapter, str]] = []
+        for claim in self._claims:
+            adapter = build_adapter(claim.platform, claim.raw)
+            try:
+                self_id = await adapter.login()
+            except Exception as exc:
+                logger.error("login failed for platform=%s raw=%s: %s",
+                             claim.platform, _redact(claim.raw), exc)
+                with suppress(Exception):
+                    await adapter.close()
+                continue
+            prelogged.append((claim, adapter, self_id))
 
-        info = await self._studio.handshake(
-            hostname=self._config.hostname,
-            inboxes=[
-                {"inbox_id": e.inbox_id, "platform_self_id": e.platform_self_id or ""}
-                for e in self._adapters.values()
-                if e.platform_self_id is not None
-            ],
-        )
+        # 2) Handshake with Studio. It auto-upserts Inbox rows for any new
+        # (platform, platform_self_id) under this account, and returns
+        # the authoritative inbox_id for each.
+        handshake_payload = [
+            {"platform": claim.platform, "platform_self_id": self_id}
+            for (claim, _adapter, self_id) in prelogged
+        ]
+        try:
+            info = await self._studio.handshake(
+                hostname=self._hostname, inboxes=handshake_payload,
+            )
+        except Exception as exc:
+            logger.error("handshake failed: %s", exc)
+            for _claim, adapter, _ in prelogged:
+                with suppress(Exception):
+                    await adapter.close()
+            return
+
         self._cursor = int(info.get("cursor", 0))
-        served_ids = {ix["id"] for ix in info.get("inboxes", [])}
+        served = info.get("inboxes", [])  # [{id, platform, platform_self_id, display_name, enabled, ...}]
+        served_by_key: Dict[Tuple[str, str], Dict[str, Any]] = {
+            (i["platform"], i["platform_self_id"]): i for i in served
+        }
+
         logger.info(
             "handshake ok: bridge=%s account=%s served=%d cursor=%d",
-            info.get("bridge_id"), info.get("account_id"), len(served_ids), self._cursor,
+            info.get("bridge_id"), info.get("account_id"), len(served), self._cursor,
         )
 
-        # Drop adapters Studio refused to bind (e.g. inbox_id is bound to a
-        # different bridge in the UI, or doesn't belong to this account).
-        for inbox_id in list(self._adapters.keys()):
-            if inbox_id not in served_ids:
-                logger.warning("inbox %s not served by Studio; dropping local adapter", inbox_id)
-                await self._stop_adapter(inbox_id)
+        # 3) Bind each prelogged adapter to its assigned inbox_id; drop any
+        # that Studio refused (e.g. account has no Persona yet).
+        loop = asyncio.get_running_loop()
+        for claim, adapter, self_id in prelogged:
+            assigned = served_by_key.get((claim.platform, self_id))
+            if not assigned:
+                logger.warning(
+                    "platform=%s self=%s not served by Studio; dropping adapter",
+                    claim.platform, self_id,
+                )
+                with suppress(Exception):
+                    await adapter.close()
+                continue
+            entry = _AdapterEntry(
+                inbox_id=assigned["id"],
+                platform=claim.platform,
+                platform_self_id=self_id,
+                adapter=adapter,
+            )
+            entry.inbound_task = loop.create_task(
+                self._adapter_inbound_loop(entry.inbox_id, adapter),
+                name=f"inbound-{entry.inbox_id}",
+            )
+            self._adapters[entry.inbox_id] = entry
+            logger.info("adapter up: inbox=%s platform=%s self=%s display=%s",
+                        entry.inbox_id, claim.platform, self_id, assigned.get("display_name"))
 
-        # Push catch-up batch from each adapter (idempotent on Studio side).
+        # 4) Initial catch-up batch (idempotent on Studio side).
         await self._push_initial_catchup()
 
-        loop = asyncio.get_running_loop()
+        # 5) Main loops.
         self._loop_tasks = [
             loop.create_task(self._heartbeat_loop(), name="heartbeat"),
             loop.create_task(self._inbound_pump_loop(), name="inbound-pump"),
@@ -113,31 +162,6 @@ class BridgeRuntime:
         self._stop.set()
 
     # --- adapter lifecycle ----------------------------------------------
-
-    async def _spawn_adapter(self, inbox_cfg: InboxConfig) -> None:
-        adapter = build_adapter(inbox_cfg.platform, inbox_cfg.raw)
-        try:
-            platform_self_id = await adapter.login()
-        except Exception as exc:
-            logger.error("adapter login failed for inbox %s (%s): %s",
-                         inbox_cfg.inbox_id, inbox_cfg.platform, exc)
-            with suppress(Exception):
-                await adapter.close()
-            return
-        entry = _AdapterEntry(
-            inbox_id=inbox_cfg.inbox_id,
-            adapter=adapter,
-            platform_self_id=platform_self_id,
-            inbound_task=None,
-        )
-        loop = asyncio.get_running_loop()
-        entry.inbound_task = loop.create_task(
-            self._adapter_inbound_loop(inbox_cfg.inbox_id, adapter),
-            name=f"inbound-{inbox_cfg.inbox_id}",
-        )
-        self._adapters[inbox_cfg.inbox_id] = entry
-        logger.info("adapter up: inbox=%s platform=%s self=%s",
-                    inbox_cfg.inbox_id, inbox_cfg.platform, platform_self_id)
 
     async def _stop_adapter(self, inbox_id: str) -> None:
         entry = self._adapters.pop(inbox_id, None)
@@ -210,7 +234,6 @@ class BridgeRuntime:
             except asyncio.CancelledError:
                 return
             batch: List[Tuple[str, IncomingMessage]] = [first]
-            # Coalesce briefly
             deadline_t = asyncio.get_running_loop().time() + INBOUND_BATCH_LINGER
             while len(batch) < INBOUND_BATCH_MAX:
                 remaining = deadline_t - asyncio.get_running_loop().time()
@@ -225,40 +248,26 @@ class BridgeRuntime:
                 batch.append(item)
             await self._push_batch(batch)
 
-    # --- heartbeat + sync ----------------------------------------------
+    # --- heartbeat -----------------------------------------------------
 
     async def _heartbeat_loop(self) -> None:
         while not self._stop.is_set():
             try:
                 resp = await self._studio.heartbeat()
                 served = {ix["id"] for ix in resp.get("inboxes", [])}
-                await self._reconcile_adapters(served)
+                # If Studio dropped a binding (UI deleted the inbox), stop
+                # the adapter; we don't auto-restart anything here — adding
+                # a new login means restarting bridge with another --chat-inbox.
+                for inbox_id in list(self._adapters.keys()):
+                    if inbox_id not in served:
+                        logger.info("inbox %s no longer served; stopping adapter", inbox_id)
+                        await self._stop_adapter(inbox_id)
             except Exception as exc:
                 logger.warning("heartbeat failed: %s", exc)
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=HEARTBEAT_INTERVAL)
             except asyncio.TimeoutError:
                 pass
-
-    async def _reconcile_adapters(self, served_ids: set[str]) -> None:
-        """Stop adapters Studio no longer serves; (re)start ones that appeared."""
-        # Stop dropped
-        for inbox_id in list(self._adapters.keys()):
-            if inbox_id not in served_ids:
-                logger.info("inbox %s no longer served; stopping adapter", inbox_id)
-                await self._stop_adapter(inbox_id)
-        # Start newly-served ones (must have local config)
-        for inbox_id in served_ids:
-            if inbox_id in self._adapters:
-                continue
-            ic = find_inbox(self._config, inbox_id)
-            if ic is None:
-                logger.warning(
-                    "inbox %s served by Studio but missing from local TOML; "
-                    "add an [[inboxes]] block and reload bridge", inbox_id,
-                )
-                continue
-            await self._spawn_adapter(ic)
 
     # --- outbound ------------------------------------------------------
 
@@ -272,7 +281,6 @@ class BridgeRuntime:
                 logger.warning("outbound long-poll failed: %s", exc)
                 await asyncio.sleep(2)
                 continue
-
             for item in items:
                 obid = int(item["id"])
                 if obid <= self._cursor:
@@ -329,3 +337,7 @@ class BridgeRuntime:
         if is_first:
             delay += THINK_DELAY
         return max(TYPING_MIN_DELAY, min(TYPING_MAX_DELAY, delay))
+
+
+def _redact(raw: Dict[str, str]) -> Dict[str, str]:
+    return {k: ("***" if k.lower() == "password" else v) for k, v in raw.items()}

@@ -28,9 +28,9 @@ def _required(d: dict, key: str) -> str:
 
 def _build_chat_adapter(raw_config: dict) -> Adapter:
     return ChatAdapter(
-        base_url=_required(raw_config, "chat_base_url"),
-        username=_required(raw_config, "chat_username"),
-        password=_required(raw_config, "chat_password"),
+        base_url=_required(raw_config, "base_url"),
+        username=_required(raw_config, "username"),
+        password=_required(raw_config, "password"),
     )
 
 

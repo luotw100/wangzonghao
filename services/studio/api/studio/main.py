@@ -707,39 +707,77 @@ def get_distill_job(job_id: str, db: DbDep, account: CurrentAccountDep):
 def _serialize_bridge_inbox_view(i: Inbox) -> Dict[str, Any]:
     """Compact inbox view for bridge consumption."""
     return {
-        "id": i.id, "platform": i.platform, "display_name": i.display_name,
-        "enabled": i.enabled, "default_persona_id": i.default_persona_id,
+        "id": i.id,
+        "platform": i.platform,
+        "platform_self_id": i.platform_self_id,
+        "display_name": i.display_name,
+        "enabled": i.enabled,
+        "default_persona_id": i.default_persona_id,
     }
 
 
 @app.post("/api/bridge/handshake")
 def bridge_handshake(payload: BridgeHandshake, db: DbDep, bridge: BridgeDep):
+    """Auto-upsert an Inbox per (platform, platform_self_id) the bridge logged into.
+
+    Bridge no longer claims inbox_id — it just reports which platform identities
+    it successfully authenticated as. Studio looks up an existing Inbox or
+    creates one bound to this bridge with the account's first Persona as default.
+    """
     now = utc_now()
     bridge.hostname = payload.hostname
     bridge.last_seen_at = now
     bridge.status = "online"
     bridge.updated_at = now
 
-    # Rebind each claimed inbox (must belong to this bridge's account, and
-    # is allowed to migrate from another bridge — UI binding is the source
-    # of truth, but the daemon's claim list is what actually runs adapters).
+    default_persona = (
+        db.query(Persona)
+        .filter(Persona.account_id == bridge.account_id, Persona.status == "active")
+        .order_by(Persona.created_at.asc())
+        .first()
+    )
+
     served: List[Inbox] = []
     for claim in payload.inboxes:
         inbox = (
             db.query(Inbox)
-            .filter(Inbox.id == claim.inbox_id, Inbox.account_id == bridge.account_id)
+            .filter(
+                Inbox.account_id == bridge.account_id,
+                Inbox.platform == claim.platform,
+                Inbox.platform_self_id == claim.platform_self_id,
+            )
             .first()
         )
-        if not inbox:
-            continue  # skip silently; Studio doesn't trust the bridge's claim if no match
-        # Honor inbox.bridge_id if it points to a different bridge — only serve
-        # inboxes the UI has explicitly assigned to this bridge.
-        if inbox.bridge_id and inbox.bridge_id != bridge.id:
-            continue
-        if not inbox.bridge_id:
+        if inbox:
+            # Existing identity — rebind to this bridge so UI never goes
+            # stale when the user moves a login to a different machine.
             inbox.bridge_id = bridge.id
-        inbox.platform_self_id = claim.platform_self_id
-        inbox.updated_at = now
+            inbox.updated_at = now
+            served.append(inbox)
+            continue
+
+        if not default_persona:
+            logger.warning(
+                "bridge %s claimed (%s, %s) but account %s has no Persona; skipping",
+                bridge.id, claim.platform, claim.platform_self_id, bridge.account_id,
+            )
+            continue
+
+        inbox = Inbox(
+            id=new_id("ib"),
+            account_id=bridge.account_id,
+            bridge_id=bridge.id,
+            platform=claim.platform,
+            display_name=f"{claim.platform_self_id}@{claim.platform}",
+            default_persona_id=default_persona.id,
+            reply_provider_config_id=None,
+            enabled=True,
+            platform_self_id=claim.platform_self_id,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(inbox)
+        db.flush()
         served.append(inbox)
 
     last_outbound_id = (
@@ -759,6 +797,7 @@ def bridge_handshake(payload: BridgeHandshake, db: DbDep, bridge: BridgeDep):
         "account_id": bridge.account_id,
         "inboxes": [_serialize_bridge_inbox_view(i) for i in served],
         "cursor": cursor,
+        "no_persona": not default_persona,
     }
 
 

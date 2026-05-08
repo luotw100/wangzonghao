@@ -29,7 +29,11 @@ class StudioClient:
     async def handshake(
         self, hostname: str, inboxes: List[Dict[str, str]]
     ) -> Dict[str, Any]:
-        """inboxes: [{"inbox_id": ..., "platform_self_id": ...}, ...]"""
+        """inboxes: [{"platform": ..., "platform_self_id": ...}, ...].
+
+        Studio resolves each pair to an inbox_id (auto-creating Inbox rows
+        for first-time pairs) and returns the authoritative served list.
+        """
         r = await self._http.post(
             f"{self.base}/api/bridge/handshake",
             json={"hostname": hostname, "inboxes": inboxes},

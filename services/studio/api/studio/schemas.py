@@ -108,13 +108,13 @@ class OutboundCreate(StrictModel):
 # --- Bridge protocol (Bridge daemon ↔ Studio) ---
 
 class BridgeHandshakeInbox(StrictModel):
-    inbox_id: str
+    platform: str
     platform_self_id: str
 
 
 class BridgeHandshake(StrictModel):
     hostname: str
-    inboxes: list[BridgeHandshakeInbox]   # what this bridge claims to serve, with current platform_self_id readings
+    inboxes: list[BridgeHandshakeInbox]   # platform logins this bridge has authenticated; Studio resolves to its own inbox_id
 
 
 class BridgeIncomingMessage(StrictModel):

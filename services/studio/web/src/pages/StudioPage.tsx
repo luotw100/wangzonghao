@@ -114,7 +114,11 @@ export function StudioPage() {
       </main>
 
       {tokenJustIssued && (
-        <BridgeTokenModal bridge={tokenJustIssued.bridge} onClose={() => setTokenJustIssued(null)} />
+        <BridgeCommandModal
+          bridge={tokenJustIssued.bridge}
+          token={tokenJustIssued.bridge.token}
+          onClose={() => setTokenJustIssued(null)}
+        />
       )}
     </div>
   );
@@ -139,6 +143,7 @@ function BridgesView({ bridges, inboxes, onChanged, setError, onTokenIssued }: {
   onTokenIssued: (br: BridgeWithToken) => void;
 }) {
   const [showCreate, setShowCreate] = useState(false);
+  const [showCommandFor, setShowCommandFor] = useState<Bridge | null>(null);
   const inboxesByBridge = useMemo(() => {
     const m: Record<string, Inbox[]> = {};
     for (const ib of inboxes) {
@@ -151,10 +156,10 @@ function BridgesView({ bridges, inboxes, onChanged, setError, onTokenIssued }: {
   }, [inboxes]);
   return (
     <div>
-      <SectionHeader title="Bridges" hint="一台主播 PC 跑一个 Bridge daemon；一个 daemon 可服务多个接管号">
+      <SectionHeader title="Bridges" hint="一台主播的 PC 跑一个 Bridge。新建后这里会给一条启动命令，复制走就能跑。">
         <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>+ 新建 Bridge</button>
       </SectionHeader>
-      {bridges.length === 0 ? <Empty>还没有 Bridge。建一个，把 token 复制到主播 PC 的 bridge.toml。</Empty> : (
+      {bridges.length === 0 ? <Empty>还没有 Bridge。建一个，会给你一条直接跑的启动命令。</Empty> : (
         <div style={{ display: 'grid', gap: 10 }}>
           {bridges.map(br => (
             <div key={br.id} className="card" style={{ padding: '14px 16px' }}>
@@ -163,15 +168,17 @@ function BridgesView({ bridges, inboxes, onChanged, setError, onTokenIssued }: {
                   <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8 }}>
                     <StatusDot status={br.status} />
                     {br.display_name}
-                    <span className="chip muted">{br.id}</span>
                   </div>
                   <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
-                    host: {br.hostname || '—'} · status: {br.status} · last_seen: {br.last_seen_at ?? '—'} · 服务 {(inboxesByBridge[br.id] || []).length} 个接管号
+                    {br.status === 'online' ? `在线 · 主机 ${br.hostname || '—'}` : br.status === 'paired_pending' ? '等待首次连接' : br.status}
+                    {' · '}最后心跳 {br.last_seen_at ?? '—'}
+                    {' · '}承载 {(inboxesByBridge[br.id] || []).length} 个接管号
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="btn btn-sm btn-ghost" onClick={() => setShowCommandFor(br)}>启动命令</button>
                   <button className="btn btn-sm btn-ghost" onClick={async () => {
-                    if (!confirm('重新生成 token 会让旧 token 失效，确认？')) return;
+                    if (!confirm('重新生成 token 会让旧 token 失效（已运行的 bridge 心跳会失败），确认？')) return;
                     try {
                       const fresh = await api.regenerateBridgeToken(br.id);
                       onTokenIssued(fresh);
@@ -188,7 +195,7 @@ function BridgesView({ bridges, inboxes, onChanged, setError, onTokenIssued }: {
                 <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line-subtle)' }}>
                   {(inboxesByBridge[br.id] || []).map(ib => (
                     <div key={ib.id} className="mono" style={{ fontSize: 11, color: 'var(--ink-2)' }}>
-                      ↳ {ib.id} · {ib.platform} · {ib.display_name} · {ib.enabled ? 'enabled' : 'disabled'}
+                      ↳ {ib.platform} · {ib.platform_self_id || '—'} · {ib.display_name} · {ib.enabled ? 'enabled' : 'disabled'}
                     </div>
                   ))}
                 </div>
@@ -202,6 +209,13 @@ function BridgesView({ bridges, inboxes, onChanged, setError, onTokenIssued }: {
           onClose={() => setShowCreate(false)}
           onCreated={(br) => { setShowCreate(false); onTokenIssued(br); onChanged(); }}
           setError={setError}
+        />
+      )}
+      {showCommandFor && (
+        <BridgeCommandModal
+          bridge={showCommandFor}
+          token={null}
+          onClose={() => setShowCommandFor(null)}
         />
       )}
     </div>
@@ -235,34 +249,93 @@ function CreateBridgeModal({ onClose, onCreated, setError }: {
         <input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="alice-mbp" autoFocus />
       </FormField>
       <p className="ink-3" style={{ fontSize: 12, margin: '0 0 12px' }}>
-        创建后会一次性显示 token。把 token + 这台 Bridge 服务的 inbox 配置写到主播 PC 的 <span className="mono">bridge.toml</span> 里。
+        创建后会给你一条 <b>包含 token 的启动命令</b>。命令在你机器上跑，密码不传 Studio。
+        关闭命令窗口后 token 就只能重发，命令本身随时能再生成（密码部分要重填）。
       </p>
-      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建并生成 token'} disabled={busy || !name.trim()} />
+      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建 Bridge'} disabled={busy || !name.trim()} />
     </ModalShell>
   );
 }
 
-function BridgeTokenModal({ bridge, onClose }: { bridge: BridgeWithToken; onClose: () => void }) {
-  const tomlExample = `# ~/.bridge/config.toml  (or BRIDGE_CONFIG=...)
-[bridge]
-studio_url = "<你的 studio URL>"
-token = "${bridge.token}"
-hostname = "${bridge.display_name}"
+interface ChatInboxDraft {
+  base_url: string;
+  username: string;
+  password: string;
+}
 
-# 然后为这台 Bridge 服务的每个 inbox 加一段 [[inboxes]]：
-# [[inboxes]]
-# inbox_id = "ib_xxx"
-# platform = "chat"
-# chat_base_url = "http://localhost:23456"
-# chat_username = "alice"
-# chat_password = "..."`;
+function BridgeCommandModal({ bridge, token, onClose }: {
+  bridge: Bridge;
+  token: string | null;     // present only right after creation/regenerate
+  onClose: () => void;
+}) {
+  const [drafts, setDrafts] = useState<ChatInboxDraft[]>([
+    { base_url: 'https://chat.laborster.com', username: '', password: '' },
+  ]);
+  const [copied, setCopied] = useState(false);
+
+  const tokenSlot = token ?? '<你保存的 token>';
+  const lines: string[] = [
+    'docker compose run --rm bridge \\',
+    `  --token=${tokenSlot} \\`,
+    ...drafts.flatMap((d, i) => {
+      const url = d.base_url || '<base_url>';
+      const u = d.username || '<username>';
+      const p = d.password || '<password>';
+      const isLast = i === drafts.length - 1;
+      const seg = `  --chat-inbox 'base_url=${url},username=${u},password=${p}'${isLast ? '' : ' \\'}`;
+      return [seg];
+    }),
+  ];
+  const command = lines.join('\n');
+
+  const update = (idx: number, patch: Partial<ChatInboxDraft>) => {
+    setDrafts(prev => prev.map((d, i) => i === idx ? { ...d, ...patch } : d));
+  };
+
   return (
-    <ModalShell onClose={onClose} title="Bridge token (仅显示一次)">
+    <ModalShell onClose={onClose} title={`Bridge 启动命令 · ${bridge.display_name}`}>
       <p className="ink-2" style={{ fontSize: 13, marginBottom: 12 }}>
-        复制下面的 TOML 到主播 PC 的 <span className="mono">~/.bridge/config.toml</span>，然后启动 Bridge daemon。窗口关闭后无法再看到 token，丢失只能 revoke 重发。
+        勾选要让这台 Bridge 登录的 chat 账号，命令会在下方实时拼好。<b>密码不会上传到 Studio</b> ——
+        全部留在你浏览器里，复制走的命令也只会跑在你自己的机器上。
+        {token && <span style={{ color: 'var(--warn)' }}> Token 只在本次窗口里完整显示，关掉就只能再重发。</span>}
       </p>
-      <pre className="card mono" style={{ padding: 14, fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>{tomlExample}</pre>
-      <ModalActions onCancel={onClose} onConfirm={onClose} confirmLabel="我已复制" />
+
+      <div style={{ display: 'grid', gap: 10, marginBottom: 12 }}>
+        {drafts.map((d, i) => (
+          <div key={i} className="card" style={{ padding: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <span className="mono ink-3" style={{ fontSize: 12 }}>chat 登录 #{i + 1}</span>
+              {drafts.length > 1 && (
+                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }}
+                        onClick={() => setDrafts(prev => prev.filter((_, j) => j !== i))}>移除</button>
+              )}
+            </div>
+            <div style={{ display: 'grid', gap: 6 }}>
+              <input className="input" value={d.base_url} onChange={e => update(i, { base_url: e.target.value })}
+                     placeholder="base_url" />
+              <input className="input" value={d.username} onChange={e => update(i, { username: e.target.value })}
+                     placeholder="username" />
+              <input className="input" value={d.password} onChange={e => update(i, { password: e.target.value })}
+                     placeholder="password (留空 → 命令里给占位符自己填)" type="text" />
+            </div>
+          </div>
+        ))}
+        <button className="btn btn-sm btn-ghost"
+                onClick={() => setDrafts(prev => [...prev, { base_url: 'https://chat.laborster.com', username: '', password: '' }])}>
+          + 再加一个 chat 账号
+        </button>
+      </div>
+
+      <pre className="card mono" style={{ padding: 14, fontSize: 12, lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-all', marginBottom: 12 }}>{command}</pre>
+
+      <ModalActions
+        onCancel={onClose}
+        onConfirm={async () => {
+          try { await navigator.clipboard.writeText(command); setCopied(true); setTimeout(() => setCopied(false), 1200); }
+          catch { /* user can still select & copy manually */ }
+        }}
+        confirmLabel={copied ? '已复制' : '复制命令'}
+      />
     </ModalShell>
   );
 }
@@ -279,187 +352,187 @@ function InboxesView({ inboxes, bridges, personas, providers, onChanged, setErro
   onChanged: () => void;
   setError: (s: string) => void;
 }) {
-  const [showCreate, setShowCreate] = useState(false);
-  const [contactsOf, setContactsOf] = useState<string | null>(null);
   return (
     <div>
-      <SectionHeader title="接管号 · Inboxes" hint="一个接管号 = 一个平台账号身份；可绑给某个 Bridge 来跑">
-        {personas.length === 0
-          ? <span className="mono ink-4" style={{ fontSize: 12 }}>请先在「人设」建至少一个</span>
-          : <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>+ 新增接管号</button>}
-      </SectionHeader>
-      {inboxes.length === 0 ? <Empty>还没有接管号。</Empty> : (
+      <SectionHeader title="接管号" hint="启动 Bridge 时登录的每个 chat 账号会自动出现在这里。点开看粉丝、给粉丝开自动回复。" />
+      {inboxes.length === 0 ? (
+        <Empty>
+          还没有接管号。先去「Bridges」建一个 Bridge、复制启动命令，跑起来后这里会自动出现你登录进去的 chat 账号。
+        </Empty>
+      ) : (
         <div style={{ display: 'grid', gap: 10 }}>
           {inboxes.map(ib => (
-            <div key={ib.id} className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                <div>
-                  <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {ib.display_name}
-                    <span className="chip muted">{ib.platform}</span>
-                    {!ib.enabled && <span className="chip warn">disabled</span>}
-                  </div>
-                  <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
-                    bridge: {bridgeLabel(bridges, ib.bridge_id)} · self: {ib.platform_self_id || '—'} · default persona: {personaName(personas, ib.default_persona_id)} · reply provider: {providerName(providers, ib.reply_provider_config_id)}
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="btn btn-sm btn-ghost" onClick={() => setContactsOf(contactsOf === ib.id ? null : ib.id)}>
-                    {contactsOf === ib.id ? '收起' : 'contacts'}
-                  </button>
-                  <select
-                    value={ib.bridge_id ?? ''}
-                    onChange={async (e) => {
-                      try {
-                        if (e.target.value) await api.updateInbox(ib.id, { bridge_id: e.target.value });
-                        else await api.updateInbox(ib.id, { clear_bridge: true });
-                        onChanged();
-                      } catch (err) { setError(String(err)); }
-                    }}
-                    className="select"
-                    style={{ minWidth: 120 }}
-                  >
-                    <option value="">（不绑 Bridge）</option>
-                    {bridges.map(br => <option key={br.id} value={br.id}>{br.display_name}</option>)}
-                  </select>
-                  <button className="btn btn-sm btn-ghost" onClick={async () => {
-                    try { await api.updateInbox(ib.id, { enabled: !ib.enabled }); onChanged(); }
-                    catch (e) { setError(String(e)); }
-                  }}>{ib.enabled ? '停用' : '启用'}</button>
-                  <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={async () => {
-                    if (!confirm('确认删除这个接管号？所有 pending outbound 会被取消。')) return;
-                    try { await api.deleteInbox(ib.id); onChanged(); } catch (e) { setError(String(e)); }
-                  }}>删除</button>
-                </div>
-              </div>
-              {contactsOf === ib.id && <InboxContacts inboxId={ib.id} personas={personas} setError={setError} onChanged={onChanged} />}
-            </div>
+            <InboxCard
+              key={ib.id} inbox={ib} bridges={bridges} personas={personas} providers={providers}
+              onChanged={onChanged} setError={setError}
+            />
           ))}
         </div>
-      )}
-      {showCreate && (
-        <CreateInboxModal
-          bridges={bridges} personas={personas} providers={providers}
-          onClose={() => setShowCreate(false)}
-          onCreated={() => { setShowCreate(false); onChanged(); }}
-          setError={setError}
-        />
       )}
     </div>
   );
 }
 
-function bridgeLabel(bridges: Bridge[], id: string | null): string {
-  if (!id) return '未绑定';
-  return bridges.find(b => b.id === id)?.display_name || id;
-}
-
-function personaName(personas: Persona[], id: string): string {
-  return personas.find(p => p.id === id)?.name || id;
-}
-
-function providerName(providers: ProviderConfig[], id: string | null): string {
-  if (!id) return '未绑定';
-  return providers.find(p => p.id === id)?.name || id;
+function InboxCard({ inbox: ib, bridges, personas, providers, onChanged, setError }: {
+  inbox: Inbox;
+  bridges: Bridge[];
+  personas: Persona[];
+  providers: ProviderConfig[];
+  onChanged: () => void;
+  setError: (s: string) => void;
+}) {
+  const bridge = bridges.find(b => b.id === ib.bridge_id) || null;
+  const online = bridge?.status === 'online';
+  return (
+    <div className="card" style={{ padding: '14px 16px' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ flex: 1, minWidth: 280 }}>
+          <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: online ? 'var(--accent)' : 'var(--ink-3)' }} />
+            {ib.display_name}
+            <span className="chip muted">{ib.platform}</span>
+            {bridge && <span className="chip muted">运行于 {bridge.display_name}</span>}
+            {!ib.enabled && <span className="chip warn">已停用</span>}
+          </div>
+          <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
+            平台 ID：{ib.platform_self_id || '—'}
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>默认人设
+            <select value={ib.default_persona_id} className="select" style={{ marginLeft: 6 }}
+                    onChange={async e => { try { await api.updateInbox(ib.id, { default_persona_id: e.target.value }); onChanged(); } catch (err) { setError(String(err)); } }}>
+              {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>
+          <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>回复 Provider
+            <select value={ib.reply_provider_config_id ?? ''} className="select" style={{ marginLeft: 6 }}
+                    onChange={async e => {
+                      try {
+                        if (e.target.value) await api.updateInbox(ib.id, { reply_provider_config_id: e.target.value });
+                        else await api.updateInbox(ib.id, { clear_reply_provider: true });
+                        onChanged();
+                      } catch (err) { setError(String(err)); }
+                    }}>
+              <option value="">（未选 → 不会自动回复）</option>
+              {providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            </select>
+          </label>
+          <button className="btn btn-sm btn-ghost" onClick={async () => {
+            try { await api.updateInbox(ib.id, { enabled: !ib.enabled }); onChanged(); }
+            catch (e) { setError(String(e)); }
+          }}>{ib.enabled ? '停用' : '启用'}</button>
+          <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={async () => {
+            if (!confirm('确认删除这个接管号？所有 pending outbound 会被取消。下次 Bridge 重连还会自动重建。')) return;
+            try { await api.deleteInbox(ib.id); onChanged(); } catch (e) { setError(String(e)); }
+          }}>删除</button>
+        </div>
+      </div>
+      {!ib.reply_provider_config_id && (
+        <div className="mono" style={{ fontSize: 11, marginTop: 8, color: 'var(--warn)' }}>
+          未选回复 Provider — 自动回复永远不会触发。
+        </div>
+      )}
+      <InboxContacts inboxId={ib.id} personas={personas} setError={setError} onChanged={onChanged} />
+    </div>
+  );
 }
 
 function InboxContacts({ inboxId, personas, setError, onChanged }: { inboxId: string; personas: Persona[]; setError: (s: string) => void; onChanged: () => void }) {
   const [contacts, setContacts] = useState<Contact[]>([]);
-  useEffect(() => {
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const reload = useCallback(() => {
     api.getInboxContacts(inboxId).then(setContacts).catch(e => setError(String(e)));
   }, [inboxId, setError]);
-  if (contacts.length === 0) return <div className="ink-3" style={{ fontSize: 12, marginTop: 12 }}>暂无 contacts。Bridge 推第一条消息后自动出现。</div>;
+  useEffect(() => { reload(); }, [reload]);
+
+  if (contacts.length === 0) {
+    return <div className="ink-3" style={{ fontSize: 12, marginTop: 12 }}>暂无粉丝 — 第一条消息进来时这里会自动出现联系人卡。</div>;
+  }
   return (
-    <div style={{ marginTop: 12, borderTop: '1px solid var(--line-subtle)', paddingTop: 12 }}>
+    <div style={{ marginTop: 12, borderTop: '1px solid var(--line-subtle)', paddingTop: 12, display: 'grid', gap: 4 }}>
+      <div className="ink-3" style={{ fontSize: 11, marginBottom: 4 }}>粉丝 · {contacts.length}</div>
       {contacts.map(c => (
-        <div key={c.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 0', borderBottom: '1px dashed var(--line-subtle)' }}>
-          <span style={{ fontSize: 13, flex: 1 }}>{c.display_name} <span className="mono ink-4" style={{ fontSize: 10 }}>· {c.peer_platform_id}</span></span>
-          <select
-            value={c.persona_id}
-            onChange={async (e) => { try { await api.updateContact(c.id, { persona_id: e.target.value }); onChanged(); } catch (err) { setError(String(err)); } }}
-            className="select"
-            style={{ minWidth: 130 }}
-          >
-            {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select>
-          <label className="mono" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <input type="checkbox" checked={c.autoreply_enabled} onChange={async (e) => { try { await api.updateContact(c.id, { autoreply_enabled: e.target.checked }); onChanged(); } catch (err) { setError(String(err)); } }} />
-            autoreply
-          </label>
-        </div>
+        <ContactRow
+          key={c.id}
+          contact={c}
+          personas={personas}
+          expanded={expandedId === c.id}
+          onToggle={() => setExpandedId(prev => prev === c.id ? null : c.id)}
+          onChanged={() => { reload(); onChanged(); }}
+          setError={setError}
+        />
       ))}
     </div>
   );
 }
 
-function CreateInboxModal({ bridges, personas, providers, onClose, onCreated, setError }: {
-  bridges: Bridge[];
+function ContactRow({ contact: c, personas, expanded, onToggle, onChanged, setError }: {
+  contact: Contact;
   personas: Persona[];
-  providers: ProviderConfig[];
-  onClose: () => void;
-  onCreated: () => void;
+  expanded: boolean;
+  onToggle: () => void;
+  onChanged: () => void;
   setError: (s: string) => void;
 }) {
-  const [platform, setPlatform] = useState('chat');
-  const [displayName, setDisplayName] = useState('');
-  const [defaultPersonaId, setDefaultPersonaId] = useState(personas[0]?.id ?? '');
-  const [bridgeId, setBridgeId] = useState<string>('');
-  const [replyProviderId, setReplyProviderId] = useState<string>('');
-  const [enabled, setEnabled] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const handle = async () => {
-    if (!displayName.trim() || !defaultPersonaId) return;
-    setBusy(true);
-    try {
-      await api.createInbox({
-        platform: platform.trim(),
-        display_name: displayName.trim(),
-        default_persona_id: defaultPersonaId,
-        bridge_id: bridgeId || null,
-        reply_provider_config_id: replyProviderId || null,
-        enabled,
-      });
-      onCreated();
-    } catch (e) { setError(String(e)); } finally { setBusy(false); }
-  };
+  const [draftCard, setDraftCard] = useState(c.card_md ?? '');
+  const [savingCard, setSavingCard] = useState(false);
+  useEffect(() => { setDraftCard(c.card_md ?? ''); }, [c.card_md]);
+
+  const cardPreview = (c.card_md ?? '').replace(/\s+/g, ' ').slice(0, 60);
+
   return (
-    <ModalShell onClose={onClose} title="新建接管号">
-      <FormField label="Platform">
-        <select value={platform} onChange={e => setPlatform(e.target.value)} className="select">
-          <option value="chat">chat (sandbox)</option>
-          <option value="wechat">wechat</option>
-          <option value="feishu">feishu</option>
-          <option value="qq">qq</option>
-        </select>
-      </FormField>
-      <FormField label="显示名">
-        <input className="input" value={displayName} onChange={e => setDisplayName(e.target.value)} placeholder="例如：alice 的 chat 调试" autoFocus />
-      </FormField>
-      <FormField label="默认人设">
-        <select value={defaultPersonaId} onChange={e => setDefaultPersonaId(e.target.value)} className="select">
-          {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select>
-      </FormField>
-      <FormField label="绑定到 Bridge (可空，表示先不上线)">
-        <select value={bridgeId} onChange={e => setBridgeId(e.target.value)} className="select">
-          <option value="">（先不绑）</option>
-          {bridges.map(br => <option key={br.id} value={br.id}>{br.display_name}</option>)}
-        </select>
-      </FormField>
-      <FormField label="自动回复用的 Provider (可空)">
-        <select value={replyProviderId} onChange={e => setReplyProviderId(e.target.value)} className="select">
-          <option value="">（不绑定，autoreply 不会触发）</option>
-          {providers.map(p => <option key={p.id} value={p.id}>{p.name} ({p.default_model})</option>)}
-        </select>
-      </FormField>
-      <FormField label="">
-        <label className="mono" style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6 }}>
-          <input type="checkbox" checked={enabled} onChange={e => setEnabled(e.target.checked)} />
-          创建后立即启用 (master switch)
+    <div style={{ borderBottom: '1px dashed var(--line-subtle)', paddingBottom: 6 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 0' }}>
+        <button className="btn btn-sm btn-ghost" onClick={onToggle} style={{ minWidth: 18, padding: '0 4px' }}>
+          {expanded ? '▾' : '▸'}
+        </button>
+        <span style={{ fontSize: 13, flex: 1, minWidth: 0 }}>
+          <span style={{ fontWeight: 500 }}>{c.display_name}</span>
+          {cardPreview && <span className="ink-3" style={{ fontSize: 11, marginLeft: 8 }}>· {cardPreview}{(c.card_md ?? '').length > 60 ? '…' : ''}</span>}
+        </span>
+        <label style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
+          人设
+          <select value={c.persona_id} className="select" style={{ minWidth: 110 }}
+                  onChange={async e => { try { await api.updateContact(c.id, { persona_id: e.target.value }); onChanged(); } catch (err) { setError(String(err)); } }}>
+            {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
         </label>
-      </FormField>
-      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建'} disabled={busy || !displayName.trim() || !defaultPersonaId} />
-    </ModalShell>
+        <label className="mono" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input type="checkbox" checked={c.autoreply_enabled}
+                 onChange={async e => { try { await api.updateContact(c.id, { autoreply_enabled: e.target.checked }); onChanged(); } catch (err) { setError(String(err)); } }} />
+          自动回复
+        </label>
+      </div>
+      {expanded && (
+        <div style={{ paddingLeft: 26, paddingRight: 4, paddingBottom: 8, display: 'grid', gap: 6 }}>
+          <div className="ink-3" style={{ fontSize: 11 }}>
+            平台 ID：<span className="mono">{c.peer_platform_id}</span>
+          </div>
+          <label className="ink-3" style={{ fontSize: 11 }}>关系卡（card_md）— 简单写下你跟这个人的关系，AI 回复时会读到</label>
+          <textarea
+            className="input mono"
+            style={{ minHeight: 90, fontSize: 12 }}
+            value={draftCard}
+            onChange={e => setDraftCard(e.target.value)}
+            placeholder="例如：北京大学生，喜欢户外，去年送过我一袋茶叶，叫我「alice 姐」"
+          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+            {draftCard !== (c.card_md ?? '') && (
+              <button className="btn btn-sm btn-ghost"
+                      onClick={() => setDraftCard(c.card_md ?? '')}>放弃修改</button>
+            )}
+            <button className="btn btn-sm btn-primary" disabled={savingCard || draftCard === (c.card_md ?? '')}
+                    onClick={async () => {
+                      setSavingCard(true);
+                      try { await api.updateContact(c.id, { card_md: draftCard }); onChanged(); }
+                      catch (err) { setError(String(err)); }
+                      finally { setSavingCard(false); }
+                    }}>{savingCard ? '保存中…' : '保存'}</button>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }
 

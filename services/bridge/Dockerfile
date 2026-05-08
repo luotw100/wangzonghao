@@ -14,4 +14,4 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY bridge ./bridge
 
-CMD ["uv", "run", "python", "-m", "bridge.main"]
+ENTRYPOINT ["uv", "run", "python", "-m", "bridge.main"]

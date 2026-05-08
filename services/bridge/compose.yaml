@@ -1,26 +1,21 @@
-# Bridge daemon compose — meant to run on the streamer's PC.
+# Bridge daemon compose — runs on the streamer's PC.
 #
-# A single Bridge daemon multiplexes N inboxes (one or more platform logins
-# co-located on this machine). Configuration lives in a local TOML file
-# (NOT env vars), so platform credentials never travel through Studio.
+# Zero config files. Pass everything on the command line. Get the exact
+# command to run from Studio's Bridge detail page (it includes your token
+# and the chat logins you've ticked).
 #
-# Setup:
-#   1. Copy bridge.toml.example -> bridge.toml in this directory
-#   2. Fill in studio_url + token (from Studio UI) and per-inbox blocks
-#   3. docker compose up --build
+#   docker compose run --rm bridge \
+#     --token=YOUR_TOKEN \
+#     --chat-inbox 'base_url=https://chat.laborster.com,username=alice,password=...'
 #
-# When Studio runs in another compose on the same host, point studio_url
-# at host.docker.internal:<published-port> in your bridge.toml.
+# The Studio URL is hardcoded to https://studio.laborster.com inside the
+# daemon. To point at a non-prod Studio (e.g. local dev), edit STUDIO_URL
+# in bridge/main.py.
 
 services:
   bridge:
     build:
       context: .
-    volumes:
-      - ./bridge.toml:/app/bridge.toml:ro
     environment:
-      BRIDGE_CONFIG: /app/bridge.toml
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    restart: unless-stopped
+    restart: "no"

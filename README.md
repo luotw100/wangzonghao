@@ -181,3 +181,7 @@ docker compose exec -T chat-api uv run python -m chat.cli list-accounts
 - **Studio 不直连 Channel：** 早期 Studio 直接调 Chat 接口创建 user / bulk-import / poll，把 Chat 当微信模拟器。这条路下线了，由 Bridge 桥接。Chat sandbox 现在跟未来真微信完全对称——Bridge 把它们一视同仁。
 - **不存默认值：** 每条 INSERT 显式赋值。schema 演化、字段重命名、字段语义变更都能在 git diff 里看清——而不是依赖 sqlalchemy 的某行 `default=False` 在某次重启时悄悄改掉行为。
 - **三个独立项目：** services/chat、services/studio、services/bridge 各有自己的 `pyproject.toml`、`uv.lock`、`Dockerfile`、`compose.yaml`，互不依赖。
+
+# TODO:
+- chat: 安全问题,storage可以被直接拉走
+- chat: Dockerfile里EXPOSE 23456是否可以去掉?是否可以只监听localhost?以确保更加安全

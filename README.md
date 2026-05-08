@@ -185,3 +185,4 @@ docker compose exec -T chat-api uv run python -m chat.cli list-accounts
 # TODO:
 - chat/studio: 安全问题,storage可以被直接拉走
 - chat/studio: Dockerfile里EXPOSE 23456/23457是否可以去掉?是否可以只监听localhost?以确保更加安全
+- 数据库模型: 类似这样的,能不能用枚举之类的?更直观一些:status        = Column(String, nullable=False)              # 'active' | 'disabled'

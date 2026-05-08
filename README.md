@@ -183,5 +183,5 @@ docker compose exec -T chat-api uv run python -m chat.cli list-accounts
 - **三个独立项目：** services/chat、services/studio、services/bridge 各有自己的 `pyproject.toml`、`uv.lock`、`Dockerfile`、`compose.yaml`，互不依赖。
 
 # TODO:
-- chat: 安全问题,storage可以被直接拉走
-- chat: Dockerfile里EXPOSE 23456是否可以去掉?是否可以只监听localhost?以确保更加安全
+- chat/studio: 安全问题,storage可以被直接拉走
+- chat/studio: Dockerfile里EXPOSE 23456/23457是否可以去掉?是否可以只监听localhost?以确保更加安全

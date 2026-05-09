@@ -7,8 +7,8 @@ Principles:
   (markdown). Inbox is a logical platform-side identity; Bridge is the
   daemon process that physically runs adapters. An Inbox is bound to one
   Bridge (Inbox.bridge_id) and a Bridge can serve N inboxes.
-- ProviderConfigs are an account-level pool. Any operation calling an LLM
-  must reference one explicitly.
+- ProviderConfigs are admin-maintained global configs. Inbox and Contact may
+    hold optional overrides; runtime falls back to the global default Provider.
 """
 
 from sqlalchemy import (
@@ -38,6 +38,7 @@ class Account(Base):
     username      = Column(String, nullable=False, unique=True, index=True)
     password_hash = Column(String, nullable=False)
     display_name  = Column(String, nullable=True)
+    role          = Column(String, nullable=False)              # AccountRole: admin | user
     status        = Column(String, nullable=False)              # 'active' | 'disabled'
     created_at    = Column(DateTime, nullable=False)
     updated_at    = Column(DateTime, nullable=False)
@@ -60,14 +61,17 @@ class AuthSession(Base):
 class ProviderConfig(Base):
     __tablename__ = "provider_configs"
 
-    id            = Column(String, primary_key=True, index=True)
-    account_id    = Column(String, ForeignKey("accounts.id"), nullable=False, index=True)
-    name          = Column(String, nullable=False)
-    base_url      = Column(String, nullable=False)
-    api_key       = Column(Text, nullable=True)
-    default_model = Column(String, nullable=False)
-    created_at    = Column(DateTime, nullable=False)
-    updated_at    = Column(DateTime, nullable=False)
+    id               = Column(String, primary_key=True, index=True)
+    owner_account_id = Column(String, ForeignKey("accounts.id"), nullable=False, index=True)
+    name             = Column(String, nullable=False)
+    base_url         = Column(String, nullable=False)
+    api_key          = Column(Text, nullable=True)
+    default_model    = Column(String, nullable=False)
+    scope            = Column(String, nullable=False)           # ProviderScope: global
+    status           = Column(String, nullable=False)           # ProviderStatus: active | disabled
+    is_default       = Column(Boolean, nullable=False)
+    created_at       = Column(DateTime, nullable=False)
+    updated_at       = Column(DateTime, nullable=False)
 
 
 # ---------------------------------------------------------------------------

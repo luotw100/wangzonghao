@@ -23,6 +23,7 @@ from studio.distill.converter import (
     message_timestamp,
     should_keep,
 )
+from studio.enums import ContactStatus, MessageRole, MessageSource
 from studio.models import (
     Archive,
     Contact,
@@ -85,9 +86,10 @@ def _ensure_contact(
         display_name=counterpart_name,
         card_md=None,
         persona_id=inbox.default_persona_id,
+        reply_provider_config_id=inbox.reply_provider_config_id,
         autoreply_enabled=False,
         pending_reply=False,
-        status="active",
+        status=ContactStatus.ACTIVE,
         last_seen_platform_msg_id=None,
         created_at=now, updated_at=now,
     )
@@ -153,8 +155,8 @@ async def ingest_archive(
             contact_id=contact.id,
             archive_id=archive_id,
             external_id=external_id,
-            source="archive",
-            role="self" if is_self else "counterpart",
+            source=MessageSource.ARCHIVE,
+            role=MessageRole.SELF if is_self else MessageRole.COUNTERPART,
             sender_name=sender_name,
             content=content,
             timestamp=ts,

@@ -31,22 +31,22 @@ Laborster 是一个**通用拟人化私聊接管服务**：让 AI 替主播 / �
 
 ## Studio 的核心概念
 
-UI 上你只直接接触 **接管 / 人设 / Provider / 聊天档案 / 蒸馏** 这几个 tab。Inbox 和 Bridge 仍然存在于 DB / 协议里，但都是 daemon 第一次握手时自动出现，不需要在 UI 上手工建。
+UI 上你只直接接触 **接管 / 人设 / 设备 / 设置** 这几个区域。Inbox 和 Bridge 仍然存在于 DB / 协议里，但都是 daemon 第一次握手时自动出现，不需要在 UI 上手工建。Provider 由管理员在设置页统一维护，普通用户无感。
 
 | 概念 | 一句话 | 数量 |
 | --- | --- | --- |
-| **Account** | Studio 后台的登录账号，CLI 创建 | 1 |
+| **Account** | Studio 后台登录账号，分 admin / user；首个 admin 可在 Web 首次初始化时创建 | N |
 | **Persona** | 人设 — 纯内容资产（markdown），多个 Contact / Inbox 可共享 | N / Account |
-| **ProviderConfig** | LLM 后端配置池 | N / Account |
+| **ProviderConfig** | 管理员维护的全局 LLM 后端配置池 | N / Studio |
 | **Archive** | 上传的 WeFlow JSON 历史聊天 | N / Account |
 | **DistillJob** | 把一个接管号的历史蒸出 Persona + 各 Contact 卡片 | N / Account |
 | **Inbox**（自动） | 一个 Channel 上的身份（一个 wxid / chat user）；bridge 登入时自动出现 | N / Account |
 | **Bridge**（自动） | 主播 PC 上的 daemon；按 (account, hostname) 自动注册 | N / Account |
-| **Contact** | 接管号下的某个粉丝；UI 上叫"接管"，每个独立设 Persona / Provider / autoreply | N / Inbox |
+| **Contact** | 接管号下的某个粉丝；UI 上叫"接管"，每个独立设 Persona / autoreply，admin 可设 Provider override | N / Inbox |
 
 **关键拆分：**
-- *Contact 是接管单元。* 每个 Contact 独立选 Persona、独立选 Provider、独立开关 autoreply。它的 Inbox 只决定"消息从哪个号收发"。
-- *Inbox 提供默认值。* 新粉丝进入时继承 Inbox 的默认 Persona / Provider；之后两边各改各的。
+- *Contact 是接管单元。* 每个 Contact 独立选 Persona、独立开关 autoreply。Provider 默认走全局默认；admin 可给 Inbox / Contact 单独 override。
+- *Inbox 提供默认值。* 新粉丝进入时继承 Inbox 的默认 Persona / Provider override；之后两边各改各的。
 - *Bridge ↔ Inbox 是 1:N。* 一台主播 PC 一个 Bridge daemon，可以同时服务这台机器上的多个平台账号。
 
 ---
@@ -94,19 +94,19 @@ Chat 后台在 http://localhost:23456 。
 ```bash
 cd services/studio
 docker compose up -d --build
-docker compose exec -T studio-api uv run python -m studio.cli create-account \
-  --username demo --password demo123 --display-name 演示
 ```
 
 Studio 后台在 http://localhost:23457 。
 
+第一次打开 Studio 时，如果数据库里没有任何账号，登录页会进入初始化模式：填写用户名、密码和显示名，直接创建首个 `admin` 并登录。之后账号都在 Web「设置」里管理，不需要再用命令行操作 Studio 账号。
+
 后台操作顺序（推荐）：
-1. **Provider** tab → 新建 LLM Provider
-2. **人设** tab → 新建至少一个人设
+1. admin 在 **设置** → 新建全局默认 Provider、创建普通 user
+2. 普通 user 登录后在 **人设** → 新建至少一个人设
 3. 在主播 PC 上启动 Bridge daemon（见下）—— Bridge / Inbox 会自动出现在 Studio
-4. **接管** tab → 选粉丝、设人设 / Provider / 开 autoreply、写关系卡
-5. **聊天档案** tab → 上传 WeFlow JSON（指明哪个 wxid 是"我" + 落地到哪个接管号）
-6. **蒸馏** tab → 选 接管号 + 目标人设 + Provider → 开蒸
+4. **接管** → 选粉丝、设人设 / 开 autoreply、写关系卡
+5. 通过聊天档案 API 上传 WeFlow JSON（指明哪个 wxid 是"我" + 落地到哪个接管号）
+6. 创建蒸馏任务，未显式指定 Provider 时使用全局默认 Provider
 
 ### 3. Bridge daemon
 
@@ -132,15 +132,17 @@ docker compose run --rm bridge \
 
 ---
 
-## 账号 CLI
+## 账号管理
+
+Studio 账号管理主路径是 Web「设置」：
+
+- 首次初始化：没有任何账号时，在登录页创建首个 admin。
+- admin：创建普通用户、列出账号、停用/启用账号、重置任意账号密码。
+- 普通 user：在设置页修改自己的密码。
+
+CLI 仅保留为运维救援入口；Chat sandbox 账号目前仍用 CLI：
 
 ```bash
-# Studio 账号
-cd services/studio
-docker compose exec -T studio-api uv run python -m studio.cli list-accounts
-docker compose exec -T studio-api uv run python -m studio.cli reset-password --username demo --password 新密码
-
-# Chat 账号（语法同构）
 cd services/chat
 docker compose exec -T chat-api uv run python -m chat.cli list-accounts
 ```
@@ -166,7 +168,7 @@ docker compose exec -T chat-api uv run python -m chat.cli list-accounts
 - ✅ Bridge 协议：账号密码握手 / heartbeat（带 inbox 同步）/ incoming / outbound 长轮询 / ack
 - ✅ Reply LLM brain：ReplyScanner + 静默期防抖 + chunks 写 outbound + per-contact provider override
 - ✅ Bridge daemon：零配置 CLI，多 adapter 共享一条到 Studio 的连接
-- ✅ Studio 前端：6 个 tab（接管 / Bridges / 人设 / Provider / 聊天档案 / 蒸馏）
+- ✅ Studio 前端：接管 / 设备 / 人设 / 设置，内置 admin 账号管理和 Provider 管理
 - ⏳ 真微信 adapter：等 chat sandbox 路径线上跑稳之后再加
 - ⏳ Bridge 本地离线缓存（断网时落盘 incoming，下次连上再推）
 - ⏳ Studio Bridge `offline` 自动转换（心跳 N 秒不到自动切 offline）
@@ -180,11 +182,12 @@ docker compose exec -T chat-api uv run python -m chat.cli list-accounts
 - **不存默认值：** 每条 INSERT 显式赋值。schema 演化、字段重命名、字段语义变更都能在 git diff 里看清——而不是依赖 sqlalchemy 的某行 `default=False` 在某次重启时悄悄改掉行为。
 - **三个独立项目：** services/chat、services/studio、services/bridge 各有自己的 `pyproject.toml`、`uv.lock`、`Dockerfile`、`compose.yaml`，互不依赖。
 
-# TODO:
-- chat/studio: 安全问题,storage可以被直接拉走
-- chat/studio: Dockerfile里EXPOSE 23456/23457是否可以去掉?是否可以只监听localhost?以确保更加安全
-- 数据库模型: 类似这样的,能不能用枚举之类的?更直观一些:status        = Column(String, nullable=False)              # 'active' | 'disabled'
-- studio应该设计两级用户,一类是现在这样的用户(主播、销售...),一类是管理员
-- studio里,对普通用户,应该对provider无感,由管理员在后台配置
-- 易用性提升
-- 迁移postgre
+## TODO
+
+- ✅ chat/studio：不再通过 Nginx 或 FastAPI 直接暴露 storage。
+- ✅ chat/studio：API Dockerfile 去掉 `EXPOSE`；容器内仍监听 `0.0.0.0` 供 Nginx 在 compose network 内访问。
+- ✅ chat/studio：状态 / 类型字段改为集中 `StrEnum`。
+- ✅ studio：Account 分 admin / user，两级用户。
+- ✅ studio：Provider 由 admin 在设置页统一配置，普通 user UI 无感。
+- ✅ studio：账号创建、列表、停用/启用、重置密码进入 Web 设置页；首次 admin 可在登录页初始化。
+- ⏳ 迁移 PostgreSQL。

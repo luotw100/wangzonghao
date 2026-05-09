@@ -10,7 +10,7 @@ Laborster 是一个**通用拟人自动化回复服务**，帮助职业用户在
 
 **核心目标**：非常非常像真人。不冷场、不让对方的话落地上、培养亲密感。只提供情绪价值，不涉及金钱交易和线下约会（红线在 `studio/reply.py:SYSTEM_INSTRUCTION`，未来引入 Playbook 后可按场景定制）。
 
-主播在 Studio 后台配置自己 — 创建 **Persona**（人设）、上传历史聊天蒸馏出 Persona + 每个 **Contact**（粉丝）的 **Card**（关系卡）；主播 PC 上跑一个 **Bridge** daemon，把本机各种平台登录（chat / 未来微信 / 飞书...）桥到 Studio。Studio 拿 Persona + Card + 实时对话历史调 LLM 生成拟人化回复，回复经 Bridge 模拟打字延迟后发出去。
+管理员在 Studio 后台维护账号和全局 **Provider**；主播 / 销售等普通用户配置自己 — 创建 **Persona**（人设）、上传历史聊天蒸馏出 Persona + 每个 **Contact**（粉丝）的 **Card**（关系卡）；主播 PC 上跑一个 **Bridge** daemon，把本机各种平台登录（chat / 未来微信 / 飞书...）桥到 Studio。Studio 拿 Persona + Card + 实时对话历史调 LLM 生成拟人化回复，回复经 Bridge 模拟打字延迟后发出去。
 
 ## 架构原则
 
@@ -19,7 +19,7 @@ Laborster 是一个**通用拟人自动化回复服务**，帮助职业用户在
 - Bridge 用账号密码握手 + 长轮询，没有消息队列；Studio 用一张 `outbound_messages` 表当队列即可。
 - 延迟发送（拟人打字速度）由 Bridge 客户端 `asyncio.sleep` 实现，不需要额外表。
 - Studio 拥有完整消息历史（source of truth），Bridge 离线不影响 Studio 决策。
-- **核心数据原语**：Account（主播本人，1 个）+ Inbox（一个 Channel 上的身份，N 个）+ Contact（粉丝，N 个，挂在 Inbox 下）+ Persona / Provider 是可复用的引用资产。
+- **核心数据原语**：Account（admin / user）+ Inbox（一个 Channel 上的身份，N 个）+ Contact（粉丝，N 个，挂在 Inbox 下）+ Persona（用户内容资产）+ Provider（管理员维护的全局 LLM 配置）。
 
 ## 编码偏好
 
@@ -56,7 +56,7 @@ Laborster 是一个**通用拟人自动化回复服务**，帮助职业用户在
 | 容器 | 内部端口 | 职责 |
 | --- | --- | --- |
 | `studio-web` (nginx) | `:23457` | 静态资源 + `/api/` 反向代理到 studio-api |
-| `studio-api` | `:23457` | FastAPI；账号 / Persona / Provider / Bridge 握手 / Inbox / Contact / Archive / Distill 全部 CRUD + Bridge 协议 |
+| `studio-api` | `:23457` | FastAPI；账号与首次 admin 初始化 / Persona / Provider / Bridge 握手 / Inbox / Contact / Archive / Distill 全部 CRUD + Bridge 协议 |
 | `studio-worker` | — | DistillScanner（扫 pending DistillJob 跑蒸馏）+ ReplyScanner（扫 `pending_reply=true` 的 Contact 调 LLM 写 outbound） |
 
 Studio 不再有任何"直连 Channel"的代码，所有平台 IO 都经过 Bridge。
@@ -95,10 +95,10 @@ Bridge 是单进程 daemon。一份 CLI 启动命令带：
 
 | 表 | 主键规则 | 说明 |
 | --- | --- | --- |
-| `accounts` | `acc_{...}` | 主播登录账号（CLI 创建） |
+| `accounts` | `acc_{...}` | Studio 登录账号；`role ∈ {admin,user}`；首个 admin 可在 Web 首次初始化时创建，之后由 admin 在设置页管理 |
 | `auth_sessions` | token sha256 | web 登录会话 |
 | `bridge_sessions` | token sha256 | bridge daemon 会话；指向某个 Bridge |
-| `provider_configs` | `p_{uuid8}` | LLM Provider 配置 |
+| `provider_configs` | `p_{uuid8}` | 管理员维护的全局 LLM Provider 配置，带 owner / scope / status / is_default |
 | `personas` | `ps_{uuid8}` | 人设；`(account_id, name)` 唯一 |
 | `bridges` | `br_{uuid8}` | 主播 PC 上的 daemon；`(account_id, hostname)` 唯一 |
 | `inboxes` | `ib_{uuid8}` | 一个 Channel 上的身份；`bridge_id` 指向当前承载的 Bridge（可空） |
@@ -123,7 +123,7 @@ Contact (auto-upsert by (inbox_id, peer_platform_id) on first inbound)
 messages (source=archive|live)
 ```
 
-Persona / ProviderConfig 跨 Inbox / Contact 共享，不属于上面的所属链。
+Persona 跨 Inbox / Contact 共享。ProviderConfig 由 admin 全局维护，Inbox / Contact 只保存可选 override；普通 user UI 不展示 Provider。
 
 ---
 
@@ -132,13 +132,13 @@ Persona / ProviderConfig 跨 Inbox / Contact 共享，不属于上面的所属�
 #### Onboarding
 
 ```
-1. CLI: studio.cli create-account --username alice --password ...
-2. web: 登录 → 建 Provider、建至少一个 Persona
+1. web 首次初始化：没有账号时创建首个 admin；admin 在设置页创建普通 user + 全局默认 Provider
+2. user 登录 → 建至少一个 Persona
 3. 主播 PC: docker compose run --rm bridge \
      --studio-username=alice --studio-password=... \
      --chat-inbox 'base_url=...,username=alice_chat,password=...'
 4. bridge daemon → handshake → Studio 自动建 Bridge 行 + Inbox 行（默认 persona = account 第一个 active persona）
-5. web 「接管」tab：第一条消息进来后 Contact 自动出现；选人设 / 选 Provider / 开 autoreply / 写关系卡
+5. web 「接管」tab：第一条消息进来后 Contact 自动出现；选人设 / 开 autoreply / 写关系卡；Provider 默认由 admin 全局配置，admin 可 override
 6. （可选）「聊天档案」tab：上传 WeFlow JSON 落到目标接管号 → 「蒸馏」tab 跑 fold pipeline 自动产出 Persona + 各 Contact 的 Card
 ```
 
@@ -149,7 +149,7 @@ Persona / ProviderConfig 跨 Inbox / Contact 共享，不属于上面的所属�
 2. Bridge ChatAdapter poll 到，inbound pump 推到 Studio /api/bridge/incoming
 3. studio-api 写 messages(source=live, role=counterpart)；如果 inbox.enabled && contact.autoreply_enabled，置 contact.pending_reply=true
 4. studio-worker ReplyScanner 每 2s 扫 pending_reply=true 的 contact，gates 重新校验：
-   - inbox.enabled / bridge 在线 / contact.persona_id / 解析 reply_provider = contact.reply_provider_config_id ?? inbox.reply_provider_config_id
+  - inbox.enabled / bridge 在线 / contact.persona_id / 解析 reply_provider = contact.reply_provider_config_id ?? inbox.reply_provider_config_id ?? global default provider
    - 距离 counterpart 最新消息 ≥ QUIET_SECONDS（避免对方还没打完就抢答）
 5. 通过 → 调 LLM → 解析 {"messages": [...]} → 写一条 OutboundMessage(chunks=[...])
 6. Bridge outbound long-poll 拿到，逐 chunk 按打字延迟模拟，调 adapter.send_text

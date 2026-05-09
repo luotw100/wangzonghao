@@ -67,11 +67,13 @@ async function request<T>(path: string, options: RequestInit = {}, timeout = 150
 // --- Types ---
 
 export type AccountStatus = 'active' | 'disabled';
+export type AccountRole = 'admin' | 'user';
 
 export interface Account {
   id: string;
   username: string;
   display_name: string | null;
+  role: AccountRole;
   status: AccountStatus;
   created_at: string;
   last_login_at: string | null;
@@ -84,11 +86,15 @@ export interface LoginResponse {
 
 export interface ProviderConfig {
   id: string;
+  owner_account_id: string;
   name: string;
   base_url: string;
   api_key_preview?: string;
   has_api_key?: boolean;
   default_model: string;
+  scope: 'global';
+  status: 'active' | 'disabled';
+  is_default: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -214,6 +220,61 @@ export function authLogout() {
 
 export function authMe() {
   return request<Account>('/auth/me');
+}
+
+export function changeOwnPassword(data: { current_password: string; new_password: string }) {
+  return request<{ status: string }>('/auth/password', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export function getBootstrapStatus() {
+  return request<{ needs_bootstrap: boolean }>('/bootstrap/status');
+}
+
+export function bootstrapAdmin(data: { username: string; password: string; display_name: string | null }) {
+  return request<LoginResponse>('/bootstrap/admin', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+// --- Account Admin ---
+
+export function getAccounts() {
+  return request<Account[]>('/accounts');
+}
+
+export function createAccount(data: {
+  username: string; password: string; display_name: string | null; role: AccountRole;
+}) {
+  return request<Account>('/accounts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export function updateAccount(
+  id: string,
+  data: { display_name?: string | null; role?: AccountRole; status?: AccountStatus },
+) {
+  return request<Account>(`/accounts/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+}
+
+export function resetAccountPassword(id: string, password: string) {
+  return request<{ status: string; id: string }>(`/accounts/${id}/password`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  });
 }
 
 // --- Provider Configs ---
@@ -360,7 +421,7 @@ export function getDistillJob(jobId: string) {
   return request<DistillJob>(`/distill-jobs/${jobId}`);
 }
 export function createDistillJob(data: {
-  source_inbox_id: string; target_persona_id: string; provider_config_id: string;
+  source_inbox_id: string; target_persona_id: string; provider_config_id?: string | null;
 }) {
   return request<DistillJob>('/distill-jobs', {
     method: 'POST',

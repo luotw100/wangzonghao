@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { useNavigate } from 'react-router-dom';
 import * as api from '../lib/api';
 import type {
+  Account,
+  AccountRole,
   Bridge,
   Contact,
   ConversationSummary,
@@ -41,11 +43,12 @@ export function StudioPage() {
 
   const loadAll = useCallback(async () => {
     try {
+      const isAdmin = me?.role === 'admin';
       const [nextBridges, nextPersonas, nextInboxes, nextProviders] = await Promise.all([
         api.getBridges(),
         api.getPersonas(),
         api.getInboxes(),
-        api.getProviderConfigs(),
+        isAdmin ? api.getProviderConfigs() : Promise.resolve([]),
       ]);
       setBridges(nextBridges);
       setPersonas(nextPersonas);
@@ -54,7 +57,7 @@ export function StudioPage() {
     } catch (err) {
       setError(String(err));
     }
-  }, []);
+  }, [me?.role]);
 
   useEffect(() => {
     loadAll();
@@ -201,6 +204,7 @@ export function StudioPage() {
               bridges={bridges}
               personas={personas}
               providers={providers}
+              isAdmin={me.role === 'admin'}
               onChanged={loadAll}
               setError={setError}
             />
@@ -212,7 +216,7 @@ export function StudioPage() {
             <DevicesView bridges={bridges} inboxes={inboxes} onChanged={loadAll} setError={setError} />
           )}
           {tab === 'settings' && (
-            <SettingsView providers={providers} me={me.username} onChanged={loadAll} setError={setError} />
+            <SettingsView providers={providers} me={me.username} isAdmin={me.role === 'admin'} onChanged={loadAll} setError={setError} />
           )}
         </main>
       </div>
@@ -232,11 +236,12 @@ function PageHead({ title, kicker, right }: { title: string; kicker?: string; ri
   );
 }
 
-function TakeoverView({ inboxes, bridges, personas, providers, onChanged, setError }: {
+function TakeoverView({ inboxes, bridges, personas, providers, isAdmin, onChanged, setError }: {
   inboxes: Inbox[];
   bridges: Bridge[];
   personas: Persona[];
   providers: ProviderConfig[];
+  isAdmin: boolean;
   onChanged: ChangeHandler;
   setError: (message: string) => void;
 }) {
@@ -354,6 +359,7 @@ function TakeoverView({ inboxes, bridges, personas, providers, onChanged, setErr
                 onSelect={setSelectedId}
                 personas={personas}
                 providers={providers}
+                isAdmin={isAdmin}
                 onChanged={onChanged}
                 onLocalRefresh={reload}
                 setError={setError}
@@ -372,6 +378,7 @@ function TakeoverView({ inboxes, bridges, personas, providers, onChanged, setErr
                 messages={messages}
                 personas={personas}
                 providers={providers}
+                isAdmin={isAdmin}
                 onPatch={patchContact}
               />
             )}
@@ -382,7 +389,7 @@ function TakeoverView({ inboxes, bridges, personas, providers, onChanged, setErr
   );
 }
 
-function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, personas, providers, onChanged, onLocalRefresh, setError }: {
+function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, personas, providers, isAdmin, onChanged, onLocalRefresh, setError }: {
   inbox: Inbox;
   bridge: Bridge | null;
   conversations: ConversationSummary[];
@@ -390,6 +397,7 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, person
   onSelect: (id: string) => void;
   personas: Persona[];
   providers: ProviderConfig[];
+  isAdmin: boolean;
   onChanged: ChangeHandler;
   onLocalRefresh: () => Promise<void>;
   setError: (message: string) => void;
@@ -417,6 +425,7 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, person
           inbox={inbox}
           personas={personas}
           providers={providers}
+          isAdmin={isAdmin}
           onChanged={async () => {
             await Promise.resolve(onChanged());
             await onLocalRefresh();
@@ -464,10 +473,11 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, person
   );
 }
 
-function InboxDefaults({ inbox, personas, providers, onChanged, setError }: {
+function InboxDefaults({ inbox, personas, providers, isAdmin, onChanged, setError }: {
   inbox: Inbox;
   personas: Persona[];
   providers: ProviderConfig[];
+  isAdmin: boolean;
   onChanged: ChangeHandler;
   setError: (message: string) => void;
 }) {
@@ -476,7 +486,7 @@ function InboxDefaults({ inbox, personas, providers, onChanged, setError }: {
       <div className="mono ink-3" style={{ fontSize: 11 }}>
         新粉丝默认（已存在的粉丝不受影响）
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '1fr 1fr' : '1fr', gap: 8 }}>
         <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>
           默认人设
           <select
@@ -497,29 +507,31 @@ function InboxDefaults({ inbox, personas, providers, onChanged, setError }: {
             {personas.map(persona => <option key={persona.id} value={persona.id}>{persona.name}</option>)}
           </select>
         </label>
-        <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-          默认 Provider
-          <select
-            value={inbox.reply_provider_config_id ?? ''}
-            className="select"
-            style={{ marginLeft: 6, marginTop: 2 }}
-            onChange={async event => {
-              try {
-                if (event.target.value) {
-                  await api.updateInbox(inbox.id, { reply_provider_config_id: event.target.value });
-                } else {
-                  await api.updateInbox(inbox.id, { clear_reply_provider: true });
+        {isAdmin && (
+          <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+            默认 Provider
+            <select
+              value={inbox.reply_provider_config_id ?? ''}
+              className="select"
+              style={{ marginLeft: 6, marginTop: 2 }}
+              onChange={async event => {
+                try {
+                  if (event.target.value) {
+                    await api.updateInbox(inbox.id, { reply_provider_config_id: event.target.value });
+                  } else {
+                    await api.updateInbox(inbox.id, { clear_reply_provider: true });
+                  }
+                  await Promise.resolve(onChanged());
+                } catch (err) {
+                  setError(String(err));
                 }
-                await Promise.resolve(onChanged());
-              } catch (err) {
-                setError(String(err));
-              }
-            }}
-          >
-            <option value="">（未选）</option>
-            {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
-          </select>
-        </label>
+              }}
+            >
+              <option value="">跟随全局默认</option>
+              {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}{provider.is_default ? ' · 全局默认' : ''}</option>)}
+            </select>
+          </label>
+        )}
       </div>
       <div>
         <button
@@ -540,13 +552,14 @@ function InboxDefaults({ inbox, personas, providers, onChanged, setError }: {
   );
 }
 
-function ContactDetail({ contact, inbox, bridge, messages, personas, providers, onPatch }: {
+function ContactDetail({ contact, inbox, bridge, messages, personas, providers, isAdmin, onPatch }: {
   contact: Contact;
   inbox: Inbox;
   bridge: Bridge | null;
   messages: Message[];
   personas: Persona[];
   providers: ProviderConfig[];
+  isAdmin: boolean;
   onPatch: (contactId: string, patch: Parameters<typeof api.updateContact>[1]) => Promise<void>;
 }) {
   const [draftCard, setDraftCard] = useState(contact.card_md ?? '');
@@ -556,9 +569,8 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
     setDraftCard(contact.card_md ?? '');
   }, [contact.id, contact.card_md]);
 
-  const effectiveProviderId = contact.reply_provider_config_id ?? inbox.reply_provider_config_id;
   const inboxLive = inbox.enabled && Boolean(bridge && bridge.status === 'online');
-  const canAutoreply = inboxLive && Boolean(effectiveProviderId) && Boolean(contact.persona_id);
+  const canAutoreply = inboxLive && Boolean(contact.persona_id);
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
@@ -586,26 +598,30 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
               {personas.map(persona => <option key={persona.id} value={persona.id}>{persona.name}</option>)}
             </select>
           </label>
-          <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-            Provider
-            <select
-              value={contact.reply_provider_config_id ?? ''}
-              className="select"
-              style={{ marginLeft: 6 }}
-              onChange={event => {
-                if (event.target.value) {
-                  onPatch(contact.id, { reply_provider_config_id: event.target.value });
-                } else {
-                  onPatch(contact.id, { clear_reply_provider: true });
-                }
-              }}
-            >
-              <option value="">
-                跟随接管号默认（{providers.find(provider => provider.id === inbox.reply_provider_config_id)?.name ?? '未选'}）
-              </option>
-              {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
-            </select>
-          </label>
+          {isAdmin ? (
+            <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+              Provider
+              <select
+                value={contact.reply_provider_config_id ?? ''}
+                className="select"
+                style={{ marginLeft: 6 }}
+                onChange={event => {
+                  if (event.target.value) {
+                    onPatch(contact.id, { reply_provider_config_id: event.target.value });
+                  } else {
+                    onPatch(contact.id, { clear_reply_provider: true });
+                  }
+                }}
+              >
+                <option value="">
+                  跟随接管号/全局默认（{providers.find(provider => provider.id === inbox.reply_provider_config_id)?.name ?? '全局默认'}）
+                </option>
+                {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}{provider.is_default ? ' · 全局默认' : ''}</option>)}
+              </select>
+            </label>
+          ) : (
+            <span className="chip muted">模型由管理员统一配置</span>
+          )}
           <label className="mono" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
             <input
               type="checkbox"
@@ -621,7 +637,6 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
             {!bridge && '— 这个接管号没绑定在线设备；'}
             {bridge && bridge.status !== 'online' && `— 设备 ${bridge.hostname} 离线；`}
             {!inbox.enabled && '— 接管号已停用；'}
-            {!effectiveProviderId && '— 没有可用的 Provider；'}
             {!contact.persona_id && '— 没有人设；'}
             自动接管启不来。
           </div>
@@ -928,13 +943,28 @@ function EditPersonaModal({ persona, onClose, onSaved, setError }: {
   );
 }
 
-function SettingsView({ providers, me, onChanged, setError }: {
+function SettingsView({ providers, me, isAdmin, onChanged, setError }: {
   providers: ProviderConfig[];
   me: string;
+  isAdmin: boolean;
   onChanged: ChangeHandler;
   setError: (message: string) => void;
 }) {
   const [showCreate, setShowCreate] = useState(false);
+  const [accounts, setAccounts] = useState<Account[]>([]);
+
+  const loadAccounts = useCallback(async () => {
+    if (!isAdmin) return;
+    try {
+      setAccounts(await api.getAccounts());
+    } catch (err) {
+      setError(String(err));
+    }
+  }, [isAdmin, setError]);
+
+  useEffect(() => {
+    loadAccounts();
+  }, [loadAccounts]);
 
   return (
     <div>
@@ -943,53 +973,22 @@ function SettingsView({ providers, me, onChanged, setError }: {
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span className="eyebrow" style={{ padding: '6px 10px' }}>账号</span>
           <button className="btn btn-ghost" style={{ justifyContent: 'flex-start' }}>个人 · @{me}</button>
-          <span className="eyebrow mt-3" style={{ padding: '6px 10px', marginTop: 12 }}>系统</span>
-          <button className="btn" style={{ justifyContent: 'flex-start', background: 'var(--bg-raised)' }}>Provider</button>
+          {isAdmin && <span className="eyebrow mt-3" style={{ padding: '6px 10px', marginTop: 12 }}>系统</span>}
+          {isAdmin && <button className="btn" style={{ justifyContent: 'flex-start', background: 'var(--bg-raised)' }}>Provider</button>}
         </nav>
-        <div className="card p-5">
-          <div className="row gap-2" style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-            <span style={{ fontWeight: 600 }}>Provider · LLM 接入</span>
-            <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={() => setShowCreate(true)}>+ 新接入</button>
-          </div>
-          <div className="text-sm text-ink-3" style={{ marginBottom: 12 }}>
-            接入你要用的大模型。新粉丝默认走主线，可在某个人设或接管上覆盖。
-          </div>
-          {providers.length === 0 ? (
-            <Empty>还没有 Provider。</Empty>
-          ) : (
-            <div style={{ display: 'grid', gap: 10 }}>
-              {providers.map(provider => (
-                <div key={provider.id} className="card" style={{ padding: '14px 16px' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                    <div>
-                      <div style={{ fontWeight: 500 }}>{provider.name}</div>
-                      <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
-                        {provider.base_url} · model: {provider.default_model} · key: {provider.api_key_preview ?? '未设置'}
-                      </div>
-                    </div>
-                    <button
-                      className="btn btn-sm btn-ghost"
-                      style={{ color: 'var(--danger)' }}
-                      onClick={async () => {
-                        if (!confirm('确认删除？')) return;
-                        try {
-                          await api.deleteProviderConfig(provider.id);
-                          await Promise.resolve(onChanged());
-                        } catch (err) {
-                          setError(String(err));
-                        }
-                      }}
-                    >
-                      删除
-                    </button>
-                  </div>
-                </div>
-              ))}
+        <div style={{ display: 'grid', gap: 14 }}>
+          <PasswordPanel me={me} setError={setError} />
+          {isAdmin && <AccountsPanel accounts={accounts} onChanged={loadAccounts} setError={setError} />}
+          {isAdmin && <ProviderPanel providers={providers} onChanged={onChanged} onCreate={() => setShowCreate(true)} setError={setError} />}
+          {!isAdmin && (
+            <div className="card p-5">
+              <div style={{ fontWeight: 600, marginBottom: 8 }}>模型配置</div>
+              <div className="text-sm text-ink-3">模型 Provider 由管理员统一配置，接管时无需选择模型。</div>
             </div>
           )}
         </div>
       </div>
-      {showCreate && (
+      {isAdmin && showCreate && (
         <CreateProviderModal
           onClose={() => setShowCreate(false)}
           onCreated={async () => {
@@ -998,6 +997,129 @@ function SettingsView({ providers, me, onChanged, setError }: {
           }}
           setError={setError}
         />
+      )}
+    </div>
+  );
+}
+
+function PasswordPanel({ me, setError }: { me: string; setError: (message: string) => void }) {
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [ok, setOk] = useState('');
+
+  const handle = async () => {
+    if (!currentPassword || !newPassword) return;
+    setBusy(true);
+    setOk('');
+    try {
+      await api.changeOwnPassword({ current_password: currentPassword, new_password: newPassword });
+      setCurrentPassword('');
+      setNewPassword('');
+      setOk('密码已更新，请重新登录。');
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card p-5">
+      <div style={{ fontWeight: 600, marginBottom: 8 }}>个人 · @{me}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'end' }}>
+        <FormField label="当前密码"><input className="input" type="password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} /></FormField>
+        <FormField label="新密码"><input className="input" type="password" value={newPassword} onChange={event => setNewPassword(event.target.value)} /></FormField>
+        <button className="btn btn-primary btn-sm" onClick={handle} disabled={busy || !currentPassword || !newPassword}>{busy ? '保存中…' : '重置密码'}</button>
+      </div>
+      {ok && <div className="mono" style={{ color: 'var(--live)', fontSize: 11 }}>{ok}</div>}
+    </div>
+  );
+}
+
+function AccountsPanel({ accounts, onChanged, setError }: {
+  accounts: Account[];
+  onChanged: ChangeHandler;
+  setError: (message: string) => void;
+}) {
+  const [showCreate, setShowCreate] = useState(false);
+  const [resetting, setResetting] = useState<Account | null>(null);
+
+  return (
+    <div className="card p-5">
+      <div className="row gap-2" style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+        <span style={{ fontWeight: 600 }}>账号 · 用户管理</span>
+        <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={() => setShowCreate(true)}>+ 新账号</button>
+      </div>
+      {accounts.length === 0 ? <Empty>还没有账号。</Empty> : (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {accounts.map(account => (
+            <div key={account.id} className="card" style={{ padding: '12px 14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 500 }}>@{account.username} <span className="chip muted">{account.role}</span> <span className={`chip ${account.status === 'active' ? 'live' : 'danger'}`}>{account.status}</span></div>
+                  <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>{account.display_name || '未命名'} · 最后登录 {formatDateTime(account.last_login_at)}</div>
+                </div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button className="btn btn-sm btn-ghost" onClick={() => setResetting(account)}>重置密码</button>
+                  <button
+                    className="btn btn-sm btn-ghost"
+                    onClick={async () => {
+                      try {
+                        await api.updateAccount(account.id, { status: account.status === 'active' ? 'disabled' : 'active' });
+                        await Promise.resolve(onChanged());
+                      } catch (err) { setError(String(err)); }
+                    }}
+                  >
+                    {account.status === 'active' ? '停用' : '启用'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {showCreate && <CreateAccountModal onClose={() => setShowCreate(false)} onCreated={async () => { setShowCreate(false); await Promise.resolve(onChanged()); }} setError={setError} />}
+      {resetting && <ResetAccountPasswordModal account={resetting} onClose={() => setResetting(null)} onSaved={async () => { setResetting(null); await Promise.resolve(onChanged()); }} setError={setError} />}
+    </div>
+  );
+}
+
+function ProviderPanel({ providers, onChanged, onCreate, setError }: {
+  providers: ProviderConfig[];
+  onChanged: ChangeHandler;
+  onCreate: () => void;
+  setError: (message: string) => void;
+}) {
+  return (
+    <div className="card p-5">
+      <div className="row gap-2" style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+        <span style={{ fontWeight: 600 }}>Provider · LLM 接入</span>
+        <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={onCreate}>+ 新接入</button>
+      </div>
+      <div className="text-sm text-ink-3" style={{ marginBottom: 12 }}>管理员维护全局默认模型；未来可在接管上覆盖。</div>
+      {providers.length === 0 ? <Empty>还没有 Provider。</Empty> : (
+        <div style={{ display: 'grid', gap: 10 }}>
+          {providers.map(provider => (
+            <div key={provider.id} className="card" style={{ padding: '14px 16px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 500 }}>{provider.name} {provider.is_default && <span className="chip live">全局默认</span>}</div>
+                  <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>{provider.base_url} · model: {provider.default_model} · key: {provider.api_key_preview ?? '未设置'}</div>
+                </div>
+                <button
+                  className="btn btn-sm btn-ghost"
+                  style={{ color: 'var(--danger)' }}
+                  onClick={async () => {
+                    if (!confirm('确认删除？')) return;
+                    try { await api.deleteProviderConfig(provider.id); await Promise.resolve(onChanged()); }
+                    catch (err) { setError(String(err)); }
+                  }}
+                >删除</button>
+              </div>
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -1039,6 +1161,82 @@ function CreateProviderModal({ onClose, onCreated, setError }: {
       <FormField label="api_key"><input className="input mono" type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} /></FormField>
       <FormField label="default_model"><input className="input mono" value={model} onChange={event => setModel(event.target.value)} placeholder="deepseek-chat" /></FormField>
       <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建'} disabled={busy || !name.trim() || !baseUrl.trim() || !model.trim()} />
+    </ModalShell>
+  );
+}
+
+function CreateAccountModal({ onClose, onCreated, setError }: {
+  onClose: () => void;
+  onCreated: () => void | Promise<void>;
+  setError: (message: string) => void;
+}) {
+  const [username, setUsername] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [password, setPassword] = useState('');
+  const [role, setRole] = useState<AccountRole>('user');
+  const [busy, setBusy] = useState(false);
+
+  const handle = async () => {
+    if (!username.trim() || !password) return;
+    setBusy(true);
+    try {
+      await api.createAccount({
+        username: username.trim(),
+        password,
+        display_name: displayName.trim() || null,
+        role,
+      });
+      await Promise.resolve(onCreated());
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ModalShell onClose={onClose} title="新建账号">
+      <FormField label="username"><input className="input mono" value={username} onChange={event => setUsername(event.target.value)} autoFocus /></FormField>
+      <FormField label="display_name"><input className="input" value={displayName} onChange={event => setDisplayName(event.target.value)} /></FormField>
+      <FormField label="password"><input className="input mono" type="password" value={password} onChange={event => setPassword(event.target.value)} /></FormField>
+      <FormField label="role">
+        <select className="select" value={role} onChange={event => setRole(event.target.value as AccountRole)}>
+          <option value="user">普通用户</option>
+          <option value="admin">管理员</option>
+        </select>
+      </FormField>
+      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建'} disabled={busy || !username.trim() || !password} />
+    </ModalShell>
+  );
+}
+
+function ResetAccountPasswordModal({ account, onClose, onSaved, setError }: {
+  account: Account;
+  onClose: () => void;
+  onSaved: () => void | Promise<void>;
+  setError: (message: string) => void;
+}) {
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const handle = async () => {
+    if (!password) return;
+    setBusy(true);
+    try {
+      await api.resetAccountPassword(account.id, password);
+      await Promise.resolve(onSaved());
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ModalShell onClose={onClose} title={`重置密码 · @${account.username}`}>
+      <FormField label="新密码"><input className="input mono" type="password" value={password} onChange={event => setPassword(event.target.value)} autoFocus /></FormField>
+      <div className="mono ink-3" style={{ fontSize: 11 }}>保存后该账号已有网页登录态会失效。</div>
+      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '保存中...' : '保存'} disabled={busy || !password} />
     </ModalShell>
   );
 }

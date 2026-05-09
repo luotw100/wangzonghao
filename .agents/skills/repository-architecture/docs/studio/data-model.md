@@ -14,6 +14,7 @@
 - `username`：唯一登录名。
 - `password_hash`。
 - `display_name`。
+- `role`：`admin | user`。
 - `status`：`active | disabled`。
 - timestamps 和 `last_login_at`。
 
@@ -30,11 +31,14 @@ Web 登录 session。
 OpenAI-compatible LLM Provider。
 
 - `id`：`p_...`。
-- `account_id`。
+- `owner_account_id`：创建该 Provider 的管理员账号。
 - `name`。
 - `base_url`。
 - `api_key` nullable。
 - `default_model`。
+- `scope`：当前为 `global`。
+- `status`：`active | disabled`。
+- `is_default`：当前全局默认 Provider 标记。
 - timestamps。
 
 ### `personas` — `Persona`
@@ -177,7 +181,7 @@ LLM 调用日志。
 
 ```text
 Account
-  owns ProviderConfig
+  may own ProviderConfig as admin creator
   owns Persona
   owns Bridge
   owns Inbox
@@ -191,7 +195,7 @@ Bridge
 Inbox
   owns Contact
   references default Persona
-  references default ProviderConfig
+  optionally references ProviderConfig override
 
 Contact
   owns Message
@@ -219,9 +223,13 @@ Bridge incoming 创建 Contact 时：
 Archive ingest 创建 Contact 时：
 
 - `persona_id = inbox.default_persona_id`。
+- `reply_provider_config_id = inbox.reply_provider_config_id`。
 - `autoreply_enabled = False`。
 - `pending_reply = False`。
 - `status = active`。
-- 当前代码没有显式传入 `reply_provider_config_id`，该列允许 NULL。
 
 Contact 创建后，Contact 设置与 Inbox 默认值相互独立。
+
+## Provider 解析规则
+
+当前 Studio Provider 由管理员维护。普通用户 UI 不展示 Provider。Reply 和 Distill 使用的 Provider 解析为：Contact override → Inbox override → 全局默认 Provider。

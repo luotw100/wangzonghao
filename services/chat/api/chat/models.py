@@ -10,7 +10,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import relationship
 
-from chat.db import Base, utc_now
+from chat.db import Base
 
 
 class Account(Base):
@@ -21,12 +21,12 @@ class Account(Base):
     password_hash = Column(String, nullable=False)
     display_name = Column(String, nullable=False)
     avatar_url = Column(String, nullable=True)
-    status = Column(String, nullable=False, default="active")
-    is_deleted = Column(Boolean, nullable=False, default=False)
+    status = Column(String, nullable=False)  # AccountStatus: active | disabled
+    is_deleted = Column(Boolean, nullable=False)
     deleted_at = Column(DateTime, nullable=True)
     last_login_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=utc_now, nullable=False)
-    updated_at = Column(DateTime, default=utc_now, nullable=False)
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
 
     contacts = relationship("Contact", back_populates="account")
     conversations = relationship("Conversation", back_populates="account")
@@ -40,8 +40,8 @@ class AuthSession(Base):
         String, ForeignKey("chat_accounts.id"), nullable=False, index=True
     )
     token_hash = Column(String, nullable=False, unique=True, index=True)
-    created_at = Column(DateTime, default=utc_now, nullable=False)
-    last_seen_at = Column(DateTime, default=utc_now, nullable=False)
+    created_at = Column(DateTime, nullable=False)
+    last_seen_at = Column(DateTime, nullable=False)
 
     account = relationship("Account")
 
@@ -62,10 +62,10 @@ class Contact(Base):
     display_name = Column(String, nullable=False)
     avatar_url = Column(String, nullable=True)
     note = Column(Text, nullable=True)
-    is_deleted = Column(Boolean, nullable=False, default=False)
+    is_deleted = Column(Boolean, nullable=False)
     deleted_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=utc_now, nullable=False)
-    updated_at = Column(DateTime, default=utc_now, nullable=False)
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
 
     account = relationship("Account", back_populates="contacts")
     conversations = relationship("Conversation", back_populates="contact")
@@ -87,10 +87,10 @@ class Conversation(Base):
         String, ForeignKey("chat_contacts.id"), nullable=False, index=True
     )
     title = Column(String, nullable=False)
-    is_deleted = Column(Boolean, nullable=False, default=False)
+    is_deleted = Column(Boolean, nullable=False)
     deleted_at = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=utc_now, nullable=False)
-    updated_at = Column(DateTime, default=utc_now, nullable=False)
+    created_at = Column(DateTime, nullable=False)
+    updated_at = Column(DateTime, nullable=False)
 
     account = relationship("Account", back_populates="conversations")
     contact = relationship("Contact", back_populates="conversations")
@@ -106,14 +106,14 @@ class Message(Base):
     conversation_id = Column(
         String, ForeignKey("chat_conversations.id"), index=True, nullable=False
     )
-    sender_type = Column(String, nullable=False)
+    sender_type = Column(String, nullable=False)  # SenderType: self | contact
     sender_contact_id = Column(
         String, ForeignKey("chat_contacts.id"), nullable=True, index=True
     )
-    msg_type = Column(String, nullable=False)
+    msg_type = Column(String, nullable=False)     # MessageType: text
     content = Column(Text, nullable=False)
-    source = Column(String, nullable=False, default="live")
-    created_at = Column(DateTime, default=utc_now, nullable=False)
+    source = Column(String, nullable=False)       # MessageSource: live | import
+    created_at = Column(DateTime, nullable=False)
 
     conversation = relationship("Conversation")
     sender_contact = relationship("Contact")
@@ -131,4 +131,4 @@ class ImportBatch(Base):
     )
     filename = Column(String, nullable=True)
     message_count = Column(Integer, nullable=False)
-    created_at = Column(DateTime, default=utc_now, nullable=False)
+    created_at = Column(DateTime, nullable=False)

@@ -17,5 +17,4 @@ COPY chat ./chat
 
 RUN mkdir -p /app/storage/attachments
 
-EXPOSE 23456
 CMD ["uv", "run", "uvicorn", "chat.main:app", "--host", "0.0.0.0", "--port", "23456"]

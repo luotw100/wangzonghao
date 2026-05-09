@@ -8,7 +8,6 @@
 
 - build context：`./web`。
 - host port：`23456:23456`。
-- mount `chat-storage:/app/storage:ro`。
 - mount `./nginx.conf:/etc/nginx/conf.d/default.conf:ro`。
 - depends on `chat-api`。
 - restart：`unless-stopped`。
@@ -31,7 +30,7 @@
 - listen `23456`。
 - 从 `/usr/share/nginx/html` serve SPA。
 - `try_files $uri $uri/ /index.html`。
-- `/storage/` alias 到 `/app/storage/`。
+- `/storage/` 显式返回 404。
 - `/api/` proxy 到 `http://chat-api:23456/api/`。
 - 设置 `Host` 和 `X-Real-IP`。
 - `client_max_body_size 50m`。
@@ -46,7 +45,6 @@
 - 执行 `uv sync --frozen --no-dev --no-install-project`。
 - copy `chat/` package。
 - 创建 `/app/storage/attachments`。
-- expose `23456`。
 - command：`uv run uvicorn chat.main:app --host 0.0.0.0 --port 23456`。
 
 ## Web Dockerfile

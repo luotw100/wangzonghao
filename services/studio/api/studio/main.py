@@ -19,9 +19,23 @@ from fastapi import (
 )
 from sqlalchemy.orm import Session
 
-from studio.auth_utils import hash_token, new_session_token, verify_password
+from studio.auth_utils import hash_password, hash_token, new_session_token, verify_password
 from studio.db import ensure_database, get_db, utc_now
 from studio.distill.ingest import ingest_archive
+from studio.enums import (
+    AccountRole,
+    AccountStatus,
+    BridgeStatus,
+    ContactStatus,
+    DistillJobStatus,
+    MessageRole,
+    MessageSource,
+    OutboundAckResult,
+    OutboundStatus,
+    PersonaStatus,
+    ProviderScope,
+    ProviderStatus,
+)
 from studio.models import (
     Account,
     Archive,
@@ -36,7 +50,12 @@ from studio.models import (
     Persona,
     ProviderConfig,
 )
+from studio.provider_policy import resolve_provider_config
 from studio.schemas import (
+    AccountCreate,
+    AccountPasswordReset,
+    AccountUpdate,
+    BootstrapAdminCreate,
     BridgeHandshake,
     BridgeIncomingBatch,
     BridgeOutboundAck,
@@ -45,6 +64,7 @@ from studio.schemas import (
     InboxCreate,
     InboxUpdate,
     LoginRequest,
+    OwnPasswordChange,
     OutboundCreate,
     PersonaCreate,
     PersonaUpdate,
@@ -68,6 +88,61 @@ def new_id(prefix: str, size: int = 8) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:size]}"
 
 
+def base_account_id(username: str) -> str:
+    safe = "".join(ch for ch in username.lower() if ch.isalnum())[:12]
+    return f"acc_{safe}" if safe else "acc_user"
+
+
+def next_account_id(db: Session, username: str) -> str:
+    account_id = base_account_id(username)
+    suffix = 1
+    while db.query(Account).filter(Account.id == account_id).first():
+        suffix += 1
+        account_id = f"{base_account_id(username)}_{suffix}"
+    return account_id
+
+
+def create_account_record(
+    db: Session,
+    *,
+    username: str,
+    password: str,
+    display_name: Optional[str],
+    role: AccountRole,
+) -> Account:
+    username = username.strip()
+    if not username:
+        raise HTTPException(status_code=400, detail="用户名不能为空")
+    if not password:
+        raise HTTPException(status_code=400, detail="密码不能为空")
+    existing = db.query(Account).filter(Account.username == username).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="用户名已存在")
+    now = utc_now()
+    created = Account(
+        id=next_account_id(db, username),
+        username=username,
+        password_hash=hash_password(password),
+        display_name=display_name,
+        role=role,
+        status=AccountStatus.ACTIVE,
+        created_at=now,
+        updated_at=now,
+        last_login_at=None,
+    )
+    db.add(created)
+    return created
+
+
+def create_auth_session(db: Session, account: Account) -> str:
+    token = new_session_token()
+    now = utc_now()
+    db.add(AuthSession(id=hash_token(token), account_id=account.id, created_at=now, last_seen_at=now))
+    account.last_login_at = now
+    account.updated_at = now
+    return token
+
+
 def extract_bearer(authorization: Optional[str]) -> str:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
@@ -89,7 +164,7 @@ def get_account(
     if not s:
         raise HTTPException(status_code=401, detail="登录已失效")
     account = db.query(Account).filter(Account.id == s.account_id).first()
-    if not account or account.status != "active":
+    if not account or account.status != AccountStatus.ACTIVE:
         raise HTTPException(status_code=401, detail="登录已失效")
     s.last_seen_at = utc_now()
     db.commit()
@@ -97,6 +172,19 @@ def get_account(
 
 
 CurrentAccountDep = Annotated[Account, Depends(get_account)]
+
+
+def is_admin(account: Account) -> bool:
+    return account.role == AccountRole.ADMIN
+
+
+def require_admin(account: CurrentAccountDep) -> Account:
+    if not is_admin(account):
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return account
+
+
+AdminAccountDep = Annotated[Account, Depends(require_admin)]
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +200,7 @@ def get_authed_bridge(
     if not session:
         raise HTTPException(status_code=401, detail="无效的 bridge 令牌")
     bridge = db.query(Bridge).filter(Bridge.id == session.bridge_id).first()
-    if not bridge or bridge.status == "revoked":
+    if not bridge or bridge.status == BridgeStatus.REVOKED:
         raise HTTPException(status_code=401, detail="bridge 已被撤销")
     session.last_seen_at = utc_now()
     db.commit()
@@ -137,14 +225,17 @@ def mask_api_key(api_key: Optional[str]) -> Optional[str]:
 def s_account(a: Account) -> Dict[str, Any]:
     return {
         "id": a.id, "username": a.username, "display_name": a.display_name,
-        "status": a.status, "created_at": a.created_at, "last_login_at": a.last_login_at,
+        "role": a.role, "status": a.status,
+        "created_at": a.created_at, "last_login_at": a.last_login_at,
     }
 
 
 def s_provider(p: ProviderConfig) -> Dict[str, Any]:
     return {
-        "id": p.id, "name": p.name, "base_url": p.base_url,
+        "id": p.id, "owner_account_id": p.owner_account_id,
+        "name": p.name, "base_url": p.base_url,
         "default_model": p.default_model,
+        "scope": p.scope, "status": p.status, "is_default": p.is_default,
         "has_api_key": bool(p.api_key), "api_key_preview": mask_api_key(p.api_key),
         "created_at": p.created_at, "updated_at": p.updated_at,
     }
@@ -231,49 +322,48 @@ def s_outbound(o: OutboundMessage, *, peer_platform_id: Optional[str] = None) ->
 # Lookups + ownership checks
 # ---------------------------------------------------------------------------
 
-def get_account_provider(db: Session, account_id: str, provider_id: str) -> ProviderConfig:
-    p = db.query(ProviderConfig).filter(
-        ProviderConfig.id == provider_id, ProviderConfig.account_id == account_id
-    ).first()
+def get_provider_or_404(db: Session, provider_id: str) -> ProviderConfig:
+    p = db.query(ProviderConfig).filter(ProviderConfig.id == provider_id).first()
     if not p:
         raise HTTPException(status_code=404, detail="Provider Config 不存在")
     return p
 
 
-def get_account_persona(db: Session, account_id: str, persona_id: str) -> Persona:
-    p = db.query(Persona).filter(
-        Persona.id == persona_id, Persona.account_id == account_id
-    ).first()
+def get_account_persona(db: Session, account: Account, persona_id: str) -> Persona:
+    query = db.query(Persona).filter(Persona.id == persona_id)
+    if not is_admin(account):
+        query = query.filter(Persona.account_id == account.id)
+    p = query.first()
     if not p:
         raise HTTPException(status_code=404, detail="Persona 不存在")
     return p
 
 
-def get_account_bridge(db: Session, account_id: str, bridge_id: str) -> Bridge:
-    b = db.query(Bridge).filter(
-        Bridge.id == bridge_id, Bridge.account_id == account_id
-    ).first()
+def get_account_bridge(db: Session, account: Account, bridge_id: str) -> Bridge:
+    query = db.query(Bridge).filter(Bridge.id == bridge_id)
+    if not is_admin(account):
+        query = query.filter(Bridge.account_id == account.id)
+    b = query.first()
     if not b:
         raise HTTPException(status_code=404, detail="Bridge 不存在")
     return b
 
 
-def get_account_inbox(db: Session, account_id: str, inbox_id: str) -> Inbox:
-    i = db.query(Inbox).filter(
-        Inbox.id == inbox_id, Inbox.account_id == account_id
-    ).first()
+def get_account_inbox(db: Session, account: Account, inbox_id: str) -> Inbox:
+    query = db.query(Inbox).filter(Inbox.id == inbox_id)
+    if not is_admin(account):
+        query = query.filter(Inbox.account_id == account.id)
+    i = query.first()
     if not i:
         raise HTTPException(status_code=404, detail="Inbox 不存在")
     return i
 
 
-def get_account_contact(db: Session, account_id: str, contact_id: str) -> Contact:
-    c = (
-        db.query(Contact)
-        .join(Inbox, Inbox.id == Contact.inbox_id)
-        .filter(Contact.id == contact_id, Inbox.account_id == account_id)
-        .first()
-    )
+def get_account_contact(db: Session, account: Account, contact_id: str) -> Contact:
+    query = db.query(Contact).join(Inbox, Inbox.id == Contact.inbox_id).filter(Contact.id == contact_id)
+    if not is_admin(account):
+        query = query.filter(Inbox.account_id == account.id)
+    c = query.first()
     if not c:
         raise HTTPException(status_code=404, detail="Contact 不存在")
     return c
@@ -288,18 +378,37 @@ def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/bootstrap/status")
+def bootstrap_status(db: DbDep):
+    return {"needs_bootstrap": db.query(Account.id).first() is None}
+
+
+@app.post("/api/bootstrap/admin")
+def bootstrap_admin(payload: BootstrapAdminCreate, db: DbDep):
+    if db.query(Account.id).first() is not None:
+        raise HTTPException(status_code=409, detail="系统已完成初始化")
+    account = create_account_record(
+        db,
+        username=payload.username,
+        password=payload.password,
+        display_name=payload.display_name,
+        role=AccountRole.ADMIN,
+    )
+    db.flush()
+    token = create_auth_session(db, account)
+    db.commit()
+    db.refresh(account)
+    return {"token": token, "account": s_account(account)}
+
+
 @app.post("/api/auth/login")
 def login(login_in: LoginRequest, db: DbDep):
     a = db.query(Account).filter(Account.username == login_in.username).first()
-    if not a or a.status != "active":
+    if not a or a.status != AccountStatus.ACTIVE:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     if not verify_password(login_in.password, a.password_hash):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
-    token = new_session_token()
-    now = utc_now()
-    db.add(AuthSession(id=hash_token(token), account_id=a.id, created_at=now, last_seen_at=now))
-    a.last_login_at = now
-    a.updated_at = now
+    token = create_auth_session(db, a)
     db.commit()
     db.refresh(a)
     return {"token": token, "account": s_account(a)}
@@ -318,15 +427,83 @@ def me(account: CurrentAccountDep):
     return s_account(account)
 
 
+@app.put("/api/auth/password")
+def change_own_password(payload: OwnPasswordChange, account: CurrentAccountDep, db: DbDep):
+    if not verify_password(payload.current_password, account.password_hash):
+        raise HTTPException(status_code=400, detail="当前密码错误")
+    account.password_hash = hash_password(payload.new_password)
+    account.updated_at = utc_now()
+    db.query(AuthSession).filter(AuthSession.account_id == account.id).delete(synchronize_session=False)
+    db.commit()
+    return {"status": "updated"}
+
+
+# ---------------------------------------------------------------------------
+# Account admin
+# ---------------------------------------------------------------------------
+
+@app.get("/api/accounts")
+def list_accounts(db: DbDep, account: AdminAccountDep):
+    items = db.query(Account).order_by(Account.created_at.asc()).all()
+    return [s_account(item) for item in items]
+
+
+@app.post("/api/accounts")
+def create_account(payload: AccountCreate, db: DbDep, account: AdminAccountDep):
+    created = create_account_record(
+        db,
+        username=payload.username,
+        password=payload.password,
+        display_name=payload.display_name,
+        role=payload.role,
+    )
+    db.commit()
+    db.refresh(created)
+    return s_account(created)
+
+
+@app.put("/api/accounts/{account_id}")
+def update_account(account_id: str, payload: AccountUpdate, db: DbDep, account: AdminAccountDep):
+    target = db.query(Account).filter(Account.id == account_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="账号不存在")
+    fields = payload.model_fields_set
+    if "display_name" in fields:
+        target.display_name = payload.display_name
+    if "role" in fields and payload.role is not None:
+        target.role = payload.role
+    if "status" in fields and payload.status is not None:
+        target.status = payload.status
+        if payload.status != AccountStatus.ACTIVE:
+            db.query(AuthSession).filter(AuthSession.account_id == target.id).delete(synchronize_session=False)
+    target.updated_at = utc_now()
+    db.commit()
+    db.refresh(target)
+    return s_account(target)
+
+
+@app.put("/api/accounts/{account_id}/password")
+def reset_account_password(
+    account_id: str, payload: AccountPasswordReset, db: DbDep, account: AdminAccountDep
+):
+    target = db.query(Account).filter(Account.id == account_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="账号不存在")
+    target.password_hash = hash_password(payload.password)
+    target.updated_at = utc_now()
+    db.query(AuthSession).filter(AuthSession.account_id == target.id).delete(synchronize_session=False)
+    db.commit()
+    return {"status": "updated", "id": target.id}
+
+
 # ---------------------------------------------------------------------------
 # Provider Configs
 # ---------------------------------------------------------------------------
 
 @app.get("/api/provider-configs")
-def list_providers(db: DbDep, account: CurrentAccountDep):
+def list_providers(db: DbDep, account: AdminAccountDep):
     items = (
         db.query(ProviderConfig)
-        .filter(ProviderConfig.account_id == account.id)
         .order_by(ProviderConfig.updated_at.desc())
         .all()
     )
@@ -334,12 +511,19 @@ def list_providers(db: DbDep, account: CurrentAccountDep):
 
 
 @app.post("/api/provider-configs")
-def create_provider(payload: ProviderConfigCreate, db: DbDep, account: CurrentAccountDep):
+def create_provider(payload: ProviderConfigCreate, db: DbDep, account: AdminAccountDep):
     now = utc_now()
+    db.query(ProviderConfig).filter(ProviderConfig.is_default.is_(True)).update(
+        {ProviderConfig.is_default: False, ProviderConfig.updated_at: now},
+        synchronize_session=False,
+    )
     p = ProviderConfig(
-        id=new_id("p"), account_id=account.id,
+        id=new_id("p"), owner_account_id=account.id,
         name=payload.name, base_url=payload.base_url.rstrip("/"),
         api_key=payload.api_key, default_model=payload.default_model,
+        scope=ProviderScope.GLOBAL,
+        status=ProviderStatus.ACTIVE,
+        is_default=True,
         created_at=now, updated_at=now,
     )
     db.add(p)
@@ -350,9 +534,9 @@ def create_provider(payload: ProviderConfigCreate, db: DbDep, account: CurrentAc
 
 @app.put("/api/provider-configs/{provider_id}")
 def update_provider(
-    provider_id: str, payload: ProviderConfigUpdate, db: DbDep, account: CurrentAccountDep
+    provider_id: str, payload: ProviderConfigUpdate, db: DbDep, account: AdminAccountDep
 ):
-    p = get_account_provider(db, account.id, provider_id)
+    p = get_provider_or_404(db, provider_id)
     fields = payload.model_fields_set
     if "name" in fields and payload.name is not None: p.name = payload.name
     if "base_url" in fields and payload.base_url is not None: p.base_url = payload.base_url.rstrip("/")
@@ -365,8 +549,8 @@ def update_provider(
 
 
 @app.delete("/api/provider-configs/{provider_id}")
-def delete_provider(provider_id: str, db: DbDep, account: CurrentAccountDep):
-    p = get_account_provider(db, account.id, provider_id)
+def delete_provider(provider_id: str, db: DbDep, account: AdminAccountDep):
+    p = get_provider_or_404(db, provider_id)
     db.delete(p)
     db.commit()
     return {"status": "deleted", "id": provider_id}
@@ -378,10 +562,10 @@ def delete_provider(provider_id: str, db: DbDep, account: CurrentAccountDep):
 
 @app.get("/api/personas")
 def list_personas(db: DbDep, account: CurrentAccountDep):
-    items = (
-        db.query(Persona).filter(Persona.account_id == account.id)
-        .order_by(Persona.created_at.desc()).all()
-    )
+    query = db.query(Persona)
+    if not is_admin(account):
+        query = query.filter(Persona.account_id == account.id)
+    items = query.order_by(Persona.created_at.desc()).all()
     return [s_persona(p) for p in items]
 
 
@@ -391,7 +575,7 @@ def create_persona(payload: PersonaCreate, db: DbDep, account: CurrentAccountDep
     p = Persona(
         id=new_id("ps"), account_id=account.id,
         name=payload.name, persona_md=payload.persona_md,
-        status="active", created_at=now, updated_at=now,
+        status=PersonaStatus.ACTIVE, created_at=now, updated_at=now,
     )
     db.add(p); db.commit(); db.refresh(p)
     return s_persona(p)
@@ -399,12 +583,12 @@ def create_persona(payload: PersonaCreate, db: DbDep, account: CurrentAccountDep
 
 @app.get("/api/personas/{persona_id}")
 def get_persona(persona_id: str, db: DbDep, account: CurrentAccountDep):
-    return s_persona(get_account_persona(db, account.id, persona_id))
+    return s_persona(get_account_persona(db, account, persona_id))
 
 
 @app.put("/api/personas/{persona_id}")
 def update_persona(persona_id: str, payload: PersonaUpdate, db: DbDep, account: CurrentAccountDep):
-    p = get_account_persona(db, account.id, persona_id)
+    p = get_account_persona(db, account, persona_id)
     fields = payload.model_fields_set
     if "name" in fields and payload.name is not None: p.name = payload.name
     if "persona_md" in fields: p.persona_md = payload.persona_md
@@ -416,7 +600,7 @@ def update_persona(persona_id: str, payload: PersonaUpdate, db: DbDep, account: 
 
 @app.delete("/api/personas/{persona_id}")
 def delete_persona(persona_id: str, db: DbDep, account: CurrentAccountDep):
-    p = get_account_persona(db, account.id, persona_id)
+    p = get_account_persona(db, account, persona_id)
     in_use_inbox = db.query(Inbox).filter(Inbox.default_persona_id == p.id).first()
     if in_use_inbox:
         raise HTTPException(status_code=409, detail=f"Persona 仍被 inbox {in_use_inbox.id} 引用")
@@ -433,11 +617,10 @@ def delete_persona(persona_id: str, db: DbDep, account: CurrentAccountDep):
 
 @app.get("/api/bridges")
 def list_bridges(db: DbDep, account: CurrentAccountDep):
-    items = (
-        db.query(Bridge)
-        .filter(Bridge.account_id == account.id, Bridge.status != "revoked")
-        .order_by(Bridge.created_at.desc()).all()
-    )
+    query = db.query(Bridge).filter(Bridge.status != BridgeStatus.REVOKED)
+    if not is_admin(account):
+        query = query.filter(Bridge.account_id == account.id)
+    items = query.order_by(Bridge.created_at.desc()).all()
     return [s_bridge(b) for b in items]
 
 
@@ -446,23 +629,23 @@ def delete_bridge(bridge_id: str, db: DbDep, account: CurrentAccountDep):
     """Revoke a bridge: marks it revoked, kills its sessions, unbinds inboxes,
     cancels pending outbound. Daemon will get 401 on next call.
     """
-    b = get_account_bridge(db, account.id, bridge_id)
+    b = get_account_bridge(db, account, bridge_id)
     inbox_ids = [r[0] for r in db.query(Inbox.id).filter(Inbox.bridge_id == b.id).all()]
     if inbox_ids:
         db.query(OutboundMessage).filter(
             OutboundMessage.inbox_id.in_(inbox_ids),
-            OutboundMessage.status == "pending",
-        ).update({OutboundMessage.status: "canceled"}, synchronize_session=False)
+            OutboundMessage.status == OutboundStatus.PENDING,
+        ).update({OutboundMessage.status: OutboundStatus.CANCELED}, synchronize_session=False)
         db.query(Inbox).filter(Inbox.bridge_id == b.id).update(
             {Inbox.bridge_id: None}, synchronize_session=False
         )
     db.query(BridgeSession).filter(BridgeSession.bridge_id == b.id).delete(
         synchronize_session=False
     )
-    b.status = "revoked"
+    b.status = BridgeStatus.REVOKED
     b.updated_at = utc_now()
     db.commit()
-    return {"status": "revoked", "id": bridge_id}
+    return {"status": BridgeStatus.REVOKED, "id": bridge_id}
 
 
 # ---------------------------------------------------------------------------
@@ -471,21 +654,23 @@ def delete_bridge(bridge_id: str, db: DbDep, account: CurrentAccountDep):
 
 @app.get("/api/inboxes")
 def list_inboxes(db: DbDep, account: CurrentAccountDep):
-    items = (
-        db.query(Inbox).filter(Inbox.account_id == account.id)
-        .order_by(Inbox.created_at.desc()).all()
-    )
+    query = db.query(Inbox)
+    if not is_admin(account):
+        query = query.filter(Inbox.account_id == account.id)
+    items = query.order_by(Inbox.created_at.desc()).all()
     return [s_inbox(i) for i in items]
 
 
 @app.post("/api/inboxes")
 def create_inbox(payload: InboxCreate, db: DbDep, account: CurrentAccountDep):
+    if payload.reply_provider_config_id is not None and not is_admin(account):
+        raise HTTPException(status_code=403, detail="只有管理员可以指定 Provider")
     if payload.default_persona_id is not None:
-        get_account_persona(db, account.id, payload.default_persona_id)
+        get_account_persona(db, account, payload.default_persona_id)
     if payload.bridge_id is not None:
-        get_account_bridge(db, account.id, payload.bridge_id)
+        get_account_bridge(db, account, payload.bridge_id)
     if payload.reply_provider_config_id is not None:
-        get_account_provider(db, account.id, payload.reply_provider_config_id)
+        get_provider_or_404(db, payload.reply_provider_config_id)
     now = utc_now()
     inbox = Inbox(
         id=new_id("ib"), account_id=account.id,
@@ -503,25 +688,27 @@ def create_inbox(payload: InboxCreate, db: DbDep, account: CurrentAccountDep):
 
 @app.get("/api/inboxes/{inbox_id}")
 def get_inbox(inbox_id: str, db: DbDep, account: CurrentAccountDep):
-    return s_inbox(get_account_inbox(db, account.id, inbox_id))
+    return s_inbox(get_account_inbox(db, account, inbox_id))
 
 
 @app.put("/api/inboxes/{inbox_id}")
 def update_inbox(inbox_id: str, payload: InboxUpdate, db: DbDep, account: CurrentAccountDep):
-    inbox = get_account_inbox(db, account.id, inbox_id)
+    inbox = get_account_inbox(db, account, inbox_id)
     fields = payload.model_fields_set
     if "display_name" in fields and payload.display_name is not None:
         inbox.display_name = payload.display_name
     if "default_persona_id" in fields and payload.default_persona_id is not None:
-        get_account_persona(db, account.id, payload.default_persona_id)
+        get_account_persona(db, account, payload.default_persona_id)
         inbox.default_persona_id = payload.default_persona_id
     if "bridge_id" in fields and payload.bridge_id is not None:
-        get_account_bridge(db, account.id, payload.bridge_id)
+        get_account_bridge(db, account, payload.bridge_id)
         inbox.bridge_id = payload.bridge_id
     if payload.clear_bridge:
         inbox.bridge_id = None
+    if ("reply_provider_config_id" in fields or payload.clear_reply_provider) and not is_admin(account):
+        raise HTTPException(status_code=403, detail="只有管理员可以修改 Provider")
     if "reply_provider_config_id" in fields and payload.reply_provider_config_id is not None:
-        get_account_provider(db, account.id, payload.reply_provider_config_id)
+        get_provider_or_404(db, payload.reply_provider_config_id)
         inbox.reply_provider_config_id = payload.reply_provider_config_id
     if payload.clear_reply_provider:
         inbox.reply_provider_config_id = None
@@ -534,17 +721,17 @@ def update_inbox(inbox_id: str, payload: InboxUpdate, db: DbDep, account: Curren
 
 @app.delete("/api/inboxes/{inbox_id}")
 def delete_inbox(inbox_id: str, db: DbDep, account: CurrentAccountDep):
-    inbox = get_account_inbox(db, account.id, inbox_id)
+    inbox = get_account_inbox(db, account, inbox_id)
     db.query(OutboundMessage).filter(
-        OutboundMessage.inbox_id == inbox.id, OutboundMessage.status == "pending"
-    ).update({OutboundMessage.status: "canceled"}, synchronize_session=False)
+        OutboundMessage.inbox_id == inbox.id, OutboundMessage.status == OutboundStatus.PENDING
+    ).update({OutboundMessage.status: OutboundStatus.CANCELED}, synchronize_session=False)
     db.delete(inbox); db.commit()
     return {"status": "deleted", "id": inbox_id}
 
 
 @app.get("/api/inboxes/{inbox_id}/contacts")
 def list_inbox_contacts(inbox_id: str, db: DbDep, account: CurrentAccountDep):
-    inbox = get_account_inbox(db, account.id, inbox_id)
+    inbox = get_account_inbox(db, account, inbox_id)
     items = (
         db.query(Contact).filter(Contact.inbox_id == inbox.id)
         .order_by(Contact.updated_at.desc()).all()
@@ -555,14 +742,14 @@ def list_inbox_contacts(inbox_id: str, db: DbDep, account: CurrentAccountDep):
 @app.post("/api/inboxes/{inbox_id}/outbound")
 def seed_outbound(inbox_id: str, payload: OutboundCreate, db: DbDep, account: CurrentAccountDep):
     """Manual outbound seeding (debug / pre-LLM-brain)."""
-    inbox = get_account_inbox(db, account.id, inbox_id)
-    contact = get_account_contact(db, account.id, payload.contact_id)
+    inbox = get_account_inbox(db, account, inbox_id)
+    contact = get_account_contact(db, account, payload.contact_id)
     if contact.inbox_id != inbox.id:
         raise HTTPException(status_code=400, detail="Contact 不属于该 inbox")
     o = OutboundMessage(
         inbox_id=inbox.id, contact_id=contact.id,
         chunks=[c.model_dump() for c in payload.chunks],
-        status="pending", delivered_at=None, failed_reason=None, created_at=utc_now(),
+        status=OutboundStatus.PENDING, delivered_at=None, failed_reason=None, created_at=utc_now(),
     )
     db.add(o); db.commit(); db.refresh(o)
     return s_outbound(o, peer_platform_id=contact.peer_platform_id)
@@ -574,17 +761,15 @@ def seed_outbound(inbox_id: str, payload: OutboundCreate, db: DbDep, account: Cu
 
 @app.get("/api/contacts/{contact_id}")
 def get_contact(contact_id: str, db: DbDep, account: CurrentAccountDep):
-    return s_contact(get_account_contact(db, account.id, contact_id))
+    return s_contact(get_account_contact(db, account, contact_id))
 
 
 @app.get("/api/conversations")
 def list_conversations(db: DbDep, account: CurrentAccountDep):
-    rows = (
-        db.query(Contact, Inbox)
-        .join(Inbox, Inbox.id == Contact.inbox_id)
-        .filter(Inbox.account_id == account.id)
-        .all()
-    )
+    query = db.query(Contact, Inbox).join(Inbox, Inbox.id == Contact.inbox_id)
+    if not is_admin(account):
+        query = query.filter(Inbox.account_id == account.id)
+    rows = query.all()
     out: List[Dict[str, Any]] = []
     for contact, inbox in rows:
         latest = (
@@ -617,7 +802,7 @@ def list_contact_messages(
     account: CurrentAccountDep,
     limit: int = Query(200, ge=1, le=500),
 ):
-    contact = get_account_contact(db, account.id, contact_id)
+    contact = get_account_contact(db, account, contact_id)
     rows = (
         db.query(Message)
         .filter(Message.contact_id == contact.id)
@@ -631,15 +816,17 @@ def list_contact_messages(
 
 @app.put("/api/contacts/{contact_id}")
 def update_contact(contact_id: str, payload: ContactUpdate, db: DbDep, account: CurrentAccountDep):
-    c = get_account_contact(db, account.id, contact_id)
+    c = get_account_contact(db, account, contact_id)
     fields = payload.model_fields_set
     if "display_name" in fields and payload.display_name is not None: c.display_name = payload.display_name
     if "card_md" in fields: c.card_md = payload.card_md
     if "persona_id" in fields and payload.persona_id is not None:
-        get_account_persona(db, account.id, payload.persona_id)
+        get_account_persona(db, account, payload.persona_id)
         c.persona_id = payload.persona_id
+    if ("reply_provider_config_id" in fields or payload.clear_reply_provider) and not is_admin(account):
+        raise HTTPException(status_code=403, detail="只有管理员可以修改 Provider")
     if "reply_provider_config_id" in fields and payload.reply_provider_config_id is not None:
-        get_account_provider(db, account.id, payload.reply_provider_config_id)
+        get_provider_or_404(db, payload.reply_provider_config_id)
         c.reply_provider_config_id = payload.reply_provider_config_id
     if payload.clear_reply_provider:
         c.reply_provider_config_id = None
@@ -657,10 +844,10 @@ def update_contact(contact_id: str, payload: ContactUpdate, db: DbDep, account: 
 
 @app.get("/api/archives")
 def list_archives(db: DbDep, account: CurrentAccountDep):
-    items = (
-        db.query(Archive).filter(Archive.account_id == account.id)
-        .order_by(Archive.uploaded_at.desc()).all()
-    )
+    query = db.query(Archive)
+    if not is_admin(account):
+        query = query.filter(Archive.account_id == account.id)
+    items = query.order_by(Archive.uploaded_at.desc()).all()
     return [s_archive(a) for a in items]
 
 
@@ -669,14 +856,14 @@ async def upload_archive(
     db: DbDep, account: CurrentAccountDep,
     inbox_id: str = Form(...), self_wxid: str = Form(...), file: UploadFile = File(...),
 ):
-    inbox = get_account_inbox(db, account.id, inbox_id)
+    inbox = get_account_inbox(db, account, inbox_id)
     with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
         contents = await file.read()
         tmp.write(contents)
         tmp_path = Path(tmp.name)
     try:
         archive = await ingest_archive(
-            db=db, account_id=account.id, inbox=inbox,
+            db=db, account_id=inbox.account_id, inbox=inbox,
             self_wxid=self_wxid, src_path=tmp_path,
             original_filename=file.filename or tmp_path.name,
         )
@@ -689,33 +876,37 @@ async def upload_archive(
 
 @app.get("/api/distill-jobs")
 def list_distill_jobs(db: DbDep, account: CurrentAccountDep):
-    items = (
-        db.query(DistillJob).filter(DistillJob.account_id == account.id)
-        .order_by(DistillJob.created_at.desc()).all()
-    )
+    query = db.query(DistillJob)
+    if not is_admin(account):
+        query = query.filter(DistillJob.account_id == account.id)
+    items = query.order_by(DistillJob.created_at.desc()).all()
     return [s_distill_job(j) for j in items]
 
 
 @app.post("/api/distill-jobs")
 def create_distill_job(payload: DistillJobCreate, db: DbDep, account: CurrentAccountDep):
-    get_account_inbox(db, account.id, payload.source_inbox_id)
-    get_account_persona(db, account.id, payload.target_persona_id)
-    get_account_provider(db, account.id, payload.provider_config_id)
+    inbox = get_account_inbox(db, account, payload.source_inbox_id)
+    get_account_persona(db, account, payload.target_persona_id)
+    if payload.provider_config_id is not None and not is_admin(account):
+        raise HTTPException(status_code=403, detail="只有管理员可以指定 Provider")
+    provider_config = resolve_provider_config(db, payload.provider_config_id)
+    if not provider_config:
+        raise HTTPException(status_code=409, detail="没有可用的全局默认 Provider")
     pending = (
         db.query(DistillJob).filter(
-            DistillJob.account_id == account.id,
+            DistillJob.account_id == inbox.account_id,
             DistillJob.target_persona_id == payload.target_persona_id,
-            DistillJob.status.in_(["pending", "running"]),
+            DistillJob.status.in_([DistillJobStatus.PENDING, DistillJobStatus.RUNNING]),
         ).first()
     )
     if pending:
         raise HTTPException(status_code=409, detail=f"该 persona 已有进行中的蒸馏任务 {pending.id}")
     j = DistillJob(
-        id=new_id("dj"), account_id=account.id,
+        id=new_id("dj"), account_id=inbox.account_id,
         source_inbox_id=payload.source_inbox_id,
         target_persona_id=payload.target_persona_id,
-        provider_config_id=payload.provider_config_id,
-        status="pending", progress={}, error_message=None,
+        provider_config_id=provider_config.id,
+        status=DistillJobStatus.PENDING, progress={}, error_message=None,
         created_at=utc_now(), started_at=None, finished_at=None,
     )
     db.add(j); db.commit(); db.refresh(j)
@@ -724,11 +915,10 @@ def create_distill_job(payload: DistillJobCreate, db: DbDep, account: CurrentAcc
 
 @app.get("/api/distill-jobs/{job_id}")
 def get_distill_job(job_id: str, db: DbDep, account: CurrentAccountDep):
-    j = (
-        db.query(DistillJob)
-        .filter(DistillJob.id == job_id, DistillJob.account_id == account.id)
-        .first()
-    )
+    query = db.query(DistillJob).filter(DistillJob.id == job_id)
+    if not is_admin(account):
+        query = query.filter(DistillJob.account_id == account.id)
+    j = query.first()
     if not j:
         raise HTTPException(status_code=404, detail="Distill Job 不存在")
     return s_distill_job(j)
@@ -769,7 +959,7 @@ def bridge_handshake(payload: BridgeHandshake, db: DbDep):
     account = (
         db.query(Account).filter(Account.username == payload.username).first()
     )
-    if not account or account.status != "active" or not verify_password(
+    if not account or account.status != AccountStatus.ACTIVE or not verify_password(
         payload.password, account.password_hash
     ):
         raise HTTPException(status_code=401, detail="Studio 账号或密码错误")
@@ -786,7 +976,7 @@ def bridge_handshake(payload: BridgeHandshake, db: DbDep):
             account_id=account.id,
             hostname=payload.hostname,
             display_name=payload.hostname,
-            status="online",
+            status=BridgeStatus.ONLINE,
             last_seen_at=now,
             created_at=now,
             updated_at=now,
@@ -794,7 +984,7 @@ def bridge_handshake(payload: BridgeHandshake, db: DbDep):
         db.add(bridge)
         db.flush()
     else:
-        bridge.status = "online"
+        bridge.status = BridgeStatus.ONLINE
         bridge.last_seen_at = now
         bridge.updated_at = now
 
@@ -811,7 +1001,7 @@ def bridge_handshake(payload: BridgeHandshake, db: DbDep):
 
     default_persona = (
         db.query(Persona)
-        .filter(Persona.account_id == account.id, Persona.status == "active")
+        .filter(Persona.account_id == account.id, Persona.status == PersonaStatus.ACTIVE)
         .order_by(Persona.created_at.asc())
         .first()
     )
@@ -855,7 +1045,7 @@ def bridge_handshake(payload: BridgeHandshake, db: DbDep):
             db.query(OutboundMessage.id)
             .filter(
                 OutboundMessage.inbox_id.in_([i.id for i in served]),
-                OutboundMessage.status != "pending",
+                OutboundMessage.status != OutboundStatus.PENDING,
             )
             .order_by(OutboundMessage.id.desc())
             .first()
@@ -879,8 +1069,8 @@ def bridge_handshake(payload: BridgeHandshake, db: DbDep):
 def bridge_heartbeat(db: DbDep, bridge: BridgeDep):
     now = utc_now()
     bridge.last_seen_at = now
-    if bridge.status != "online":
-        bridge.status = "online"
+    if bridge.status != BridgeStatus.ONLINE:
+        bridge.status = BridgeStatus.ONLINE
     db.commit()
     # Return current authoritative inbox set so daemon can sync (start /
     # stop adapters when UI bindings change).
@@ -925,7 +1115,7 @@ def bridge_incoming(payload: BridgeIncomingBatch, db: DbDep, bridge: BridgeDep):
                 card_md=None, persona_id=inbox.default_persona_id,
                 reply_provider_config_id=inbox.reply_provider_config_id,
                 autoreply_enabled=False, pending_reply=False,
-                status="active", last_seen_platform_msg_id=None,
+                status=ContactStatus.ACTIVE, last_seen_platform_msg_id=None,
                 created_at=now, updated_at=now,
             )
             db.add(contact); db.flush()
@@ -943,13 +1133,13 @@ def bridge_incoming(payload: BridgeIncomingBatch, db: DbDep, bridge: BridgeDep):
         ts = m.sent_at.replace(tzinfo=None) if m.sent_at.tzinfo else m.sent_at
         db.add(Message(
             contact_id=contact.id, archive_id=None,
-            external_id=external_id, source="live",
+            external_id=external_id, source=MessageSource.LIVE,
             role=m.role, sender_name=None, content=m.content,
             timestamp=ts, archive_msg_idx=None, created_at=now,
         ))
         contact.last_seen_platform_msg_id = m.platform_msg_id
         contact.updated_at = now
-        if m.role == "counterpart" and inbox.enabled and contact.autoreply_enabled:
+        if m.role == MessageRole.COUNTERPART and inbox.enabled and contact.autoreply_enabled:
             contact.pending_reply = True
         accepted += 1
 
@@ -982,7 +1172,7 @@ async def bridge_outbound(
                     .filter(
                         OutboundMessage.inbox_id.in_(inbox_ids),
                         OutboundMessage.id > cursor,
-                        OutboundMessage.status == "pending",
+                        OutboundMessage.status == OutboundStatus.PENDING,
                     )
                     .order_by(OutboundMessage.id.asc())
                     .limit(50)
@@ -1017,14 +1207,14 @@ def bridge_outbound_ack(
     )
     if not o:
         raise HTTPException(status_code=404, detail="Outbound 不存在")
-    if o.status != "pending":
+    if o.status != OutboundStatus.PENDING:
         return {"status": o.status}
     now = utc_now()
-    if payload.result == "sent":
-        o.status = "delivered"
+    if payload.result == OutboundAckResult.SENT:
+        o.status = OutboundStatus.DELIVERED
         o.delivered_at = now
     else:
-        o.status = "failed"
+        o.status = OutboundStatus.FAILED
         o.failed_reason = payload.reason
     db.commit()
     return {"status": o.status}

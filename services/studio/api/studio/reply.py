@@ -27,6 +27,13 @@ from sqlalchemy.orm import Session as ORMSession
 
 from studio.clients import ProviderClient
 from studio.db import SessionLocal, utc_now
+from studio.enums import (
+    ContactStatus,
+    LlmPurpose,
+    MessageRole,
+    OutboundMessageType,
+    OutboundStatus,
+)
 from studio.models import (
     Contact,
     Inbox,
@@ -34,8 +41,8 @@ from studio.models import (
     Message,
     OutboundMessage,
     Persona,
-    ProviderConfig,
 )
+from studio.provider_policy import resolve_provider_config
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +114,7 @@ def _decide(db: ORMSession, contact_id: str) -> _ReplyDecision:
     contact = db.query(Contact).filter(Contact.id == contact_id).first()
     if not contact:
         return _ReplyDecision("contact 不存在", None, [])
-    if contact.status != "active":
+    if contact.status != ContactStatus.ACTIVE:
         return _ReplyDecision("contact archived", None, [])
     if not contact.autoreply_enabled:
         return _ReplyDecision("autoreply disabled on contact", None, [])
@@ -116,12 +123,9 @@ def _decide(db: ORMSession, contact_id: str) -> _ReplyDecision:
     if not inbox or not inbox.enabled:
         return _ReplyDecision("inbox disabled", None, [])
     provider_id = contact.reply_provider_config_id or inbox.reply_provider_config_id
-    if not provider_id:
-        return _ReplyDecision("contact/inbox 未绑定 reply_provider", None, [])
-
-    pc = db.query(ProviderConfig).filter(ProviderConfig.id == provider_id).first()
+    pc = resolve_provider_config(db, provider_id)
     if not pc or not pc.api_key:
-        return _ReplyDecision("provider 缺失或没 api_key", None, [])
+        return _ReplyDecision("provider 缺失或没 api_key（含全局默认 Provider）", None, [])
 
     persona = db.query(Persona).filter(Persona.id == contact.persona_id).first()
     if not persona:
@@ -139,7 +143,7 @@ def _decide(db: ORMSession, contact_id: str) -> _ReplyDecision:
         return _ReplyDecision("没有可用历史", None, [])
 
     latest = max(history, key=lambda m: m.timestamp)
-    if latest.role != "counterpart":
+    if latest.role != MessageRole.COUNTERPART:
         return _ReplyDecision("最近一条不是对方", None, history)
 
     seconds_since = (utc_now() - latest.timestamp).total_seconds()
@@ -163,7 +167,7 @@ def _decide(db: ORMSession, contact_id: str) -> _ReplyDecision:
 def _format_history_lines(history: List[Message]) -> str:
     lines: List[str] = []
     for m in history:
-        speaker = "我" if m.role == "self" else "对方"
+        speaker = "我" if m.role == MessageRole.SELF else "对方"
         ts = m.timestamp.strftime("%m-%d %H:%M")
         content = m.content.replace("\n", " ").strip()
         lines.append(f"[{ts}] {speaker}: {content}")
@@ -246,7 +250,7 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
         db = SessionLocal()
         try:
             db.add(LlmLog(
-                purpose="reply", persona_id=None, inbox_id=ctx.inbox_id,
+                purpose=LlmPurpose.REPLY, persona_id=None, inbox_id=ctx.inbox_id,
                 request_messages=json.dumps(request_messages, ensure_ascii=False),
                 response_raw=f"ERROR: {exc}", model=ctx.model, created_at=utc_now(),
             ))
@@ -259,7 +263,7 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
     db = SessionLocal()
     try:
         db.add(LlmLog(
-            purpose="reply", persona_id=None, inbox_id=ctx.inbox_id,
+            purpose=LlmPurpose.REPLY, persona_id=None, inbox_id=ctx.inbox_id,
             request_messages=json.dumps(request_messages, ensure_ascii=False),
             response_raw=response_text, model=ctx.model, created_at=utc_now(),
         ))
@@ -284,8 +288,8 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
             ob = OutboundMessage(
                 inbox_id=ctx.inbox_id,
                 contact_id=ctx.contact_id,
-                chunks=[{"content": ch, "msg_type": "text"} for ch in chunks],
-                status="pending",
+                chunks=[{"content": ch, "msg_type": OutboundMessageType.TEXT} for ch in chunks],
+                status=OutboundStatus.PENDING,
                 delivered_at=None,
                 failed_reason=None,
                 created_at=utc_now(),
@@ -308,7 +312,7 @@ def list_pending_contact_ids() -> List[str]:
     try:
         rows = (
             db.query(Contact.id)
-            .filter(Contact.pending_reply.is_(True), Contact.status == "active")
+            .filter(Contact.pending_reply.is_(True), Contact.status == ContactStatus.ACTIVE)
             .all()
         )
         return [r[0] for r in rows]

@@ -27,19 +27,18 @@ Chat web/API 通过 Nginx 暴露在 `http://localhost:23456`。
 ```bash
 cd services/studio
 docker compose up -d --build
-docker compose exec -T studio-api uv run python -m studio.cli create-account \
-  --username demo --password demo123 --display-name 演示
 ```
 
 Studio web/API 通过 Nginx 暴露在 `http://localhost:23457`。
 
 当前推荐顺序：
 
-1. 创建 ProviderConfig。
-2. 创建至少一个 Persona。
+1. 第一次打开 Studio 时，在登录页创建首个 admin。
+2. 用 admin 登录 Studio，在 Settings 中创建普通用户账号和全局默认 ProviderConfig。
+3. 用对应用户登录后创建至少一个 Persona。
 3. 启动 Bridge。
 4. 等 Bridge handshake 自动创建 Bridge/Inbox。
-5. 在 Takeover tab 中给 Contact 配置 Persona、Provider、autoreply 和 card。
+5. 在 Takeover tab 中给 Contact 配置 Persona、autoreply 和 card；Provider override 只对 admin 可见，普通用户使用全局默认 Provider。
 6. 如需蒸馏，上传 archive 后创建 distill job。
 
 ## 启动 Bridge 连接本地 Chat 和 Studio
@@ -66,7 +65,7 @@ Docker 运行和本地裸跑是两套存储：
 
 在本地 DB 创建的账号不会出现在 Docker volume DB 中。
 
-## Account CLI
+## Account management
 
 Chat：
 
@@ -76,7 +75,7 @@ docker compose exec -T chat-api uv run python -m chat.cli list-accounts
 docker compose exec -T chat-api uv run python -m chat.cli reset-password --username alice --password NewPassword
 ```
 
-Studio：
+Studio：账号管理主路径是 Web Settings；首次无账号时登录页会开放首个 admin 初始化。admin 可创建/list/停用启用账号、重置任意账号密码；普通 user 可修改自己的密码。CLI 仅保留为运维/救援入口：
 
 ```bash
 cd services/studio
@@ -95,7 +94,7 @@ docker compose exec -T studio-api uv run python -m studio.cli reset-password --u
 后端 / schema / protocol 改动：
 
 1. 重建相关 Compose stack。
-2. 在 Docker DB 中创建或重置账号。
+2. 在 Docker DB 中创建或重置账号（Studio 优先通过 Web Settings，Chat 用 CLI）。
 3. 同时运行 Chat、Studio、Bridge。
 4. 验证 Bridge handshake 创建 Bridge/Inbox。
 5. 在 Chat 中以 contact 视角发送消息。

@@ -4,15 +4,15 @@
 
 ## Studio Vite proxy
 
-`services/studio/web/vite.config.ts` 当前把 `/api` 和 `/storage` proxy 到 `localhost:23456`，而 Studio Compose 默认端口是 `23457`。这是当前文件内容，使用 Vite dev server 前需要核对。
+`services/studio/web/vite.config.ts` 当前把 `/api` proxy 到 `localhost:23457`。
 
 ## Bridge 默认 Studio URL
 
 `services/bridge/bridge/main.py` 当前定义 `DEFAULT_STUDIO_URL = "https://studio.laborster.com"`。本地联调命令通过 `--studio-url` 覆盖。
 
-## Chat model defaults
+## Model defaults
 
-Chat sandbox models 当前使用 SQLAlchemy column defaults，例如 `status='active'` 和 timestamp defaults。Studio models 当前文件头明确要求不用 column-level defaults。
+Chat sandbox 和 Studio models 当前都不使用 SQLAlchemy column defaults；insert 路径必须显式写入状态、时间戳和布尔值。
 
 ## Bridge offline 状态
 
@@ -24,10 +24,10 @@ Bridge session token 只保存在 Bridge 内存中。Bridge 重启后重新 hand
 
 ## Provider UI
 
-Studio API 和前端 API client 当前都有 Provider update 能力；StudioPage 的 Providers tab 当前只暴露 create/delete，没有完整 edit UI。
+Studio Provider 管理在 Settings 页面，仅 admin 可见。当前 UI 支持创建、启用/禁用和设为默认；普通 user 不展示 Provider 选择和 Provider 管理。
 
 ## Archive ingest
 
 Archive ingest 当前只支持 1:1 聊天。`_identify_counterpart()` 在出现多个 counterpart 时抛错。
 
-`studio/distill/ingest.py` 中 `_ensure_contact()` 当前创建 Contact 时显式设置 Persona、autoreply、pending、status 等字段；`reply_provider_config_id` 字段在当前代码路径中没有显式传入，数据库列允许 NULL。
+`studio/distill/ingest.py` 中 `_ensure_contact()` 当前创建 Contact 时显式设置 Persona、Provider、autoreply、pending、status 等字段；`reply_provider_config_id` 继承 Inbox 的 Provider override，允许为空。

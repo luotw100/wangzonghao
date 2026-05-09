@@ -1,7 +1,17 @@
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
+
+from studio.enums import (
+    AccountRole,
+    AccountStatus,
+    ContactStatus,
+    MessageRole,
+    OutboundAckResult,
+    OutboundMessageType,
+    PersonaStatus,
+)
 
 
 class StrictModel(BaseModel):
@@ -13,6 +23,34 @@ class StrictModel(BaseModel):
 class LoginRequest(StrictModel):
     username: str
     password: str
+
+
+class BootstrapAdminCreate(StrictModel):
+    username: str
+    password: str
+    display_name: Optional[str]
+
+
+class AccountCreate(StrictModel):
+    username: str
+    password: str
+    display_name: Optional[str]
+    role: AccountRole
+
+
+class AccountUpdate(StrictModel):
+    display_name: Optional[str] = None
+    role: Optional[AccountRole] = None
+    status: Optional[AccountStatus] = None
+
+
+class AccountPasswordReset(StrictModel):
+    password: str
+
+
+class OwnPasswordChange(StrictModel):
+    current_password: str
+    new_password: str
 
 
 # --- Provider Configs ---
@@ -41,7 +79,7 @@ class PersonaCreate(StrictModel):
 class PersonaUpdate(StrictModel):
     name: Optional[str] = None
     persona_md: Optional[str] = None
-    status: Optional[Literal["active", "archived"]] = None
+    status: Optional[PersonaStatus] = None
 
 
 # --- Bridges (auto-provisioned daemons; users only ever read/revoke them) ---
@@ -77,7 +115,7 @@ class ContactUpdate(StrictModel):
     reply_provider_config_id: Optional[str] = None
     clear_reply_provider: Optional[bool] = None
     autoreply_enabled: Optional[bool] = None
-    status: Optional[Literal["active", "archived"]] = None
+    status: Optional[ContactStatus] = None
 
 
 # --- Distill Jobs ---
@@ -85,14 +123,14 @@ class ContactUpdate(StrictModel):
 class DistillJobCreate(StrictModel):
     source_inbox_id: str
     target_persona_id: str
-    provider_config_id: str
+    provider_config_id: Optional[str] = None
 
 
 # --- Manual outbound seed (debug / pre-LLM-brain) ---
 
 class OutboundChunk(StrictModel):
     content: str
-    msg_type: Literal["text"]
+    msg_type: OutboundMessageType
 
 
 class OutboundCreate(StrictModel):
@@ -125,7 +163,7 @@ class BridgeIncomingMessage(StrictModel):
     peer_platform_id: str
     peer_display_name: str
     platform_msg_id: str
-    role: Literal["self", "counterpart"]
+    role: MessageRole
     content: str
     sent_at: datetime
 
@@ -135,6 +173,6 @@ class BridgeIncomingBatch(StrictModel):
 
 
 class BridgeOutboundAck(StrictModel):
-    result: Literal["sent", "failed"]
+    result: OutboundAckResult
     platform_msg_id: Optional[str] = None
     reason: Optional[str] = None

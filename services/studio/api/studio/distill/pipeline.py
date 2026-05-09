@@ -25,6 +25,7 @@ from studio.distill.packer import (
     pack_windows,
     split_sessions,
 )
+from studio.enums import ContactStatus, LlmPurpose, MessageRole, ProviderStatus
 from studio.models import (
     Contact,
     Inbox,
@@ -77,7 +78,10 @@ def _load_ctx(
     persona = db.query(Persona).filter(Persona.id == target_persona_id).first()
     if not persona:
         raise ValueError(f"Persona {target_persona_id} 不存在")
-    pc = db.query(ProviderConfig).filter(ProviderConfig.id == provider_config_id).first()
+    pc = db.query(ProviderConfig).filter(
+        ProviderConfig.id == provider_config_id,
+        ProviderConfig.status == ProviderStatus.ACTIVE,
+    ).first()
     if not pc:
         raise ValueError(f"Provider Config {provider_config_id} 不存在")
     if not pc.api_key:
@@ -105,7 +109,7 @@ def _load_contact_messages(db: ORMSession, contact_id: str) -> List[Message]:
 def _messages_to_text_messages(msgs: List[Message]) -> List[TextMessage]:
     out: List[TextMessage] = []
     for m in msgs:
-        sender = m.sender_name or ("我" if m.role == "self" else "对方")
+        sender = m.sender_name or ("我" if m.role == MessageRole.SELF else "对方")
         line = f"[{m.timestamp.strftime('%Y-%m-%d %H:%M:%S')}] {sender}: {m.content}"
         out.append(
             TextMessage(
@@ -164,7 +168,7 @@ def _log_llm_call(
 ) -> None:
     db.add(
         LlmLog(
-            purpose="distill",
+            purpose=LlmPurpose.DISTILL,
             persona_id=persona_id,
             inbox_id=inbox_id,
             request_messages=json.dumps(request_messages, ensure_ascii=False),
@@ -299,7 +303,7 @@ async def run_distill(
         )
         contacts = (
             db.query(Contact)
-            .filter(Contact.inbox_id == source_inbox_id, Contact.status == "active")
+            .filter(Contact.inbox_id == source_inbox_id, Contact.status == ContactStatus.ACTIVE)
             .order_by(Contact.created_at.asc())
             .all()
         )
@@ -356,7 +360,7 @@ def main() -> None:
     parser.add_argument("--source-inbox-id", required=True)
     parser.add_argument("--target-persona-id", required=True)
     parser.add_argument("--provider-config-id", required=True)
-    parser.add_argument("--request-timeout", type=float, default=120.0)
+    parser.add_argument("--request-timeout", type=float, required=True)
     args = parser.parse_args()
 
     ensure_database()

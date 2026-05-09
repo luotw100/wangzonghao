@@ -17,5 +17,4 @@ COPY studio ./studio
 
 RUN mkdir -p /app/storage/uploads
 
-EXPOSE 23457
 CMD ["uv", "run", "uvicorn", "studio.main:app", "--host", "0.0.0.0", "--port", "23457"]

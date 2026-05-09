@@ -34,7 +34,8 @@
 
 主要函数：
 
-- Auth：`login`、`authLogout`、`authMe`。
+- Auth / bootstrap：`login`、`authLogout`、`authMe`、`changeOwnPassword`、`getBootstrapStatus`、`bootstrapAdmin`。
+- Account admin：`getAccounts`、`createAccount`、`updateAccount`、`resetAccountPassword`。
 - Providers：`getProviderConfigs`、`createProviderConfig`、`updateProviderConfig`、`deleteProviderConfig`。
 - Personas：`getPersonas`、`getPersona`、`createPersona`、`updatePersona`、`deletePersona`。
 - Bridges：`getBridges`、`deleteBridge`。
@@ -50,43 +51,38 @@
 - `AuthProvider` 在 token 存在时调用 `authMe()` 加载当前账号。
 - `useAuth()` 暴露 `account`、`loading`、`refresh`、`logout`。
 - `RequireAuth` 保护 `/studio`。
-- `RedirectIfAuthed` 保护 `/login`。
+- `RedirectIfAuthed` 当前未被路由使用。
 
 `App.tsx` routes：
 
 - `/` → `HomePage`。
-- `/login` → `LoginPage`。
 - `/studio` → `StudioPage`，外层是 `RequireAuth`。
 
-`UnauthorizedRedirect` 注册全局 unauthorized handler：401 时 refresh auth state，并跳转 `/login`。
+`UnauthorizedRedirect` 注册全局 unauthorized handler：401 时 refresh auth state，并跳转 `/`。
 
 ## Pages
 
 ### HomePage
 
-当前是入口页，提供进入 Studio 的链接。
-
-### LoginPage
-
 当前行为：
 
+- 进入页面时调用 `getBootstrapStatus()`。
+- 如果数据库没有任何账号，显示首次初始化表单，调用 `bootstrapAdmin()` 创建首个 admin 并登录。
 - username/password form。
 - 调 `api.login()`。
 - `api.setToken()` 保存 token。
 - 调 auth `refresh()`。
 - 跳转 `/studio`。
-- 显示 CLI 创建账号提示。
+- 登录失败时显示错误；账号创建和重置密码的主路径在 Studio 设置页。
 
 ### StudioPage 顶层
 
 Tab 类型：
 
 - `takeover`
-- `bridges`
-- `personas`
-- `providers`
-- `archives`
-- `distill`
+- `persona`
+- `device`
+- `settings`
 
 顶层 state：
 
@@ -95,11 +91,9 @@ Tab 类型：
 - `personas`
 - `inboxes`
 - `providers`
-- `archives`
-- `jobs`
 - `error`
 
-`loadAll()` 并发拉取 bridges、personas、inboxes、providers、archives、distill jobs。
+`loadAll()` 并发拉取 bridges、personas、inboxes。当前账号 role 是 admin 时额外拉 providers；普通 user 不拉 ProviderConfig。
 
 ## TakeoverView
 
@@ -141,7 +135,7 @@ State：
 编辑 Inbox 默认值：
 
 - `default_persona_id`。
-- `reply_provider_config_id`。
+- admin 可编辑 `reply_provider_config_id`；普通 user 不展示 Provider 选择。
 - `enabled`。
 
 保存时调用 `api.updateInbox()`。
@@ -153,15 +147,15 @@ State：
 - display name。
 - peer platform id。
 - Persona select。
-- Provider override select。
+- admin 可看到 Provider override select；普通 user 看到“模型由管理员统一配置”。
 - autoreply switch。
 - card markdown editor。
 - recent messages。
 
-effective provider：
+Provider 运行时解析：
 
 ```text
-contact.reply_provider_config_id ?? inbox.reply_provider_config_id
+contact.reply_provider_config_id ?? inbox.reply_provider_config_id ?? global default provider
 ```
 
 接管 ready 条件在 UI 中由以下因素计算：
@@ -169,7 +163,6 @@ contact.reply_provider_config_id ?? inbox.reply_provider_config_id
 - Inbox enabled。
 - Bridge online。
 - Persona 存在。
-- effective provider 存在。
 
 保存通过 `onPatch()`，最终调用 `api.updateContact()`。
 
@@ -186,27 +179,20 @@ contact.reply_provider_config_id ?? inbox.reply_provider_config_id
 - Edit modal 调 `api.updatePersona()`。
 - Delete 调 `api.deletePersona()`。
 
-## ProvidersView
+## SettingsView
+
+Settings 当前包含：
+
+- `PasswordPanel`：当前账号输入旧密码和新密码后重置自己的密码。
+- `AccountsPanel`：仅 admin 可见，列出账号、创建账号、停用/启用账号、重置任意账号密码。
+- `ProviderPanel`：仅 admin 可见，列出 ProviderConfig、创建 ProviderConfig、删除 ProviderConfig。
+
+## ProviderPanel
 
 - 列出 ProviderConfig。
 - Create modal 调 `api.createProviderConfig()`。
 - Delete 调 `api.deleteProviderConfig()`。
 - 当前 UI 没有完整 provider edit 表单，虽然 API client 有 `updateProviderConfig()`。
-
-## ArchivesView
-
-- 选择 target Inbox。
-- 输入 `self_wxid`。
-- 选择 JSON file。
-- 调 `api.uploadArchive()`。
-- 展示 archive list。
-
-## DistillView
-
-- 展示 DistillJobs 和 progress。
-- 如果有 `pending` 或 `running` job，每 2.5s 调 `onChanged()` 轮询刷新。
-- Create modal 选择 source Inbox、target Persona、ProviderConfig。
-- 调 `api.createDistillJob()`。
 
 ## Shared UI helpers
 

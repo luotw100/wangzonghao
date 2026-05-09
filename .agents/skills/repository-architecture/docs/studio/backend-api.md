@@ -59,9 +59,9 @@
 
 ## Ownership helpers
 
-这些 helper 当前用于按 account 校验归属：
+这些 helper 当前用于按 account 校验归属；admin 账号可跨 account 读取，普通 user 只读自己的数据：
 
-- `get_account_provider()`。
+- `get_provider_or_404()`。
 - `get_account_persona()`。
 - `get_account_bridge()`。
 - `get_account_inbox()`。
@@ -74,6 +74,7 @@
 主要 request models：
 
 - `LoginRequest`。
+- `AccountCreate`、`AccountUpdate`、`AccountPasswordReset`、`OwnPasswordChange`。
 - `ProviderConfigCreate`、`ProviderConfigUpdate`。
 - `PersonaCreate`、`PersonaUpdate`。
 - `InboxCreate`、`InboxUpdate`。
@@ -87,9 +88,25 @@
 ### Health/Auth
 
 - `GET /api/health`
+- `GET /api/bootstrap/status`
+- `POST /api/bootstrap/admin`
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
+- `PUT /api/auth/password`
+
+Bootstrap endpoints 不需要登录，但 `POST /api/bootstrap/admin` 只有在数据库没有任何 Account 时可用；它创建首个 admin 并直接返回登录 token。
+
+`PUT /api/auth/password` 要求当前密码和新密码，成功后会删除该账号所有 Web AuthSession。
+
+### Account admin
+
+- `GET /api/accounts`
+- `POST /api/accounts`
+- `PUT /api/accounts/{account_id}`
+- `PUT /api/accounts/{account_id}/password`
+
+这些 endpoint 需要 admin role。Admin 可在 Web 设置页创建账号、列出账号、停用/启用账号和重置任意账号密码。
 
 ### ProviderConfig
 
@@ -99,6 +116,8 @@
 - `DELETE /api/provider-configs/{provider_id}`
 
 Create 当前会对 `base_url` 做 `rstrip('/')`。Delete 当前没有在代码中检查引用关系。
+
+ProviderConfig endpoints 当前需要 admin role。创建 ProviderConfig 时会把已有 default 清掉，并把新 ProviderConfig 设为全局默认。
 
 ### Persona
 
@@ -165,7 +184,7 @@ Upload 当前接收 multipart fields：
 - `POST /api/distill-jobs`
 - `GET /api/distill-jobs/{job_id}`
 
-Create 当前校验 source Inbox、target Persona、ProviderConfig，并拒绝同一 target Persona 已有 pending/running job。
+Create 当前校验 source Inbox、target Persona，并拒绝同一 target Persona 已有 pending/running job。`provider_config_id` 可空；为空时解析全局默认 Provider。普通 user 不能显式指定 Provider。
 
 ## Bridge API
 
@@ -188,5 +207,6 @@ Bridge endpoints 见 `docs/bridge/protocol.md`。
 - `create-account`
 - `list-accounts`
 - `reset-password`
+- `set-role`
 
-当前 account id 生成规则是 `acc_{username}`。Create 显式设置 active status 和 timestamps。
+当前 account id 生成规则是 `acc_{username}`。Create 显式设置 role、active status 和 timestamps。CLI 输出使用带颜色的表格；账号管理的主路径是 Studio Web 设置页。

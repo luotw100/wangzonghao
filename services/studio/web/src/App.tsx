@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import { HomePage } from './pages/HomePage';
-import { StudioPage } from './pages/StudioPage';
+import { StudioPage } from './pages/StudioPage.tsx';
 import { setUnauthorizedHandler } from './lib/api';
 import { AuthProvider, RequireAuth, useAuth } from './lib/auth';
 

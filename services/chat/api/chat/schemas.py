@@ -1,7 +1,8 @@
 from datetime import datetime
-from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
+
+from chat.enums import AccountStatus, CommandStatus, MessageSource, MessageType, SenderType
 
 
 class StrictModel(BaseModel):
@@ -13,7 +14,7 @@ class AccountRead(StrictModel):
     username: str
     display_name: str
     avatar_url: str | None
-    status: str
+    status: AccountStatus
     is_deleted: bool
     deleted_at: datetime | None
     created_at: datetime
@@ -79,14 +80,14 @@ class ConversationRead(StrictModel):
 
 
 class MessageCreate(StrictModel):
-    sender_type: Literal["self", "contact"]
-    msg_type: str
+    sender_type: SenderType
+    msg_type: MessageType
     content: str
 
 
 class BulkMessageItem(StrictModel):
-    sender_type: Literal["self", "contact"]
-    msg_type: str
+    sender_type: SenderType
+    msg_type: MessageType
     content: str
     created_at: datetime
 
@@ -100,11 +101,11 @@ class MessageRead(StrictModel):
     id: int
     account_id: str
     conversation_id: str
-    sender_type: Literal["self", "contact"]
+    sender_type: SenderType
     sender_contact_id: str | None
     msg_type: str
     content: str
-    source: str
+    source: MessageSource
     created_at: datetime
 
 
@@ -114,7 +115,7 @@ class ConversationMessages(StrictModel):
 
 
 class StatusResponse(StrictModel):
-    status: str
+    status: CommandStatus
     id: str | int | None = None
     imported: int | None = None
     ids: list[int] | None = None

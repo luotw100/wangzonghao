@@ -58,7 +58,8 @@ Bridge 当前不负责：
 Studio 当前负责：
 
 - Account auth；
-- ProviderConfig CRUD；
+- admin account management；
+- admin-only ProviderConfig CRUD；
 - Persona CRUD；
 - Bridge auto-registration 和 revoke；
 - Inbox list/default settings；
@@ -72,7 +73,6 @@ Studio 当前负责：
 
 ```text
 Account
-  ├─ ProviderConfig
   ├─ Persona
   ├─ Bridge
   │    └─ BridgeSession
@@ -81,22 +81,25 @@ Account
   │    │    ├─ Message
   │    │    └─ OutboundMessage
   │    ├─ default Persona ref
-  │    └─ default ProviderConfig ref
+        │    └─ optional ProviderConfig override ref
   ├─ Archive
   │    └─ Message
   └─ DistillJob
        ├─ source Inbox
        ├─ target Persona
        └─ ProviderConfig
+
+ProviderConfig
+        └─ owner Account ref
 ```
 
 ### Account
 
-Studio 登录账号，当前由 CLI 创建。Web auth session 和 Bridge session 是两套表。
+Studio 登录账号，带 `admin | user` role。数据库没有任何账号时，Web 登录页可创建首个 admin；之后账号创建、列表、停用/启用和重置密码的主路径是 Studio Web 设置页。Web auth session 和 Bridge session 是两套表。
 
 ### ProviderConfig
 
-账号级 LLM Provider 配置，包含 `base_url`、`api_key`、`default_model`。Inbox 可选默认 Provider，Contact 可选 override。
+管理员维护的全局 LLM Provider 配置，包含 `base_url`、`api_key`、`default_model`、`scope`、`status`、`is_default`。Inbox 和 Contact 保留可选 Provider override；普通 user UI 不展示 Provider。
 
 ### Persona
 
@@ -108,11 +111,11 @@ Studio 登录账号，当前由 CLI 创建。Web auth session 和 Bridge session
 
 ### Inbox
 
-一个平台身份，例如一个 Chat account。Handshake 按 `(account_id, platform, platform_self_id)` upsert Inbox。Inbox 可以绑定一个 Bridge，并保存默认 Persona/Provider。
+一个平台身份，例如一个 Chat account。Handshake 按 `(account_id, platform, platform_self_id)` upsert Inbox。Inbox 可以绑定一个 Bridge，并保存默认 Persona 和可选 Provider override。
 
 ### Contact
 
-接管单元，属于一个 Inbox，对应平台里的一个 peer。Contact 保存 display name、关系卡、Persona 引用、Provider override、autoreply 开关、pending reply flag 和 status。
+接管单元，属于一个 Inbox，对应平台里的一个 peer。Contact 保存 display name、关系卡、Persona 引用、可选 Provider override、autoreply 开关、pending reply flag 和 status。
 
 ### Message
 
@@ -126,5 +129,5 @@ Studio → Bridge 的工作队列表。包含 JSON `chunks`、状态、投递/�
 
 - Chat 需要 `CHAT_STORAGE_DIR`，缺失时报错。
 - Studio 需要 `STUDIO_STORAGE_DIR`，缺失时报错。
-- Studio models 文件头明确要求不用 SQLAlchemy column default。
+- Chat 和 Studio models 当前不使用 SQLAlchemy column default。
 - Bridge 当前 CLI 有 `--studio-url` 默认值，这是当前代码事实；本地联调命令仍应显式传入。

@@ -111,7 +111,7 @@ maybe_reply(contact_id)
 - Contact 存在且 `status == active`。
 - Contact `autoreply_enabled=True`。
 - Inbox 存在且 enabled。
-- Provider 来自 `contact.reply_provider_config_id or inbox.reply_provider_config_id`。
+- Provider 来自 `contact.reply_provider_config_id or inbox.reply_provider_config_id or global default provider`。
 - Provider 存在且有 API key。
 - Persona 存在。
 - History 非空。
@@ -142,7 +142,7 @@ adapter 缺失、peer id 缺失或平台发送异常时，Bridge ack `failed` �
 ## 6. Archive upload
 
 ```text
-Studio web Archives tab
+Studio web archive upload API
   → 选择 Inbox
   → 输入 self_wxid
   → 上传 WeFlow JSON
@@ -169,14 +169,14 @@ ingest_archive()
 ## 7. Distill pipeline
 
 ```text
-Studio web Distill tab
+Studio web distill API
   → POST /api/distill-jobs
   → 写 DistillJob(status='pending')
 
 StudioRuntime DistillScanner 每 5s
   → 找 pending jobs
   → 标记 running
-  → run_distill(source_inbox_id, target_persona_id, provider_config_id)
+  → run_distill(source_inbox_id, target_persona_id, resolved_provider_config_id)
 
 run_distill()
   → 加载 Inbox、Persona、ProviderConfig

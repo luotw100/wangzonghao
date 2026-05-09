@@ -8,7 +8,6 @@
 
 - build context：`./web`。
 - host port：`23457:23457`。
-- mount `studio-storage:/app/storage:ro`。
 - mount `./nginx.conf:/etc/nginx/conf.d/default.conf:ro`。
 - depends on `studio-api`。
 - restart：`unless-stopped`。
@@ -40,7 +39,7 @@
 - listen `23457`。
 - 从 `/usr/share/nginx/html` serve SPA。
 - `try_files $uri $uri/ /index.html`。
-- `/storage/` alias 到 `/app/storage/`。
+- `/storage/` 显式返回 404。
 - `/api/` proxy 到 `http://studio-api:23457/api/`。
 - `proxy_read_timeout 120s`。
 - `client_max_body_size 50m`。
@@ -55,7 +54,6 @@
 - 执行 `uv sync --frozen --no-dev --no-install-project`。
 - copy `studio/` package。
 - 创建 `/app/storage/uploads`。
-- expose `23457`。
 - command：`uv run uvicorn studio.main:app --host 0.0.0.0 --port 23457`。
 
 ## Web Dockerfile
@@ -70,7 +68,7 @@
 
 ## Vite dev server 当前配置
 
-`services/studio/web/vite.config.ts` 当前把 `/api` 和 `/storage` proxy 到 `localhost:23456`，而 Studio Compose 默认端口是 `23457`。这是当前文件事实。
+`services/studio/web/vite.config.ts` 当前只把 `/api` proxy 到 `localhost:23457`；dev server 不暴露 `/storage`。
 
 ## 必要环境变量
 

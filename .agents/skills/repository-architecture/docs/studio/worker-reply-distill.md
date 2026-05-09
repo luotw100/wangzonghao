@@ -35,7 +35,7 @@
 
 每 5 秒：
 
-1. 查询 `DistillJob.status == 'pending'`，按 created_at 升序。
+1. 查询 `DistillJob.status == DistillJobStatus.PENDING`，按 created_at 升序。
 2. 清理已完成 in-flight tasks。
 3. 对未 in-flight 的 pending job 创建 `_run_distill_job()` task。
 
@@ -103,7 +103,7 @@
 2. Contact status 是 active。
 3. Contact autoreply enabled。
 4. Inbox 存在且 enabled。
-5. Provider 从 `contact.reply_provider_config_id or inbox.reply_provider_config_id` 解析到。
+5. Provider 从 `contact.reply_provider_config_id or inbox.reply_provider_config_id or global default provider` 解析到，且状态 active。
 6. Provider 存在且有 API key。
 7. Persona 存在。
 8. History 非空。
@@ -194,7 +194,7 @@ LLM 调用异常时写 `LlmLog(response_raw='ERROR: ...')`，当前不清 `pendi
 
 当前流程：
 
-1. `_load_ctx()` 加载 Inbox、target Persona、ProviderConfig，并校验 API key。
+1. `_load_ctx()` 加载 Inbox、target Persona、ProviderConfig，并校验 Provider active 且有 API key。
 2. `run_distill()` 列出 source Inbox 下 active Contacts。
 3. 每个有消息的 Contact：
    - 读取消息，按 timestamp/id 升序；

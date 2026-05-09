@@ -23,6 +23,7 @@ from typing import Any, Dict, Optional
 from studio.clients import ProviderClient
 from studio.db import SessionLocal, utc_now
 from studio.distill.pipeline import run_distill
+from studio.enums import DistillJobStatus
 from studio.models import DistillJob
 from studio.reply import list_pending_contact_ids, maybe_reply
 
@@ -79,7 +80,7 @@ class StudioRuntime:
                 try:
                     pending = (
                         db.query(DistillJob)
-                        .filter(DistillJob.status == "pending")
+                        .filter(DistillJob.status == DistillJobStatus.PENDING)
                         .order_by(DistillJob.created_at.asc())
                         .all()
                     )
@@ -120,9 +121,9 @@ class StudioRuntime:
         db = SessionLocal()
         try:
             job = db.query(DistillJob).filter(DistillJob.id == job_id).first()
-            if not job or job.status != "pending":
+            if not job or job.status != DistillJobStatus.PENDING:
                 return
-            job.status = "running"
+            job.status = DistillJobStatus.RUNNING
             job.started_at = utc_now()
             db.commit()
         finally:
@@ -152,7 +153,7 @@ class StudioRuntime:
             try:
                 j = db.query(DistillJob).filter(DistillJob.id == job_id).first()
                 if j:
-                    j.status = "failed"
+                    j.status = DistillJobStatus.FAILED
                     j.error_message = str(exc)
                     j.finished_at = utc_now()
                     db.commit()
@@ -164,7 +165,7 @@ class StudioRuntime:
         try:
             j = db.query(DistillJob).filter(DistillJob.id == job_id).first()
             if j:
-                j.status = "done"
+                j.status = DistillJobStatus.DONE
                 j.finished_at = utc_now()
                 db.commit()
         finally:

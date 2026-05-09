@@ -5,11 +5,11 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
-from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session, joinedload
 
 from chat.auth_utils import hash_token, new_session_token, verify_password
-from chat.db import STORAGE_DIR, SessionLocal, ensure_database, get_db, utc_now
+from chat.db import SessionLocal, ensure_database, get_db, utc_now
+from chat.enums import AccountStatus, CommandStatus, MessageSource, SenderType
 from chat.models import (
     Account,
     AuthSession,
@@ -37,7 +37,6 @@ from chat.schemas import (
 ensure_database()
 
 app = FastAPI(title="Laborster Chat")
-app.mount("/storage", StaticFiles(directory=str(STORAGE_DIR)), name="storage")
 
 DbDep = Annotated[Session, Depends(get_db)]
 
@@ -69,7 +68,7 @@ def get_auth_session(
         not auth_session
         or not auth_session.account
         or auth_session.account.is_deleted
-        or auth_session.account.status != "active"
+        or auth_session.account.status != AccountStatus.ACTIVE
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已失效"
@@ -150,6 +149,8 @@ def get_or_create_direct_conversation(
         account_id=account_id,
         contact_id=contact.id,
         title=title or contact.display_name,
+        is_deleted=False,
+        deleted_at=None,
         created_at=now,
         updated_at=now,
     )
@@ -163,10 +164,10 @@ def add_message(
     sender_type: str,
     msg_type: str,
     content: str,
-    source: str = "live",
+    source: MessageSource = MessageSource.LIVE,
     created_at: datetime | None = None,
 ) -> Message:
-    if sender_type not in {"self", "contact"}:
+    if sender_type not in {SenderType.SELF, SenderType.CONTACT}:
         raise HTTPException(
             status_code=400, detail="sender_type 必须是 self 或 contact"
         )
@@ -175,7 +176,7 @@ def add_message(
         account_id=conversation.account_id,
         conversation_id=conversation.id,
         sender_type=sender_type,
-        sender_contact_id=conversation.contact_id if sender_type == "contact" else None,
+        sender_contact_id=conversation.contact_id if sender_type == SenderType.CONTACT else None,
         msg_type=msg_type,
         content=content,
         source=source,
@@ -219,7 +220,7 @@ def health() -> dict[str, str]:
 @app.post("/api/auth/login", response_model=LoginResponse)
 def login(login_in: LoginRequest, db: DbDep) -> LoginResponse:
     account = db.query(Account).filter(Account.username == login_in.username).first()
-    if not account or account.is_deleted or account.status != "active":
+    if not account or account.is_deleted or account.status != AccountStatus.ACTIVE:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     if not verify_password(login_in.password, account.password_hash):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
@@ -245,7 +246,7 @@ def login(login_in: LoginRequest, db: DbDep) -> LoginResponse:
 def logout(auth_session: AuthSessionDep, db: DbDep) -> StatusResponse:
     db.delete(auth_session)
     db.commit()
-    return StatusResponse(status="success")
+    return StatusResponse(status=CommandStatus.SUCCESS)
 
 
 @app.get("/api/auth/me", response_model=AccountRead)
@@ -277,6 +278,8 @@ def create_contact(
         display_name=contact_in.display_name,
         avatar_url=contact_in.avatar_url,
         note=contact_in.note,
+        is_deleted=False,
+        deleted_at=None,
         created_at=now,
         updated_at=now,
     )
@@ -408,7 +411,7 @@ def send_debug_message(
     )
     db.commit()
     db.refresh(message)
-    return StatusResponse(status="success", id=message.id)
+    return StatusResponse(status=CommandStatus.SUCCESS, id=message.id)
 
 
 @app.post(
@@ -421,15 +424,15 @@ def connector_send_message(
     account: CurrentAccountDep,
     db: DbDep,
 ) -> StatusResponse:
-    if msg_in.sender_type != "self":
+    if msg_in.sender_type != SenderType.SELF:
         raise HTTPException(
             status_code=400, detail="Connector 只能以当前登录账号发送消息"
         )
     conversation = get_conversation_or_404(db, account.id, conversation_id)
-    message = add_message(db, conversation, "self", msg_in.msg_type, msg_in.content)
+    message = add_message(db, conversation, SenderType.SELF, msg_in.msg_type, msg_in.content)
     db.commit()
     db.refresh(message)
-    return StatusResponse(status="success", id=message.id)
+    return StatusResponse(status=CommandStatus.SUCCESS, id=message.id)
 
 
 @app.post(
@@ -443,7 +446,7 @@ def bulk_import_messages(
 ) -> StatusResponse:
     conversation = get_conversation_or_404(db, account.id, conversation_id)
     if not bulk_in.messages:
-        return StatusResponse(status="success", imported=0, ids=[])
+        return StatusResponse(status=CommandStatus.SUCCESS, imported=0, ids=[])
 
     import_batch = ImportBatch(
         id=new_id("ci", 12),
@@ -451,6 +454,7 @@ def bulk_import_messages(
         conversation_id=conversation.id,
         filename=bulk_in.filename,
         message_count=len(bulk_in.messages),
+        created_at=utc_now(),
     )
     db.add(import_batch)
     inserted_ids: list[int] = []
@@ -461,14 +465,14 @@ def bulk_import_messages(
             item.sender_type,
             item.msg_type,
             item.content,
-            source="import",
+            source=MessageSource.IMPORT,
             created_at=normalize_timestamp(item.created_at),
         )
         db.flush()
         inserted_ids.append(message.id)
     db.commit()
     return StatusResponse(
-        status="success", imported=len(inserted_ids), ids=inserted_ids
+        status=CommandStatus.SUCCESS, imported=len(inserted_ids), ids=inserted_ids
     )
 
 

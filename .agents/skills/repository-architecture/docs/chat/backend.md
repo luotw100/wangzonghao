@@ -18,7 +18,7 @@
 - SQLite 文件是 `${CHAT_STORAGE_DIR}/chat.db`。
 - 暴露 `Base`、`SessionLocal`、`get_db()`、`ensure_database()`、`utc_now()`。
 
-`main.py` import 时调用 `ensure_database()`，并把 `/storage` mount 到 `STORAGE_DIR`。
+`main.py` import 时调用 `ensure_database()`。当前 API 不再把 storage 目录直接 mount 成静态路径。
 
 ## Models
 
@@ -48,7 +48,8 @@ Account
 - Contact / Conversation 通过 `is_deleted`、`deleted_at` 软删除。
 - `Message.sender_type` 是 `self | contact`。
 - Bridge 的 ChatAdapter 会把 `sender_type='contact'` 映射为 Studio 的 `role='counterpart'`。
-- Chat models 当前使用 SQLAlchemy column defaults；这和 Studio models 不同。
+- Chat models 当前不使用 SQLAlchemy column defaults；创建记录时由应用层显式写入状态、软删除标记和时间戳。
+- Chat 代码使用 `chat/enums.py` 中的 StrEnum 表达 status、sender_type、message type、message source 和 command status。
 
 ## Auth
 

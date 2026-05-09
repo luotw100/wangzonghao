@@ -4,7 +4,7 @@
 
 ## 认证模型
 
-当前 Bridge 没有预创建 token 流程。认证流程是：
+Bridge 认证通过 handshake 动态获取 token，不需要预创建。认证流程是：
 
 1. Bridge 启动时持有 Studio username/password 和 hostname。
 2. Bridge 调 handshake。

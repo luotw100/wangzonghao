@@ -1,15 +1,11 @@
 import argparse
+from uuid import uuid4
 
 from studio.auth_utils import hash_password
 from studio.cli_render import danger, ok, render_table, warn
 from studio.db import ensure_database, get_db, utc_now
 from studio.enums import AccountRole, AccountStatus
 from studio.models import Account
-
-
-def base_account_id(username: str) -> str:
-    safe = "".join(ch for ch in username.lower() if ch.isalnum())[:12]
-    return f"acc_{safe}" if safe else "acc_user"
 
 
 def create_account(args: argparse.Namespace) -> None:
@@ -19,11 +15,7 @@ def create_account(args: argparse.Namespace) -> None:
         existing = db.query(Account).filter(Account.username == args.username).first()
         if existing:
             raise SystemExit(f"account already exists: {args.username}")
-        account_id = base_account_id(args.username)
-        suffix = 1
-        while db.query(Account).filter(Account.id == account_id).first():
-            suffix += 1
-            account_id = f"{base_account_id(args.username)}_{suffix}"
+        account_id = f"acc_{uuid4().hex[:8]}"
         now = utc_now()
         account = Account(
             id=account_id,

@@ -4,7 +4,7 @@
 
 `services/studio` 是当前仓库中的云端控制台和 AI brain。它存储 source-of-truth 消息历史，管理 Persona / ProviderConfig，接受 Bridge protocol，运行 reply 和 distill worker，并提供 Studio web console。
 
-Studio 当前不直连 Chat 或其他平台。所有平台 IO 都通过 Bridge 进入/离开 Studio。
+Studio 所有平台 IO 都通过 Bridge 进入/离开，不直连 Chat 或其他平台。
 
 ## 目录结构
 
@@ -17,14 +17,19 @@ services/studio/
     pyproject.toml
     studio/
       auth_utils.py
-      clients.py
       cli.py
+      cli_render.py
+      clients.py
       db.py
-      main.py
+      deps.py                 ← FastAPI 依赖、auth helpers、ownership checks、new_id()
+      enums.py
+      main.py                 ← 薄入口，仅 mount routers
       models.py
+      provider_policy.py
       reply.py
       runtime.py
       schemas.py
+      serializers.py           ← 响应序列化函数 s_account / s_provider / ...
       worker.py
       distill/
         converter.py
@@ -32,6 +37,17 @@ services/studio/
         packer.py
         pipeline.py
         prompts/fold.md
+      routers/
+        __init__.py
+        auth.py               ← health + auth endpoints
+        accounts.py            ← account CRUD + admin overview
+        providers.py           ← ProviderConfig CRUD
+        personas.py            ← Persona CRUD
+        bridges.py             ← Bridge list + revoke
+        inboxes.py             ← Inbox 操作（Inbox 创建仅通过 bridge handshake）
+        contacts.py            ← Contact + conversation endpoints
+        archives.py            ← Archive upload + distill job endpoints
+        bridge_protocol.py     ← Bridge daemon ↔ Studio protocol
   web/
     Dockerfile
     package.json

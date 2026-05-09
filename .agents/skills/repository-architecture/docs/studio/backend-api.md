@@ -2,13 +2,16 @@
 
 ## 入口文件
 
-- FastAPI app：`studio/main.py`。
+- FastAPI app：`studio/main.py`（薄入口，仅 mount 各 router）。
 - DB：`studio/db.py`。
 - Models：`studio/models.py`。
 - Schemas：`studio/schemas.py`。
 - Auth utils：`studio/auth_utils.py`。
 - LLM client：`studio/clients.py`。
 - CLI：`studio/cli.py`。
+- Serializers：`studio/serializers.py`。
+- 依赖：`studio/deps.py`。
+- Routers：`studio/routers/`（auth, accounts, providers, personas, bridges, inboxes, contacts, archives, bridge_protocol）。
 
 ## DB 初始化
 
@@ -44,7 +47,7 @@
 
 ## Serializers
 
-`main.py` 当前使用手写 serializer，而不是 response model：
+`main.py` 当前使用手写 serializer（非 Pydantic response model）：
 
 - `s_account()`
 - `s_provider()`：mask API key。
@@ -77,7 +80,7 @@
 - `AccountCreate`、`AccountUpdate`、`AccountPasswordReset`、`OwnPasswordChange`。
 - `ProviderConfigCreate`、`ProviderConfigUpdate`。
 - `PersonaCreate`、`PersonaUpdate`。
-- `InboxCreate`、`InboxUpdate`。
+- `InboxUpdate`——Inbox 仅由 bridge handshake 自动创建，没有独立创建 schema。
 - `ContactUpdate`。
 - `DistillJobCreate`。
 - `OutboundChunk`、`OutboundCreate`。
@@ -114,7 +117,7 @@
 - `PUT /api/provider-configs/{provider_id}`
 - `DELETE /api/provider-configs/{provider_id}`
 
-Create 当前会对 `base_url` 做 `rstrip('/')`。Delete 当前没有在代码中检查引用关系。
+Create 时对 `base_url` 做 `rstrip('/')`。Delete 不校验引用完整性（如 Provider 是否被 Inbox/Contact 引用）。
 
 ProviderConfig endpoints 当前需要 admin role。创建 ProviderConfig 时会把已有 default 清掉，并把新 ProviderConfig 设为全局默认。
 
@@ -144,14 +147,13 @@ Delete 当前在 Persona 被 Inbox default 或 Contact 引用时返回 409。
 ### Inboxes
 
 - `GET /api/inboxes`
-- `POST /api/inboxes`
 - `GET /api/inboxes/{inbox_id}`
 - `PUT /api/inboxes/{inbox_id}`
 - `DELETE /api/inboxes/{inbox_id}`
 - `GET /api/inboxes/{inbox_id}/contacts`
 - `POST /api/inboxes/{inbox_id}/outbound`
 
-当前 API 允许手动创建/删除 Inbox，但正常链路中 Inbox 由 Bridge handshake 自动 upsert，UI 主要编辑默认值。
+Inbox 仅由 Bridge handshake 自动 upsert 创建，没有 `POST /api/inboxes` 端点。UI 主要编辑默认值。
 
 `POST /api/inboxes/{inbox_id}/outbound` 是手工 seed outbound 的 debug endpoint。
 
@@ -208,4 +210,4 @@ Bridge endpoints 见 `docs/bridge/protocol.md`。
 - `reset-password`
 - `set-role`
 
-当前 account id 生成规则是 `acc_{username}`。Create 显式设置 role、active status 和 timestamps。CLI 输出使用带颜色的表格；账号管理的主路径是 Studio Web 设置页。
+当前 account id 生成规则是 `acc_{uuid8}`（UUID 随机 8 位）。Create 显式设置 role、active status 和 timestamps。CLI 输出使用带颜色的表格；账号管理的主路径是 Studio Web 设置页。

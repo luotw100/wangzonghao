@@ -26,7 +26,7 @@ Studio cloud control plane
 
 `services/chat` 是独立聊天应用，当前用于作为可控 Channel。它包含自己的账号、auth session、联系人、会话、消息、导入、long polling 和前端 UI。
 
-Studio 不 import Chat 代码，也不直接调用 Chat API。当前只有 Bridge 的 `ChatAdapter` 通过 HTTP 调用 Chat。
+Studio 与 Chat 之间没有代码 import 和直接 API 调用；仅 Bridge 的 `ChatAdapter` 通过 HTTP 调用 Chat。
 
 ### Bridge daemon
 

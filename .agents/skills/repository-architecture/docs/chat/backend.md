@@ -18,7 +18,7 @@
 - SQLite 文件是 `${CHAT_STORAGE_DIR}/chat.db`。
 - 暴露 `Base`、`SessionLocal`、`get_db()`、`ensure_database()`、`utc_now()`。
 
-`main.py` import 时调用 `ensure_database()`。当前 API 不再把 storage 目录直接 mount 成静态路径。
+`main.py` import 时调用 `ensure_database()`。API 不通过 storage 目录提供静态文件服务。
 
 ## Models
 

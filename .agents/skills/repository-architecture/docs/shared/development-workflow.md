@@ -85,7 +85,7 @@ docker compose exec -T chat-api uv run python -m chat.cli list-accounts
 docker compose exec -T chat-api uv run python -m chat.cli reset-password --username alice --password NewPassword
 ```
 
-Studio：CLI 是首个 admin 的唯一创建入口；登录页不再有 first-run bootstrap。后续账号管理走 Web Settings——admin 可创建/list/停用启用账号、重置任意账号密码；普通 user 可修改自己的密码。CLI 同时保留作为运维/救援入口：
+Studio：CLI 是首个 admin 的唯一创建入口；登录页仅提供 username/password 登录。后续账号管理走 Web Settings——admin 可创建/list/停用启用账号、重置任意账号密码；普通 user 可修改自己的密码。CLI 同时保留作为运维/救援入口：
 
 ```bash
 cd services/studio

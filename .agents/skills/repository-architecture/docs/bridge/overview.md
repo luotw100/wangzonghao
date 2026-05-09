@@ -4,7 +4,7 @@
 
 `services/bridge` 是运行在主播/运营本机的 daemon。它持有平台登录态，并在 Channel adapters 和 Studio 之间桥接消息。
 
-Bridge 当前不保存 DB，不保存长期 token。全部运行状态来自 CLI args、内存 token 和 adapter 内存状态。
+Bridge 是无状态 daemon：不保存 DB、不保存长期 token；全部运行状态来自 CLI args、内存 token 和 adapter 内存状态。
 
 ## 目录结构
 

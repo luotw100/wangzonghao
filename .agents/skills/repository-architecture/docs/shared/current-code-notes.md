@@ -14,9 +14,21 @@
 
 Chat sandbox 和 Studio models 当前都不使用 SQLAlchemy column defaults；insert 路径必须显式写入状态、时间戳和布尔值。
 
+## Account ID
+
+Account id 由 `studio/deps.py` 中的 `new_id("acc")` 生成，格式为 `acc_{uuid8}`（UUID 随机 8 位）。
+
+## API 模块结构
+
+`studio/main.py` 当前是薄入口，仅 mount 各 router module。路由处理逻辑分布在 `studio/routers/` 目录下（auth, accounts, providers, personas, bridges, inboxes, contacts, archives, bridge_protocol）。序列化函数在 `studio/serializers.py`，认证依赖和 ownership helpers 在 `studio/deps.py`。
+
+## Inbox 创建
+
+Inbox 仅由 Bridge handshake 自动 upsert 创建，没有独立的创建 API。
+
 ## Bridge offline 状态
 
-Studio 当前会在 heartbeat 时更新 `Bridge.last_seen_at` 并保持 `status='online'`。当前代码没有自动把长时间无 heartbeat 的 Bridge 转成 `offline` 的 scanner。
+Studio 在 heartbeat 时更新 `Bridge.last_seen_at` 并保持 `status='online'`。Bridge offline 状态仅由手动 revoke 设置，没有自动 offline scanner。
 
 ## Bridge token
 

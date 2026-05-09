@@ -67,7 +67,7 @@
 
 当前行为：
 
-- 纯 username/password form；不再有 first-run bootstrap 分支。
+- 纯 username/password form，仅提供登录功能。
 - 调 `api.login()` → `api.setToken()` 保存 token → auth `refresh()` → 跳转 `/studio`。
 - 登录失败时显示错误。
 - 提示首个 admin 用 CLI 创建（`python -m studio.cli create-account --role admin`），账号管理与密码重置都走 Studio Settings 页。
@@ -196,7 +196,7 @@ Settings 当前包含：
 - 列出 ProviderConfig。
 - Create modal 调 `api.createProviderConfig()`。
 - Delete 调 `api.deleteProviderConfig()`。
-- 当前 UI 没有完整 provider edit 表单，虽然 API client 有 `updateProviderConfig()`。
+- UI 只有 provider create 和 delete；provider edit 表单未实现（API client 已有 `updateProviderConfig()`）。
 
 ## Shared UI helpers
 

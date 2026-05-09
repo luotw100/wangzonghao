@@ -1,0 +1,101 @@
+"""Inbox endpoints (no manual creation — inboxes are auto-provisioned via bridge handshake)."""
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from studio.db import get_db, utc_now
+from studio.deps import (
+    CurrentAccountDep,
+    get_account_bridge,
+    get_account_contact,
+    get_account_inbox,
+    get_account_persona,
+    get_provider_or_404,
+    is_admin,
+    new_id,
+)
+from studio.enums import OutboundStatus
+from studio.models import Contact, Inbox, OutboundMessage
+from studio.schemas import InboxUpdate, OutboundCreate
+from studio.serializers import s_contact, s_inbox, s_outbound
+
+router = APIRouter()
+
+
+@router.get("/api/inboxes")
+def list_inboxes(db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
+    query = db.query(Inbox)
+    if not is_admin(account):
+        query = query.filter(Inbox.account_id == account.id)
+    items = query.order_by(Inbox.created_at.desc()).all()
+    return [s_inbox(i) for i in items]
+
+
+@router.get("/api/inboxes/{inbox_id}")
+def get_inbox(inbox_id: str, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
+    return s_inbox(get_account_inbox(db, account, inbox_id))
+
+
+@router.put("/api/inboxes/{inbox_id}")
+def update_inbox(inbox_id: str, payload: InboxUpdate, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
+    inbox = get_account_inbox(db, account, inbox_id)
+    fields = payload.model_fields_set
+    if "display_name" in fields and payload.display_name is not None:
+        inbox.display_name = payload.display_name
+    if "default_persona_id" in fields and payload.default_persona_id is not None:
+        get_account_persona(db, account, payload.default_persona_id)
+        inbox.default_persona_id = payload.default_persona_id
+    if "bridge_id" in fields and payload.bridge_id is not None:
+        get_account_bridge(db, account, payload.bridge_id)
+        inbox.bridge_id = payload.bridge_id
+    if payload.clear_bridge:
+        inbox.bridge_id = None
+    if ("reply_provider_config_id" in fields or payload.clear_reply_provider) and not is_admin(account):
+        raise HTTPException(status_code=403, detail="只有管理员可以修改 Provider")
+    if "reply_provider_config_id" in fields and payload.reply_provider_config_id is not None:
+        get_provider_or_404(db, payload.reply_provider_config_id)
+        inbox.reply_provider_config_id = payload.reply_provider_config_id
+    if payload.clear_reply_provider:
+        inbox.reply_provider_config_id = None
+    if "enabled" in fields and payload.enabled is not None:
+        inbox.enabled = payload.enabled
+    inbox.updated_at = utc_now()
+    db.commit(); db.refresh(inbox)
+    return s_inbox(inbox)
+
+
+@router.delete("/api/inboxes/{inbox_id}")
+def delete_inbox(inbox_id: str, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
+    inbox = get_account_inbox(db, account, inbox_id)
+    db.query(OutboundMessage).filter(
+        OutboundMessage.inbox_id == inbox.id, OutboundMessage.status == OutboundStatus.PENDING
+    ).update({OutboundMessage.status: OutboundStatus.CANCELED}, synchronize_session=False)
+    db.delete(inbox); db.commit()
+    return {"status": "deleted", "id": inbox_id}
+
+
+@router.get("/api/inboxes/{inbox_id}/contacts")
+def list_inbox_contacts(inbox_id: str, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
+    inbox = get_account_inbox(db, account, inbox_id)
+    items = (
+        db.query(Contact).filter(Contact.inbox_id == inbox.id)
+        .order_by(Contact.updated_at.desc()).all()
+    )
+    return [s_contact(c) for c in items]
+
+
+@router.post("/api/inboxes/{inbox_id}/outbound")
+def seed_outbound(inbox_id: str, payload: OutboundCreate, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
+    inbox = get_account_inbox(db, account, inbox_id)
+    contact = get_account_contact(db, account, payload.contact_id)
+    if contact.inbox_id != inbox.id:
+        raise HTTPException(status_code=400, detail="Contact 不属于该 inbox")
+    o = OutboundMessage(
+        inbox_id=inbox.id, contact_id=contact.id,
+        chunks=[c.model_dump() for c in payload.chunks],
+        status=OutboundStatus.PENDING, delivered_at=None, failed_reason=None, created_at=utc_now(),
+    )
+    db.add(o); db.commit(); db.refresh(o)
+    return s_outbound(o, peer_platform_id=contact.peer_platform_id)

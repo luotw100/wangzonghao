@@ -79,15 +79,7 @@ class PersonaUpdate(StrictModel):
 # --- Bridges (auto-provisioned daemons; users only ever read/revoke them) ---
 
 
-# --- Inboxes ---
-
-class InboxCreate(StrictModel):
-    platform: str
-    display_name: str
-    default_persona_id: Optional[str]
-    bridge_id: Optional[str]
-    reply_provider_config_id: Optional[str]
-    enabled: bool
+# --- Inboxes (creation via bridge handshake only; no manual POST) ---
 
 
 class InboxUpdate(StrictModel):

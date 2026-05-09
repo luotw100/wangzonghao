@@ -38,7 +38,7 @@ Environment：
 
 - `LOG_LEVEL`，Compose 默认 `INFO`。
 
-当前没有持久文件、volume、DB 或 token file。
+Bridge 是无状态 daemon：无持久文件、无 volume、无 DB、无 token file。
 
 ## 本地网络
 
@@ -51,13 +51,13 @@ Bridge 容器访问本机 Compose 服务时当前命令使用：
 
 - 某个 adapter 登录失败：记录 error，关闭该 adapter，继续处理其他 claim。
 - Studio handshake 失败：关闭已登录 adapters，runtime 返回。
-- inbound push 失败：记录 error；当前没有落盘 offline queue。
+- inbound push 失败：记录 error；失败消息不落盘到 offline queue。
 - heartbeat 失败：记录 warning，下个 interval 重试。
 - outbound long-poll 失败：记录 warning，sleep 2s。
 - outbound 发送失败：ack outbound 为 failed。
 
 ## 当前运行限制
 
-- 没有本地离线缓存。
+- Bridge 运行时不使用本地离线缓存。
 - heartbeat response 能停 adapter，但不能启动 CLI 中不存在的新 adapter。
 - Bridge token 只在内存中；重启后重新 handshake。

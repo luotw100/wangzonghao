@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as api from '../lib/api';
 import type {
@@ -14,10 +14,18 @@ import type {
 } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
-type Tab = 'takeover' | 'persona' | 'device' | 'settings';
+type Tab = 'overview' | 'takeover' | 'persona' | 'device' | 'settings';
 type ChangeHandler = () => void | Promise<void>;
 
-const NAV: { id: Tab; label: string; icon: string }[] = [
+const ADMIN_NAV: { id: Tab; label: string; icon: string }[] = [
+  { id: 'overview', label: '总览', icon: '◎' },
+  { id: 'takeover', label: '接管', icon: '◇' },
+  { id: 'persona', label: '人设', icon: '✶' },
+  { id: 'device', label: '设备', icon: '⌥' },
+  { id: 'settings', label: '设置', icon: '⚙' },
+];
+
+const USER_NAV: { id: Tab; label: string; icon: string }[] = [
   { id: 'takeover', label: '接管', icon: '◇' },
   { id: 'persona', label: '人设', icon: '✶' },
   { id: 'device', label: '设备', icon: '⌥' },
@@ -25,6 +33,7 @@ const NAV: { id: Tab; label: string; icon: string }[] = [
 ];
 
 const TAB_CONTEXT: Record<Tab, { ctx: string; sub: string }> = {
+  overview: { ctx: '总览', sub: 'overview · 全系统用户与资源' },
   takeover: { ctx: '接管', sub: 'contacts · 你管的所有粉丝' },
   persona: { ctx: '人设', sub: 'personas · 你能扮演的人' },
   device: { ctx: '设备', sub: 'devices · 你的本地守护进程' },
@@ -34,7 +43,8 @@ const TAB_CONTEXT: Record<Tab, { ctx: string; sub: string }> = {
 export function StudioPage() {
   const navigate = useNavigate();
   const { account: me, logout } = useAuth();
-  const [tab, setTab] = useState<Tab>('takeover');
+  const isAdmin = me?.role === 'admin';
+  const [tab, setTab] = useState<Tab>(isAdmin ? 'overview' : 'takeover');
   const [bridges, setBridges] = useState<Bridge[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [inboxes, setInboxes] = useState<Inbox[]>([]);
@@ -43,7 +53,6 @@ export function StudioPage() {
 
   const loadAll = useCallback(async () => {
     try {
-      const isAdmin = me?.role === 'admin';
       const [nextBridges, nextPersonas, nextInboxes, nextProviders] = await Promise.all([
         api.getBridges(),
         api.getPersonas(),
@@ -57,7 +66,7 @@ export function StudioPage() {
     } catch (err) {
       setError(String(err));
     }
-  }, [me?.role]);
+  }, [isAdmin]);
 
   useEffect(() => {
     loadAll();
@@ -89,7 +98,7 @@ export function StudioPage() {
       >
         <span className="lab-mark" style={{ marginBottom: 18 }} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', alignItems: 'center' }}>
-          {NAV.map(item => {
+          {(isAdmin ? ADMIN_NAV : USER_NAV).map(item => {
             const active = tab === item.id;
             return (
               <button
@@ -198,13 +207,16 @@ export function StudioPage() {
         )}
 
         <main style={{ flex: 1, overflow: 'auto' }}>
+          {tab === 'overview' && isAdmin && (
+            <OverviewView setError={setError} />
+          )}
           {tab === 'takeover' && (
             <TakeoverView
               inboxes={inboxes}
               bridges={bridges}
               personas={personas}
               providers={providers}
-              isAdmin={me.role === 'admin'}
+              isAdmin={isAdmin}
               onChanged={loadAll}
               setError={setError}
             />
@@ -213,10 +225,16 @@ export function StudioPage() {
             <PersonasView personas={personas} onChanged={loadAll} setError={setError} />
           )}
           {tab === 'device' && (
-            <DevicesView bridges={bridges} inboxes={inboxes} onChanged={loadAll} setError={setError} />
+            <DevicesView
+              bridges={bridges}
+              inboxes={inboxes}
+              meUsername={me.username}
+              onChanged={loadAll}
+              setError={setError}
+            />
           )}
           {tab === 'settings' && (
-            <SettingsView providers={providers} me={me.username} isAdmin={me.role === 'admin'} onChanged={loadAll} setError={setError} />
+            <SettingsView providers={providers} me={me.username} isAdmin={isAdmin} onChanged={loadAll} setError={setError} />
           )}
         </main>
       </div>
@@ -705,9 +723,10 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
   );
 }
 
-function DevicesView({ bridges, inboxes, onChanged, setError }: {
+function DevicesView({ bridges, inboxes, meUsername, onChanged, setError }: {
   bridges: Bridge[];
   inboxes: Inbox[];
+  meUsername: string;
   onChanged: ChangeHandler;
   setError: (message: string) => void;
 }) {
@@ -724,10 +743,11 @@ function DevicesView({ bridges, inboxes, onChanged, setError }: {
   return (
     <div>
       <PageHead title="设备" kicker="devices · 你的本地守护进程" />
-      <div style={{ padding: '0 28px 24px' }}>
+      <div style={{ padding: '0 28px 24px', display: 'grid', gap: 14 }}>
+        <BridgeCommandPanel meUsername={meUsername} setError={setError} />
         {bridges.length === 0 ? (
           <Empty>
-            还没有设备。在主播的 PC 上运行 <span className="mono">docker compose run --rm bridge --studio-username=... --studio-password=... --chat-inbox '...'</span>，它会自动注册到这里。
+            还没有设备。复制上面命令到主播的 PC 上运行；接好 chat 账号后会自动注册到这里。
           </Empty>
         ) : (
           <div style={{ display: 'grid', gap: 10 }}>
@@ -1282,6 +1302,216 @@ function ModalActions({ onCancel, onConfirm, confirmLabel, disabled }: {
     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
       <button className="btn btn-ghost btn-sm" onClick={onCancel}>取消</button>
       <button className="btn btn-primary btn-sm" onClick={onConfirm} disabled={disabled}>{confirmLabel}</button>
+    </div>
+  );
+}
+
+function buildBridgeCommand({
+  studioUsername,
+  studioUrl,
+  chatBaseUrl,
+  chatUsername,
+}: {
+  studioUsername: string;
+  studioUrl: string;
+  chatBaseUrl: string;
+  chatUsername: string;
+}): string {
+  return [
+    'docker compose run --rm bridge \\',
+    `  --studio-username=${studioUsername || '<studio账号>'} \\`,
+    '  --studio-password=<填入你的密码> \\',
+    `  --studio-url=${studioUrl} \\`,
+    `  --chat-inbox 'base_url=${chatBaseUrl},username=${chatUsername || '<chat账号>'},password=<chat账号密码>'`,
+  ].join('\n');
+}
+
+function BridgeCommandPanel({ meUsername, setError }: {
+  meUsername: string;
+  setError: (message: string) => void;
+}) {
+  const [studioUrl, setStudioUrl] = useState('http://host.docker.internal:23457');
+  const [chatBaseUrl, setChatBaseUrl] = useState('http://host.docker.internal:23456');
+  const [chatUsername, setChatUsername] = useState(meUsername);
+  const [copied, setCopied] = useState(false);
+
+  const command = useMemo(
+    () => buildBridgeCommand({
+      studioUsername: meUsername,
+      studioUrl,
+      chatBaseUrl,
+      chatUsername,
+    }),
+    [meUsername, studioUrl, chatBaseUrl, chatUsername],
+  );
+
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch (err) {
+      setError(String(err));
+    }
+  };
+
+  return (
+    <div className="card" style={{ padding: 16, display: 'grid', gap: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>快速生成命令</span>
+        <span className="mono ink-3" style={{ fontSize: 11 }}>
+          在主播 PC 的 <span className="mono">services/bridge/</span> 下执行
+        </span>
+        <button className="btn btn-sm btn-ghost" style={{ marginLeft: 'auto' }} onClick={onCopy}>
+          {copied ? '已复制' : '复制命令'}
+        </button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+        <label className="mono ink-3" style={{ fontSize: 11 }}>
+          studio-url
+          <input className="input mono" style={{ marginTop: 2 }} value={studioUrl} onChange={e => setStudioUrl(e.target.value)} />
+        </label>
+        <label className="mono ink-3" style={{ fontSize: 11 }}>
+          chat base_url
+          <input className="input mono" style={{ marginTop: 2 }} value={chatBaseUrl} onChange={e => setChatBaseUrl(e.target.value)} />
+        </label>
+        <label className="mono ink-3" style={{ fontSize: 11 }}>
+          chat username
+          <input className="input mono" style={{ marginTop: 2 }} value={chatUsername} onChange={e => setChatUsername(e.target.value)} placeholder="alice" />
+        </label>
+      </div>
+      <pre
+        className="mono"
+        style={{
+          margin: 0,
+          padding: 12,
+          background: 'var(--bg-deep)',
+          border: '1px solid var(--line-subtle)',
+          borderRadius: 8,
+          fontSize: 12,
+          lineHeight: 1.55,
+          whiteSpace: 'pre-wrap',
+          wordBreak: 'break-all',
+          color: 'var(--ink-2)',
+        }}
+      >{command}</pre>
+      <div className="mono ink-3" style={{ fontSize: 11 }}>
+        密码不要写进命令历史；建议 <span className="mono">read -s</span> 或 <span className="mono">.env</span> 注入。
+      </div>
+    </div>
+  );
+}
+
+function OverviewView({ setError }: { setError: (message: string) => void }) {
+  const [data, setData] = useState<api.AdminOverview | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const reload = useCallback(async () => {
+    setLoading(true);
+    try {
+      setData(await api.getAdminOverview());
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setLoading(false);
+    }
+  }, [setError]);
+
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  return (
+    <div>
+      <PageHead
+        title="总览"
+        kicker="overview · SaaS 运营视角"
+        right={<button className="btn btn-sm btn-ghost" onClick={reload}>{loading ? '刷新中…' : '刷新'}</button>}
+      />
+      <div style={{ padding: '0 28px 24px', display: 'grid', gap: 14 }}>
+        {!data ? (
+          <Empty>正在加载…</Empty>
+        ) : (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
+              <StatCard label="账号" value={data.totals.accounts} sub={`管理员 ${data.totals.admins} · 用户 ${data.totals.users}`} />
+              <StatCard label="设备" value={`${data.totals.bridges_online} 在线`} sub={`离线 ${data.totals.bridges_offline}`} />
+              <StatCard label="接管号" value={data.totals.inboxes} />
+              <StatCard label="人设" value={data.totals.personas} />
+              <StatCard label="粉丝" value={data.totals.contacts} sub={`接管中 ${data.totals.contacts_autoreply}`} />
+              <StatCard label="消息" value={data.totals.messages} />
+              <StatCard label="Provider" value={data.totals.providers} />
+              <StatCard label="待发 outbound" value={data.totals.outbound_pending} />
+            </div>
+
+            <div className="card" style={{ padding: 16 }}>
+              <div style={{ fontWeight: 600, marginBottom: 10 }}>账号明细</div>
+              {data.accounts.length === 0 ? (
+                <Empty>系统里还没有账号。用 <span className="mono">python -m studio.cli create-account</span> 创建一个。</Empty>
+              ) : (
+                <div style={{ overflowX: 'auto' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ textAlign: 'left', color: 'var(--ink-3)' }}>
+                        <th style={overviewTh}>账号</th>
+                        <th style={overviewTh}>角色</th>
+                        <th style={overviewTh}>状态</th>
+                        <th style={overviewTh}>最后登录</th>
+                        <th style={overviewTh}>设备</th>
+                        <th style={overviewTh}>接管号</th>
+                        <th style={overviewTh}>人设</th>
+                        <th style={overviewTh}>粉丝(接管中)</th>
+                        <th style={overviewTh}>消息</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.accounts.map(row => (
+                        <tr key={row.account.id} style={{ borderTop: '1px solid var(--line-subtle)' }}>
+                          <td style={overviewTd}>
+                            <div style={{ fontWeight: 500 }}>@{row.account.username}</div>
+                            <div className="mono ink-3" style={{ fontSize: 10 }}>{row.account.display_name || '未命名'}</div>
+                          </td>
+                          <td style={overviewTd}>
+                            <span className={`chip ${row.account.role === 'admin' ? 'warn' : 'muted'}`}>{row.account.role}</span>
+                          </td>
+                          <td style={overviewTd}>
+                            <span className={`chip ${row.account.status === 'active' ? 'live' : 'danger'}`}>{row.account.status}</span>
+                          </td>
+                          <td style={overviewTd} className="mono ink-3">{formatDateTime(row.account.last_login_at)}</td>
+                          <td style={overviewTd}>
+                            <span className="mono">{row.bridges_online}</span>
+                            <span className="ink-3" style={{ fontSize: 10 }}> / {row.bridges_online + row.bridges_offline}</span>
+                          </td>
+                          <td style={overviewTd}>{row.inboxes}</td>
+                          <td style={overviewTd}>{row.personas}</td>
+                          <td style={overviewTd}>
+                            <span className="mono">{row.contacts}</span>
+                            <span className="ink-3" style={{ fontSize: 10 }}> ({row.contacts_autoreply})</span>
+                          </td>
+                          <td style={overviewTd}>{row.messages}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const overviewTh: CSSProperties = { padding: '6px 10px', fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' };
+const overviewTd: CSSProperties = { padding: '8px 10px', verticalAlign: 'middle' };
+
+function StatCard({ label, value, sub }: { label: string; value: number | string; sub?: string }) {
+  return (
+    <div className="card" style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <span className="eyebrow">{label}</span>
+      <span className="serif" style={{ fontSize: 26, lineHeight: 1, letterSpacing: '-0.02em' }}>{value}</span>
+      {sub && <span className="mono ink-3" style={{ fontSize: 11 }}>{sub}</span>}
     </div>
   );
 }

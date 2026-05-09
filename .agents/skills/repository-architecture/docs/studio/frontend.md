@@ -34,7 +34,8 @@
 
 主要函数：
 
-- Auth / bootstrap：`login`、`authLogout`、`authMe`、`changeOwnPassword`、`getBootstrapStatus`、`bootstrapAdmin`。
+- Auth：`login`、`authLogout`、`authMe`、`changeOwnPassword`。
+- Admin overview：`getAdminOverview`（admin-only，返回 `AdminOverview { totals, accounts[] }`）。
 - Account admin：`getAccounts`、`createAccount`、`updateAccount`、`resetAccountPassword`。
 - Providers：`getProviderConfigs`、`createProviderConfig`、`updateProviderConfig`、`deleteProviderConfig`。
 - Personas：`getPersonas`、`getPersona`、`createPersona`、`updatePersona`、`deletePersona`。
@@ -66,23 +67,19 @@
 
 当前行为：
 
-- 进入页面时调用 `getBootstrapStatus()`。
-- 如果数据库没有任何账号，显示首次初始化表单，调用 `bootstrapAdmin()` 创建首个 admin 并登录。
-- username/password form。
-- 调 `api.login()`。
-- `api.setToken()` 保存 token。
-- 调 auth `refresh()`。
-- 跳转 `/studio`。
-- 登录失败时显示错误；账号创建和重置密码的主路径在 Studio 设置页。
+- 纯 username/password form；不再有 first-run bootstrap 分支。
+- 调 `api.login()` → `api.setToken()` 保存 token → auth `refresh()` → 跳转 `/studio`。
+- 登录失败时显示错误。
+- 提示首个 admin 用 CLI 创建（`python -m studio.cli create-account --role admin`），账号管理与密码重置都走 Studio Settings 页。
 
 ### StudioPage 顶层
 
-Tab 类型：
+Tab 类型按角色区分：
 
-- `takeover`
-- `persona`
-- `device`
-- `settings`
+- Admin：`overview`（默认） · `takeover` · `persona` · `device` · `settings`
+- 普通用户：`takeover`（默认） · `persona` · `device` · `settings`
+
+`overview` 是 admin 专属：调 `getAdminOverview()`，渲染全局 totals 卡片 + 跨账号明细表（设备 / 接管号 / 人设 / 粉丝(接管中) / 消息）。其它 tab 的查询在 admin 时不按 account 过滤，因此 admin 也能跨用户穿透排查。
 
 顶层 state：
 
@@ -166,11 +163,18 @@ contact.reply_provider_config_id ?? inbox.reply_provider_config_id ?? global def
 
 保存通过 `onPatch()`，最终调用 `api.updateContact()`。
 
-## BridgesView
+## BridgesView (DevicesView)
 
+- 顶部固定 `BridgeCommandPanel`：根据当前 username + studio_url + chat base_url + chat username 实时拼出 `docker compose run --rm bridge ...` 启动命令，密码留作占位符；按钮可一键复制。
 - 列出非 revoked Bridge。
 - 显示 status、hostname、last seen、承载的 Inboxes。
 - revoke 调 `api.deleteBridge()`。
+
+## OverviewView (admin)
+
+- 顶部 `StatCard` 网格：账号 / 设备 / 接管号 / 人设 / 粉丝 / 消息 / Provider / 待发 outbound 全局合计。
+- 下方账号明细表：每行一个 Studio Account，列出 role、status、最后登录、设备在线数、接管号、人设、粉丝(其中接管中)、消息总数。
+- 数据来自 `getAdminOverview()`；右上角刷新按钮重拉。
 
 ## PersonasView
 

@@ -31,15 +31,25 @@ docker compose up -d --build
 
 Studio web/API 通过 Nginx 暴露在 `http://localhost:23457`。
 
+Studio 登录页只做登录；首个 admin 必须用 CLI 创建：
+
+```bash
+docker compose exec -T studio-api uv run python -m studio.cli create-account \
+  --username admin --password Admin123 --display-name 平台管理员 --role admin
+```
+
 当前推荐顺序：
 
-1. 第一次打开 Studio 时，在登录页创建首个 admin。
-2. 用 admin 登录 Studio，在 Settings 中创建普通用户账号和全局默认 ProviderConfig。
-3. 用对应用户登录后创建至少一个 Persona。
-3. 启动 Bridge。
-4. 等 Bridge handshake 自动创建 Bridge/Inbox。
-5. 在 Takeover tab 中给 Contact 配置 Persona、autoreply 和 card；Provider override 只对 admin 可见，普通用户使用全局默认 Provider。
-6. 如需蒸馏，上传 archive 后创建 distill job。
+1. 用上面 CLI 创建首个 admin。
+2. 用 admin 登录 Studio。Admin 默认进入 **总览** tab（系统级仪表盘：账号/设备/接管号/消息汇总）。
+3. 在 Settings 中创建普通用户账号和全局默认 ProviderConfig（普通用户看不到 Provider tab）。
+4. 用对应普通用户登录后创建至少一个 Persona。
+5. 启动 Bridge（在 Studio 的 设备 tab 顶部有「快速生成命令」面板可一键复制）。
+6. 等 Bridge handshake 自动创建 Bridge/Inbox。
+7. 在 Takeover tab 中给 Contact 配置 Persona、autoreply 和 card；Provider override 只对 admin 可见，普通用户使用全局默认 Provider。
+8. 如需蒸馏，上传 archive 后创建 distill job。
+
+> 一键 dev seed：仓库根的 `scripts/seed-dev.sh` 会自动创建 chat 用户、Studio admin + 普通用户、provider、persona，并在 Chat 里灌几条样例消息（清空 volume 后可重复执行）。
 
 ## 启动 Bridge 连接本地 Chat 和 Studio
 
@@ -75,10 +85,12 @@ docker compose exec -T chat-api uv run python -m chat.cli list-accounts
 docker compose exec -T chat-api uv run python -m chat.cli reset-password --username alice --password NewPassword
 ```
 
-Studio：账号管理主路径是 Web Settings；首次无账号时登录页会开放首个 admin 初始化。admin 可创建/list/停用启用账号、重置任意账号密码；普通 user 可修改自己的密码。CLI 仅保留为运维/救援入口：
+Studio：CLI 是首个 admin 的唯一创建入口；登录页不再有 first-run bootstrap。后续账号管理走 Web Settings——admin 可创建/list/停用启用账号、重置任意账号密码；普通 user 可修改自己的密码。CLI 同时保留作为运维/救援入口：
 
 ```bash
 cd services/studio
+docker compose exec -T studio-api uv run python -m studio.cli create-account \
+  --username admin --password Admin123 --display-name 平台管理员 --role admin
 docker compose exec -T studio-api uv run python -m studio.cli list-accounts
 docker compose exec -T studio-api uv run python -m studio.cli reset-password --username demo --password NewPassword
 ```

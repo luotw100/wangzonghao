@@ -204,6 +204,38 @@ export interface DistillJob {
   finished_at: string | null;
 }
 
+export interface AdminOverviewTotals {
+  accounts: number;
+  admins: number;
+  users: number;
+  bridges_online: number;
+  bridges_offline: number;
+  inboxes: number;
+  personas: number;
+  contacts: number;
+  contacts_autoreply: number;
+  messages: number;
+  providers: number;
+  outbound_pending: number;
+}
+
+export interface AdminOverviewAccount {
+  account: Account;
+  bridges_online: number;
+  bridges_offline: number;
+  bridges_revoked: number;
+  inboxes: number;
+  personas: number;
+  contacts: number;
+  contacts_autoreply: number;
+  messages: number;
+}
+
+export interface AdminOverview {
+  totals: AdminOverviewTotals;
+  accounts: AdminOverviewAccount[];
+}
+
 // --- Auth ---
 
 export function login(username: string, password: string): Promise<LoginResponse> {
@@ -230,16 +262,10 @@ export function changeOwnPassword(data: { current_password: string; new_password
   });
 }
 
-export function getBootstrapStatus() {
-  return request<{ needs_bootstrap: boolean }>('/bootstrap/status');
-}
+// --- Admin overview ---
 
-export function bootstrapAdmin(data: { username: string; password: string; display_name: string | null }) {
-  return request<LoginResponse>('/bootstrap/admin', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
+export function getAdminOverview() {
+  return request<AdminOverview>('/admin/overview');
 }
 
 // --- Account Admin ---

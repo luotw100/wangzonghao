@@ -88,16 +88,14 @@
 ### Health/Auth
 
 - `GET /api/health`
-- `GET /api/bootstrap/status`
-- `POST /api/bootstrap/admin`
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
 - `PUT /api/auth/password`
 
-Bootstrap endpoints 不需要登录，但 `POST /api/bootstrap/admin` 只有在数据库没有任何 Account 时可用；它创建首个 admin 并直接返回登录 token。
-
 `PUT /api/auth/password` 要求当前密码和新密码，成功后会删除该账号所有 Web AuthSession。
+
+首个 admin 没有 Web 入口——必须用 `python -m studio.cli create-account --role admin` 创建。
 
 ### Account admin
 
@@ -105,8 +103,9 @@ Bootstrap endpoints 不需要登录，但 `POST /api/bootstrap/admin` 只有在�
 - `POST /api/accounts`
 - `PUT /api/accounts/{account_id}`
 - `PUT /api/accounts/{account_id}/password`
+- `GET /api/admin/overview`
 
-这些 endpoint 需要 admin role。Admin 可在 Web 设置页创建账号、列出账号、停用/启用账号和重置任意账号密码。
+这些 endpoint 需要 admin role。Admin 可在 Web 设置页创建账号、列出账号、停用/启用账号和重置任意账号密码。`GET /api/admin/overview` 返回系统总览：账号列表（带每个账号的 bridges/inboxes/personas/contacts/messages 计数）和全局合计，给 Studio 前端的 admin 总览 tab 用。
 
 ### ProviderConfig
 

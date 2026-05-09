@@ -25,12 +25,6 @@ class LoginRequest(StrictModel):
     password: str
 
 
-class BootstrapAdminCreate(StrictModel):
-    username: str
-    password: str
-    display_name: Optional[str]
-
-
 class AccountCreate(StrictModel):
     username: str
     password: str

@@ -6,20 +6,10 @@ import { useAuth } from '../lib/auth';
 export function HomePage() {
   const navigate = useNavigate();
   const { account, loading, refresh } = useAuth();
-  const [checkingBootstrap, setCheckingBootstrap] = useState(true);
-  const [needsBootstrap, setNeedsBootstrap] = useState(false);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [displayName, setDisplayName] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    api.getBootstrapStatus()
-      .then(result => setNeedsBootstrap(result.needs_bootstrap))
-      .catch(err => setError(err instanceof Error ? err.message : String(err)))
-      .finally(() => setCheckingBootstrap(false));
-  }, []);
 
   useEffect(() => {
     if (!loading && account) navigate('/studio', { replace: true });
@@ -44,34 +34,8 @@ export function HomePage() {
     }
   };
 
-  const handleBootstrap = async () => {
-    if (!username.trim() || !password) {
-      setError('请填写管理员用户名和密码');
-      return;
-    }
-    setError('');
-    setBusy(true);
-    try {
-      const result = await api.bootstrapAdmin({
-        username: username.trim(),
-        password,
-        display_name: displayName.trim() || null,
-      });
-      api.setToken(result.token);
-      await refresh();
-      navigate('/studio', { replace: true });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  if (loading || checkingBootstrap) return null;
+  if (loading) return null;
   if (account) return <Navigate to="/studio" replace />;
-
-  const submitLabel = needsBootstrap ? '创建管理员并进入' : '进入 Studio';
-  const submitAction = needsBootstrap ? handleBootstrap : handleLogin;
 
   return (
     <div className="lab-screen lab-tech-grid" style={{ display: 'flex', height: '100dvh' }}>
@@ -132,32 +96,21 @@ export function HomePage() {
       </div>
 
       <div style={{ width: 460, flex: '0 0 460px', padding: '64px 56px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-        <span className="eyebrow">{needsBootstrap ? '首次初始化' : '登录'}</span>
+        <span className="eyebrow">登录</span>
         <h2 className="serif mt-2" style={{ fontSize: 28, margin: '6px 0 28px', fontWeight: 400, letterSpacing: '-0.02em' }}>
-          {needsBootstrap ? '创建第一个管理员' : '欢迎回来'}
+          欢迎回来
         </h2>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {needsBootstrap && (
-            <label className="col gap-2" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              <span className="text-xs text-ink-3 mono">DISPLAY NAME</span>
-              <input
-                className="input"
-                value={displayName}
-                onChange={event => setDisplayName(event.target.value)}
-                placeholder="管理员"
-              />
-            </label>
-          )}
           <label className="col gap-2" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <span className="text-xs text-ink-3 mono">{needsBootstrap ? 'ADMIN USERNAME' : 'USERNAME'}</span>
+            <span className="text-xs text-ink-3 mono">USERNAME</span>
             <input
               className="input"
               autoFocus
               value={username}
               onChange={event => setUsername(event.target.value)}
               onKeyDown={event => {
-                if (event.key === 'Enter') submitAction();
+                if (event.key === 'Enter') handleLogin();
               }}
               placeholder="alice"
             />
@@ -170,18 +123,18 @@ export function HomePage() {
               value={password}
               onChange={event => setPassword(event.target.value)}
               onKeyDown={event => {
-                if (event.key === 'Enter') submitAction();
+                if (event.key === 'Enter') handleLogin();
               }}
               placeholder="········"
             />
           </label>
           <button
-            onClick={submitAction}
+            onClick={handleLogin}
             disabled={busy || !username.trim() || !password}
             className="btn btn-primary"
             style={{ height: 42, fontSize: 14, marginTop: 8 }}
           >
-            {busy ? (needsBootstrap ? '创建中…' : '登录中…') : submitLabel}
+            {busy ? '登录中…' : '进入 Studio'}
           </button>
 
           {error && (
@@ -203,17 +156,8 @@ export function HomePage() {
 
         <div className="divider mt-6" style={{ marginTop: 24 }} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16, fontSize: 11, color: 'var(--ink-4)' }}>
-          {needsBootstrap ? (
-            <>
-              <div><span className="mono text-ink-3">FIRST RUN</span> 仅当数据库中没有任何账号时开放</div>
-              <div>创建后可在 Settings 里继续管理普通用户和 Provider。</div>
-            </>
-          ) : (
-            <>
-              <div><span className="mono text-ink-3">ADMIN</span> 账号和密码由 Studio 设置页管理</div>
-              <div>忘记密码时请联系管理员在 Settings 中重置。</div>
-            </>
-          )}
+          <div><span className="mono text-ink-3">ADMIN</span> 账号通过 CLI 创建：<span className="mono">python -m studio.cli create-account --role admin</span></div>
+          <div>忘记密码时联系管理员在 Settings 中重置，或用 CLI 的 reset-password。</div>
         </div>
       </div>
     </div>

@@ -17,6 +17,7 @@ from fastapi import (
     UploadFile,
     status,
 )
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from studio.auth_utils import hash_password, hash_token, new_session_token, verify_password
@@ -55,7 +56,6 @@ from studio.schemas import (
     AccountCreate,
     AccountPasswordReset,
     AccountUpdate,
-    BootstrapAdminCreate,
     BridgeHandshake,
     BridgeIncomingBatch,
     BridgeOutboundAck,
@@ -378,29 +378,6 @@ def health() -> Dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/api/bootstrap/status")
-def bootstrap_status(db: DbDep):
-    return {"needs_bootstrap": db.query(Account.id).first() is None}
-
-
-@app.post("/api/bootstrap/admin")
-def bootstrap_admin(payload: BootstrapAdminCreate, db: DbDep):
-    if db.query(Account.id).first() is not None:
-        raise HTTPException(status_code=409, detail="系统已完成初始化")
-    account = create_account_record(
-        db,
-        username=payload.username,
-        password=payload.password,
-        display_name=payload.display_name,
-        role=AccountRole.ADMIN,
-    )
-    db.flush()
-    token = create_auth_session(db, account)
-    db.commit()
-    db.refresh(account)
-    return {"token": token, "account": s_account(account)}
-
-
 @app.post("/api/auth/login")
 def login(login_in: LoginRequest, db: DbDep):
     a = db.query(Account).filter(Account.username == login_in.username).first()
@@ -494,6 +471,99 @@ def reset_account_password(
     db.query(AuthSession).filter(AuthSession.account_id == target.id).delete(synchronize_session=False)
     db.commit()
     return {"status": "updated", "id": target.id}
+
+
+# ---------------------------------------------------------------------------
+# Admin overview — system-wide dashboard for SaaS operators
+# ---------------------------------------------------------------------------
+
+@app.get("/api/admin/overview")
+def admin_overview(db: DbDep, account: AdminAccountDep):
+    """Aggregated counters for the admin dashboard.
+
+    Returns global totals plus per-account breakdown (everything except
+    LLM logs and outbound queue, which are debug-grade).
+    """
+    accounts = db.query(Account).order_by(Account.created_at.asc()).all()
+
+    bridge_counts: Dict[str, Dict[str, int]] = {}
+    for account_id, status_value, count in (
+        db.query(Bridge.account_id, Bridge.status, func.count(Bridge.id))
+        .group_by(Bridge.account_id, Bridge.status)
+        .all()
+    ):
+        bridge_counts.setdefault(account_id, {})[status_value] = count
+
+    inbox_counts: Dict[str, int] = dict(
+        db.query(Inbox.account_id, func.count(Inbox.id))
+        .group_by(Inbox.account_id)
+        .all()
+    )
+    persona_counts: Dict[str, int] = dict(
+        db.query(Persona.account_id, func.count(Persona.id))
+        .group_by(Persona.account_id)
+        .all()
+    )
+
+    contact_rows = (
+        db.query(Inbox.account_id, func.count(Contact.id))
+        .join(Contact, Contact.inbox_id == Inbox.id)
+        .group_by(Inbox.account_id)
+        .all()
+    )
+    contact_counts: Dict[str, int] = dict(contact_rows)
+
+    autoreply_rows = (
+        db.query(Inbox.account_id, func.count(Contact.id))
+        .join(Contact, Contact.inbox_id == Inbox.id)
+        .filter(Contact.autoreply_enabled.is_(True))
+        .group_by(Inbox.account_id)
+        .all()
+    )
+    autoreply_counts: Dict[str, int] = dict(autoreply_rows)
+
+    message_rows = (
+        db.query(Inbox.account_id, func.count(Message.id))
+        .join(Contact, Contact.inbox_id == Inbox.id)
+        .join(Message, Message.contact_id == Contact.id)
+        .group_by(Inbox.account_id)
+        .all()
+    )
+    message_counts: Dict[str, int] = dict(message_rows)
+
+    items: List[Dict[str, Any]] = []
+    for a in accounts:
+        bridges_for_account = bridge_counts.get(a.id, {})
+        items.append({
+            "account": s_account(a),
+            "bridges_online": bridges_for_account.get(BridgeStatus.ONLINE, 0),
+            "bridges_offline": bridges_for_account.get(BridgeStatus.OFFLINE, 0),
+            "bridges_revoked": bridges_for_account.get(BridgeStatus.REVOKED, 0),
+            "inboxes": inbox_counts.get(a.id, 0),
+            "personas": persona_counts.get(a.id, 0),
+            "contacts": contact_counts.get(a.id, 0),
+            "contacts_autoreply": autoreply_counts.get(a.id, 0),
+            "messages": message_counts.get(a.id, 0),
+        })
+
+    totals = {
+        "accounts": len(accounts),
+        "admins": sum(1 for a in accounts if a.role == AccountRole.ADMIN),
+        "users": sum(1 for a in accounts if a.role == AccountRole.USER),
+        "bridges_online": sum(b.get(BridgeStatus.ONLINE, 0) for b in bridge_counts.values()),
+        "bridges_offline": sum(b.get(BridgeStatus.OFFLINE, 0) for b in bridge_counts.values()),
+        "inboxes": sum(inbox_counts.values()),
+        "personas": sum(persona_counts.values()),
+        "contacts": sum(contact_counts.values()),
+        "contacts_autoreply": sum(autoreply_counts.values()),
+        "messages": sum(message_counts.values()),
+        "providers": db.query(func.count(ProviderConfig.id)).scalar() or 0,
+        "outbound_pending": db.query(func.count(OutboundMessage.id))
+            .filter(OutboundMessage.status == OutboundStatus.PENDING)
+            .scalar() or 0,
+    }
+
+    return {"totals": totals, "accounts": items}
 
 
 # ---------------------------------------------------------------------------

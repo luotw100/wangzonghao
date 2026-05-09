@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as api from '../lib/api';
 import type {
-  Archive,
   Bridge,
   Contact,
   ConversationSummary,
-  DistillJob,
   Inbox,
   Message,
   Persona,
@@ -14,7 +12,22 @@ import type {
 } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
-type Tab = 'takeover' | 'bridges' | 'personas' | 'providers' | 'archives' | 'distill';
+type Tab = 'takeover' | 'persona' | 'device' | 'settings';
+type ChangeHandler = () => void | Promise<void>;
+
+const NAV: { id: Tab; label: string; icon: string }[] = [
+  { id: 'takeover', label: '接管', icon: '◇' },
+  { id: 'persona', label: '人设', icon: '✶' },
+  { id: 'device', label: '设备', icon: '⌥' },
+  { id: 'settings', label: '设置', icon: '⚙' },
+];
+
+const TAB_CONTEXT: Record<Tab, { ctx: string; sub: string }> = {
+  takeover: { ctx: '接管', sub: 'contacts · 你管的所有粉丝' },
+  persona: { ctx: '人设', sub: 'personas · 你能扮演的人' },
+  device: { ctx: '设备', sub: 'devices · 你的本地守护进程' },
+  settings: { ctx: '设置', sub: 'settings · 账号 · Provider' },
+};
 
 export function StudioPage() {
   const navigate = useNavigate();
@@ -24,113 +37,208 @@ export function StudioPage() {
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [inboxes, setInboxes] = useState<Inbox[]>([]);
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
-  const [archives, setArchives] = useState<Archive[]>([]);
-  const [jobs, setJobs] = useState<DistillJob[]>([]);
   const [error, setError] = useState('');
 
   const loadAll = useCallback(async () => {
     try {
-      const [bs, ps, ibs, pcs, ars, djs] = await Promise.all([
+      const [nextBridges, nextPersonas, nextInboxes, nextProviders] = await Promise.all([
         api.getBridges(),
         api.getPersonas(),
         api.getInboxes(),
         api.getProviderConfigs(),
-        api.getArchives(),
-        api.getDistillJobs(),
       ]);
-      setBridges(bs);
-      setPersonas(ps);
-      setInboxes(ibs);
-      setProviders(pcs);
-      setArchives(ars);
-      setJobs(djs);
-    } catch (e) {
-      setError(String(e));
+      setBridges(nextBridges);
+      setPersonas(nextPersonas);
+      setInboxes(nextInboxes);
+      setProviders(nextProviders);
+    } catch (err) {
+      setError(String(err));
     }
   }, []);
 
-  useEffect(() => { loadAll(); }, [loadAll]);
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
 
   const handleLogout = async () => {
     await logout();
-    navigate('/login', { replace: true });
+    navigate('/', { replace: true });
   };
+
+  const onlineBridges = useMemo(() => bridges.filter(bridge => bridge.status === 'online').length, [bridges]);
+  const totalBridges = useMemo(() => bridges.filter(bridge => bridge.status !== 'revoked').length, [bridges]);
 
   if (!me) return null;
 
   return (
-    <div style={{ height: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--bg-deep)', color: 'var(--ink-1)' }}>
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 22px', borderBottom: '1px solid var(--line-subtle)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span className="font-brand" style={{ fontSize: 18, color: 'var(--accent)' }}>Laborster Studio</span>
-          <nav style={{ display: 'flex', gap: 8 }}>
-            {(['takeover', 'bridges', 'personas', 'providers', 'archives', 'distill'] as Tab[]).map(t => (
+    <div className="lab-screen" style={{ display: 'flex', height: '100dvh' }}>
+      <aside
+        style={{
+          width: 64,
+          flex: '0 0 64px',
+          background: 'var(--bg-base)',
+          borderRight: '1px solid var(--line-subtle)',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          padding: '14px 0',
+        }}
+      >
+        <span className="lab-mark" style={{ marginBottom: 18 }} />
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', alignItems: 'center' }}>
+          {NAV.map(item => {
+            const active = tab === item.id;
+            return (
               <button
-                key={t}
-                onClick={() => setTab(t)}
-                className="btn btn-sm"
+                key={item.id}
+                title={item.label}
+                onClick={() => setTab(item.id)}
                 style={{
-                  background: tab === t ? 'var(--brass-soft)' : 'transparent',
-                  color: tab === t ? 'var(--brass)' : 'var(--ink-2)',
-                  borderColor: tab === t ? 'var(--brass-line)' : 'var(--line-subtle)',
+                  width: 44,
+                  height: 44,
+                  borderRadius: 10,
+                  border: 'none',
+                  background: active ? 'var(--brass-soft)' : 'transparent',
+                  color: active ? 'var(--brass)' : 'var(--ink-3)',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  fontFamily: 'var(--f-serif)',
                 }}
               >
-                {tabLabel(t)}
+                <span style={{ fontSize: 16 }}>{item.icon}</span>
+                <span className="mono" style={{ marginTop: 2, fontSize: 9, opacity: 0.85 }}>{item.label}</span>
+                {active && (
+                  <span
+                    style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: 8,
+                      bottom: 8,
+                      width: 2,
+                      background: 'var(--brass)',
+                      borderRadius: 2,
+                    }}
+                  />
+                )}
               </button>
-            ))}
-          </nav>
+            );
+          })}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <span className="mono ink-3" style={{ fontSize: 12 }}>@{me.username}</span>
-          <button onClick={handleLogout} className="btn btn-sm btn-ghost">退出</button>
+        <div style={{ marginTop: 'auto' }}>
+          <button
+            title={`@${me.username} · 退出`}
+            onClick={handleLogout}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 999,
+              background: 'var(--bg-raised)',
+              border: '1px solid var(--line)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontFamily: 'var(--f-serif)',
+              fontSize: 14,
+              color: 'var(--brass)',
+              cursor: 'pointer',
+            }}
+          >
+            {(me.display_name || me.username)[0]}
+          </button>
         </div>
-      </header>
+      </aside>
 
-      {error && (
-        <div style={{ margin: '10px 22px', padding: '10px 12px', background: 'oklch(0.62 0.150 22 / 0.12)', border: '1px solid oklch(0.62 0.150 22 / 0.35)', borderRadius: 8, color: 'var(--danger)', display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 12 }}>
-          <span style={{ wordBreak: 'break-all' }}>{error}</span>
-          <button onClick={() => setError('')} className="btn btn-ghost btn-sm" style={{ minHeight: 20, padding: '0 6px', color: 'var(--danger)' }}>×</button>
-        </div>
-      )}
+      <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+        <header
+          style={{
+            height: 48,
+            flex: '0 0 48px',
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0 22px',
+            gap: 18,
+            borderBottom: '1px solid var(--line-subtle)',
+          }}
+        >
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <span style={{ fontSize: 14, fontWeight: 600 }}>{TAB_CONTEXT[tab].ctx}</span>
+            <span className="mono text-xs text-ink-4">{TAB_CONTEXT[tab].sub}</span>
+          </div>
+          <span className="chip mono">
+            <span className={`dot ${onlineBridges > 0 ? 'dot-live' : 'dot-off'}`} /> 设备 {onlineBridges}/{totalBridges}
+          </span>
+          <span className="chip mono">@{me.username}</span>
+        </header>
 
-      <main style={{ flex: 1, overflow: 'auto', padding: '20px 22px' }}>
-        {tab === 'takeover' && (
-          <TakeoverView
-            inboxes={inboxes} bridges={bridges} personas={personas} providers={providers}
-            onChanged={loadAll} setError={setError}
-          />
+        {error && (
+          <div
+            style={{
+              margin: '10px 22px',
+              padding: '10px 12px',
+              background: 'oklch(0.62 0.150 22 / 0.12)',
+              border: '1px solid oklch(0.62 0.150 22 / 0.35)',
+              borderRadius: 8,
+              color: 'var(--danger)',
+              display: 'flex',
+              justifyContent: 'space-between',
+              gap: 12,
+              fontSize: 12,
+            }}
+          >
+            <span style={{ wordBreak: 'break-all' }}>{error}</span>
+            <button onClick={() => setError('')} className="btn btn-ghost btn-sm">×</button>
+          </div>
         )}
-        {tab === 'bridges' && (
-          <BridgesView bridges={bridges} inboxes={inboxes} onChanged={loadAll} setError={setError} />
-        )}
-        {tab === 'personas' && <PersonasView personas={personas} onChanged={loadAll} setError={setError} />}
-        {tab === 'providers' && <ProvidersView providers={providers} onChanged={loadAll} setError={setError} />}
-        {tab === 'archives' && <ArchivesView archives={archives} inboxes={inboxes} onChanged={loadAll} setError={setError} />}
-        {tab === 'distill' && <DistillView jobs={jobs} inboxes={inboxes} personas={personas} providers={providers} onChanged={loadAll} setError={setError} />}
-      </main>
+
+        <main style={{ flex: 1, overflow: 'auto' }}>
+          {tab === 'takeover' && (
+            <TakeoverView
+              inboxes={inboxes}
+              bridges={bridges}
+              personas={personas}
+              providers={providers}
+              onChanged={loadAll}
+              setError={setError}
+            />
+          )}
+          {tab === 'persona' && (
+            <PersonasView personas={personas} onChanged={loadAll} setError={setError} />
+          )}
+          {tab === 'device' && (
+            <DevicesView bridges={bridges} inboxes={inboxes} onChanged={loadAll} setError={setError} />
+          )}
+          {tab === 'settings' && (
+            <SettingsView providers={providers} me={me.username} onChanged={loadAll} setError={setError} />
+          )}
+        </main>
+      </div>
     </div>
   );
 }
 
-function tabLabel(t: Tab): string {
-  return ({
-    takeover: '接管', bridges: 'Bridges', personas: '人设',
-    providers: 'Provider', archives: '聊天档案', distill: '蒸馏',
-  } as const)[t];
+function PageHead({ title, kicker, right }: { title: string; kicker?: string; right?: ReactNode }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, padding: '24px 28px 12px' }}>
+      <div style={{ flex: 1 }}>
+        {kicker && <span className="eyebrow">{kicker}</span>}
+        <h1 className="serif" style={{ fontSize: 28, margin: '4px 0 0', fontWeight: 400, letterSpacing: '-0.02em' }}>{title}</h1>
+      </div>
+      {right}
+    </div>
+  );
 }
-
-// ---------------------------------------------------------------------------
-// Takeover — primary view: contacts, grouped by inbox, with per-contact and
-// inbox-level config inline.
-// ---------------------------------------------------------------------------
 
 function TakeoverView({ inboxes, bridges, personas, providers, onChanged, setError }: {
   inboxes: Inbox[];
   bridges: Bridge[];
   personas: Persona[];
   providers: ProviderConfig[];
-  onChanged: () => void;
-  setError: (s: string) => void;
+  onChanged: ChangeHandler;
+  setError: (message: string) => void;
 }) {
   const [items, setItems] = useState<ConversationSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -142,23 +250,29 @@ function TakeoverView({ inboxes, bridges, personas, providers, onChanged, setErr
     try {
       const next = await api.getConversations();
       setItems(next);
-      setSelectedId(prev => prev ?? next[0]?.contact.id ?? null);
-    } catch (e) {
-      setError(String(e));
+      setSelectedId(previous => (
+        previous && next.some(item => item.contact.id === previous)
+          ? previous
+          : next[0]?.contact.id ?? null
+      ));
+    } catch (err) {
+      setError(String(err));
     } finally {
       setLoading(false);
     }
   }, [setError]);
 
-  useEffect(() => { reload(); }, [reload]);
+  useEffect(() => {
+    reload();
+  }, [reload]);
 
   const selected = items.find(item => item.contact.id === selectedId) ?? null;
   const selectedInbox = useMemo(() => {
     if (!selected) return null;
-    return inboxes.find(ib => ib.id === selected.inbox.id) ?? selected.inbox;
+    return inboxes.find(inbox => inbox.id === selected.inbox.id) ?? selected.inbox;
   }, [selected, inboxes]);
   const selectedBridge = selectedInbox
-    ? bridges.find(b => b.id === selectedInbox.bridge_id) ?? null
+    ? bridges.find(bridge => bridge.id === selectedInbox.bridge_id) ?? null
     : null;
 
   const reloadMessages = useCallback(async () => {
@@ -166,20 +280,25 @@ function TakeoverView({ inboxes, bridges, personas, providers, onChanged, setErr
       setMessages([]);
       return;
     }
-    try { setMessages(await api.getContactMessages(selectedId)); }
-    catch (e) { setError(String(e)); }
+    try {
+      setMessages(await api.getContactMessages(selectedId));
+    } catch (err) {
+      setError(String(err));
+    }
   }, [selectedId, setError]);
 
-  useEffect(() => { reloadMessages(); }, [reloadMessages]);
+  useEffect(() => {
+    reloadMessages();
+  }, [reloadMessages]);
 
   const grouped = useMemo(() => {
-    const m: Record<string, ConversationSummary[]> = {};
+    const result: Record<string, ConversationSummary[]> = {};
     for (const item of items) {
       const key = item.inbox.id;
-      if (!m[key]) m[key] = [];
-      m[key].push(item);
+      if (!result[key]) result[key] = [];
+      result[key].push(item);
     }
-    return m;
+    return result;
   }, [items]);
 
   const inboxOrder = useMemo(() => {
@@ -188,14 +307,12 @@ function TakeoverView({ inboxes, bridges, personas, providers, onChanged, setErr
     for (const item of items) {
       if (seen.has(item.inbox.id)) continue;
       seen.add(item.inbox.id);
-      const fresh = inboxes.find(ib => ib.id === item.inbox.id) ?? item.inbox;
-      ordered.push(fresh);
+      ordered.push(inboxes.find(inbox => inbox.id === item.inbox.id) ?? item.inbox);
     }
-    for (const ib of inboxes) {
-      if (!seen.has(ib.id)) {
-        seen.add(ib.id);
-        ordered.push(ib);
-      }
+    for (const inbox of inboxes) {
+      if (seen.has(inbox.id)) continue;
+      seen.add(inbox.id);
+      ordered.push(inbox);
     }
     return ordered;
   }, [items, inboxes]);
@@ -205,30 +322,34 @@ function TakeoverView({ inboxes, bridges, personas, providers, onChanged, setErr
       await api.updateContact(contactId, patch);
       await reload();
       await reloadMessages();
-      onChanged();
-    } catch (e) {
-      setError(String(e));
+      await Promise.resolve(onChanged());
+    } catch (err) {
+      setError(String(err));
     }
   };
 
   return (
     <div>
-      <SectionHeader title="接管" hint="所有需要 AI 接管的会话都在这里。每个粉丝独立配置人设 / Provider / 自动回复；每个接管号有一组默认值。">
-        <button className="btn btn-sm btn-ghost" onClick={reload}>{loading ? '刷新中…' : '刷新'}</button>
-      </SectionHeader>
+      <PageHead
+        title={`${items.length} 个接管`}
+        kicker="contacts"
+        right={<button className="btn btn-sm btn-ghost" onClick={reload}>{loading ? '刷新中…' : '刷新'}</button>}
+      />
       {inboxOrder.length === 0 ? (
-        <Empty>
-          还没有任何接管号。在主播 PC 上跑 bridge daemon（用 Studio 账号密码登录），它登进的每个 chat 账号会自动出现在这里。
-        </Empty>
+        <div style={{ padding: '0 28px 24px' }}>
+          <Empty>
+            还没有任何接管号。在主播 PC 上启动本地设备 daemon，它登进的每个 chat 账号都会自动出现在这里。
+          </Empty>
+        </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(300px, 380px) minmax(0, 1fr)', gap: 12, alignItems: 'start' }}>
+        <div style={{ padding: '0 28px 24px', display: 'grid', gridTemplateColumns: 'minmax(300px, 380px) minmax(0, 1fr)', gap: 12, alignItems: 'start' }}>
           <div style={{ display: 'grid', gap: 12 }}>
-            {inboxOrder.map(ib => (
+            {inboxOrder.map(inbox => (
               <InboxGroup
-                key={ib.id}
-                inbox={ib}
-                bridge={bridges.find(b => b.id === ib.bridge_id) ?? null}
-                conversations={grouped[ib.id] ?? []}
+                key={inbox.id}
+                inbox={inbox}
+                bridge={bridges.find(bridge => bridge.id === inbox.bridge_id) ?? null}
+                conversations={grouped[inbox.id] ?? []}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
                 personas={personas}
@@ -241,7 +362,9 @@ function TakeoverView({ inboxes, bridges, personas, providers, onChanged, setErr
           </div>
 
           <div className="card" style={{ padding: 16, minHeight: 420 }}>
-            {!selected || !selectedInbox ? <Empty>请从左侧选一个粉丝。</Empty> : (
+            {!selected || !selectedInbox ? (
+              <Empty>请从左侧选一个粉丝。</Empty>
+            ) : (
               <ContactDetail
                 contact={selected.contact}
                 inbox={selectedInbox}
@@ -267,38 +390,44 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, person
   onSelect: (id: string) => void;
   personas: Persona[];
   providers: ProviderConfig[];
-  onChanged: () => void;
-  onLocalRefresh: () => void;
-  setError: (s: string) => void;
+  onChanged: ChangeHandler;
+  onLocalRefresh: () => Promise<void>;
+  setError: (message: string) => void;
 }) {
   const [showSettings, setShowSettings] = useState(false);
   const online = bridge?.status === 'online';
+
   return (
     <div className="card" style={{ padding: '12px 14px', display: 'grid', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minWidth: 0 }}>
-          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: online ? 'var(--accent)' : 'var(--ink-3)' }} />
+          <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: online ? 'var(--live)' : 'var(--ink-3)' }} />
           <strong style={{ fontSize: 13 }}>{inbox.display_name}</strong>
           <span className="chip muted">{inbox.platform}</span>
           {!inbox.enabled && <span className="chip warn">已停用</span>}
           {bridge && <span className="mono ink-3" style={{ fontSize: 11 }}>{bridge.hostname}</span>}
         </div>
-        <button className="btn btn-sm btn-ghost" onClick={() => setShowSettings(v => !v)}>
+        <button className="btn btn-sm btn-ghost" onClick={() => setShowSettings(value => !value)}>
           {showSettings ? '收起' : '默认值'}
         </button>
       </div>
 
       {showSettings && (
         <InboxDefaults
-          inbox={inbox} personas={personas} providers={providers}
-          onChanged={() => { onChanged(); onLocalRefresh(); }}
+          inbox={inbox}
+          personas={personas}
+          providers={providers}
+          onChanged={async () => {
+            await Promise.resolve(onChanged());
+            await onLocalRefresh();
+          }}
           setError={setError}
         />
       )}
 
       {conversations.length === 0 ? (
         <div className="ink-3" style={{ fontSize: 12, padding: '8px 4px' }}>
-          暂无粉丝 — 收到第一条消息时会自动出现。
+          暂无粉丝，收到第一条消息时会自动出现。
         </div>
       ) : (
         <div style={{ display: 'grid', gap: 6 }}>
@@ -311,15 +440,13 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, person
                 padding: '10px 12px',
                 textAlign: 'left',
                 borderColor: selectedId === item.contact.id ? 'var(--brass-line)' : 'var(--line-subtle)',
-                background: selectedId === item.contact.id ? 'var(--brass-soft)' : 'var(--panel)',
+                background: selectedId === item.contact.id ? 'var(--brass-soft)' : 'var(--bg-base)',
               }}
             >
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
                 <strong style={{ fontSize: 13 }}>{item.contact.display_name}</strong>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {item.contact.autoreply_enabled
-                    ? <span className="chip live">接管中</span>
-                    : <span className="chip muted">手动</span>}
+                  {item.contact.autoreply_enabled ? <span className="chip live">接管中</span> : <span className="chip muted">手动</span>}
                   <span className="chip muted">{item.message_count}</span>
                 </div>
               </div>
@@ -341,44 +468,73 @@ function InboxDefaults({ inbox, personas, providers, onChanged, setError }: {
   inbox: Inbox;
   personas: Persona[];
   providers: ProviderConfig[];
-  onChanged: () => void;
-  setError: (s: string) => void;
+  onChanged: ChangeHandler;
+  setError: (message: string) => void;
 }) {
   return (
-    <div style={{ display: 'grid', gap: 6, padding: '8px 10px', background: 'var(--panel-2)', borderRadius: 8, border: '1px solid var(--line-subtle)' }}>
+    <div style={{ display: 'grid', gap: 6, padding: '8px 10px', background: 'var(--bg-raised)', borderRadius: 8, border: '1px solid var(--line-subtle)' }}>
       <div className="mono ink-3" style={{ fontSize: 11 }}>
         新粉丝默认（已存在的粉丝不受影响）
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-        <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>默认人设
-          <select value={inbox.default_persona_id ?? ''} className="select" style={{ marginLeft: 6, marginTop: 2 }}
-                  onChange={async e => {
-                    if (!e.target.value) return;
-                    try { await api.updateInbox(inbox.id, { default_persona_id: e.target.value }); onChanged(); } catch (err) { setError(String(err)); }
-                  }}>
+        <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+          默认人设
+          <select
+            value={inbox.default_persona_id ?? ''}
+            className="select"
+            style={{ marginLeft: 6, marginTop: 2 }}
+            onChange={async event => {
+              if (!event.target.value) return;
+              try {
+                await api.updateInbox(inbox.id, { default_persona_id: event.target.value });
+                await Promise.resolve(onChanged());
+              } catch (err) {
+                setError(String(err));
+              }
+            }}
+          >
             <option value="">（未选）</option>
-            {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {personas.map(persona => <option key={persona.id} value={persona.id}>{persona.name}</option>)}
           </select>
         </label>
-        <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>默认 Provider
-          <select value={inbox.reply_provider_config_id ?? ''} className="select" style={{ marginLeft: 6, marginTop: 2 }}
-                  onChange={async e => {
-                    try {
-                      if (e.target.value) await api.updateInbox(inbox.id, { reply_provider_config_id: e.target.value });
-                      else await api.updateInbox(inbox.id, { clear_reply_provider: true });
-                      onChanged();
-                    } catch (err) { setError(String(err)); }
-                  }}>
+        <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+          默认 Provider
+          <select
+            value={inbox.reply_provider_config_id ?? ''}
+            className="select"
+            style={{ marginLeft: 6, marginTop: 2 }}
+            onChange={async event => {
+              try {
+                if (event.target.value) {
+                  await api.updateInbox(inbox.id, { reply_provider_config_id: event.target.value });
+                } else {
+                  await api.updateInbox(inbox.id, { clear_reply_provider: true });
+                }
+                await Promise.resolve(onChanged());
+              } catch (err) {
+                setError(String(err));
+              }
+            }}
+          >
             <option value="">（未选）</option>
-            {providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+            {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
           </select>
         </label>
       </div>
       <div>
-        <button className="btn btn-sm btn-ghost" onClick={async () => {
-          try { await api.updateInbox(inbox.id, { enabled: !inbox.enabled }); onChanged(); }
-          catch (e) { setError(String(e)); }
-        }}>{inbox.enabled ? '停用整个接管号' : '启用整个接管号'}</button>
+        <button
+          className="btn btn-sm btn-ghost"
+          onClick={async () => {
+            try {
+              await api.updateInbox(inbox.id, { enabled: !inbox.enabled });
+              await Promise.resolve(onChanged());
+            } catch (err) {
+              setError(String(err));
+            }
+          }}
+        >
+          {inbox.enabled ? '停用整个接管号' : '启用整个接管号'}
+        </button>
       </div>
     </div>
   );
@@ -395,7 +551,10 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
 }) {
   const [draftCard, setDraftCard] = useState(contact.card_md ?? '');
   const [savingCard, setSavingCard] = useState(false);
-  useEffect(() => { setDraftCard(contact.card_md ?? ''); }, [contact.id, contact.card_md]);
+
+  useEffect(() => {
+    setDraftCard(contact.card_md ?? '');
+  }, [contact.id, contact.card_md]);
 
   const effectiveProviderId = contact.reply_provider_config_id ?? inbox.reply_provider_config_id;
   const inboxLive = inbox.enabled && Boolean(bridge && bridge.status === 'online');
@@ -410,41 +569,57 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
         </div>
       </div>
 
-      <div style={{ display: 'grid', gap: 8, padding: 12, background: 'var(--panel-2)', borderRadius: 8, border: '1px solid var(--line-subtle)' }}>
+      <div style={{ display: 'grid', gap: 8, padding: 12, background: 'var(--bg-raised)', borderRadius: 8, border: '1px solid var(--line-subtle)' }}>
         <div className="mono ink-3" style={{ fontSize: 11 }}>这个粉丝的接管设置</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
-          <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>人设
-            <select value={contact.persona_id ?? ''} className="select" style={{ marginLeft: 6 }}
-                    onChange={e => { if (e.target.value) onPatch(contact.id, { persona_id: e.target.value }); }}>
+          <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+            人设
+            <select
+              value={contact.persona_id ?? ''}
+              className="select"
+              style={{ marginLeft: 6 }}
+              onChange={event => {
+                if (event.target.value) onPatch(contact.id, { persona_id: event.target.value });
+              }}
+            >
               <option value="">（未选）</option>
-              {personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {personas.map(persona => <option key={persona.id} value={persona.id}>{persona.name}</option>)}
             </select>
           </label>
-          <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>Provider
+          <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+            Provider
             <select
               value={contact.reply_provider_config_id ?? ''}
-              className="select" style={{ marginLeft: 6 }}
-              onChange={e => {
-                if (e.target.value) onPatch(contact.id, { reply_provider_config_id: e.target.value });
-                else onPatch(contact.id, { clear_reply_provider: true });
+              className="select"
+              style={{ marginLeft: 6 }}
+              onChange={event => {
+                if (event.target.value) {
+                  onPatch(contact.id, { reply_provider_config_id: event.target.value });
+                } else {
+                  onPatch(contact.id, { clear_reply_provider: true });
+                }
               }}
             >
               <option value="">
-                跟随接管号默认（{providers.find(p => p.id === inbox.reply_provider_config_id)?.name ?? '未选'}）
+                跟随接管号默认（{providers.find(provider => provider.id === inbox.reply_provider_config_id)?.name ?? '未选'}）
               </option>
-              {providers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
             </select>
           </label>
           <label className="mono" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input type="checkbox" checked={contact.autoreply_enabled} disabled={!canAutoreply && !contact.autoreply_enabled}
-                   onChange={e => onPatch(contact.id, { autoreply_enabled: e.target.checked })} />
+            <input
+              type="checkbox"
+              checked={contact.autoreply_enabled}
+              disabled={!canAutoreply && !contact.autoreply_enabled}
+              onChange={event => onPatch(contact.id, { autoreply_enabled: event.target.checked })}
+            />
             自动接管
           </label>
         </div>
         {!canAutoreply && (
           <div className="mono" style={{ fontSize: 11, color: 'var(--warn)' }}>
-            {!bridge && '— 这个接管号没绑定在线 Bridge；'}
-            {bridge && bridge.status !== 'online' && `— Bridge ${bridge.hostname} 离线；`}
+            {!bridge && '— 这个接管号没绑定在线设备；'}
+            {bridge && bridge.status !== 'online' && `— 设备 ${bridge.hostname} 离线；`}
             {!inbox.enabled && '— 接管号已停用；'}
             {!effectiveProviderId && '— 没有可用的 Provider；'}
             {!contact.persona_id && '— 没有人设；'}
@@ -454,44 +629,57 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
 
         <label className="ink-3" style={{ fontSize: 11 }}>关系卡（card_md）— 简单写下你跟这个人的关系，AI 回复时会读到</label>
         <textarea
-          className="input mono"
+          className="textarea mono"
           style={{ minHeight: 90, fontSize: 12 }}
           value={draftCard}
-          onChange={e => setDraftCard(e.target.value)}
-          placeholder="例如：北京大学生，喜欢户外，去年送过我一袋茶叶，叫我「alice 姐」"
+          onChange={event => setDraftCard(event.target.value)}
+          placeholder="例如：北京大学生，喜欢户外，去年送过我一袋茶叶，叫我 alice 姐"
         />
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
           {draftCard !== (contact.card_md ?? '') && (
-            <button className="btn btn-sm btn-ghost"
-                    onClick={() => setDraftCard(contact.card_md ?? '')}>放弃修改</button>
+            <button className="btn btn-sm btn-ghost" onClick={() => setDraftCard(contact.card_md ?? '')}>
+              放弃修改
+            </button>
           )}
-          <button className="btn btn-sm btn-primary" disabled={savingCard || draftCard === (contact.card_md ?? '')}
-                  onClick={async () => {
-                    setSavingCard(true);
-                    try { await onPatch(contact.id, { card_md: draftCard }); }
-                    finally { setSavingCard(false); }
-                  }}>{savingCard ? '保存中…' : '保存关系卡'}</button>
+          <button
+            className="btn btn-sm btn-primary"
+            disabled={savingCard || draftCard === (contact.card_md ?? '')}
+            onClick={async () => {
+              setSavingCard(true);
+              try {
+                await onPatch(contact.id, { card_md: draftCard });
+              } finally {
+                setSavingCard(false);
+              }
+            }}
+          >
+            {savingCard ? '保存中…' : '保存关系卡'}
+          </button>
         </div>
       </div>
 
-      {messages.length === 0 ? <Empty>暂无消息。</Empty> : (
+      {messages.length === 0 ? (
+        <Empty>暂无消息。</Empty>
+      ) : (
         <div style={{ display: 'grid', gap: 8, maxHeight: '52dvh', overflow: 'auto', paddingRight: 4 }}>
-          {messages.map(m => (
-            <div key={m.id} style={{ display: 'flex', justifyContent: m.role === 'self' ? 'flex-end' : 'flex-start' }}>
+          {messages.map(message => (
+            <div key={message.id} style={{ display: 'flex', justifyContent: message.role === 'self' ? 'flex-end' : 'flex-start' }}>
               <div style={{ maxWidth: '76%' }}>
-                <div className="mono ink-3" style={{ fontSize: 10, textAlign: m.role === 'self' ? 'right' : 'left', marginBottom: 3 }}>
-                  {m.role === 'self' ? '我' : contact.display_name} · {formatDateTime(m.timestamp)} · {m.source}
+                <div className="mono ink-3" style={{ fontSize: 10, textAlign: message.role === 'self' ? 'right' : 'left', marginBottom: 3 }}>
+                  {message.role === 'self' ? '我' : contact.display_name} · {formatDateTime(message.timestamp)} · {message.source}
                 </div>
-                <div style={{
-                  padding: '8px 10px',
-                  borderRadius: 12,
-                  background: m.role === 'self' ? 'var(--brass-soft)' : 'var(--panel-2)',
-                  border: '1px solid var(--line-subtle)',
-                  whiteSpace: 'pre-wrap',
-                  fontSize: 13,
-                  lineHeight: 1.5,
-                }}>
-                  {m.content}
+                <div
+                  style={{
+                    padding: '8px 10px',
+                    borderRadius: 12,
+                    background: message.role === 'self' ? 'var(--brass-soft)' : 'var(--bg-raised)',
+                    border: '1px solid var(--line-subtle)',
+                    whiteSpace: 'pre-wrap',
+                    fontSize: 13,
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {message.content}
                 </div>
               </div>
             </div>
@@ -502,345 +690,171 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
   );
 }
 
-function formatDateTime(value: string | null | undefined): string {
-  if (!value) return '—';
-  const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return value;
-  return d.toLocaleString();
-}
-
-// ---------------------------------------------------------------------------
-// Bridges — read-only status; `revoke` button is the only mutation.
-// ---------------------------------------------------------------------------
-
-function BridgesView({ bridges, inboxes, onChanged, setError }: {
+function DevicesView({ bridges, inboxes, onChanged, setError }: {
   bridges: Bridge[];
   inboxes: Inbox[];
-  onChanged: () => void;
-  setError: (s: string) => void;
+  onChanged: ChangeHandler;
+  setError: (message: string) => void;
 }) {
   const inboxesByBridge = useMemo(() => {
-    const m: Record<string, Inbox[]> = {};
-    for (const ib of inboxes) {
-      if (ib.bridge_id) {
-        if (!m[ib.bridge_id]) m[ib.bridge_id] = [];
-        m[ib.bridge_id].push(ib);
-      }
+    const result: Record<string, Inbox[]> = {};
+    for (const inbox of inboxes) {
+      if (!inbox.bridge_id) continue;
+      if (!result[inbox.bridge_id]) result[inbox.bridge_id] = [];
+      result[inbox.bridge_id].push(inbox);
     }
-    return m;
+    return result;
   }, [inboxes]);
 
   return (
     <div>
-      <SectionHeader title="Bridges" hint="主播 PC 上跑的 daemon。带着 Studio 账号密码起来就会自动出现，按 (账号 + hostname) 标识。" />
-      {bridges.length === 0 ? (
-        <Empty>
-          还没有 Bridge。在主播的 PC 上 <span className="mono">docker compose run --rm bridge --studio-username=... --studio-password=... --chat-inbox '...'</span>，它会自动注册到这里。
-        </Empty>
-      ) : (
-        <div style={{ display: 'grid', gap: 10 }}>
-          {bridges.map(br => (
-            <div key={br.id} className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                <div>
-                  <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <StatusDot status={br.status} />
-                    {br.hostname}
-                  </div>
-                  <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
-                    {br.status === 'online' ? '在线' : br.status}
-                    {' · '}最后心跳 {formatDateTime(br.last_seen_at)}
-                    {' · '}承载 {(inboxesByBridge[br.id] || []).length} 个接管号
-                  </div>
-                </div>
-                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={async () => {
-                  if (!confirm(`确认 revoke ${br.hostname}？所有该机器上的接管号会从它身上脱钩，daemon 下次调用会被 401。`)) return;
-                  try { await api.deleteBridge(br.id); onChanged(); } catch (e) { setError(String(e)); }
-                }}>revoke</button>
-              </div>
-              {(inboxesByBridge[br.id] || []).length > 0 && (
-                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line-subtle)' }}>
-                  {(inboxesByBridge[br.id] || []).map(ib => (
-                    <div key={ib.id} className="mono" style={{ fontSize: 11, color: 'var(--ink-2)' }}>
-                      ↳ {ib.platform} · {ib.platform_self_id || '—'} · {ib.display_name} · {ib.enabled ? 'enabled' : 'disabled'}
+      <PageHead title="设备" kicker="devices · 你的本地守护进程" />
+      <div style={{ padding: '0 28px 24px' }}>
+        {bridges.length === 0 ? (
+          <Empty>
+            还没有设备。在主播的 PC 上运行 <span className="mono">docker compose run --rm bridge --studio-username=... --studio-password=... --chat-inbox '...'</span>，它会自动注册到这里。
+          </Empty>
+        ) : (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {bridges.map(bridge => (
+              <div key={bridge.id} className="card" style={{ padding: '14px 16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <StatusDot status={bridge.status} />
+                      {bridge.hostname}
+                      <span className={`chip ${statusChipClass(bridge.status)}`}>{statusText(bridge.status)}</span>
                     </div>
-                  ))}
+                    <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
+                      最后心跳 {formatDateTime(bridge.last_seen_at)} · 承载 {(inboxesByBridge[bridge.id] || []).length} 个接管号
+                    </div>
+                  </div>
+                  <button
+                    className="btn btn-sm btn-ghost"
+                    style={{ color: 'var(--danger)' }}
+                    onClick={async () => {
+                      if (!confirm(`确认撤销设备 ${bridge.hostname}？该机器上的接管号会从它身上脱钩，daemon 下次调用会被 401。`)) return;
+                      try {
+                        await api.deleteBridge(bridge.id);
+                        await Promise.resolve(onChanged());
+                      } catch (err) {
+                        setError(String(err));
+                      }
+                    }}
+                  >
+                    撤销
+                  </button>
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+                {(inboxesByBridge[bridge.id] || []).length > 0 && (
+                  <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line-subtle)', display: 'grid', gap: 6 }}>
+                    {(inboxesByBridge[bridge.id] || []).map(inbox => (
+                      <div key={inbox.id} className="mono" style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+                        {inbox.platform} · {inbox.platform_self_id || '—'} · {inbox.display_name} · {inbox.enabled ? '启用' : '停用'}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 function StatusDot({ status }: { status: Bridge['status'] }) {
   const color =
-    status === 'online' ? 'var(--accent)' :
+    status === 'online' ? 'var(--live)' :
     status === 'revoked' ? 'var(--danger)' : 'var(--ink-3)';
   return <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: color }} />;
 }
 
-// ---------------------------------------------------------------------------
-// Personas
-// ---------------------------------------------------------------------------
+function statusText(status: Bridge['status']): string {
+  if (status === 'online') return '在线';
+  if (status === 'offline') return '离线';
+  return '已撤销';
+}
 
-function PersonasView({ personas, onChanged, setError }: { personas: Persona[]; onChanged: () => void; setError: (s: string) => void }) {
+function statusChipClass(status: Bridge['status']): string {
+  if (status === 'online') return 'live';
+  if (status === 'revoked') return 'danger';
+  return 'muted';
+}
+
+function PersonasView({ personas, onChanged, setError }: {
+  personas: Persona[];
+  onChanged: ChangeHandler;
+  setError: (message: string) => void;
+}) {
   const [showCreate, setShowCreate] = useState(false);
   const [editing, setEditing] = useState<Persona | null>(null);
+
   return (
     <div>
-      <SectionHeader title="人设 · Personas" hint="人设是内容资产，可被任意接管号 / 粉丝引用">
-        <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>+ 新建人设</button>
-      </SectionHeader>
-      {personas.length === 0 ? <Empty>还没有人设。</Empty> : (
-        <div style={{ display: 'grid', gap: 10 }}>
-          {personas.map(p => (
-            <div key={p.id} className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontWeight: 500 }}>{p.name} <span className="chip muted">{p.status}</span></div>
-                  <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
-                    {p.persona_md ? `${p.persona_md.slice(0, 80)}${p.persona_md.length > 80 ? '…' : ''}` : '（空）'}
+      <PageHead
+        title="人设"
+        kicker="personas"
+        right={<button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>+ 新建</button>}
+      />
+      <div style={{ padding: '0 28px 24px' }}>
+        {personas.length === 0 ? (
+          <Empty>还没有人设。</Empty>
+        ) : (
+          <div style={{ display: 'grid', gap: 10 }}>
+            {personas.map(persona => (
+              <div key={persona.id} className="card" style={{ padding: '14px 16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 500 }}>
+                      {persona.name} <span className="chip muted">{persona.status}</span>
+                    </div>
+                    <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
+                      {persona.persona_md ? `${persona.persona_md.slice(0, 80)}${persona.persona_md.length > 80 ? '…' : ''}` : '（空）'}
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button className="btn btn-sm btn-ghost" onClick={() => setEditing(persona)}>编辑</button>
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      style={{ color: 'var(--danger)' }}
+                      onClick={async () => {
+                        if (!confirm('确认删除？被引用时会失败。')) return;
+                        try {
+                          await api.deletePersona(persona.id);
+                          await Promise.resolve(onChanged());
+                        } catch (err) {
+                          setError(String(err));
+                        }
+                      }}
+                    >
+                      删除
+                    </button>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="btn btn-sm btn-ghost" onClick={() => setEditing(p)}>编辑</button>
-                  <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={async () => {
-                    if (!confirm('确认删除？被引用时会失败。')) return;
-                    try { await api.deletePersona(p.id); onChanged(); } catch (e) { setError(String(e)); }
-                  }}>删除</button>
-                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-      {showCreate && <CreatePersonaModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); onChanged(); }} setError={setError} />}
-      {editing && <EditPersonaModal persona={editing} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); onChanged(); }} setError={setError} />}
-    </div>
-  );
-}
-
-function CreatePersonaModal({ onClose, onCreated, setError }: { onClose: () => void; onCreated: () => void; setError: (s: string) => void }) {
-  const [name, setName] = useState('');
-  const [md, setMd] = useState('');
-  const [busy, setBusy] = useState(false);
-  const handle = async () => {
-    if (!name.trim()) return;
-    setBusy(true);
-    try { await api.createPersona({ name: name.trim(), persona_md: md || null }); onCreated(); }
-    catch (e) { setError(String(e)); } finally { setBusy(false); }
-  };
-  return (
-    <ModalShell onClose={onClose} title="新建人设">
-      <FormField label="名称"><input className="input" value={name} onChange={e => setName(e.target.value)} autoFocus /></FormField>
-      <FormField label="persona_md (可空)">
-        <textarea className="textarea mono" style={{ minHeight: 200 }} value={md} onChange={e => setMd(e.target.value)} />
-      </FormField>
-      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建'} disabled={busy || !name.trim()} />
-    </ModalShell>
-  );
-}
-
-function EditPersonaModal({ persona, onClose, onSaved, setError }: { persona: Persona; onClose: () => void; onSaved: () => void; setError: (s: string) => void }) {
-  const [name, setName] = useState(persona.name);
-  const [md, setMd] = useState(persona.persona_md ?? '');
-  const [busy, setBusy] = useState(false);
-  const handle = async () => {
-    setBusy(true);
-    try { await api.updatePersona(persona.id, { name, persona_md: md || null }); onSaved(); }
-    catch (e) { setError(String(e)); } finally { setBusy(false); }
-  };
-  return (
-    <ModalShell onClose={onClose} title={`编辑人设 · ${persona.name}`}>
-      <FormField label="名称"><input className="input" value={name} onChange={e => setName(e.target.value)} /></FormField>
-      <FormField label="persona_md">
-        <textarea className="textarea mono" style={{ minHeight: 320 }} value={md} onChange={e => setMd(e.target.value)} />
-      </FormField>
-      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '保存中...' : '保存'} disabled={busy} />
-    </ModalShell>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Providers
-// ---------------------------------------------------------------------------
-
-function ProvidersView({ providers, onChanged, setError }: { providers: ProviderConfig[]; onChanged: () => void; setError: (s: string) => void }) {
-  const [showCreate, setShowCreate] = useState(false);
-  return (
-    <div>
-      <SectionHeader title="LLM Providers" hint="OpenAI 兼容后端，每次蒸馏 / 回复时显式引用">
-        <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>+ 新建</button>
-      </SectionHeader>
-      {providers.length === 0 ? <Empty>还没有 Provider。</Empty> : (
-        <div style={{ display: 'grid', gap: 10 }}>
-          {providers.map(p => (
-            <div key={p.id} className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontWeight: 500 }}>{p.name}</div>
-                  <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
-                    {p.base_url} · model: {p.default_model} · key: {p.api_key_preview ?? '未设置'}
-                  </div>
-                </div>
-                <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={async () => {
-                  if (!confirm('确认删除？')) return;
-                  try { await api.deleteProviderConfig(p.id); onChanged(); } catch (e) { setError(String(e)); }
-                }}>删除</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      {showCreate && <CreateProviderModal onClose={() => setShowCreate(false)} onCreated={() => { setShowCreate(false); onChanged(); }} setError={setError} />}
-    </div>
-  );
-}
-
-function CreateProviderModal({ onClose, onCreated, setError }: { onClose: () => void; onCreated: () => void; setError: (s: string) => void }) {
-  const [name, setName] = useState('');
-  const [baseUrl, setBaseUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('');
-  const [busy, setBusy] = useState(false);
-  const handle = async () => {
-    if (!name.trim() || !baseUrl.trim() || !model.trim()) return;
-    setBusy(true);
-    try { await api.createProviderConfig({ name: name.trim(), base_url: baseUrl.trim(), api_key: apiKey || null, default_model: model.trim() }); onCreated(); }
-    catch (e) { setError(String(e)); } finally { setBusy(false); }
-  };
-  return (
-    <ModalShell onClose={onClose} title="新建 Provider Config">
-      <FormField label="名称"><input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="例如 Deepseek" autoFocus /></FormField>
-      <FormField label="base_url"><input className="input mono" value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://api.deepseek.com" /></FormField>
-      <FormField label="api_key"><input className="input mono" type="password" value={apiKey} onChange={e => setApiKey(e.target.value)} /></FormField>
-      <FormField label="default_model"><input className="input mono" value={model} onChange={e => setModel(e.target.value)} placeholder="deepseek-chat" /></FormField>
-      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建'} disabled={busy || !name.trim() || !baseUrl.trim() || !model.trim()} />
-    </ModalShell>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Archives
-// ---------------------------------------------------------------------------
-
-function ArchivesView({ archives, inboxes, onChanged, setError }: { archives: Archive[]; inboxes: Inbox[]; onChanged: () => void; setError: (s: string) => void }) {
-  const [inboxId, setInboxId] = useState(inboxes[0]?.id ?? '');
-  const [selfWxid, setSelfWxid] = useState('');
-  const [file, setFile] = useState<File | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => { if (!inboxId && inboxes.length > 0) setInboxId(inboxes[0].id); }, [inboxes, inboxId]);
-
-  const handle = async () => {
-    if (!inboxId || !selfWxid.trim() || !file) return;
-    setBusy(true);
-    try { await api.uploadArchive(inboxId, selfWxid.trim(), file); setFile(null); setSelfWxid(''); onChanged(); }
-    catch (e) { setError(String(e)); } finally { setBusy(false); }
-  };
-
-  return (
-    <div>
-      <SectionHeader title="聊天档案 · Archives" hint="WeFlow JSON 上传 → 落到指定接管号下，作为蒸馏来源" />
-      {inboxes.length === 0 ? <Empty>还没有接管号 — bridge daemon 一旦登入 chat 账号就会自动出现。</Empty> : (
-        <div className="card" style={{ padding: 16, marginBottom: 18 }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-            <FormField label="目标接管号">
-              <select value={inboxId} onChange={e => setInboxId(e.target.value)} className="select">
-                {inboxes.map(ib => <option key={ib.id} value={ib.id}>{ib.display_name}</option>)}
-              </select>
-            </FormField>
-            <FormField label={'self_wxid (这条记录里"我"的 wxid)'}>
-              <input className="input mono" value={selfWxid} onChange={e => setSelfWxid(e.target.value)} placeholder="wxid_xxxxx" />
-            </FormField>
-            <FormField label="WeFlow JSON">
-              <input type="file" accept="application/json,.json" onChange={e => setFile(e.target.files?.[0] ?? null)} className="input" />
-            </FormField>
+            ))}
           </div>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 10 }}>
-            <button className="btn btn-primary btn-sm" onClick={handle} disabled={!inboxId || !selfWxid.trim() || !file || busy}>
-              {busy ? '上传中...' : '上传并解析'}
-            </button>
-          </div>
-        </div>
-      )}
-      {archives.length === 0 ? <Empty>还没有上传任何档案。</Empty> : (
-        <div style={{ display: 'grid', gap: 8 }}>
-          {archives.map(a => {
-            const ib = inboxes.find(i => i.id === a.inbox_id);
-            return (
-              <div key={a.id} className="card" style={{ padding: '12px 16px' }}>
-                <div style={{ fontWeight: 500 }}>{a.filename}</div>
-                <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
-                  inbox: {ib?.display_name || a.inbox_id} · self: {a.self_wxid} · {a.message_count.toLocaleString()} 条 · 上传 {a.uploaded_at}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Distill
-// ---------------------------------------------------------------------------
-
-function DistillView({ jobs, inboxes, personas, providers, onChanged, setError }: {
-  jobs: DistillJob[];
-  inboxes: Inbox[];
-  personas: Persona[];
-  providers: ProviderConfig[];
-  onChanged: () => void;
-  setError: (s: string) => void;
-}) {
-  const ready = inboxes.length > 0 && personas.length > 0 && providers.length > 0;
-  const [showCreate, setShowCreate] = useState(false);
-  const hasActive = useMemo(() => jobs.some(j => j.status === 'pending' || j.status === 'running'), [jobs]);
-  useEffect(() => {
-    if (!hasActive) return;
-    const t = window.setInterval(onChanged, 2500);
-    return () => window.clearInterval(t);
-  }, [hasActive, onChanged]);
-  return (
-    <div>
-      <SectionHeader title="蒸馏 · Distill Jobs" hint="对一个接管号的历史，蒸出一个目标人设 + 各 contact 的卡片">
-        {ready
-          ? <button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>+ 触发蒸馏</button>
-          : <span className="mono ink-4" style={{ fontSize: 12 }}>需要先有 接管号 + 人设 + Provider</span>}
-      </SectionHeader>
-      {jobs.length === 0 ? <Empty>还没有蒸馏任务。</Empty> : (
-        <div style={{ display: 'grid', gap: 8 }}>
-          {jobs.map(j => {
-            const wt = j.progress?.windows_total ?? 0;
-            const wd = j.progress?.windows_done ?? 0;
-            const pct = wt > 0 ? Math.round((wd / wt) * 100) : 0;
-            return (
-              <div key={j.id} className="card" style={{ padding: '12px 16px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-                  <div className="mono" style={{ fontSize: 13 }}>{j.id}</div>
-                  <span className={`chip ${j.status === 'done' ? 'ok' : j.status === 'failed' ? 'danger' : j.status === 'running' ? 'live' : 'muted'}`}>{j.status}</span>
-                </div>
-                <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
-                  inbox: {inboxes.find(i => i.id === j.source_inbox_id)?.display_name || j.source_inbox_id} →
-                  persona: {personas.find(p => p.id === j.target_persona_id)?.name || j.target_persona_id} ·
-                  {wt > 0 ? ` ${wd}/${wt} windows (${pct}%)` : ' 尚未开始'}
-                  {j.error_message && ` · ${j.error_message.slice(0, 80)}`}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+        )}
+      </div>
       {showCreate && (
-        <CreateDistillModal
-          inboxes={inboxes} personas={personas} providers={providers}
+        <CreatePersonaModal
           onClose={() => setShowCreate(false)}
-          onCreated={() => { setShowCreate(false); onChanged(); }}
+          onCreated={async () => {
+            setShowCreate(false);
+            await Promise.resolve(onChanged());
+          }}
+          setError={setError}
+        />
+      )}
+      {editing && (
+        <EditPersonaModal
+          persona={editing}
+          onClose={() => setEditing(null)}
+          onSaved={async () => {
+            setEditing(null);
+            await Promise.resolve(onChanged());
+          }}
           setError={setError}
         />
       )}
@@ -848,60 +862,199 @@ function DistillView({ jobs, inboxes, personas, providers, onChanged, setError }
   );
 }
 
-function CreateDistillModal({ inboxes, personas, providers, onClose, onCreated, setError }: {
-  inboxes: Inbox[];
-  personas: Persona[];
-  providers: ProviderConfig[];
+function CreatePersonaModal({ onClose, onCreated, setError }: {
   onClose: () => void;
-  onCreated: () => void;
-  setError: (s: string) => void;
+  onCreated: () => void | Promise<void>;
+  setError: (message: string) => void;
 }) {
-  const [inboxId, setInboxId] = useState(inboxes[0]?.id ?? '');
-  const [personaId, setPersonaId] = useState(personas[0]?.id ?? '');
-  const [providerId, setProviderId] = useState(providers[0]?.id ?? '');
+  const [name, setName] = useState('');
+  const [md, setMd] = useState('');
   const [busy, setBusy] = useState(false);
+
   const handle = async () => {
+    if (!name.trim()) return;
     setBusy(true);
     try {
-      await api.createDistillJob({
-        source_inbox_id: inboxId,
-        target_persona_id: personaId,
-        provider_config_id: providerId,
-      });
-      onCreated();
-    } catch (e) { setError(String(e)); } finally { setBusy(false); }
+      await api.createPersona({ name: name.trim(), persona_md: md || null });
+      await Promise.resolve(onCreated());
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
   };
+
   return (
-    <ModalShell onClose={onClose} title="触发蒸馏">
-      <FormField label="来源接管号"><select value={inboxId} onChange={e => setInboxId(e.target.value)} className="select">{inboxes.map(i => <option key={i.id} value={i.id}>{i.display_name}</option>)}</select></FormField>
-      <FormField label="目标人设"><select value={personaId} onChange={e => setPersonaId(e.target.value)} className="select">{personas.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}</select></FormField>
-      <FormField label="Provider"><select value={providerId} onChange={e => setProviderId(e.target.value)} className="select">{providers.map(p => <option key={p.id} value={p.id}>{p.name} ({p.default_model})</option>)}</select></FormField>
-      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '提交中...' : '开始蒸馏'} disabled={busy || !inboxId || !personaId || !providerId} />
+    <ModalShell onClose={onClose} title="新建人设">
+      <FormField label="名称"><input className="input" value={name} onChange={event => setName(event.target.value)} autoFocus /></FormField>
+      <FormField label="persona_md (可空)">
+        <textarea className="textarea mono" style={{ minHeight: 200 }} value={md} onChange={event => setMd(event.target.value)} />
+      </FormField>
+      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建'} disabled={busy || !name.trim()} />
     </ModalShell>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Shared bits
-// ---------------------------------------------------------------------------
+function EditPersonaModal({ persona, onClose, onSaved, setError }: {
+  persona: Persona;
+  onClose: () => void;
+  onSaved: () => void | Promise<void>;
+  setError: (message: string) => void;
+}) {
+  const [name, setName] = useState(persona.name);
+  const [md, setMd] = useState(persona.persona_md ?? '');
+  const [busy, setBusy] = useState(false);
 
-function SectionHeader({ title, hint, children }: { title: string; hint: string; children?: React.ReactNode }) {
+  const handle = async () => {
+    setBusy(true);
+    try {
+      await api.updatePersona(persona.id, { name, persona_md: md || null });
+      await Promise.resolve(onSaved());
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
-      <div>
-        <h2 className="serif" style={{ fontSize: 22, margin: 0 }}>{title}</h2>
-        <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>{hint}</div>
+    <ModalShell onClose={onClose} title={`编辑人设 · ${persona.name}`}>
+      <FormField label="名称"><input className="input" value={name} onChange={event => setName(event.target.value)} /></FormField>
+      <FormField label="persona_md">
+        <textarea className="textarea mono" style={{ minHeight: 320 }} value={md} onChange={event => setMd(event.target.value)} />
+      </FormField>
+      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '保存中...' : '保存'} disabled={busy} />
+    </ModalShell>
+  );
+}
+
+function SettingsView({ providers, me, onChanged, setError }: {
+  providers: ProviderConfig[];
+  me: string;
+  onChanged: ChangeHandler;
+  setError: (message: string) => void;
+}) {
+  const [showCreate, setShowCreate] = useState(false);
+
+  return (
+    <div>
+      <PageHead title="设置" kicker="settings" />
+      <div style={{ padding: '0 28px 24px', display: 'grid', gridTemplateColumns: '220px minmax(0, 1fr)', gap: 24 }}>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span className="eyebrow" style={{ padding: '6px 10px' }}>账号</span>
+          <button className="btn btn-ghost" style={{ justifyContent: 'flex-start' }}>个人 · @{me}</button>
+          <span className="eyebrow mt-3" style={{ padding: '6px 10px', marginTop: 12 }}>系统</span>
+          <button className="btn" style={{ justifyContent: 'flex-start', background: 'var(--bg-raised)' }}>Provider</button>
+        </nav>
+        <div className="card p-5">
+          <div className="row gap-2" style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+            <span style={{ fontWeight: 600 }}>Provider · LLM 接入</span>
+            <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={() => setShowCreate(true)}>+ 新接入</button>
+          </div>
+          <div className="text-sm text-ink-3" style={{ marginBottom: 12 }}>
+            接入你要用的大模型。新粉丝默认走主线，可在某个人设或接管上覆盖。
+          </div>
+          {providers.length === 0 ? (
+            <Empty>还没有 Provider。</Empty>
+          ) : (
+            <div style={{ display: 'grid', gap: 10 }}>
+              {providers.map(provider => (
+                <div key={provider.id} className="card" style={{ padding: '14px 16px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                    <div>
+                      <div style={{ fontWeight: 500 }}>{provider.name}</div>
+                      <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
+                        {provider.base_url} · model: {provider.default_model} · key: {provider.api_key_preview ?? '未设置'}
+                      </div>
+                    </div>
+                    <button
+                      className="btn btn-sm btn-ghost"
+                      style={{ color: 'var(--danger)' }}
+                      onClick={async () => {
+                        if (!confirm('确认删除？')) return;
+                        try {
+                          await api.deleteProviderConfig(provider.id);
+                          await Promise.resolve(onChanged());
+                        } catch (err) {
+                          setError(String(err));
+                        }
+                      }}
+                    >
+                      删除
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
-      <div>{children}</div>
+      {showCreate && (
+        <CreateProviderModal
+          onClose={() => setShowCreate(false)}
+          onCreated={async () => {
+            setShowCreate(false);
+            await Promise.resolve(onChanged());
+          }}
+          setError={setError}
+        />
+      )}
     </div>
   );
 }
 
-function Empty({ children }: { children: React.ReactNode }) {
+function CreateProviderModal({ onClose, onCreated, setError }: {
+  onClose: () => void;
+  onCreated: () => void | Promise<void>;
+  setError: (message: string) => void;
+}) {
+  const [name, setName] = useState('');
+  const [baseUrl, setBaseUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [model, setModel] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const handle = async () => {
+    if (!name.trim() || !baseUrl.trim() || !model.trim()) return;
+    setBusy(true);
+    try {
+      await api.createProviderConfig({
+        name: name.trim(),
+        base_url: baseUrl.trim(),
+        api_key: apiKey || null,
+        default_model: model.trim(),
+      });
+      await Promise.resolve(onCreated());
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ModalShell onClose={onClose} title="新建 Provider Config">
+      <FormField label="名称"><input className="input" value={name} onChange={event => setName(event.target.value)} placeholder="例如 Deepseek" autoFocus /></FormField>
+      <FormField label="base_url"><input className="input mono" value={baseUrl} onChange={event => setBaseUrl(event.target.value)} placeholder="https://api.deepseek.com" /></FormField>
+      <FormField label="api_key"><input className="input mono" type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} /></FormField>
+      <FormField label="default_model"><input className="input mono" value={model} onChange={event => setModel(event.target.value)} placeholder="deepseek-chat" /></FormField>
+      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建'} disabled={busy || !name.trim() || !baseUrl.trim() || !model.trim()} />
+    </ModalShell>
+  );
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString();
+}
+
+function Empty({ children }: { children: ReactNode }) {
   return <div className="card ink-3" style={{ padding: 18, textAlign: 'center' }}>{children}</div>;
 }
 
-function FormField({ label, children }: { label: string; children: React.ReactNode }) {
+function FormField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label style={{ display: 'block', marginBottom: 12 }}>
       {label && <div className="mono ink-3" style={{ fontSize: 11, marginBottom: 4 }}>{label}</div>}
@@ -910,10 +1063,10 @@ function FormField({ label, children }: { label: string; children: React.ReactNo
   );
 }
 
-function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
+function ModalShell({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'oklch(0.06 0.005 60 / 0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }} onClick={onClose}>
-      <div className="card" style={{ width: 'min(560px, 92vw)', maxHeight: '85vh', overflow: 'auto', padding: 22 }} onClick={e => e.stopPropagation()}>
+      <div className="card" style={{ width: 'min(560px, 92vw)', maxHeight: '85vh', overflow: 'auto', padding: 22 }} onClick={event => event.stopPropagation()}>
         <h3 className="serif" style={{ fontSize: 20, margin: '0 0 16px' }}>{title}</h3>
         {children}
       </div>
@@ -921,7 +1074,12 @@ function ModalShell({ title, onClose, children }: { title: string; onClose: () =
   );
 }
 
-function ModalActions({ onCancel, onConfirm, confirmLabel, disabled }: { onCancel: () => void; onConfirm: () => void; confirmLabel: string; disabled?: boolean }) {
+function ModalActions({ onCancel, onConfirm, confirmLabel, disabled }: {
+  onCancel: () => void;
+  onConfirm: () => void;
+  confirmLabel: string;
+  disabled?: boolean;
+}) {
   return (
     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
       <button className="btn btn-ghost btn-sm" onClick={onCancel}>取消</button>

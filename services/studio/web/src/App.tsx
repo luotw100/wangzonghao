@@ -2,9 +2,8 @@ import { useEffect } from 'react';
 import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import { HomePage } from './pages/HomePage';
 import { StudioPage } from './pages/StudioPage';
-import { LoginPage } from './pages/LoginPage';
 import { setUnauthorizedHandler } from './lib/api';
-import { AuthProvider, RedirectIfAuthed, RequireAuth, useAuth } from './lib/auth';
+import { AuthProvider, RequireAuth, useAuth } from './lib/auth';
 
 function UnauthorizedRedirect() {
   const navigate = useNavigate();
@@ -12,9 +11,7 @@ function UnauthorizedRedirect() {
   useEffect(() => {
     setUnauthorizedHandler(() => {
       refresh();
-      if (window.location.pathname !== '/login') {
-        navigate('/login', { replace: true });
-      }
+      if (window.location.pathname !== '/') navigate('/', { replace: true });
     });
     return () => setUnauthorizedHandler(null);
   }, [navigate, refresh]);
@@ -28,7 +25,6 @@ export default function App() {
         <UnauthorizedRedirect />
         <Routes>
           <Route path="/" element={<HomePage />} />
-          <Route path="/login" element={<RedirectIfAuthed><LoginPage /></RedirectIfAuthed>} />
           <Route path="/studio" element={<RequireAuth><StudioPage /></RequireAuth>} />
         </Routes>
       </AuthProvider>

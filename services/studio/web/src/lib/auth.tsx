@@ -70,7 +70,7 @@ function Splash() {
 export function RequireAuth({ children }: { children: ReactNode }) {
   const { account, loading } = useAuth();
   if (loading) return <Splash />;
-  if (!account) return <Navigate to="/login" replace />;
+  if (!account) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 

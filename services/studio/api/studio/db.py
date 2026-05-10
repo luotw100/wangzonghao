@@ -29,5 +29,8 @@ def get_db():
         db.close()
 
 
-STORAGE_DIR = Path(os.environ.get("STUDIO_STORAGE_DIR", "/app/storage")).resolve()
+_storage_dir = os.environ.get("STUDIO_STORAGE_DIR")
+if not _storage_dir:
+    raise RuntimeError("STUDIO_STORAGE_DIR is required")
+STORAGE_DIR = Path(_storage_dir).resolve()
 STORAGE_DIR.mkdir(parents=True, exist_ok=True)

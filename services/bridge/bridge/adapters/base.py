@@ -8,8 +8,8 @@ Conventions:
 - Time is reported as naive UTC datetime.
 - platform_msg_id must be unique within (thread, direction). Studio
   de-duplicates on /api/bridge/incoming using external_id='live:<msg_id>'.
-- Adapters do NOT implement typing-speed delay. The runtime sleeps between
-  outbound chunks and only then calls send_text().
+- Bridge is a pure forwarder: no pacing, no delay. Studio controls when each
+  message becomes eligible for delivery.
 - One adapter instance owns one inbox. The runtime tags messages with
   inbox_id when forwarding to Studio (the adapter doesn't need to know its
   own inbox_id).

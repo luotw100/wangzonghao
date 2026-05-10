@@ -9,7 +9,6 @@ from studio.enums import (
     ContactStatus,
     MessageRole,
     OutboundAckResult,
-    OutboundMessageType,
     PersonaStatus,
 )
 
@@ -114,14 +113,9 @@ class DistillJobCreate(StrictModel):
 
 # --- Manual outbound seed (debug / pre-LLM-brain) ---
 
-class OutboundChunk(StrictModel):
-    content: str
-    msg_type: OutboundMessageType
-
-
 class OutboundCreate(StrictModel):
     contact_id: str
-    chunks: list[OutboundChunk]
+    content: str
 
 
 # --- Bridge protocol (Bridge daemon ↔ Studio) ---

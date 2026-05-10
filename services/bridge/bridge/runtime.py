@@ -7,6 +7,10 @@ pairs. Studio owns the inbox_id (auto-creating an Inbox if it's the first
 time we've seen this self_id under this account) and returns the resolved
 mapping. The daemon then opens an inbound stream per inbox and shares one
 outbound long-poll across them.
+
+Bridge is a pure message forwarder: receive from Studio, send to platform.
+No pacing, no delay — Studio controls when each message becomes eligible
+via the send_after field on OutboundMessage.
 """
 
 from __future__ import annotations
@@ -21,13 +25,6 @@ from bridge.adapters.base import Adapter, IncomingMessage, build_adapter
 from bridge.studio_client import StudioClient
 
 logger = logging.getLogger(__name__)
-
-
-# Outbound pacing
-TYPING_CHARS_PER_SECOND = 6.0
-TYPING_MIN_DELAY = 1.0
-TYPING_MAX_DELAY = 12.0
-THINK_DELAY = 1.5
 
 HEARTBEAT_INTERVAL = 15.0
 INBOUND_BATCH_LINGER = 0.4
@@ -292,7 +289,7 @@ class BridgeRuntime:
         outbound_id = int(item["id"])
         inbox_id = str(item.get("inbox_id"))
         platform_peer_id = item.get("peer_platform_id")
-        chunks = item.get("chunks", [])
+        content = str(item.get("content", "")).strip()
 
         entry = self._adapters.get(inbox_id)
         if entry is None:
@@ -307,18 +304,14 @@ class BridgeRuntime:
                 reason="missing peer_platform_id",
             )
             return
+        if not content:
+            await self._studio.ack_outbound(
+                outbound_id, result="sent",
+            )
+            return
 
-        first = True
-        last_msg_id: Optional[str] = None
         try:
-            for chunk in chunks:
-                content = str(chunk.get("content", "")).strip()
-                if not content:
-                    continue
-                delay = self._chunk_delay(content, is_first=first)
-                first = False
-                await asyncio.sleep(delay)
-                last_msg_id = await entry.adapter.send_text(platform_peer_id, content)
+            msg_id = await entry.adapter.send_text(platform_peer_id, content)
         except Exception as exc:
             logger.error("outbound %d send failed (inbox=%s): %s", outbound_id, inbox_id, exc)
             await self._studio.ack_outbound(
@@ -327,16 +320,8 @@ class BridgeRuntime:
             return
 
         await self._studio.ack_outbound(
-            outbound_id, result="sent", platform_msg_id=last_msg_id,
+            outbound_id, result="sent", platform_msg_id=msg_id,
         )
-
-    @staticmethod
-    def _chunk_delay(content: str, *, is_first: bool) -> float:
-        n = max(1, len(content))
-        delay = n / TYPING_CHARS_PER_SECOND
-        if is_first:
-            delay += THINK_DELAY
-        return max(TYPING_MIN_DELAY, min(TYPING_MAX_DELAY, delay))
 
 
 def _redact(raw: Dict[str, str]) -> Dict[str, str]:

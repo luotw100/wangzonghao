@@ -74,7 +74,3 @@ class LlmPurpose(StrEnum):
 class OutboundAckResult(StrEnum):
     SENT = "sent"
     FAILED = "failed"
-
-
-class OutboundMessageType(StrEnum):
-    TEXT = "text"

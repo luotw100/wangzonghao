@@ -115,7 +115,7 @@ def s_outbound(o: OutboundMessage, *, peer_platform_id: Optional[str] = None) ->
     return {
         "id": o.id, "inbox_id": o.inbox_id, "contact_id": o.contact_id,
         "peer_platform_id": peer_platform_id,
-        "chunks": o.chunks, "status": o.status, "created_at": o.created_at,
+        "content": o.content, "status": o.status, "created_at": o.created_at,
         "delivered_at": o.delivered_at, "failed_reason": o.failed_reason,
     }
 

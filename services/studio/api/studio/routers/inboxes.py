@@ -92,10 +92,12 @@ def seed_outbound(inbox_id: str, payload: OutboundCreate, db: Annotated[Session,
     contact = get_account_contact(db, account, payload.contact_id)
     if contact.inbox_id != inbox.id:
         raise HTTPException(status_code=400, detail="Contact 不属于该 inbox")
+    now_ts = utc_now()
     o = OutboundMessage(
         inbox_id=inbox.id, contact_id=contact.id,
-        chunks=[c.model_dump() for c in payload.chunks],
-        status=OutboundStatus.PENDING, delivered_at=None, failed_reason=None, created_at=utc_now(),
+        content=payload.content,
+        send_after=now_ts,
+        status=OutboundStatus.PENDING, delivered_at=None, failed_reason=None, created_at=now_ts,
     )
     db.add(o); db.commit(); db.refresh(o)
     return s_outbound(o, peer_platform_id=contact.peer_platform_id)

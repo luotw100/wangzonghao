@@ -259,6 +259,7 @@ async def bridge_outbound(
                         OutboundMessage.inbox_id.in_(inbox_ids),
                         OutboundMessage.id > cursor,
                         OutboundMessage.status == OutboundStatus.PENDING,
+                        OutboundMessage.send_after <= utc_now(),
                     )
                     .order_by(OutboundMessage.id.asc())
                     .limit(50)

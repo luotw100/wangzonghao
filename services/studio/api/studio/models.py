@@ -236,12 +236,14 @@ class OutboundMessage(Base):
     __tablename__ = "outbound_messages"
     __table_args__ = (
         Index("idx_outbound_inbox_id", "inbox_id", "id"),
+        Index("idx_outbound_send_after", "status", "send_after"),
     )
 
     id            = Column(Integer, primary_key=True, autoincrement=True)
     inbox_id      = Column(String, ForeignKey("inboxes.id"), nullable=False, index=True)
     contact_id    = Column(String, ForeignKey("contacts.id"), nullable=False, index=True)
-    chunks        = Column(JSON, nullable=False)
+    content       = Column(Text, nullable=False)
+    send_after    = Column(DateTime, nullable=False)
     status        = Column(String, nullable=False)             # 'pending'|'delivered'|'failed'|'canceled'
     delivered_at  = Column(DateTime, nullable=True)
     failed_reason = Column(Text, nullable=True)

@@ -5,7 +5,7 @@ Two scanners run side-by-side:
   rolling fold pipeline.
 - ReplyScanner: picks up Contacts with pending_reply=True, gates them
   through studio.reply._decide(), and (if all gates pass + quiet-period
-  elapsed) calls the LLM and queues outbound chunks.
+  elapsed) calls the LLM and queues outbound messages.
 
 Both scanners are simple poll loops (5s tick); concurrency is bounded by
 in-flight task dictionaries to avoid double-processing the same row.

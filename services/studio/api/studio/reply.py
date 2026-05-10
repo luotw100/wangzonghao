@@ -1,18 +1,19 @@
 """LLM reply brain.
 
 Triggered by the ReplyScanner in the worker: for each Contact with
-pending_reply=True, builds prompt → calls LLM → writes outbound chunks →
+pending_reply=True, builds prompt → calls LLM → writes outbound messages →
 clears pending_reply.
 
 Design:
 - All gating is recomputed at reply time inside one DB session, so a stale
-  pending_reply flag (e.g. left over after autoreply was disabled) is a
-  no-op rather than a leak.
+  pending_reply flag (e.g. left over after autoreply was disabled) is a no-op
+  rather than a leak.
 - A short quiet-period suppresses replies while the counterpart is still
   typing: if the latest counterpart message arrived less than QUIET_SECONDS
   ago, defer this round (the flag stays true; we'll be back).
-- chunks come from the LLM as a JSON array of strings; the model decides
-  pacing. Bridge daemon implements typing delay client-side.
+- Each LLM response chunk becomes a separate OutboundMessage with a
+  send_after timestamp. Studio controls pacing: Bridge simply forwards
+  messages as soon as they become eligible.
 """
 
 from __future__ import annotations
@@ -31,7 +32,6 @@ from studio.enums import (
     ContactStatus,
     LlmPurpose,
     MessageRole,
-    OutboundMessageType,
     OutboundStatus,
 )
 from studio.models import (
@@ -52,6 +52,14 @@ logger = logging.getLogger(__name__)
 QUIET_SECONDS = 6
 # How many recent messages to include in the prompt history dump.
 HISTORY_TAIL = 60
+
+# Pacing: Studio schedules each chunk's send_after so Bridge just forwards
+# immediately when it becomes eligible. First chunk gets a "think" delay;
+# subsequent chunks are spaced by simulated typing speed.
+TYPING_CHARS_PER_SECOND = 6.0
+TYPING_MIN_DELAY = 1.0
+TYPING_MAX_DELAY = 12.0
+THINK_DELAY = 1.5
 
 
 SYSTEM_INSTRUCTION = """\
@@ -285,17 +293,26 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
             return "contact gone"
 
         if chunks:
-            ob = OutboundMessage(
-                inbox_id=ctx.inbox_id,
-                contact_id=ctx.contact_id,
-                chunks=[{"content": ch, "msg_type": OutboundMessageType.TEXT} for ch in chunks],
-                status=OutboundStatus.PENDING,
-                delivered_at=None,
-                failed_reason=None,
-                created_at=utc_now(),
-            )
-            db.add(ob)
-            status = f"queued {len(chunks)} chunk(s)"
+            now_ts = utc_now()
+            send_after = now_ts + timedelta(seconds=THINK_DELAY)
+            for i, ch in enumerate(chunks):
+                if i > 0:
+                    prev_len = max(1, len(chunks[i - 1]))
+                    delay = prev_len / TYPING_CHARS_PER_SECOND
+                    delay = max(TYPING_MIN_DELAY, min(TYPING_MAX_DELAY, delay))
+                    send_after = send_after + timedelta(seconds=delay)
+                ob = OutboundMessage(
+                    inbox_id=ctx.inbox_id,
+                    contact_id=ctx.contact_id,
+                    content=ch,
+                    send_after=send_after,
+                    status=OutboundStatus.PENDING,
+                    delivered_at=None,
+                    failed_reason=None,
+                    created_at=now_ts,
+                )
+                db.add(ob)
+            status = f"queued {len(chunks)} message(s)"
         else:
             status = "model returned empty (intentional silence)"
 

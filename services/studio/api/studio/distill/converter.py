@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections import Counter
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 type Message = dict[str, Any]
@@ -62,13 +62,13 @@ def should_keep(msg: Message) -> bool:
 
 
 def message_timestamp(msg: Message) -> datetime:
-    """Return the message timestamp as a naive datetime (UTC-equivalent local seconds)."""
+    """Return the message timestamp as a timezone-aware UTC datetime."""
     create_time = msg.get("createTime")
     if create_time is not None:
-        return datetime.fromtimestamp(create_time)
+        return datetime.fromtimestamp(create_time, tz=timezone.utc)
     formatted = msg.get("formattedTime", "")
     if formatted:
-        return datetime.strptime(formatted[:19], "%Y-%m-%d %H:%M:%S")
+        return datetime.strptime(formatted[:19], "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
     raise ValueError("消息缺少时间戳（createTime / formattedTime 都没有）")
 
 

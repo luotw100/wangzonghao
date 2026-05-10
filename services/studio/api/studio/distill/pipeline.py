@@ -18,7 +18,8 @@ from typing import Callable, Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session as ORMSession
 
 from studio.clients import ProviderClient
-from studio.db import SessionLocal, ensure_database, utc_now
+from studio.db import SessionLocal, utc_now
+from studio.migrate import run_migrations
 from studio.distill.packer import (
     TextMessage,
     Window,
@@ -59,7 +60,7 @@ class _DistillCtx:
     persona_id: str
     persona_name: str
     inbox_id: str
-    inbox_self_wxid: Optional[str]
+    inbox_platform_self_id: Optional[str]
     base_url: str
     api_key: str
     model: str
@@ -90,7 +91,7 @@ def _load_ctx(
         persona_id=persona.id,
         persona_name=persona.name,
         inbox_id=inbox.id,
-        inbox_self_wxid=inbox.platform_self_id,
+        inbox_platform_self_id=inbox.platform_self_id,
         base_url=pc.base_url,
         api_key=pc.api_key,
         model=pc.default_model,
@@ -135,7 +136,7 @@ def _build_user_message(
     return (
         f"```yaml\n"
         f"character_name: {json.dumps(ctx.persona_name, ensure_ascii=False)}\n"
-        f"character_wxid: {json.dumps(ctx.inbox_self_wxid or '', ensure_ascii=False)}\n"
+        f"character_wxid: {json.dumps(ctx.inbox_platform_self_id or '', ensure_ascii=False)}\n"
         f"contact_name: {json.dumps(contact.display_name, ensure_ascii=False)}\n"
         f"contact_wxid: {json.dumps(contact.peer_platform_id or '', ensure_ascii=False)}\n"
         f"window: {window.window_id}/{total_windows}\n"
@@ -363,7 +364,7 @@ def main() -> None:
     parser.add_argument("--request-timeout", type=float, required=True)
     args = parser.parse_args()
 
-    ensure_database()
+    run_migrations()
 
     def progress_cb(state: Dict[str, int]) -> None:
         print(f"  progress: {state}")

@@ -2,7 +2,7 @@
 
 ## 入口文件
 
-- FastAPI app：`studio/main.py`（薄入口，仅 mount 各 router）。
+- FastAPI app：`studio/main.py`（薄入口，lifespan 中执行 `run_migrations()`，mount 各 router）。
 - DB：`studio/db.py`。
 - Models：`studio/models.py`。
 - Schemas：`studio/schemas.py`。
@@ -11,17 +11,20 @@
 - CLI：`studio/cli.py`。
 - Serializers：`studio/serializers.py`。
 - 依赖：`studio/deps.py`。
+- Migration：`studio/migrate.py`（封装 Alembic `upgrade head`）。
 - Routers：`studio/routers/`（auth, accounts, providers, personas, bridges, inboxes, contacts, archives, bridge_protocol）。
 
 ## DB 初始化
 
 `db.py` 当前行为：
 
-- 读取 `STUDIO_STORAGE_DIR`，缺失时报错。
-- SQLite 文件是 `${STUDIO_STORAGE_DIR}/studio.db`。
-- 暴露 `Base`、`SessionLocal`、`get_db()`、`ensure_database()`、`utc_now()`。
+- 读取 `DATABASE_URL` 环境变量，缺失时报错。
+- PostgreSQL 连接池：`pool_size=10, max_overflow=20`。
+- 暴露 `Base`、`SessionLocal`、`get_db()`、`utc_now()`。
+- `STORAGE_DIR` 从 `STUDIO_STORAGE_DIR` 环境变量读取，默认 `/app/storage`。
+- `utc_now()` 返回时区感知的 UTC datetime。
 
-`main.py` import 时调用 `ensure_database()`。
+`main.py` 通过 FastAPI lifespan 在 startup 时调用 `run_migrations()`（`studio/migrate.py`），执行 `alembic upgrade head`。Worker 和 CLI 在各自的入口也调用 `run_migrations()`。
 
 ## Auth
 
@@ -174,7 +177,7 @@ Inbox 仅由 Bridge handshake 自动 upsert 创建，没有 `POST /api/inboxes` 
 Upload 当前接收 multipart fields：
 
 - `inbox_id`
-- `self_wxid`
+- `platform_self_id`
 - `file`
 
 处理流程：写临时文件 → 调 `ingest_archive()` → ValueError 转 400 → 删除临时文件。

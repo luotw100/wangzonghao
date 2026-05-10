@@ -95,7 +95,7 @@ def s_message(m: Message) -> Dict[str, Any]:
 def s_archive(a: Archive) -> Dict[str, Any]:
     return {
         "id": a.id, "account_id": a.account_id, "inbox_id": a.inbox_id,
-        "filename": a.filename, "self_wxid": a.self_wxid,
+        "filename": a.filename, "platform_self_id": a.platform_self_id,
         "message_count": a.message_count, "contact_count": a.contact_count,
         "uploaded_at": a.uploaded_at,
     }

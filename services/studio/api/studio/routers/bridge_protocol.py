@@ -2,6 +2,7 @@
 
 import asyncio
 import time
+from datetime import timezone
 from typing import Annotated, Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -218,7 +219,7 @@ def bridge_incoming(payload: BridgeIncomingBatch, db: Annotated[Session, Depends
             deduped += 1
             continue
 
-        ts = m.sent_at.replace(tzinfo=None) if m.sent_at.tzinfo else m.sent_at
+        ts = m.sent_at if m.sent_at.tzinfo else m.sent_at.replace(tzinfo=timezone.utc)
         db.add(Message(
             contact_id=contact.id, archive_id=None,
             external_id=external_id, source=MessageSource.LIVE,

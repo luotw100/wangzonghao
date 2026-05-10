@@ -2,7 +2,7 @@
 
 ## Compose
 
-`services/studio/compose.yaml` 当前定义三个 service 和一个 volume。
+`services/studio/compose.yaml` 当前定义四个 service 和两个 volume。
 
 ### `studio-web`
 
@@ -15,22 +15,32 @@
 ### `studio-api`
 
 - build context：`./api`。
-- env：`STUDIO_STORAGE_DIR=/app/storage`。
+- env：`STUDIO_STORAGE_DIR=/app/storage`、`DATABASE_URL=postgresql://studio:studio@studio-db/studio`。
 - mount `studio-storage:/app/storage`。
+- depends on `studio-db`（condition: `service_healthy`）。
 - restart：`unless-stopped`。
 
 ### `studio-worker`
 
 - build context：`./api`。
 - command：`uv run python -m studio.worker --request-timeout 120`。
-- env：`STUDIO_STORAGE_DIR=/app/storage`。
+- env：`STUDIO_STORAGE_DIR=/app/storage`、`DATABASE_URL=postgresql://studio:studio@studio-db/studio`。
 - mount 同一个 `studio-storage`。
 - depends on `studio-api`。
 - restart：`unless-stopped`。
 
-### Volume
+### `studio-db`
 
-- `studio-storage` 保存 `studio.db`、uploads 和共享 storage 文件。
+- image：`postgres:16-alpine`。
+- env：`POSTGRES_USER=studio`、`POSTGRES_PASSWORD=studio`、`POSTGRES_DB=studio`。
+- mount `studio-pgdata:/var/lib/postgresql/data`。
+- healthcheck：`pg_isready -U studio`。
+- restart：`unless-stopped`。
+
+### Volumes
+
+- `studio-storage`：保存 uploads 和共享 storage 文件。
+- `studio-pgdata`：PostgreSQL 数据目录。
 
 ## Nginx
 
@@ -52,6 +62,7 @@
 - 安装 `uv`。
 - copy `pyproject.toml` 和 `uv.lock`。
 - 执行 `uv sync --frozen --no-dev --no-install-project`。
+- copy `alembic.ini`。
 - copy `studio/` package。
 - 创建 `/app/storage/uploads`。
 - command：`uv run uvicorn studio.main:app --host 0.0.0.0 --port 23457`。
@@ -72,13 +83,18 @@
 
 ## 必要环境变量
 
-`STUDIO_STORAGE_DIR` 必须存在。缺失时 `studio/db.py` 会直接抛错。
+`DATABASE_URL` 和 `STUDIO_STORAGE_DIR` 都必须存在。缺失时 `studio/db.py` 会直接抛错。
+
+## Database
+
+Studio 使用 PostgreSQL，由 Alembic 管理 schema 迁移。启动时通过 FastAPI lifespan 调用 `run_migrations()`（`studio/migrate.py`），自动执行 `alembic upgrade head`。Worker 和 CLI 同样在入口调用 `run_migrations()`。
+
+Schema 变更流程：修改 `models.py` → 生成新的 Alembic migration → `alembic upgrade head`。
 
 ## Storage paths
 
-- SQLite DB：`${STUDIO_STORAGE_DIR}/studio.db`。
 - Uploaded archives：`${STUDIO_STORAGE_DIR}/uploads/{account_id}/{archive_id}.json`。
 
 ## 进程耦合
 
-`studio-api` 和 `studio-worker` 当前共享一个 SQLite DB volume。
+`studio-api` 和 `studio-worker` 共享 PostgreSQL 数据库，通过 `studio-db` 服务访问。

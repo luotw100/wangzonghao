@@ -2,7 +2,7 @@ import argparse
 import asyncio
 import logging
 
-from studio.db import ensure_database
+from studio.migrate import run_migrations
 from studio.runtime import StudioRuntime, RuntimeOptions
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -27,7 +27,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def main():
-    ensure_database()
+    run_migrations()
     args = parse_args()
     runtime_options = RuntimeOptions(request_timeout=args.request_timeout)
     try:

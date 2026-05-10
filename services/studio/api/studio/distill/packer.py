@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 
 SESSION_GAP_SECONDS = 30 * 60  # 30 minutes
 WINDOW_TOKEN_LIMIT = 40_000
@@ -94,7 +94,7 @@ def parse_text_lines(lines: list[str]) -> list[TextMessage]:
         sender = rest[:colon_pos]
         content = rest[colon_pos + 2:]
         try:
-            timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S")
+            timestamp = datetime.strptime(timestamp_str, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
         except ValueError:
             continue
         messages.append(TextMessage(timestamp=timestamp, sender=sender, content=content, raw_line=line))

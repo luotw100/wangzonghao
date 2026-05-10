@@ -13,6 +13,7 @@ RUN pip install --no-cache-dir uv -i http://mirrors.aliyun.com/pypi/simple --tru
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
+COPY alembic.ini ./
 COPY studio ./studio
 
 RUN mkdir -p /app/storage/uploads

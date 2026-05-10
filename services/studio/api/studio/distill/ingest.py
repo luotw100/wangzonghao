@@ -51,13 +51,13 @@ def _persist_upload(account_id: str, archive_id: str, src_path: Path) -> Path:
     return dest_path
 
 
-def _identify_counterpart(name_map: Dict[str, str], self_wxid: str) -> str:
-    if self_wxid not in name_map:
+def _identify_counterpart(name_map: Dict[str, str], platform_self_id: str) -> str:
+    if platform_self_id not in name_map:
         raise ValueError(
-            f"指定的 self_wxid '{self_wxid}' 不在聊天记录中。"
+            f"指定的 platform_self_id '{platform_self_id}' 不在聊天记录中。"
             f"可见 wxid: {sorted(name_map.keys())}"
         )
-    counterparts = [w for w in name_map if w != self_wxid]
+    counterparts = [w for w in name_map if w != platform_self_id]
     if len(counterparts) != 1:
         raise ValueError(
             f"暂只支持 1 对 1 聊天，当前对方有 {len(counterparts)} 人: {counterparts}"
@@ -102,7 +102,7 @@ async def ingest_archive(
     db: ORMSession,
     account_id: str,
     inbox: Inbox,
-    self_wxid: str,
+    platform_self_id: str,
     src_path: Path,
     original_filename: str,
 ) -> Archive:
@@ -114,7 +114,7 @@ async def ingest_archive(
         raise ValueError("聊天记录为空")
 
     name_map = build_name_map([raw_messages])
-    counterpart_wxid = _identify_counterpart(name_map, self_wxid)
+    counterpart_wxid = _identify_counterpart(name_map, platform_self_id)
     counterpart_name = name_map[counterpart_wxid]
 
     hash_hex = file_hash(src_path)
@@ -148,7 +148,7 @@ async def ingest_archive(
         except ValueError:
             continue
 
-        is_self = wxid == self_wxid
+        is_self = wxid == platform_self_id
         sender_name = name_map.get(wxid, wxid)
         external_id = f"archive:{archive_id}:{idx}"
         db.add(Message(
@@ -168,7 +168,7 @@ async def ingest_archive(
     archive = Archive(
         id=archive_id, account_id=account_id, inbox_id=inbox.id,
         filename=original_filename, file_path=str(dest_path), file_hash=hash_hex,
-        self_wxid=self_wxid, message_count=msg_count, contact_count=1,
+        platform_self_id=platform_self_id, message_count=msg_count, contact_count=1,
         uploaded_at=now,
     )
     db.add(archive)

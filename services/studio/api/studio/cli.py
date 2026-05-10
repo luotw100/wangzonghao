@@ -3,13 +3,14 @@ from uuid import uuid4
 
 from studio.auth_utils import hash_password
 from studio.cli_render import danger, ok, render_table, warn
-from studio.db import ensure_database, get_db, utc_now
+from studio.db import get_db, utc_now
 from studio.enums import AccountRole, AccountStatus
+from studio.migrate import run_migrations
 from studio.models import Account
 
 
 def create_account(args: argparse.Namespace) -> None:
-    ensure_database()
+    run_migrations()
     db = next(get_db())
     try:
         existing = db.query(Account).filter(Account.username == args.username).first()
@@ -40,7 +41,7 @@ def create_account(args: argparse.Namespace) -> None:
 
 
 def list_accounts(_: argparse.Namespace) -> None:
-    ensure_database()
+    run_migrations()
     db = next(get_db())
     try:
         rows = []
@@ -54,7 +55,7 @@ def list_accounts(_: argparse.Namespace) -> None:
 
 
 def reset_password(args: argparse.Namespace) -> None:
-    ensure_database()
+    run_migrations()
     db = next(get_db())
     try:
         account = db.query(Account).filter(Account.username == args.username).first()
@@ -69,7 +70,7 @@ def reset_password(args: argparse.Namespace) -> None:
 
 
 def set_role(args: argparse.Namespace) -> None:
-    ensure_database()
+    run_migrations()
     db = next(get_db())
     try:
         account = db.query(Account).filter(Account.username == args.username).first()

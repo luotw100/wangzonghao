@@ -15,8 +15,12 @@ services:
       context: ./api
     environment:
       STUDIO_STORAGE_DIR: /app/storage
+      DATABASE_URL: postgresql://studio:studio@studio-db/studio
     volumes:
       - studio-storage:/app/storage
+    depends_on:
+      studio-db:
+        condition: service_healthy
     restart: unless-stopped
 
   studio-worker:
@@ -25,11 +29,29 @@ services:
     command: ["uv", "run", "python", "-m", "studio.worker", "--request-timeout", "120"]
     environment:
       STUDIO_STORAGE_DIR: /app/storage
+      DATABASE_URL: postgresql://studio:studio@studio-db/studio
     volumes:
       - studio-storage:/app/storage
     depends_on:
-      - studio-api
+      studio-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  studio-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: studio
+      POSTGRES_PASSWORD: studio
+      POSTGRES_DB: studio
+    volumes:
+      - studio-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U studio"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
     restart: unless-stopped
 
 volumes:
   studio-storage:
+  studio-pgdata:

@@ -8,19 +8,23 @@
 - Schemas：`services/chat/api/chat/schemas.py`
 - Auth helpers：`services/chat/api/chat/auth_utils.py`
 - CLI：`services/chat/api/chat/cli.py`
+- Migration：`services/chat/api/chat/migrate.py`
 
 ## DB 初始化
 
 `db.py` 当前行为：
 
-- 读取 `CHAT_STORAGE_DIR`，缺失时报错。
-- 创建 `STORAGE_DIR`。
-- SQLite 文件是 `${CHAT_STORAGE_DIR}/chat.db`。
-- 暴露 `Base`、`SessionLocal`、`get_db()`、`ensure_database()`、`utc_now()`。
+- 读取 `DATABASE_URL` 环境变量，缺失时报错。
+- PostgreSQL 连接池：`pool_size=10, max_overflow=20`。
+- 暴露 `Base`、`SessionLocal`、`get_db()`、`utc_now()`。
+- `CHAT_STORAGE_DIR` 从环境变量读取，默认 `/app/storage`。
+- `utc_now()` 返回时区感知的 UTC datetime。
 
-`main.py` import 时调用 `ensure_database()`。API 不通过 storage 目录提供静态文件服务。
+`main.py` 通过 FastAPI lifespan 在 startup 时调用 `run_migrations()`（`chat/migrate.py`），自动执行 `alembic upgrade head`。CLI 在入口也调用 `run_migrations()`。
 
 ## Models
+
+所有 DateTime 列使用 `timezone=True`（存储为 `timestamptz`）。所有自增主键使用 `BigInteger`。枚举字段使用 `CheckConstraint` 约束。所有 String 列有明确长度限制。
 
 | 表 | Model | 当前作用 |
 | --- | --- | --- |
@@ -46,7 +50,9 @@ Account
 - `Contact` 唯一约束：`(account_id, platform_contact_id)`。
 - `Conversation` 唯一约束：`(account_id, contact_id)`。
 - Contact / Conversation 通过 `is_deleted`、`deleted_at` 软删除。
-- `Message.sender_type` 是 `self | contact`。
+- `Message.sender_type` 是 `self | contact`，有 CHECK 约束。
+- `Message.source` 是 `live | import`，有 CHECK 约束。
+- `Message.msg_type` 是 `text`，有 CHECK 约束。
 - Bridge 的 ChatAdapter 会把 `sender_type='contact'` 映射为 Studio 的 `role='counterpart'`。
 - Chat models 当前不使用 SQLAlchemy column defaults；创建记录时由应用层显式写入状态、软删除标记和时间戳。
 - Chat 代码使用 `chat/enums.py` 中的 StrEnum 表达 status、sender_type、message type、message source 和 command status。
@@ -114,7 +120,7 @@ Messages：
 ## 关键 helper
 
 - `new_id(prefix, size)`：生成 id。
-- `normalize_timestamp()`：去掉 timezone。
+- `normalize_timestamp()`：确保 datetime 带时区信息；naive datetime 补 UTC。
 - `get_contact_or_404()` / `get_conversation_or_404()`：按 account 校验归属。
 - `get_or_create_direct_conversation()`：恢复软删除会话或创建一对一会话。
 - `add_message()`：校验 sender_type，写 Message，并更新 conversation timestamp。

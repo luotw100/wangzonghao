@@ -5,16 +5,11 @@ from pathlib import Path
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
-storage_dir_value = os.environ.get("CHAT_STORAGE_DIR")
-if not storage_dir_value:
-    raise RuntimeError("CHAT_STORAGE_DIR is required")
+database_url = os.environ.get("DATABASE_URL")
+if not database_url:
+    raise RuntimeError("DATABASE_URL is required")
 
-STORAGE_DIR = Path(storage_dir_value).resolve()
-STORAGE_DIR.mkdir(parents=True, exist_ok=True)
-DB_PATH = STORAGE_DIR / "chat.db"
-DATABASE_URL = f"sqlite:///{DB_PATH}"
-
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+engine = create_engine(database_url, pool_size=10, max_overflow=20)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -23,7 +18,7 @@ class Base(DeclarativeBase):
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(timezone.utc)
 
 
 def get_db():
@@ -34,7 +29,5 @@ def get_db():
         db.close()
 
 
-def ensure_database():
-    from chat import models  # noqa: F401
-
-    Base.metadata.create_all(bind=engine)
+STORAGE_DIR = Path(os.environ.get("CHAT_STORAGE_DIR", "/app/storage")).resolve()
+STORAGE_DIR.mkdir(parents=True, exist_ok=True)

@@ -158,10 +158,10 @@ LLM 调用异常时写 `LlmLog(response_raw='ERROR: ...')`，当前不清 `pendi
 - 上传文件保存到 `${STUDIO_STORAGE_DIR}/uploads/{account_id}/{archive_id}.json`。
 - `file_hash()` 使用 sha256 前 16 位。
 - 按 `(account_id, file_hash)` 拒绝重复 archive。
-- `_identify_counterpart()` 要求 `self_wxid` 存在，并且只有一个 counterpart。
+- `_identify_counterpart()` 要求 `platform_self_id` 存在，并且只有一个 counterpart。
 - `_ensure_contact()` 在 Inbox 下创建或复用 Contact。
 - Message `external_id = archive:{archive_id}:{idx}`。
-- sender wxid 等于 `self_wxid` 时 role 为 `self`，否则 `counterpart`。
+- sender wxid 等于 `platform_self_id` 时 role 为 `self`，否则 `counterpart`。
 - 只插入 `should_keep()` 允许的消息。
 
 ## Distill converter

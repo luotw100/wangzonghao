@@ -31,7 +31,7 @@ def list_archives(db: Annotated[Session, Depends(get_db)], account: CurrentAccou
 @router.post("/api/archives")
 async def upload_archive(
     db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep,
-    inbox_id: str = Form(...), self_wxid: str = Form(...), file: UploadFile = File(...),
+    inbox_id: str = Form(...), platform_self_id: str = Form(...), file: UploadFile = File(...),
 ):
     import tempfile
     inbox = get_account_inbox(db, account, inbox_id)
@@ -42,7 +42,7 @@ async def upload_archive(
     try:
         archive = await ingest_archive(
             db=db, account_id=inbox.account_id, inbox=inbox,
-            self_wxid=self_wxid, src_path=tmp_path,
+            platform_self_id=platform_self_id, src_path=tmp_path,
             original_filename=file.filename or tmp_path.name,
         )
     except ValueError as exc:

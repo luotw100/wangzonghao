@@ -2,8 +2,9 @@ import argparse
 
 from chat.auth_utils import hash_password
 from chat.cli_render import danger, ok, render_table
-from chat.db import ensure_database, get_db, utc_now
+from chat.db import get_db, utc_now
 from chat.enums import AccountStatus
+from chat.migrate import run_migrations
 from chat.models import Account
 
 
@@ -13,7 +14,7 @@ def base_account_id(username: str) -> str:
 
 
 def create_account(args: argparse.Namespace) -> None:
-    ensure_database()
+    run_migrations()
     db = next(get_db())
     try:
         existing = db.query(Account).filter(Account.username == args.username).first()
@@ -50,7 +51,7 @@ def create_account(args: argparse.Namespace) -> None:
 
 
 def list_accounts(_: argparse.Namespace) -> None:
-    ensure_database()
+    run_migrations()
     db = next(get_db())
     try:
         rows = []
@@ -63,7 +64,7 @@ def list_accounts(_: argparse.Namespace) -> None:
 
 
 def reset_password(args: argparse.Namespace) -> None:
-    ensure_database()
+    run_migrations()
     db = next(get_db())
     try:
         account = db.query(Account).filter(Account.username == args.username).first()

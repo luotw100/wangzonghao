@@ -1,15 +1,16 @@
 import asyncio
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
 from chat.auth_utils import hash_token, new_session_token, verify_password
-from chat.db import SessionLocal, ensure_database, get_db, utc_now
+from chat.db import SessionLocal, get_db, utc_now
 from chat.enums import AccountStatus, CommandStatus, MessageSource, SenderType
+from chat.migrate import run_migrations
 from chat.models import (
     Account,
     AuthSession,
@@ -34,9 +35,16 @@ from chat.schemas import (
     StatusResponse,
 )
 
-ensure_database()
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="Laborster Chat")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    run_migrations()
+    yield
+
+
+app = FastAPI(title="Laborster Chat", lifespan=lifespan)
 
 DbDep = Annotated[Session, Depends(get_db)]
 
@@ -46,7 +54,9 @@ def new_id(prefix: str, size: int = 10) -> str:
 
 
 def normalize_timestamp(value: datetime) -> datetime:
-    return value.replace(tzinfo=None) if value.tzinfo else value
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value
 
 
 def get_auth_session(

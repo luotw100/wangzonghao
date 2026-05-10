@@ -1,9 +1,21 @@
 """Laborster Studio API — thin app that mounts all routers."""
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
-from studio.db import ensure_database
-from studio.routers import (
+from studio.migrate import run_migrations
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    run_migrations()
+    yield
+
+
+app = FastAPI(title="Laborster Studio API", lifespan=lifespan)
+
+from studio.routers import (  # noqa: E402
     accounts,
     archives,
     auth,
@@ -14,10 +26,6 @@ from studio.routers import (
     personas,
     providers,
 )
-
-ensure_database()
-
-app = FastAPI(title="Laborster Studio API")
 
 app.include_router(auth.router)
 app.include_router(accounts.router)

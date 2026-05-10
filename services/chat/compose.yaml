@@ -16,9 +16,29 @@ services:
       context: ./api
     environment:
       CHAT_STORAGE_DIR: /app/storage
+      DATABASE_URL: postgresql://chat:chat@chat-db/chat
     volumes:
       - chat-storage:/app/storage
+    depends_on:
+      chat-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  chat-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: chat
+      POSTGRES_PASSWORD: chat
+      POSTGRES_DB: chat
+    volumes:
+      - chat-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chat"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
     restart: unless-stopped
 
 volumes:
   chat-storage:
+  chat-pgdata:

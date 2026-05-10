@@ -43,9 +43,10 @@ Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Cha
 5. **Inbox 是平台身份。** Inbox 表示一个平台账号/身份，并给新 Contact 提供默认 Persona 和可选 Provider override。
 6. **Bridge 是本地 daemon 实例。** Bridge 行由 `(account_id, hostname)` 标识，可服务多个 Inbox。
 7. **Outbound 队列是数据库表。** `outbound_messages` 是 Studio → Bridge 的工作队列；Bridge long-poll 并维护 cursor。
-8. **Chat/Studio storage env 必须显式提供。** 缺失 `CHAT_STORAGE_DIR` 或 `STUDIO_STORAGE_DIR` 会直接报错。
+8. **Chat/Studio 数据库环境变量必须显式提供。** 缺失 `DATABASE_URL` 或 `STUDIO_STORAGE_DIR` / `CHAT_STORAGE_DIR` 会直接报错。
 9. **Chat/Studio models 不用 SQLAlchemy column default。** 当前设计要求插入时显式写入字段值。
 10. **Studio Provider 是管理员维护的全局配置。** 普通用户 UI 不展示 Provider；reply/distill 解析顺序是 Contact override → Inbox override → 全局默认 Provider。
+11. **Studio 和 Chat 使用 PostgreSQL + Alembic 管理 schema。** 启动时自动执行 `run_migrations()`。
 
 ## 文档地图
 

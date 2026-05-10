@@ -67,13 +67,13 @@ docker compose run --rm bridge \
 
 Docker 运行和本地裸跑是两套存储：
 
-| Service | Docker storage | 本地 env |
+| Service | Docker env | 本地 env |
 | --- | --- | --- |
-| Chat | volume `chat-storage` | `CHAT_STORAGE_DIR` |
-| Studio | volume `studio-storage` | `STUDIO_STORAGE_DIR` |
+| Chat | `DATABASE_URL` + `CHAT_STORAGE_DIR` | `DATABASE_URL` + `CHAT_STORAGE_DIR` |
+| Studio | `DATABASE_URL` + `STUDIO_STORAGE_DIR` | `DATABASE_URL` + `STUDIO_STORAGE_DIR` |
 | Bridge | 无持久存储 | CLI args |
 
-在本地 DB 创建的账号不会出现在 Docker volume DB 中。
+数据库由 PostgreSQL 管理（Compose 中各服务有独立的 `*-db` 容器），Schema 由 Alembic 迁移。
 
 ## Account management
 

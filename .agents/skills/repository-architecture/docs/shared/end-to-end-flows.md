@@ -144,7 +144,7 @@ adapter 缺失、peer id 缺失或平台发送异常时，Bridge ack `failed` �
 ```text
 Studio web archive upload API
   → 选择 Inbox
-  → 输入 self_wxid
+  → 输入 platform_self_id
   → 上传 WeFlow JSON
   → POST /api/archives multipart
 
@@ -156,7 +156,7 @@ Studio upload_archive()
 ingest_archive()
   → 解析 JSON messages
   → 构造 wxid → display-name map
-  → 校验 self_wxid 存在
+  → 校验 platform_self_id 存在
   → 要求只有一个 counterpart（当前只支持 1:1）
   → 按 (account_id, file_hash) 拒绝重复文件
   → 保存原文件到 storage/uploads/{account_id}/{archive_id}.json

@@ -14,6 +14,14 @@
 
 Chat sandbox 和 Studio models 当前都不使用 SQLAlchemy column defaults；insert 路径必须显式写入状态、时间戳和布尔值。
 
+## Database
+
+Studio 和 Chat 都使用 PostgreSQL，由 Alembic 管理 schema 迁移。启动时通过 `run_migrations()` 执行 `alembic upgrade head`。所有 DateTime 列存储为 `timestamptz`（时区感知 UTC）。所有自增主键使用 `BigInteger`。
+
+## Migrations
+
+`studio/migrate.py` 和 `chat/migrate.py` 封装 Alembic `upgrade head`。API 启动通过 FastAPI lifespan 调用；Worker 和 CLI 在各自入口调用。
+
 ## Account ID
 
 Account id 由 `studio/deps.py` 中的 `new_id("acc")` 生成，格式为 `acc_{uuid8}`（UUID 随机 8 位）。
@@ -43,3 +51,5 @@ Studio Provider 管理在 Settings 页面，仅 admin 可见。当前 UI 支持�
 Archive ingest 当前只支持 1:1 聊天。`_identify_counterpart()` 在出现多个 counterpart 时抛错。
 
 `studio/distill/ingest.py` 中 `_ensure_contact()` 当前创建 Contact 时显式设置 Persona、Provider、autoreply、pending、status 等字段；`reply_provider_config_id` 继承 Inbox 的 Provider override，允许为空。
+
+Archive model 中的 `platform_self_id` 字段标识 Archive 对应的平台自身 ID（之前名为 `self_wxid`）。

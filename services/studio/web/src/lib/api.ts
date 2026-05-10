@@ -157,7 +157,7 @@ export interface Archive {
   account_id: string;
   inbox_id: string;
   filename: string;
-  self_wxid: string;
+  platform_self_id: string;
   message_count: number;
   contact_count: number;
   uploaded_at: string;
@@ -421,7 +421,7 @@ export async function uploadArchive(
 ): Promise<Archive> {
   const form = new FormData();
   form.append('inbox_id', inboxId);
-  form.append('self_wxid', selfWxid);
+  form.append('platform_self_id', selfWxid);
   form.append('file', file);
   const headers = new Headers();
   const token = getToken();

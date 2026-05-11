@@ -127,8 +127,8 @@ Studio → Bridge 的工作队列表。包含 JSON `chunks`、状态、投递/�
 
 ## 配置原则在当前代码中的体现
 
-- Chat 需要 `DATABASE_URL` 和 `CHAT_STORAGE_DIR`，缺失时报错。
-- Studio 需要 `DATABASE_URL` 和 `STUDIO_STORAGE_DIR`，缺失时报错。
+- Chat 需要 `DATABASE_URL` 和 S3 环境变量（`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`），缺失时报错。
+- Studio 需要 `DATABASE_URL` 和 S3 环境变量（`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`），缺失时报错。
 - Chat 和 Studio models 当前不使用 SQLAlchemy column default。
 - Studio 和 Chat 使用 PostgreSQL，由 Alembic 管理 schema 迁移。
 - Bridge 当前 CLI 有 `--studio-url` 默认值，这是当前代码事实；本地联调命令仍应显式传入。

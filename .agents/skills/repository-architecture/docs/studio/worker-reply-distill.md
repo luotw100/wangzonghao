@@ -155,8 +155,8 @@ LLM 调用异常时写 `LlmLog(response_raw='ERROR: ...')`，当前不清 `pendi
 
 行为：
 
-- 上传文件保存到 `${STUDIO_STORAGE_DIR}/uploads/{account_id}/{archive_id}.json`。
-- `file_hash()` 使用 sha256 前 16 位。
+- 上传文件保存到 S3（key: `uploads/{account_id}/{archive_id}.json`）。
+- `_data_hash()` 使用 sha256 前 16 位。
 - 按 `(account_id, file_hash)` 拒绝重复 archive。
 - `_identify_counterpart()` 要求 `platform_self_id` 存在，并且只有一个 counterpart。
 - `_ensure_contact()` 在 Inbox 下创建或复用 Contact。

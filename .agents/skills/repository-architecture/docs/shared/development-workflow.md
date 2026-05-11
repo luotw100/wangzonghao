@@ -14,6 +14,7 @@ services/
 ## 启动 Chat sandbox
 
 ```bash
+cd infra && docker compose up -d    # 先启动基础设施
 cd services/chat
 docker compose up -d --build
 docker compose exec -T chat-api uv run python -m chat.cli create-account \
@@ -25,6 +26,7 @@ Chat web/API 通过 Nginx 暴露在 `http://localhost:23456`。
 ## 启动 Studio
 
 ```bash
+cd infra && docker compose up -d    # 先启动基础设施
 cd services/studio
 docker compose up -d --build
 ```
@@ -65,15 +67,23 @@ docker compose run --rm bridge \
 
 ## Storage 事实
 
-Docker 运行和本地裸跑是两套存储：
+基础设施（PostgreSQL + MinIO）由 `infra/compose.yaml` 统一管理，通过 host 端口暴露。Chat/Studio/Bridge 通过 `host.docker.internal` 连接。
 
-| Service | Docker env | 本地 env |
-| --- | --- | --- |
-| Chat | `DATABASE_URL` + `CHAT_STORAGE_DIR` | `DATABASE_URL` + `CHAT_STORAGE_DIR` |
-| Studio | `DATABASE_URL` + `STUDIO_STORAGE_DIR` | `DATABASE_URL` + `STUDIO_STORAGE_DIR` |
-| Bridge | 无持久存储 | CLI args |
+| Service | 连接方式 |
+| --- | --- |
+| Chat PG | `host.docker.internal:5433` |
+| Studio PG | `host.docker.internal:5432` |
+| MinIO S3 | `host.docker.internal:9000` |
 
-数据库由 PostgreSQL 管理（Compose 中各服务有独立的 `*-db` 容器），Schema 由 Alembic 迁移。
+环境变量：
+
+| Service | 必要 env |
+| --- | --- |
+| Chat | `DATABASE_URL`、`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET` |
+| Studio | `DATABASE_URL`、`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET` |
+| Bridge | 无持久存储（CLI args） |
+
+文件存储使用 S3 兼容对象存储（开发环境用 MinIO），每个服务通过 `S3_BUCKET` 区分命名空间。生产环境替换为云服务时只需修改 `.env` 中的 `DATABASE_URL` 和 `S3_ENDPOINT`。
 
 ## Account management
 

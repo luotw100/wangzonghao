@@ -195,7 +195,7 @@ class Archive(Base):
     account_id     = Column(String(32), ForeignKey("accounts.id"), nullable=False, index=True)
     inbox_id       = Column(String(32), ForeignKey("inboxes.id"), nullable=False, index=True)
     filename       = Column(String(256), nullable=False)
-    file_path      = Column(String(512), nullable=False)
+    storage_key    = Column(String(512), nullable=False)
     file_hash      = Column(String(64), nullable=False, index=True)
     platform_self_id = Column(String(128), nullable=False)
     message_count  = Column(Integer, nullable=False)

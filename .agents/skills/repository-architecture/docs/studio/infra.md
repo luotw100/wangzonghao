@@ -2,7 +2,7 @@
 
 ## Compose
 
-`services/studio/compose.yaml` 当前定义四个 service 和两个 volume。
+`services/studio/compose.yaml` 当前定义两个 service，无 volume。
 
 ### `studio-web`
 
@@ -15,32 +15,27 @@
 ### `studio-api`
 
 - build context：`./api`。
-- env：`STUDIO_STORAGE_DIR=/app/storage`、`DATABASE_URL=postgresql://studio:studio@studio-db/studio`。
-- mount `studio-storage:/app/storage`。
-- depends on `studio-db`（condition: `service_healthy`）。
+- env：`DATABASE_URL`、`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`。
+- `extra_hosts: host.docker.internal:host-gateway`（连接 infra 的 PG 和 MinIO）。
 - restart：`unless-stopped`。
 
 ### `studio-worker`
 
 - build context：`./api`。
 - command：`uv run python -m studio.worker --request-timeout 120`。
-- env：`STUDIO_STORAGE_DIR=/app/storage`、`DATABASE_URL=postgresql://studio:studio@studio-db/studio`。
-- mount 同一个 `studio-storage`。
-- depends on `studio-api`。
+- env：同 `studio-api`。
+- `extra_hosts: host.docker.internal:host-gateway`。
 - restart：`unless-stopped`。
 
-### `studio-db`
+## 外部依赖
 
-- image：`postgres:16-alpine`。
-- env：`POSTGRES_USER=studio`、`POSTGRES_PASSWORD=studio`、`POSTGRES_DB=studio`。
-- mount `studio-pgdata:/var/lib/postgresql/data`。
-- healthcheck：`pg_isready -U studio`。
-- restart：`unless-stopped`。
+Studio 不再管理自己的 PG 或 MinIO 容器。数据库和对象存储由 `infra/compose.yaml` 统一管理，通过 host 端口暴露：
 
-### Volumes
+- PostgreSQL：`host.docker.internal:5432`
+- MinIO S3 API：`host.docker.internal:9000`
+- MinIO Console：`host.docker.internal:9001`
 
-- `studio-storage`：保存 uploads 和共享 storage 文件。
-- `studio-pgdata`：PostgreSQL 数据目录。
+生产环境替换为云服务时，只需修改 `.env` 中的 `DATABASE_URL` 和 `S3_ENDPOINT`。
 
 ## Nginx
 
@@ -64,7 +59,6 @@
 - 执行 `uv sync --frozen --no-dev --no-install-project`。
 - copy `alembic.ini`。
 - copy `studio/` package。
-- 创建 `/app/storage/uploads`。
 - command：`uv run uvicorn studio.main:app --host 0.0.0.0 --port 23457`。
 
 ## Web Dockerfile
@@ -79,11 +73,11 @@
 
 ## Vite dev server 当前配置
 
-`services/studio/web/vite.config.ts` 当前只把 `/api` proxy 到 `localhost:23457`；dev server 不暴露 `/storage`。
+`services/studio/web/vite.config.ts` 当前只把 `/api` proxy 到 `localhost:23457`。
 
 ## 必要环境变量
 
-`DATABASE_URL` 和 `STUDIO_STORAGE_DIR` 都必须存在。缺失时 `studio/db.py` 会直接抛错。
+`DATABASE_URL`、`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET` 都必须存在。缺失时 `studio/db.py` 或 `studio/s3.py` 会直接抛错。
 
 ## Database
 
@@ -91,10 +85,14 @@ Studio 使用 PostgreSQL，由 Alembic 管理 schema 迁移。启动时通过 Fa
 
 Schema 变更流程：修改 `models.py` → 生成新的 Alembic migration → `alembic upgrade head`。
 
-## Storage paths
+## Object Storage (S3)
 
-- Uploaded archives：`${STUDIO_STORAGE_DIR}/uploads/{account_id}/{archive_id}.json`。
+Studio 使用 S3 兼容对象存储（开发环境用 `infra/` 中的 MinIO）保存上传的 archive 文件。
+
+- `studio/s3.py` 提供 `s3_put`、`s3_get`、`s3_key_exists` 三个函数。
+- Archive 文件存储 key：`uploads/{account_id}/{archive_id}.json`。
+- `Archive.storage_key` 列存储 S3 key。
 
 ## 进程耦合
 
-`studio-api` 和 `studio-worker` 共享 PostgreSQL 数据库，通过 `studio-db` 服务访问。
+`studio-api` 和 `studio-worker` 共享 PostgreSQL 数据库和 S3 对象存储，均通过 `host.docker.internal` 访问 `infra/` 中的服务。

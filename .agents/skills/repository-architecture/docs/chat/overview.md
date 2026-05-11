@@ -71,7 +71,7 @@ Bridge 使用 Chat API 登录、拉取 conversations/messages、发送 messages�
 
 ## 存储和配置
 
-`CHAT_STORAGE_DIR` 必须存在。Chat 使用 PostgreSQL 数据库，通过 `DATABASE_URL` 环境变量配置连接。Schema 由 Alembic 管理，启动时自动执行迁移。
+Chat 使用 PostgreSQL 数据库（通过 `DATABASE_URL` 环境变量配置）和 S3 兼容对象存储（通过 `S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET` 环境变量配置），缺失时报错。Schema 由 Alembic 管理，启动时自动执行迁移。
 
 ## 账号管理
 

@@ -116,7 +116,7 @@ Bridge 运行时 token。
 - `account_id`：`String(32)`。
 - `inbox_id`：`String(32)`。
 - `filename`：`String(256)`。
-- `file_path`：`String(512)`。
+- `storage_key`：`String(512)`，S3 对象 key。
 - `file_hash`：`String(64)`，sha256 前 16 位。
 - `platform_self_id`：`String(128)`。
 - `message_count`：Integer。

@@ -9,14 +9,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
 import uuid
-from pathlib import Path
 from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session as ORMSession
 
-from studio.db import STORAGE_DIR, utc_now
+from studio.db import utc_now
 from studio.distill.converter import (
     build_name_map,
     clean_content,
@@ -28,27 +26,18 @@ from studio.models import (
     Archive,
     Contact,
     Inbox,
-    Message,
 )
-
-UPLOADS_DIR = STORAGE_DIR / "uploads"
-UPLOADS_DIR.mkdir(exist_ok=True)
+from studio.s3 import s3_put
 
 
-def file_hash(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(8192), b""):
-            h.update(chunk)
-    return h.hexdigest()[:16]
+def _data_hash(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()[:16]
 
 
-def _persist_upload(account_id: str, archive_id: str, src_path: Path) -> Path:
-    dest_dir = UPLOADS_DIR / account_id
-    dest_dir.mkdir(exist_ok=True)
-    dest_path = dest_dir / f"{archive_id}.json"
-    shutil.copyfile(src_path, dest_path)
-    return dest_path
+def _persist_upload(account_id: str, archive_id: str, data: bytes) -> str:
+    key = f"uploads/{account_id}/{archive_id}.json"
+    s3_put(key, data, content_type="application/json")
+    return key
 
 
 def _identify_counterpart(name_map: Dict[str, str], platform_self_id: str) -> str:
@@ -103,12 +92,11 @@ async def ingest_archive(
     account_id: str,
     inbox: Inbox,
     platform_self_id: str,
-    src_path: Path,
+    raw_data: bytes,
     original_filename: str,
 ) -> Archive:
     """Ingest one WeFlow JSON file. Idempotent on file_hash; fails on duplicates."""
-    with src_path.open("r", encoding="utf-8") as f:
-        data = json.load(f)
+    data = json.loads(raw_data)
     raw_messages: List[Dict[str, Any]] = data.get("messages") or []
     if not raw_messages:
         raise ValueError("聊天记录为空")
@@ -117,7 +105,7 @@ async def ingest_archive(
     counterpart_wxid = _identify_counterpart(name_map, platform_self_id)
     counterpart_name = name_map[counterpart_wxid]
 
-    hash_hex = file_hash(src_path)
+    hash_hex = _data_hash(raw_data)
     duplicate = (
         db.query(Archive)
         .filter(Archive.account_id == account_id, Archive.file_hash == hash_hex)
@@ -127,7 +115,7 @@ async def ingest_archive(
         raise ValueError(f"该文件已上传过 (archive {duplicate.id})")
 
     archive_id = f"a_{uuid.uuid4().hex[:8]}"
-    dest_path = _persist_upload(account_id, archive_id, src_path)
+    s3_key = _persist_upload(account_id, archive_id, raw_data)
 
     contact = _ensure_contact(db, inbox, counterpart_wxid, counterpart_name)
 
@@ -167,7 +155,7 @@ async def ingest_archive(
 
     archive = Archive(
         id=archive_id, account_id=account_id, inbox_id=inbox.id,
-        filename=original_filename, file_path=str(dest_path), file_hash=hash_hex,
+        filename=original_filename, storage_key=s3_key, file_hash=hash_hex,
         platform_self_id=platform_self_id, message_count=msg_count, contact_count=1,
         uploaded_at=now,
     )

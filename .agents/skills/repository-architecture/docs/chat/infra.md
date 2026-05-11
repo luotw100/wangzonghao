@@ -2,7 +2,7 @@
 
 ## Compose
 
-`services/chat/compose.yaml` 当前定义三个 service 和两个 volume。
+`services/chat/compose.yaml` 当前定义两个 service，无 volume。
 
 ### `chat-web`
 
@@ -16,23 +16,19 @@
 ### `chat-api`
 
 - build context：`./api`。
-- env：`CHAT_STORAGE_DIR=/app/storage`、`DATABASE_URL=postgresql://chat:chat@chat-db/chat`。
-- mount `chat-storage:/app/storage`。
-- depends on `chat-db`（condition: `service_healthy`）。
+- env：`DATABASE_URL`、`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`。
+- `extra_hosts: host.docker.internal:host-gateway`（连接 infra 的 PG 和 MinIO）。
 - restart：`unless-stopped`。
 
-### `chat-db`
+## 外部依赖
 
-- image：`postgres:16-alpine`。
-- env：`POSTGRES_USER=chat`、`POSTGRES_PASSWORD=chat`、`POSTGRES_DB=chat`。
-- mount `chat-pgdata:/var/lib/postgresql/data`。
-- healthcheck：`pg_isready -U chat`。
-- restart：`unless-stopped`。
+Chat 不再管理自己的 PG 或 MinIO 容器。数据库和对象存储由 `infra/compose.yaml` 统一管理，通过 host 端口暴露：
 
-### Volumes
+- PostgreSQL：`host.docker.internal:5433`
+- MinIO S3 API：`host.docker.internal:9000`
+- MinIO Console：`host.docker.internal:9001`
 
-- `chat-storage`：保存 storage assets。
-- `chat-pgdata`：PostgreSQL 数据目录。
+生产环境替换为云服务时，只需修改 `.env` 中的 `DATABASE_URL` 和 `S3_ENDPOINT`。
 
 ## Nginx
 
@@ -56,7 +52,6 @@
 - 执行 `uv sync --frozen --no-dev --no-install-project`。
 - copy `alembic.ini`。
 - copy `chat/` package。
-- 创建 `/app/storage/attachments`。
 - command：`uv run uvicorn chat.main:app --host 0.0.0.0 --port 23456`。
 
 ## Web Dockerfile
@@ -78,7 +73,7 @@
 
 ## 必要环境变量
 
-`DATABASE_URL` 和 `CHAT_STORAGE_DIR` 都必须存在。缺失时 `chat/db.py` 会直接抛错。
+`DATABASE_URL`、`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET` 都必须存在。缺失时 `chat/db.py` 或 `chat/s3.py` 会直接抛错。
 
 ## Database
 

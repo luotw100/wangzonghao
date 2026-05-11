@@ -1,6 +1,5 @@
 """Archive upload and distill job endpoints."""
 
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -33,22 +32,16 @@ async def upload_archive(
     db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep,
     inbox_id: str = Form(...), platform_self_id: str = Form(...), file: UploadFile = File(...),
 ):
-    import tempfile
     inbox = get_account_inbox(db, account, inbox_id)
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".json") as tmp:
-        contents = await file.read()
-        tmp.write(contents)
-        tmp_path = Path(tmp.name)
+    raw_data = await file.read()
     try:
         archive = await ingest_archive(
             db=db, account_id=inbox.account_id, inbox=inbox,
-            platform_self_id=platform_self_id, src_path=tmp_path,
-            original_filename=file.filename or tmp_path.name,
+            platform_self_id=platform_self_id, raw_data=raw_data,
+            original_filename=file.filename or "upload.json",
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    finally:
-        tmp_path.unlink(missing_ok=True)
     return s_archive(archive)
 
 

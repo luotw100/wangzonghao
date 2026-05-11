@@ -14,10 +14,9 @@
 
 `db.py` 当前行为：
 
-- 读取 `DATABASE_URL` 环境变量，缺失时报错。
+- 读取 `DATABASE_URL` 和 S3 环境变量（`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`），缺失时报错。
 - PostgreSQL 连接池：`pool_size=10, max_overflow=20`。
 - 暴露 `Base`、`SessionLocal`、`get_db()`、`utc_now()`。
-- `CHAT_STORAGE_DIR` 从环境变量读取，默认 `/app/storage`。
 - `utc_now()` 返回时区感知的 UTC datetime。
 
 `main.py` 通过 FastAPI lifespan 在 startup 时调用 `run_migrations()`（`chat/migrate.py`），自动执行 `alembic upgrade head`。CLI 在入口也调用 `run_migrations()`。

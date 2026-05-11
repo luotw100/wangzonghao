@@ -159,7 +159,7 @@ ingest_archive()
   → 校验 platform_self_id 存在
   → 要求只有一个 counterpart（当前只支持 1:1）
   → 按 (account_id, file_hash) 拒绝重复文件
-  → 保存原文件到 storage/uploads/{account_id}/{archive_id}.json
+  → 保存原文件到 S3（key: uploads/{account_id}/{archive_id}.json）
   → 确保 Contact 存在
   → filter/sort messages
   → 插入 Message(source='archive', external_id=archive:{archive_id}:{idx})

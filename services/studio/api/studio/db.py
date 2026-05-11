@@ -1,6 +1,5 @@
 import os
 from datetime import datetime, timezone
-from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
@@ -27,10 +26,3 @@ def get_db():
         yield db
     finally:
         db.close()
-
-
-_storage_dir = os.environ.get("STUDIO_STORAGE_DIR")
-if not _storage_dir:
-    raise RuntimeError("STUDIO_STORAGE_DIR is required")
-STORAGE_DIR = Path(_storage_dir).resolve()
-STORAGE_DIR.mkdir(parents=True, exist_ok=True)

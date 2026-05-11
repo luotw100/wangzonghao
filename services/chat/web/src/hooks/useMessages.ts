@@ -4,11 +4,7 @@ import type { Message } from '../api';
 
 interface UseMessagesResult {
   messages: Message[];
-  loading: boolean;
-  error: string;
   reload: () => Promise<void>;
-  /** Optimistically append a message (used by Composer + import). */
-  prepend: (incoming: Message[]) => void;
   reset: (incoming: Message[]) => void;
 }
 
@@ -25,8 +21,6 @@ interface UseMessagesResult {
  */
 export function useMessages(conversationId: string | null, enabled: boolean): UseMessagesResult {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
 
   const lastIdRef = useRef(0);
   const cancelledRef = useRef(false);
@@ -37,20 +31,6 @@ export function useMessages(conversationId: string | null, enabled: boolean): Us
     const max = items.reduce((m, x) => (x.id > m ? x.id : m), 0);
     if (max > lastIdRef.current) lastIdRef.current = max;
   }, []);
-
-  const prepend = useCallback(
-    (incoming: Message[]) => {
-      if (!incoming.length) return;
-      setMessages((previous) => {
-        const seen = new Set(previous.map((m) => m.id));
-        const fresh = incoming.filter((m) => !seen.has(m.id));
-        if (!fresh.length) return previous;
-        return [...previous, ...fresh].sort((a, b) => a.id - b.id);
-      });
-      updateLastId(incoming);
-    },
-    [updateLastId]
-  );
 
   const reset = useCallback(
     (incoming: Message[]) => {
@@ -63,16 +43,12 @@ export function useMessages(conversationId: string | null, enabled: boolean): Us
   const reload = useCallback(async () => {
     if (!conversationIdRef.current) return;
     const id = conversationIdRef.current;
-    setLoading(true);
     try {
       const initial = await api.getMessages(id, 0, 0);
       if (cancelledRef.current || conversationIdRef.current !== id) return;
       reset(initial);
-      setError('');
-    } catch (err) {
-      if (!cancelledRef.current) setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      if (!cancelledRef.current) setLoading(false);
+    } catch {
+      // silent — poll loop will retry
     }
   }, [reset]);
 
@@ -92,8 +68,6 @@ export function useMessages(conversationId: string | null, enabled: boolean): Us
     cancelledRef.current = false;
     lastIdRef.current = 0;
     setMessages([]);
-    setError('');
-    setLoading(true);
 
     const id = conversationId;
 
@@ -103,11 +77,9 @@ export function useMessages(conversationId: string | null, enabled: boolean): Us
         if (cancelled || conversationIdRef.current !== id) return;
         setMessages(initial);
         lastIdRef.current = initial.reduce((m, x) => (x.id > m ? x.id : m), 0);
-        setLoading(false);
-      } catch (err) {
+      } catch {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-          setLoading(false);
+          await new Promise((resolve) => setTimeout(resolve, 1500));
         }
         return;
       }
@@ -128,8 +100,7 @@ export function useMessages(conversationId: string | null, enabled: boolean): Us
               lastIdRef.current
             );
           }
-        } catch (err) {
-          if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        } catch {
           await new Promise((resolve) => setTimeout(resolve, 1500));
         }
       }
@@ -141,5 +112,5 @@ export function useMessages(conversationId: string | null, enabled: boolean): Us
     };
   }, [conversationId, enabled]);
 
-  return { messages, loading, error, reload, prepend, reset };
+  return { messages, reload, reset };
 }

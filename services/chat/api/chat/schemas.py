@@ -58,15 +58,6 @@ class ContactRead(StrictModel):
     updated_at: datetime
 
 
-class ConversationCreate(StrictModel):
-    contact_id: str
-    title: str | None = None
-
-
-class ConversationUpdate(StrictModel):
-    title: str | None = None
-
-
 class ConversationRead(StrictModel):
     id: str
     account_id: str
@@ -83,18 +74,7 @@ class MessageCreate(StrictModel):
     sender_type: SenderType
     msg_type: MessageType
     content: str
-
-
-class BulkMessageItem(StrictModel):
-    sender_type: SenderType
-    msg_type: MessageType
-    content: str
-    created_at: datetime
-
-
-class BulkMessageImport(StrictModel):
-    filename: str | None = None
-    messages: list[BulkMessageItem]
+    created_at: datetime | None = None
 
 
 class MessageRead(StrictModel):
@@ -117,5 +97,3 @@ class ConversationMessages(StrictModel):
 class StatusResponse(StrictModel):
     status: CommandStatus
     id: str | int | None = None
-    imported: int | None = None
-    ids: list[int] | None = None

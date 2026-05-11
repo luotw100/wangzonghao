@@ -100,22 +100,8 @@ def upgrade() -> None:
     op.create_index("ix_chat_messages_conversation_id", "chat_messages", ["conversation_id"])
     op.create_index("ix_chat_messages_sender_contact_id", "chat_messages", ["sender_contact_id"])
 
-    op.create_table(
-        "chat_import_batches",
-        sa.Column("id", sa.String(32), primary_key=True),
-        sa.Column("account_id", sa.String(32), sa.ForeignKey("chat_accounts.id"), nullable=False),
-        sa.Column("conversation_id", sa.String(32), sa.ForeignKey("chat_conversations.id"), nullable=False),
-        sa.Column("filename", sa.String(256), nullable=True),
-        sa.Column("message_count", sa.Integer, nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-    )
-    op.create_index("ix_chat_import_batches_id", "chat_import_batches", ["id"])
-    op.create_index("ix_chat_import_batches_account_id", "chat_import_batches", ["account_id"])
-    op.create_index("ix_chat_import_batches_conversation_id", "chat_import_batches", ["conversation_id"])
-
 
 def downgrade() -> None:
-    op.drop_table("chat_import_batches")
     op.drop_table("chat_messages")
     op.drop_table("chat_conversations")
     op.drop_table("chat_contacts")

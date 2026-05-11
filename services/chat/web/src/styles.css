@@ -494,23 +494,7 @@ label > span {
   text-overflow: ellipsis;
 }
 
-.import-btn {
-  height: 28px;
-  padding: 0 12px;
-  font-size: 12px;
-  white-space: nowrap;
-}
-.import-btn .label-short {
-  display: none;
-}
-@media (max-width: 540px) {
-  .import-btn .label-long {
-    display: none;
-  }
-  .import-btn .label-short {
-    display: inline;
-  }
-}
+
 
 /* ---------- Messages ---------- */
 .messages {
@@ -749,92 +733,7 @@ label > span {
   padding: 16px;
   z-index: 100;
 }
-.import-modal {
-  width: min(640px, 100%);
-  max-height: calc(100dvh - 32px);
-  background: #fff;
-  border-radius: 10px;
-  padding: 20px;
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow: auto;
-}
-.import-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-}
-.import-header h2 {
-  margin-top: 4px;
-  font-size: 17px;
-}
-.import-row {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 10px;
-  align-items: center;
-}
-.import-row > span {
-  font-size: 12px;
-  color: var(--wc-text-muted);
-}
 
-.drop-zone {
-  border: 1.5px dashed var(--wc-divider-strong);
-  border-radius: 8px;
-  padding: 18px 16px;
-  text-align: center;
-  color: var(--wc-text-muted);
-  font-size: 13px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  transition: border-color 120ms, background 120ms;
-}
-.drop-zone.over {
-  border-color: var(--wc-green);
-  background: rgba(7, 193, 96, 0.06);
-  color: var(--wc-green-press);
-}
-.file-pick {
-  color: var(--wc-green);
-  cursor: pointer;
-  text-decoration: underline;
-}
-
-.import-modal textarea {
-  height: 220px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12.5px;
-  line-height: 1.5;
-  resize: vertical;
-}
-
-.import-status {
-  font-size: 12px;
-  min-height: 18px;
-}
-.import-status .ok {
-  color: #2a9d4a;
-}
-.import-status em {
-  color: var(--wc-text-muted);
-  font-style: normal;
-  margin-left: 6px;
-}
-.import-status .bad {
-  color: var(--wc-danger);
-}
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
 
 /* =========================================================================
    Context menu
@@ -919,15 +818,7 @@ label > span {
   .chat-title h1 {
     font-size: 16px;
   }
-  .import-btn {
-    height: 28px;
-    padding: 0 8px;
-    font-size: 12px;
-    white-space: nowrap;
-  }
-  .import-btn .label-long {
-    display: none;
-  }
+  
 
   .messages-inner {
     padding: 12px;

@@ -1,16 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import * as api from '../api';
-import type { Contact, Conversation } from '../api';
+import type { Conversation } from '../api';
 
 export interface WorkspaceState {
-  contacts: Contact[];
   conversations: Conversation[];
   loaded: boolean;
 }
 
 export function useWorkspace(enabled: boolean) {
   const [state, setState] = useState<WorkspaceState>({
-    contacts: [],
     conversations: [],
     loaded: false,
   });
@@ -20,11 +18,8 @@ export function useWorkspace(enabled: boolean) {
     if (inFlight.current) return;
     inFlight.current = true;
     try {
-      const [contacts, conversations] = await Promise.all([
-        api.listContacts(),
-        api.listConversations(),
-      ]);
-      setState({ contacts, conversations, loaded: true });
+      const conversations = await api.listConversations();
+      setState({ conversations, loaded: true });
     } finally {
       inFlight.current = false;
     }
@@ -32,7 +27,7 @@ export function useWorkspace(enabled: boolean) {
 
   useEffect(() => {
     if (!enabled) {
-      setState({ contacts: [], conversations: [], loaded: false });
+      setState({ conversations: [], loaded: false });
       return;
     }
     reload().catch(() => {

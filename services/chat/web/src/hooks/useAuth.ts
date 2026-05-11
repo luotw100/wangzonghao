@@ -50,9 +50,5 @@ export function useAuth() {
     setState({ account: null, loading: false, error: '' });
   }, []);
 
-  const clearError = useCallback(() => {
-    setState((s) => ({ ...s, error: '' }));
-  }, []);
-
-  return { ...state, login, logout, clearError };
+  return { ...state, login, logout };
 }

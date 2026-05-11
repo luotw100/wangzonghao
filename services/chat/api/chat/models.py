@@ -5,7 +5,6 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
-    Integer,
     String,
     Text,
     UniqueConstraint,
@@ -111,12 +110,3 @@ class Message(Base):
     sender_contact = relationship("Contact")
 
 
-class ImportBatch(Base):
-    __tablename__ = "chat_import_batches"
-
-    id = Column(String(32), primary_key=True, index=True)
-    account_id = Column(String(32), ForeignKey("chat_accounts.id"), nullable=False, index=True)
-    conversation_id = Column(String(32), ForeignKey("chat_conversations.id"), nullable=False, index=True)
-    filename = Column(String(256), nullable=True)
-    message_count = Column(Integer, nullable=False)
-    created_at = Column(DateTime(timezone=True), nullable=False)

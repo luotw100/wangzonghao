@@ -10,9 +10,9 @@ interface SidebarProps {
   activeConversationId: string | null;
   onSelectConversation: (id: string) => void;
   onCreateContact: (name: string, note: string) => Promise<void>;
+  onUpdateContactNote: (contactId: string, note: string) => Promise<void>;
   onDeleteContact: (contactId: string) => Promise<void>;
   onLogout: () => void;
-  /** map of conversationId → last message (for sidebar preview) */
   lastMessages: Record<string, Message | undefined>;
 }
 
@@ -22,6 +22,7 @@ export default function Sidebar({
   activeConversationId,
   onSelectConversation,
   onCreateContact,
+  onUpdateContactNote,
   onDeleteContact,
   onLogout,
   lastMessages,
@@ -198,6 +199,17 @@ export default function Sidebar({
           y={menu.y}
           onClose={() => setMenu(null)}
           items={[
+            {
+              label: '编辑备注',
+              onClick: async () => {
+                const target = menu.conversation;
+                setMenu(null);
+                const current = target.contact.note || '';
+                const note = window.prompt('修改备注', current);
+                if (note === null) return;
+                await onUpdateContactNote(target.contact.id, note.trim());
+              },
+            },
             {
               label: '删除联系人',
               danger: true,

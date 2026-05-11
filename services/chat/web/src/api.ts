@@ -114,10 +114,6 @@ export function logout(): Promise<void> {
   return request<void>('/auth/logout', { method: 'POST' });
 }
 
-export function listContacts(): Promise<Contact[]> {
-  return request<Contact[]>('/contacts');
-}
-
 export function createContact(payload: {
   display_name: string;
   platform_contact_id?: string;
@@ -125,6 +121,17 @@ export function createContact(payload: {
 }): Promise<Contact> {
   return request<Contact>('/contacts', {
     method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateContact(
+  contactId: string,
+  payload: { note?: string }
+): Promise<Contact> {
+  return request<Contact>(`/contacts/${contactId}`, {
+    method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
@@ -140,7 +147,7 @@ export function listConversations(): Promise<Conversation[]> {
 
 export function sendMessage(
   conversationId: string,
-  payload: { sender_type: 'self' | 'contact'; msg_type: string; content: string }
+  payload: { sender_type: 'self' | 'contact'; msg_type: string; content: string; created_at?: string }
 ) {
   return request<{ status: string; id: number }>(`/conversations/${conversationId}/messages`, {
     method: 'POST',
@@ -191,24 +198,4 @@ export async function getMessages(
   }
 }
 
-export function bulkImportMessages(
-  conversationId: string,
-  payload: {
-    filename?: string;
-    messages: Array<{
-      sender_type: 'self' | 'contact';
-      msg_type: string;
-      content: string;
-      created_at: string;
-    }>;
-  }
-) {
-  return request<{ status: string; imported: number; ids: number[] }>(
-    `/conversations/${conversationId}/messages/bulk`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }
-  );
-}
+

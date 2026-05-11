@@ -10,7 +10,6 @@ from chat.models import (  # noqa: F401
     AuthSession,
     Contact,
     Conversation,
-    ImportBatch,
     Message,
 )
 

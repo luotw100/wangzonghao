@@ -16,19 +16,15 @@ from chat.models import (
     AuthSession,
     Contact,
     Conversation,
-    ImportBatch,
     Message,
 )
 from chat.schemas import (
     AccountRead,
-    BulkMessageImport,
     ContactCreate,
     ContactRead,
     ContactUpdate,
-    ConversationCreate,
     ConversationMessages,
     ConversationRead,
-    ConversationUpdate,
     LoginRequest,
     LoginResponse,
     MessageCreate,
@@ -174,13 +170,16 @@ def add_message(
     sender_type: str,
     msg_type: str,
     content: str,
-    source: MessageSource = MessageSource.LIVE,
+    source: MessageSource | None = None,
     created_at: datetime | None = None,
 ) -> Message:
     if sender_type not in {SenderType.SELF, SenderType.CONTACT}:
         raise HTTPException(
             status_code=400, detail="sender_type 必须是 self 或 contact"
         )
+
+    if source is None:
+        source = MessageSource.IMPORT if created_at else MessageSource.LIVE
 
     message = Message(
         account_id=conversation.account_id,
@@ -352,60 +351,6 @@ def list_conversations(
     return query.order_by(Conversation.updated_at.desc()).all()
 
 
-@app.post("/api/conversations", response_model=ConversationRead)
-def create_conversation(
-    conv_in: ConversationCreate, account: CurrentAccountDep, db: DbDep
-) -> Conversation:
-    contact = get_contact_or_404(db, account.id, conv_in.contact_id)
-    conversation = get_or_create_direct_conversation(
-        db, account.id, contact, title=conv_in.title
-    )
-    db.commit()
-    db.refresh(conversation)
-    return get_conversation_or_404(db, account.id, conversation.id)
-
-
-@app.get("/api/conversations/{conversation_id}", response_model=ConversationRead)
-def get_conversation(
-    conversation_id: str, account: CurrentAccountDep, db: DbDep
-) -> Conversation:
-    return get_conversation_or_404(
-        db, account.id, conversation_id, include_deleted=True
-    )
-
-
-@app.put("/api/conversations/{conversation_id}", response_model=ConversationRead)
-def update_conversation(
-    conversation_id: str,
-    conv_update: ConversationUpdate,
-    account: CurrentAccountDep,
-    db: DbDep,
-) -> Conversation:
-    conversation = get_conversation_or_404(db, account.id, conversation_id)
-    if conv_update.title is not None:
-        conversation.title = conv_update.title
-    conversation.updated_at = utc_now()
-    db.commit()
-    db.refresh(conversation)
-    return get_conversation_or_404(db, account.id, conversation.id)
-
-
-@app.delete("/api/conversations/{conversation_id}", response_model=ConversationRead)
-def delete_conversation(
-    conversation_id: str, account: CurrentAccountDep, db: DbDep
-) -> Conversation:
-    conversation = get_conversation_or_404(db, account.id, conversation_id)
-    now = utc_now()
-    conversation.is_deleted = True
-    conversation.deleted_at = now
-    conversation.updated_at = now
-    db.commit()
-    db.refresh(conversation)
-    return get_conversation_or_404(
-        db, account.id, conversation.id, include_deleted=True
-    )
-
-
 @app.post(
     "/api/conversations/{conversation_id}/messages", response_model=StatusResponse
 )
@@ -417,7 +362,12 @@ def send_debug_message(
 ) -> StatusResponse:
     conversation = get_conversation_or_404(db, account.id, conversation_id)
     message = add_message(
-        db, conversation, msg_in.sender_type, msg_in.msg_type, msg_in.content
+        db,
+        conversation,
+        msg_in.sender_type,
+        msg_in.msg_type,
+        msg_in.content,
+        created_at=normalize_timestamp(msg_in.created_at) if msg_in.created_at else None,
     )
     db.commit()
     db.refresh(message)
@@ -439,51 +389,17 @@ def connector_send_message(
             status_code=400, detail="Connector 只能以当前登录账号发送消息"
         )
     conversation = get_conversation_or_404(db, account.id, conversation_id)
-    message = add_message(db, conversation, SenderType.SELF, msg_in.msg_type, msg_in.content)
+    message = add_message(
+        db,
+        conversation,
+        SenderType.SELF,
+        msg_in.msg_type,
+        msg_in.content,
+        created_at=normalize_timestamp(msg_in.created_at) if msg_in.created_at else None,
+    )
     db.commit()
     db.refresh(message)
     return StatusResponse(status=CommandStatus.SUCCESS, id=message.id)
-
-
-@app.post(
-    "/api/conversations/{conversation_id}/messages/bulk", response_model=StatusResponse
-)
-def bulk_import_messages(
-    conversation_id: str,
-    bulk_in: BulkMessageImport,
-    account: CurrentAccountDep,
-    db: DbDep,
-) -> StatusResponse:
-    conversation = get_conversation_or_404(db, account.id, conversation_id)
-    if not bulk_in.messages:
-        return StatusResponse(status=CommandStatus.SUCCESS, imported=0, ids=[])
-
-    import_batch = ImportBatch(
-        id=new_id("ci", 12),
-        account_id=account.id,
-        conversation_id=conversation.id,
-        filename=bulk_in.filename,
-        message_count=len(bulk_in.messages),
-        created_at=utc_now(),
-    )
-    db.add(import_batch)
-    inserted_ids: list[int] = []
-    for item in bulk_in.messages:
-        message = add_message(
-            db,
-            conversation,
-            item.sender_type,
-            item.msg_type,
-            item.content,
-            source=MessageSource.IMPORT,
-            created_at=normalize_timestamp(item.created_at),
-        )
-        db.flush()
-        inserted_ids.append(message.id)
-    db.commit()
-    return StatusResponse(
-        status=CommandStatus.SUCCESS, imported=len(inserted_ids), ids=inserted_ids
-    )
 
 
 @app.get(

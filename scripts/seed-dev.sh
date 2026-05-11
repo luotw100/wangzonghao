@@ -246,15 +246,21 @@ print(arr[0]["id"] if arr else "")
     ok "chat contact already exists ($contact_id) — reusing"
   fi
 
-  # Ensure a conversation exists for the contact.
-  local body
-  body=$(printf '{"contact_id":%s}' "$(printf '%s' "$contact_id" | json_escape)")
-  out=$(http_post "$CHAT_URL/api/conversations" "$token" "$body")
+  # Find the conversation for this contact.
+  local conversation_id=""
+  out=$(http_get "$CHAT_URL/api/conversations" "$token")
   code="${out%% *}"; rest="${out#* }"
-  [ "$code" = "200" ] || { warn "create conversation failed (HTTP $code): $rest"; return; }
-  local conversation_id
-  conversation_id=$(json_get "$rest" id)
-  [ -n "$conversation_id" ] || { warn "no conversation id in response: $rest"; return; }
+  if [ "$code" = "200" ]; then
+    conversation_id=$(printf '%s' "$rest" | python3 -c '
+import json, sys
+arr = json.load(sys.stdin)
+for c in arr:
+    if c.get("contact_id") == sys.argv[1]:
+        print(c["id"])
+        break
+' "$contact_id")
+  fi
+  [ -n "$conversation_id" ] || { warn "no conversation found for contact $contact_id"; return; }
 
   log "posting seed messages to conversation $conversation_id"
   local seed_jsonl='[

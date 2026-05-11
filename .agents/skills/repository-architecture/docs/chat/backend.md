@@ -14,7 +14,7 @@
 
 `db.py` 当前行为：
 
-- 读取 `DATABASE_URL` 和 S3 环境变量（`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`），缺失时报错。
+- 读取 `DATABASE_URL`，缺失时报错。
 - PostgreSQL 连接池：`pool_size=10, max_overflow=20`。
 - 暴露 `Base`、`SessionLocal`、`get_db()`、`utc_now()`。
 - `utc_now()` 返回时区感知的 UTC datetime。
@@ -32,7 +32,6 @@
 | `chat_contacts` | `Contact` | 某账号下的联系人。 |
 | `chat_conversations` | `Conversation` | 某账号与某联系人的一对一会话。 |
 | `chat_messages` | `Message` | 会话消息。 |
-| `chat_import_batches` | `ImportBatch` | 批量导入记录。 |
 
 关系：
 
@@ -81,8 +80,8 @@ Account
 
 - Auth：`AccountRead`、`LoginRequest`、`LoginResponse`。
 - Contacts：`ContactCreate`、`ContactUpdate`、`ContactRead`。
-- Conversations：`ConversationCreate`、`ConversationUpdate`、`ConversationRead`。
-- Messages/import：`MessageCreate`、`BulkMessageItem`、`BulkMessageImport`、`MessageRead`、`ConversationMessages`。
+- Conversations：`ConversationRead`。
+- Messages：`MessageCreate`、`MessageRead`、`ConversationMessages`。
 - Generic：`StatusResponse`。
 
 ## API endpoints
@@ -104,16 +103,11 @@ Contacts：
 Conversations：
 
 - `GET /api/conversations`
-- `POST /api/conversations`
-- `GET /api/conversations/{conversation_id}`
-- `PUT /api/conversations/{conversation_id}`
-- `DELETE /api/conversations/{conversation_id}`
 
 Messages：
 
 - `POST /api/conversations/{conversation_id}/messages`
 - `POST /api/connector/conversations/{conversation_id}/messages`
-- `POST /api/conversations/{conversation_id}/messages/bulk`
 - `GET /api/conversations/{conversation_id}/messages?last_id=N&timeout=T`
 
 ## 关键 helper

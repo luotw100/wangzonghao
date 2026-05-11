@@ -102,7 +102,7 @@ maybe_reply(contact_id)
   → ProviderClient.complete_chat()
   → 写 LlmLog(purpose='reply')
   → 解析 JSON {"messages": [...]}
-  → chunks 非空则插入 OutboundMessage(status='pending')
+  → 每个 chunk 插入独立 OutboundMessage(status='pending', send_after=计算打字节奏)
   → 清除 contact.pending_reply
 ```
 
@@ -123,16 +123,13 @@ maybe_reply(contact_id)
 ```text
 BridgeRuntime._outbound_loop()
   → GET Studio /api/bridge/outbound?cursor=N&timeout=30
-  → 获取当前 Bridge 绑定 Inbox 下的 pending outbound
+  → 获取当前 Bridge 绑定 Inbox 下的 pending outbound（每条是一条独立文本）
 
 每个 OutboundMessage
   → 按 inbox_id 找 adapter
   → 校验 peer_platform_id
-  → 每个 chunk：
-       delay = len(content) / 6 chars/sec
-       第一条额外 +1.5s think delay
-       delay clamp 到 1s..12s
-       adapter.send_text(peer_platform_id, content)
+  → 跳过空 content
+  → adapter.send_text(peer_platform_id, content)
   → POST Studio /api/bridge/outbound/{id}/ack result=sent
   → Studio 标记 delivered
 ```

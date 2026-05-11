@@ -2,7 +2,7 @@
 
 ## Compose
 
-`services/studio/compose.yaml` 当前定义两个 service，无 volume。
+`services/studio/compose.yaml` 当前定义三个 service，无 volume。
 
 ### `studio-web`
 
@@ -29,7 +29,7 @@
 
 ## 外部依赖
 
-Studio 不再管理自己的 PG 或 MinIO 容器。数据库和对象存储由 `infra/compose.yaml` 统一管理，通过 host 端口暴露：
+Studio 的数据库和对象存储由 `infra/compose.yaml` 统一管理，通过 host 端口暴露：
 
 - PostgreSQL：`host.docker.internal:5432`
 - MinIO S3 API：`host.docker.internal:9000`

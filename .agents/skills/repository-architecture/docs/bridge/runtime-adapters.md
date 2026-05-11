@@ -90,7 +90,6 @@
 
 `runtime.py` 当前常量：
 
-- typing：6 chars/sec，min 1s，max 12s，首条额外 think delay 1.5s。
 - heartbeat interval：15s。
 - inbound batch linger：0.4s。
 - inbound batch max：30。
@@ -145,21 +144,9 @@ GET /api/bridge/outbound?cursor=current&timeout=30
 
 - 用 `inbox_id` 找 adapter。
 - 校验 `peer_platform_id`。
-- 遍历 JSON `chunks`。
 - 跳过空 content。
-- `await asyncio.sleep(_chunk_delay(...))`。
 - 调 `adapter.send_text(peer_id, content)`。
-- 成功时 ack `sent`，携带最后一条 platform message id。
+- 成功时 ack `sent`，携带 platform message id。
 - 异常时 ack `failed`，携带 reason。
 
-## Typing delay
-
-`_chunk_delay(content, is_first)`：
-
-```text
-delay = len(content) / 6
-if first: delay += 1.5
-clamp to [1, 12]
-```
-
-这个 delay 在 Bridge 端实现，因为它属于物理发送行为。
+Bridge 不实现任何 delay 或 pacing。打字节奏由 Studio 在创建 OutboundMessage 时通过 `send_after` 时间戳控制。

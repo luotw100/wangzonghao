@@ -62,8 +62,7 @@ main()
 6. 启动 heartbeat loop。
 7. 启动 inbound batching pump。
 8. 启动 outbound long-poll loop。
-9. 按 chunk sleep，模拟 typing delay。
-10. 发送成功/失败后 ack outbound。
+9. 平台发送和 ack。
 
 ## Bridge 当前不做的事
 

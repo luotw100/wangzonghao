@@ -10,14 +10,14 @@ Laborster 是一个**通用拟人自动化回复服务**，帮助职业用户在
 
 **核心目标**：非常非常像真人。不冷场、不让对方的话落地上、培养亲密感。只提供情绪价值，不涉及金钱交易和线下约会（红线在 `studio/reply.py:SYSTEM_INSTRUCTION`，未来引入 Playbook 后可按场景定制）。
 
-管理员在 Studio 后台维护账号和全局 **Provider**；主播 / 销售等普通用户配置自己 — 创建 **Persona**（人设）、上传历史聊天蒸馏出 Persona + 每个 **Contact**（粉丝）的 **Card**（关系卡）；主播 PC 上跑一个 **Bridge** daemon，把本机各种平台登录（chat / 未来微信 / 飞书...）桥到 Studio。Studio 拿 Persona + Card + 实时对话历史调 LLM 生成拟人化回复，回复经 Bridge 模拟打字延迟后发出去。
+管理员在 Studio 后台维护账号和全局 **Provider**；主播 / 销售等普通用户配置自己 — 创建 **Persona**（人设）、上传历史聊天蒸馏出 Persona + 每个 **Contact**（粉丝）的 **Card**（关系卡）；主播 PC 上跑一个 **Bridge** daemon，把本机各种平台登录（chat / 未来微信 / 飞书...）桥到 Studio。Studio 拿 Persona + Card + 实时对话历史调 LLM 生成拟人化回复，每条回复 chunk 作为独立 OutboundMessage（带 `send_after` 时间戳控制打字节奏），经 Bridge 立即发出。
 
 ## 架构原则
 
 - 简单可靠、耐操、易于理解、可扩展、性能好
 - 三件套：**Channel（聊天平台）↔ Bridge（主播 PC daemon）↔ Studio（云端）**。Studio 不直连任何 Channel；Bridge 不调 LLM、不存人设。
 - Bridge 用账号密码握手 + 长轮询，没有消息队列；Studio 用一张 `outbound_messages` 表当队列即可。
-- 延迟发送（拟人打字速度）由 Bridge 客户端 `asyncio.sleep` 实现，不需要额外表。
+- 延迟发送（拟人打字速度）由 Studio worker 在创建 OutboundMessage 时通过 `send_after` 时间戳控制；Bridge 侧不做任何 delay，收到即发。
 - Studio 拥有完整消息历史（source of truth），Bridge 离线不影响 Studio 决策。
 - **核心数据原语**：Account（admin / user）+ Inbox（一个 Channel 上的身份，N 个）+ Contact（粉丝，N 个，挂在 Inbox 下）+ Persona（用户内容资产）+ Provider（管理员维护的全局 LLM 配置）。
 
@@ -35,7 +35,7 @@ Laborster 是一个**通用拟人自动化回复服务**，帮助职业用户在
 
 ## 技术栈
 
-- 后端：Python 3.12+, FastAPI, SQLAlchemy, SQLite, httpx
+- 后端：Python 3.12+, FastAPI, SQLAlchemy, PostgreSQL, httpx
 - 前端：React + TypeScript + Vite
 - 部署：Docker Compose + Nginx 反向代理
 
@@ -72,7 +72,7 @@ Bridge 是单进程 daemon。一份 CLI 启动命令带：
 
 - 每个 chat 登录一个 `ChatAdapter`，调用 chat sandbox API 完成 login → poll → send。
 - 一个 inbound pump：把所有 adapter 的新消息批量推到 Studio `/api/bridge/incoming`。
-- 一个 outbound long-poll：从 Studio `/api/bridge/outbound` 拉 pending 出件，按 chunk 模拟打字延迟后调 `adapter.send_text`，最后 ack。
+- 一个 outbound long-poll：从 Studio `/api/bridge/outbound` 拉 pending 出件，立即调 `adapter.send_text` 发送，最后 ack。
 - 一个 heartbeat：每 15s 一次 `/api/bridge/heartbeat`；返回当前 Studio 认可的 inbox 列表，Bridge 把 UI 那边删掉的 inbox 对应 adapter 关掉。
 
 ### Bridge ↔ Studio 协议
@@ -151,9 +151,9 @@ Persona 跨 Inbox / Contact 共享。ProviderConfig 由 admin 全局维护，Inb
 4. studio-worker ReplyScanner 每 2s 扫 pending_reply=true 的 contact，gates 重新校验：
   - inbox.enabled / bridge 在线 / contact.persona_id / 解析 reply_provider = contact.reply_provider_config_id ?? inbox.reply_provider_config_id ?? global default provider
    - 距离 counterpart 最新消息 ≥ QUIET_SECONDS（避免对方还没打完就抢答）
-5. 通过 → 调 LLM → 解析 {"messages": [...]} → 写一条 OutboundMessage(chunks=[...])
-6. Bridge outbound long-poll 拿到，逐 chunk 按打字延迟模拟，调 adapter.send_text
-7. Bridge ack；Studio 把 outbound 标 delivered
+ 5. 通过 → 调 LLM → 解析 {"messages": [...]} → 每条 chunk 写一条独立 OutboundMessage(status=pending, send_after=计算打字节奏)
+ 6. Bridge outbound long-poll 拿到，立即调 adapter.send_text 发送
+ 7. Bridge ack；Studio 把 outbound 标 delivered
 ```
 
 #### Reply Prompt 构建规则（studio/reply.py）
@@ -162,7 +162,7 @@ Persona 跨 Inbox / Contact 共享。ProviderConfig 由 admin 全局维护，Inb
 - user message = persona.persona_md + contact.card_md + 最近 N 条历史（自然语言格式：`[mm-dd HH:MM] 我/对方: ...`）。
 - 历史包含 source=archive + source=live 的全部消息，按 timestamp 升序；最后一条必须是 counterpart 才会触发回复。
 - LLM 必须返回 `{"messages": ["第一条", "第二条"]}`；空数组表示"装作没看见"。
-- chunk 间打字延迟在 Bridge 端按 `len(content) / 6 chars/sec` 计算，最少 1s 最多 12s；首条多加一点 think delay。
+- 每条 LLM 回复 chunk 写一条独立 OutboundMessage，`send_after` 在 Studio 端按 `len(content) / 6 chars/sec` 计算打字节奏，最少 1s 最多 12s；首条多加 1.5s think delay。Bridge 收到即发，不做延迟。
 
 #### Distill Pipeline（studio/distill/）
 

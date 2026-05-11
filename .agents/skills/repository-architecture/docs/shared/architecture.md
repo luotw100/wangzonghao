@@ -17,7 +17,7 @@ Studio cloud control plane
 ```
 
 - **Channel**：真实或模拟聊天平台。当前仓库中的实现是 `services/chat`。
-- **Bridge**：本地 IO daemon，持有平台登录态，负责收发消息和 typing delay。
+- **Bridge**：本地 IO daemon，持有平台登录态，负责收发消息。
 - **Studio**：云端控制面，持有账号、人设、Provider、消息历史、关系卡、蒸馏任务、回复决策和 outbound 队列。
 
 ## 服务边界
@@ -40,7 +40,6 @@ Bridge 当前负责：
 - 批量推送 `/api/bridge/incoming`；
 - heartbeat；
 - outbound long polling；
-- chunk 级 typing delay；
 - 平台发送和 ack。
 
 Bridge 当前不负责：
@@ -123,7 +122,7 @@ Studio `messages` 表统一保存 archive 和 live 消息。按 `(contact_id, ex
 
 ### OutboundMessage
 
-Studio → Bridge 的工作队列表。包含 JSON `chunks`、状态、投递/失败信息。Bridge 通过 cursor 消费并 ack。
+Studio → Bridge 的工作队列表。每条 OutboundMessage 是一条独立的待发送文本，包含 `content`、`send_after`（打字节奏控制）、状态、投递/失败信息。Bridge 通过 cursor 消费并 ack。
 
 ## 配置原则在当前代码中的体现
 

@@ -147,6 +147,16 @@
 
 LLM 调用异常时写 `LlmLog(response_raw='ERROR: ...')`，当前不清 `pending_reply`。解析异常时清 `pending_reply`。
 
+### OutboundMessage 节奏
+
+每个解析到的 chunk 写一条独立 `OutboundMessage`。`send_after` 在 Studio 端计算：
+
+- 首条：`now + THINK_DELAY (1.5s)`。
+- 后续：前一条 `send_after + max(MIN, min(MAX, len(prev_chunk) / CHARS_PER_SEC))`。
+- `TYPING_CHARS_PER_SECOND = 6.0`，`TYPING_MIN_DELAY = 1.0s`，`TYPING_MAX_DELAY = 12.0s`，`THINK_DELAY = 1.5s`。
+
+Bridge 收到即发，不做延迟。
+
 ## Distill ingest
 
 文件：`studio/distill/ingest.py`。

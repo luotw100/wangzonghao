@@ -68,7 +68,7 @@ services/studio/
 - Python 3.12+
 - FastAPI
 - SQLAlchemy
-- SQLite
+- PostgreSQL
 - httpx
 - python-multipart
 - Uvicorn
@@ -112,15 +112,18 @@ services/studio/
 - ReplyScanner 扫 `pending_reply=True` Contact。
 - 通过 ProviderClient 执行 LLM 调用。
 
-两个进程共享同一个 SQLite DB volume。
+两个进程共享同一个 PostgreSQL 数据库。
 
 ## Studio Web 当前 tabs
 
-1. Takeover — Contact 级接管配置和消息预览。
-2. Bridges — Bridge 状态和 revoke。
-3. Personas — create/edit/delete Persona。
-4. Providers — create/delete ProviderConfig。
-5. Archives — 上传 WeFlow JSON 到目标 Inbox。
-6. Distill — 创建和查看 distill jobs。
+Admin tab 导航：总览（默认） · 接管 · 人设 · 设备 · 设置
+
+普通用户 tab 导航：接管（默认） · 人设 · 设备 · 设置
+
+- **总览**（admin only）：跨账号系统级统计。
+- **接管**：Contact 级接管配置和消息预览。
+- **人设**：create/edit/delete Persona。
+- **设备**：Bridge 状态、快速启动命令和 revoke。
+- **设置**：密码修改、账号管理（admin）、Provider 管理（admin）。
 
 Bridge 和 Inbox 主要由 daemon handshake 自动创建；UI 当前不要求手动创建 Bridge。

@@ -37,7 +37,7 @@ Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Cha
 ## 当前核心不变量
 
 1. **Studio 不直连 Channel。** 当前 Chat sandbox 也只能通过 Bridge 的 `chat` adapter 进入 Studio。
-2. **Bridge 不做策略决策。** Bridge 只登录平台、收消息、推 Studio、拉 outbound、模拟打字和发送。
+2. **Bridge 不做策略决策。** Bridge 只登录平台、收消息、推 Studio、拉 outbound、发送。
 3. **Studio DB 是 source of truth。** Studio 的 `messages` 表统一保存 archive/live 历史。
 4. **Contact 是接管单元。** Contact 持有 `persona_id`、可选 Provider override、`autoreply_enabled`、`card_md`、`pending_reply`。
 5. **Inbox 是平台身份。** Inbox 表示一个平台账号/身份，并给新 Contact 提供默认 Persona 和可选 Provider override。
@@ -89,8 +89,8 @@ Contact.pending_reply=True
   → StudioRuntime ReplyScanner every 2s
   → maybe_reply()
   → ProviderClient.complete_chat()
-  → OutboundMessage(status=pending)
-  → Bridge long-poll + typing delay + ack
+  → OutboundMessage(status=pending, send_after=打字节奏)
+  → Bridge long-poll + 即发 + ack
 ```
 
 ## AI / 开发者阅读顺序

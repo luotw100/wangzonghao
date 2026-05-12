@@ -13,6 +13,10 @@ class SenderType(StrEnum):
 
 class MessageType(StrEnum):
     TEXT = "text"
+    IMAGE = "image"
+    AUDIO = "audio"
+    VIDEO = "video"
+    FILE = "file"
 
 
 class MessageSource(StrEnum):

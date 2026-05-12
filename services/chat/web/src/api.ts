@@ -39,16 +39,23 @@ export interface Conversation {
   contact: Contact;
 }
 
+export type MessageType = 'text' | 'image' | 'audio' | 'video' | 'file';
+
 export interface Message {
   id: number;
   account_id: string;
   conversation_id: string;
   sender_type: 'self' | 'contact';
   sender_contact_id: string | null;
-  msg_type: string;
+  msg_type: MessageType;
   content: string;
   source: string;
   created_at: string;
+}
+
+export interface UploadPresignResponse {
+  storage_key: string;
+  upload_url: string;
 }
 
 export interface LoginResponse {
@@ -147,13 +154,36 @@ export function listConversations(): Promise<Conversation[]> {
 
 export function sendMessage(
   conversationId: string,
-  payload: { sender_type: 'self' | 'contact'; msg_type: string; content: string; created_at?: string }
+  payload: { sender_type: 'self' | 'contact'; msg_type: MessageType; content: string; created_at?: string }
 ) {
   return request<{ status: string; id: number }>(`/conversations/${conversationId}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+}
+
+export function presignUpload(filename: string, mimeType: string): Promise<UploadPresignResponse> {
+  return request<UploadPresignResponse>('/uploads/presign', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename, mime_type: mimeType }),
+  });
+}
+
+export async function uploadPresignedFile(uploadUrl: string, file: File): Promise<void> {
+  const res = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    body: file,
+  });
+  if (!res.ok) {
+    throw new Error(`文件上传失败: HTTP ${res.status}`);
+  }
+}
+
+export function mediaUrl(storageKey: string): string {
+  return `${API_BASE}/media/${storageKey}`;
 }
 
 /**
@@ -197,5 +227,3 @@ export async function getMessages(
     throw err;
   }
 }
-
-

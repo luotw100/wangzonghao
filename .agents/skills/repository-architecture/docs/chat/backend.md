@@ -50,7 +50,7 @@ Account
 - Contact / Conversation 通过 `is_deleted`、`deleted_at` 软删除。
 - `Message.sender_type` 是 `self | contact`，有 CHECK 约束。
 - `Message.source` 是 `live | import`，有 CHECK 约束。
-- `Message.msg_type` 是 `text`，有 CHECK 约束。
+- `Message.msg_type` 是 `text | image | audio | video | file`，有 CHECK 约束。
 - Bridge 的 ChatAdapter 会把 `sender_type='contact'` 映射为 Studio 的 `role='counterpart'`。
 - Chat models 当前不使用 SQLAlchemy column defaults；创建记录时由应用层显式写入状态、软删除标记和时间戳。
 - Chat 代码使用 `chat/enums.py` 中的 StrEnum 表达 status、sender_type、message type、message source 和 command status。
@@ -82,6 +82,7 @@ Account
 - Contacts：`ContactCreate`、`ContactUpdate`、`ContactRead`。
 - Conversations：`ConversationRead`。
 - Messages：`MessageCreate`、`MessageRead`、`ConversationMessages`。
+- Media：`UploadPresignRequest`、`UploadPresignResponse`。
 - Generic：`StatusResponse`。
 
 ## API endpoints
@@ -110,15 +111,56 @@ Messages：
 - `POST /api/connector/conversations/{conversation_id}/messages`
 - `GET /api/conversations/{conversation_id}/messages?last_id=N&timeout=T`
 
+Media：
+
+- `POST /api/uploads/presign`：请求 presigned PUT URL，传入 `{filename, mime_type}`，返回 `{storage_key, upload_url}`。
+- `GET /api/media/{storage_key}`：校验 auth + 所有权（storage_key 必须以 `media/{account_id}/` 开头），302 重定向到 presigned GET URL（5 分钟有效）。
+
 ## 关键 helper
 
 - `new_id(prefix, size)`：生成 id。
 - `normalize_timestamp()`：确保 datetime 带时区信息；naive datetime 补 UTC。
 - `get_contact_or_404()` / `get_conversation_or_404()`：按 account 校验归属。
 - `get_or_create_direct_conversation()`：恢复软删除会话或创建一对一会话。
-- `add_message()`：校验 sender_type，写 Message，并更新 conversation timestamp。
+- `add_message()`：校验 sender_type 和 msg_type（media 类型要求 content 必须以 `media/{account_id}/` 开头），写 Message，并更新 conversation timestamp。
 - `get_messages_after_id()`：按 last id 拉消息。
 - `build_messages_payload()`：返回 conversation + messages。
+
+## 媒体消息流程
+
+Chat sandbox 当前支持 5 种消息类型：`text`、`image`、`audio`、`video`、`file`。
+
+### 数据模型
+
+- `msg_type` CHECK 约束合法值：`text | image | audio | video | file`。
+- `content` 语义：
+  - `msg_type='text'`：content 是纯文本。
+  - `msg_type ∈ {image, audio, video, file}`：content 是 S3 storage key，格式为 `media/{account_id}/{uuid4}`。
+- 应用层校验：非 text 消息的 content 必须以 `media/{当前用户 account_id}/` 开头。
+
+### 上传流程
+
+1. 前端请求 `POST /api/uploads/presign`（带 `filename` 和 `mime_type`），后端生成 `storage_key`（`media/{account_id}/{uuid4}`）和 presigned PUT URL（15 分钟有效）。
+2. 前端直接 PUT 文件到 presigned URL，数据不经过 Chat 后端。
+3. 前端用 `POST /api/conversations/{id}/messages`（`msg_type` + `content=storage_key`）发送消息。
+
+### 下载流程
+
+- 前端请求 `GET /api/media/{storage_key}`，后端校验 auth + 所有权后 302 重定向到 presigned GET URL（5 分钟有效）。
+- 文件数据不经过 Chat 后端，浏览器直接从 S3 下载。
+
+### S3 工具
+
+`s3.py` 新增函数：
+
+- `s3_generate_storage_key(account_id)`：生成 `media/{account_id}/{uuid4}` 格式 key。
+- `s3_presigned_put_url(key, content_type, expires=15min)`：生成 presigned PUT URL。
+- `s3_presigned_get_url(key, filename=None, expires=5min)`：生成 presigned GET URL，可选带 `Content-Disposition`。
+- `s3_head_content_type(key)`：获取 S3 对象的 Content-Type。
+
+### 环境变量
+
+- `UPLOAD_MAX_SIZE_MB`：必填，文件大小上限 MB，缺失时启动报错。
 
 ## Long polling
 

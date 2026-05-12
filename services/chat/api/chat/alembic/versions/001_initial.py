@@ -93,7 +93,7 @@ def upgrade() -> None:
         sa.Column("source", sa.String(16), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("sender_type IN ('self', 'contact')", name="ck_chat_msg_sender_type"),
-        sa.CheckConstraint("msg_type IN ('text')", name="ck_chat_msg_type"),
+        sa.CheckConstraint("msg_type IN ('text', 'image', 'audio', 'video', 'file')", name="ck_chat_msg_type"),
         sa.CheckConstraint("source IN ('live', 'import')", name="ck_chat_msg_source"),
     )
     op.create_index("ix_chat_messages_account_id", "chat_messages", ["account_id"])

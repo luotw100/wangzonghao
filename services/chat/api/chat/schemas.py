@@ -72,7 +72,7 @@ class ConversationRead(StrictModel):
 
 class MessageCreate(StrictModel):
     sender_type: SenderType
-    msg_type: MessageType
+    msg_type: MessageType = MessageType.TEXT
     content: str
     created_at: datetime | None = None
 
@@ -83,7 +83,7 @@ class MessageRead(StrictModel):
     conversation_id: str
     sender_type: SenderType
     sender_contact_id: str | None
-    msg_type: str
+    msg_type: MessageType
     content: str
     source: MessageSource
     created_at: datetime
@@ -96,4 +96,14 @@ class ConversationMessages(StrictModel):
 
 class StatusResponse(StrictModel):
     status: CommandStatus
-    id: str | int | None = None
+    id: int | None = None
+
+
+class UploadPresignRequest(StrictModel):
+    filename: str
+    mime_type: str
+
+
+class UploadPresignResponse(StrictModel):
+    storage_key: str
+    upload_url: str

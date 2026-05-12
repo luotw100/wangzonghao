@@ -92,7 +92,7 @@ class Message(Base):
     __tablename__ = "chat_messages"
     __table_args__ = (
         CheckConstraint("sender_type IN ('self', 'contact')", name="ck_chat_msg_sender_type"),
-        CheckConstraint("msg_type IN ('text')", name="ck_chat_msg_type"),
+        CheckConstraint("msg_type IN ('text', 'image', 'audio', 'video', 'file')", name="ck_chat_msg_type"),
         CheckConstraint("source IN ('live', 'import')", name="ck_chat_msg_source"),
     )
 

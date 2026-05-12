@@ -5,11 +5,12 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session, joinedload
 
 from chat.auth_utils import hash_token, new_session_token, verify_password
 from chat.db import SessionLocal, get_db, utc_now
-from chat.enums import AccountStatus, CommandStatus, MessageSource, SenderType
+from chat.enums import AccountStatus, CommandStatus, MessageSource, MessageType, SenderType
 from chat.migrate import run_migrations
 from chat.models import (
     Account,
@@ -17,6 +18,11 @@ from chat.models import (
     Contact,
     Conversation,
     Message,
+)
+from chat.s3 import (
+    s3_generate_storage_key,
+    s3_presigned_get_url,
+    s3_presigned_put_url,
 )
 from chat.schemas import (
     AccountRead,
@@ -29,14 +35,51 @@ from chat.schemas import (
     LoginResponse,
     MessageCreate,
     StatusResponse,
+    UploadPresignRequest,
+    UploadPresignResponse,
 )
 
 from contextlib import asynccontextmanager
+
+UPLOAD_MAX_SIZE_BYTES: int | None = None
+
+
+def _init_upload_max_size() -> int:
+    import os
+    val = os.environ.get("UPLOAD_MAX_SIZE_MB")
+    if not val:
+        raise RuntimeError("UPLOAD_MAX_SIZE_MB environment variable is required")
+    mb = int(val)
+    if mb <= 0:
+        raise RuntimeError("UPLOAD_MAX_SIZE_MB must be a positive integer")
+    return mb * 1024 * 1024
+
+
+def _get_upload_max_size() -> int:
+    global UPLOAD_MAX_SIZE_BYTES
+    if UPLOAD_MAX_SIZE_BYTES is None:
+        UPLOAD_MAX_SIZE_BYTES = _init_upload_max_size()
+    return UPLOAD_MAX_SIZE_BYTES
+
+
+MIME_TYPE_MAP: dict[str, MessageType] = {
+    "image/": MessageType.IMAGE,
+    "audio/": MessageType.AUDIO,
+    "video/": MessageType.VIDEO,
+}
+
+
+def _infer_msg_type(mime_type: str) -> MessageType:
+    for prefix, mt in MIME_TYPE_MAP.items():
+        if mime_type.startswith(prefix):
+            return mt
+    return MessageType.FILE
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     run_migrations()
+    _get_upload_max_size()
     yield
 
 
@@ -361,6 +404,15 @@ def send_debug_message(
     db: DbDep,
 ) -> StatusResponse:
     conversation = get_conversation_or_404(db, account.id, conversation_id)
+
+    if msg_in.msg_type != MessageType.TEXT:
+        expected_prefix = f"media/{account.id}/"
+        if not msg_in.content.startswith(expected_prefix):
+            raise HTTPException(
+                status_code=400,
+                detail=f"媒体消息的 content 必须是以 {expected_prefix} 开头的 storage key",
+            )
+
     message = add_message(
         db,
         conversation,
@@ -389,6 +441,15 @@ def connector_send_message(
             status_code=400, detail="Connector 只能以当前登录账号发送消息"
         )
     conversation = get_conversation_or_404(db, account.id, conversation_id)
+
+    if msg_in.msg_type != MessageType.TEXT:
+        expected_prefix = f"media/{account.id}/"
+        if not msg_in.content.startswith(expected_prefix):
+            raise HTTPException(
+                status_code=400,
+                detail=f"媒体消息的 content 必须是以 {expected_prefix} 开头的 storage key",
+            )
+
     message = add_message(
         db,
         conversation,
@@ -428,3 +489,26 @@ async def get_conversation_messages(
             return payload
 
         await asyncio.sleep(min(0.2, timeout - elapsed))
+
+
+@app.post("/api/uploads/presign", response_model=UploadPresignResponse)
+def presign_upload(
+    payload: UploadPresignRequest,
+    account: CurrentAccountDep,
+) -> UploadPresignResponse:
+    storage_key = s3_generate_storage_key(account.id)
+    upload_url = s3_presigned_put_url(storage_key, payload.mime_type)
+    return UploadPresignResponse(storage_key=storage_key, upload_url=upload_url)
+
+
+@app.get("/api/media/{storage_key:path}")
+def serve_media(
+    storage_key: str,
+    account: CurrentAccountDep,
+) -> RedirectResponse:
+    expected_prefix = f"media/{account.id}/"
+    if not storage_key.startswith(expected_prefix):
+        raise HTTPException(status_code=403, detail="无权访问该文件")
+
+    url = s3_presigned_get_url(storage_key)
+    return RedirectResponse(url=url)

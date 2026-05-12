@@ -123,6 +123,8 @@ Bridge 会停止本地存在但不在 response 中的 adapter。
 }
 ```
 
+当前 Bridge 协议的 incoming/outbound 消息仅传输纯文本（`content` 为字符串），不包含 `msg_type` 或 `media` 字段。
+
 ### 当前行为
 
 逐条处理：

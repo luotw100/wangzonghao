@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { Account, Conversation, Message } from '../api';
+import { mediaUrl } from '../api';
 import Avatar from './Avatar';
 import { formatBubbleSeparator, formatFullTime, shouldShowSeparator } from '../utils/time';
 
@@ -7,8 +8,6 @@ interface MessageListProps {
   account: Account;
   conversation: Conversation;
   messages: Message[];
-  /** Whose perspective is the user adopting right now? Determines which side
-   * is rendered on the right (the active speaker is always on the right). */
   perspective: 'self' | 'contact';
 }
 
@@ -17,6 +16,32 @@ interface Row {
   key: string;
   message?: Message;
   label?: string;
+}
+
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function MediaContent({ message }: { message: Message }) {
+  const url = mediaUrl(message.content);
+  switch (message.msg_type) {
+    case 'image':
+      return <img src={url} alt="图片" className="bubble-media" loading="lazy" />;
+    case 'audio':
+      return <audio src={url} controls className="bubble-media" />;
+    case 'video':
+      return <video src={url} controls className="bubble-media" />;
+    case 'file':
+      return (
+        <a href={url} className="bubble-file-link" target="_blank" rel="noopener noreferrer">
+          📎 下载文件
+        </a>
+      );
+    default:
+      return <span>{message.content}</span>;
+  }
 }
 
 export default function MessageList({ account, conversation, messages, perspective }: MessageListProps) {
@@ -41,10 +66,6 @@ export default function MessageList({ account, conversation, messages, perspecti
     return out;
   }, [messages]);
 
-  // Scroll-to-bottom strategy:
-  //  - Always jump to bottom on conversation switch.
-  //  - When new messages arrive, only auto-scroll if the user is already near
-  //    the bottom (within 120px); otherwise leave their scroll position alone.
   useEffect(() => {
     const node = containerRef.current;
     if (!node) return;
@@ -70,7 +91,7 @@ export default function MessageList({ account, conversation, messages, perspecti
       <div className="messages-empty">
         <EmptyChatArt />
         <h3>开始一段对话</h3>
-        <p>选择 Enter 发送，Shift+Enter 换行。可切换发送身份模拟两端对话。</p>
+        <p>选择 Enter 发送文本消息，或点击附件按钮发送图片/音频/视频/文件。</p>
       </div>
     );
   }
@@ -87,8 +108,6 @@ export default function MessageList({ account, conversation, messages, perspecti
             );
           }
           const message = row.message!;
-          // The "perspective" determines orientation: whichever side the user
-          // is currently speaking *as* gets rendered on the right.
           const isOnRight = message.sender_type === perspective;
           const senderName =
             message.sender_type === 'self' ? account.display_name : conversation.contact.display_name;
@@ -105,7 +124,11 @@ export default function MessageList({ account, conversation, messages, perspecti
                   }
                   title={formatFullTime(message.created_at)}
                 >
-                  {message.content}
+                  {message.msg_type === 'text' ? (
+                    message.content
+                  ) : (
+                    <MediaContent message={message} />
+                  )}
                 </div>
                 {message.source === 'import' && <span className="bubble-tag">导入</span>}
               </div>

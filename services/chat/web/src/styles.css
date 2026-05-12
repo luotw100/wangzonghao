@@ -597,6 +597,24 @@ label > span {
   letter-spacing: 0.05em;
 }
 
+.bubble-media {
+  max-width: 320px;
+  max-height: 320px;
+  border-radius: var(--wc-radius);
+  display: block;
+}
+.bubble-media[controls] {
+  width: 280px;
+}
+.bubble-file-link {
+  color: inherit;
+  text-decoration: underline;
+  word-break: break-all;
+}
+.bubble-file-link:hover {
+  opacity: 0.8;
+}
+
 .messages-empty {
   display: flex;
   flex-direction: column;
@@ -665,9 +683,31 @@ label > span {
 
 .composer-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto 1fr auto;
   gap: 10px;
   align-items: stretch;
+}
+.attach-btn {
+  align-self: flex-end;
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--wc-text-muted);
+  border: 1px solid var(--wc-divider-strong);
+}
+.attach-btn:hover {
+  background: #f0f0f0;
+  color: var(--wc-text);
+}
+.attach-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .composer-row textarea {
   min-height: 76px;
@@ -833,5 +873,9 @@ label > span {
   }
   .composer-row textarea {
     min-height: 56px;
+  }
+  .bubble-media {
+    max-width: 240px;
+    max-height: 240px;
   }
 }

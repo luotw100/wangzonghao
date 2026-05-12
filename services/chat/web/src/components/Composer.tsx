@@ -1,5 +1,6 @@
-import { KeyboardEvent, useEffect, useRef, useState } from 'react';
-import type { Account, Conversation } from '../api';
+import { KeyboardEvent, useRef, useState } from 'react';
+import type { Account, Conversation, MessageType } from '../api';
+import { presignUpload, sendMessage, uploadPresignedFile } from '../api';
 
 interface ComposerProps {
   account: Account;
@@ -7,6 +8,13 @@ interface ComposerProps {
   perspective: 'self' | 'contact';
   onChangePerspective: (next: 'self' | 'contact') => void;
   onSend: (content: string, sender: 'self' | 'contact') => Promise<void>;
+}
+
+function inferMediaType(mimeType: string): MessageType {
+  if (mimeType.startsWith('image/')) return 'image';
+  if (mimeType.startsWith('audio/')) return 'audio';
+  if (mimeType.startsWith('video/')) return 'video';
+  return 'file';
 }
 
 export default function Composer({
@@ -20,12 +28,7 @@ export default function Composer({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    setValue('');
-    setError('');
-    textareaRef.current?.focus();
-  }, [conversation.id]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function send() {
     const content = value.trim();
@@ -35,13 +38,34 @@ export default function Composer({
     try {
       await onSend(content, perspective);
       setValue('');
-      // re-focus once the new message rendered
       requestAnimationFrame(() => textareaRef.current?.focus());
     } catch (err) {
-      // Restore the unsent text so user can retry.
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setSending(false);
+    }
+  }
+
+  async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setSending(true);
+    setError('');
+    try {
+      const presign = await presignUpload(file.name, file.type || 'application/octet-stream');
+      await uploadPresignedFile(presign.upload_url, file);
+      const msgType = inferMediaType(file.type || 'application/octet-stream');
+      await sendMessage(conversation.id, {
+        sender_type: perspective,
+        msg_type: msgType,
+        content: presign.storage_key,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSending(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }
 
@@ -78,10 +102,27 @@ export default function Composer({
       </div>
 
       <div className="composer-hint">
-        正在以 <strong>{speakingAs}</strong> 的身份发送 · Enter 发送 · Shift+Enter 换行
+        正在以 <strong>{speakingAs}</strong> 的身份发送 · Enter 发送文本 · 📎 发送媒体
       </div>
 
       <div className="composer-row">
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*,audio/*,video/*,*.*"
+          style={{ display: 'none' }}
+          onChange={handleFileChange}
+          disabled={sending}
+        />
+        <button
+          type="button"
+          className="attach-btn"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={sending}
+          title="发送媒体文件"
+        >
+          📎
+        </button>
         <textarea
           ref={textareaRef}
           value={value}

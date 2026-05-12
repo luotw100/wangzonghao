@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 
 import boto3
 from botocore.config import Config as BotoConfig
@@ -12,6 +13,9 @@ if not all([_endpoint, _access_key, _secret_key, _bucket]):
     raise RuntimeError("S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, and S3_BUCKET are required")
 
 S3_BUCKET = _bucket
+
+UPLOAD_PRESIGN_EXPIRES = timedelta(minutes=15)
+DOWNLOAD_PRESIGN_EXPIRES = timedelta(minutes=5)
 
 _s3_client = boto3.client(
     "s3",
@@ -38,3 +42,39 @@ def s3_key_exists(key: str) -> bool:
         return True
     except _s3_client.exceptions.ClientError:
         return False
+
+
+def s3_generate_storage_key(account_id: str) -> str:
+    import uuid
+    return f"media/{account_id}/{uuid.uuid4().hex}"
+
+
+def s3_presigned_put_url(key: str, content_type: str, expires: timedelta = UPLOAD_PRESIGN_EXPIRES) -> str:
+    return _s3_client.generate_presigned_url(
+        "put_object",
+        Params={"Bucket": S3_BUCKET, "Key": key, "ContentType": content_type},
+        ExpiresIn=int(expires.total_seconds()),
+    )
+
+
+def s3_presigned_get_url(
+    key: str,
+    filename: str | None = None,
+    expires: timedelta = DOWNLOAD_PRESIGN_EXPIRES,
+) -> str:
+    params: dict = {"Bucket": S3_BUCKET, "Key": key}
+    if filename:
+        params["ResponseContentDisposition"] = f'attachment; filename="{filename}"'
+    return _s3_client.generate_presigned_url(
+        "get_object",
+        Params=params,
+        ExpiresIn=int(expires.total_seconds()),
+    )
+
+
+def s3_head_content_type(key: str) -> str | None:
+    try:
+        resp = _s3_client.head_object(Bucket=S3_BUCKET, Key=key)
+        return resp.get("ContentType")
+    except _s3_client.exceptions.ClientError:
+        return None

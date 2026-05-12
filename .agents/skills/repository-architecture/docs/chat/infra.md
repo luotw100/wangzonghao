@@ -16,7 +16,7 @@
 ### `chat-api`
 
 - build context：`./api`。
-- env：`DATABASE_URL`、`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`。
+- env：`DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`、`UPLOAD_MAX_SIZE_MB`。
 - `extra_hosts: host.docker.internal:host-gateway`（连接 infra 的 PG 和 MinIO）。
 - restart：`unless-stopped`。
 
@@ -73,7 +73,9 @@ Chat 的数据库和对象存储由 `infra/compose.yaml` 统一管理，通过 h
 
 ## 必要环境变量
 
-`DATABASE_URL`、`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET` 都必须存在。缺失时 `chat/db.py` 或 `chat/s3.py` 会直接抛错。
+`DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`、`UPLOAD_MAX_SIZE_MB` 都必须存在。缺失时 `chat/db.py` 或 `chat/s3.py` 或 `chat/main.py` 会直接抛错。
+
+`S3_ENDPOINT` 是容器内访问 MinIO 的地址（如 `http://host.docker.internal:9000`），`S3_PUBLIC_URL` 是浏览器访问 MinIO 的地址（如 `https://s3.laborster.com`）。两者不同因为 presigned URL 的签名绑定 host，必须用浏览器可达的公网地址签名。
 
 ## Database
 

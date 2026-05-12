@@ -126,7 +126,7 @@ Studio → Bridge 的工作队列表。每条 OutboundMessage 是一条独立的
 
 ## 配置原则在当前代码中的体现
 
-- Chat 需要 `DATABASE_URL`、`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`、`UPLOAD_MAX_SIZE_MB` 环境变量，缺失时报错。
+- Chat 需要 `DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`、`UPLOAD_MAX_SIZE_MB` 环境变量，缺失时报错。`S3_ENDPOINT` 是容器内地址，`S3_PUBLIC_URL` 是浏览器可达地址，两者不同因为 presigned URL 签名绑定 host。
 - Studio 需要 `DATABASE_URL` 和 S3 环境变量（`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`），缺失时报错。
 - Chat 和 Studio models 当前不使用 SQLAlchemy column default。
 - Studio 和 Chat 使用 PostgreSQL，由 Alembic 管理 schema 迁移。

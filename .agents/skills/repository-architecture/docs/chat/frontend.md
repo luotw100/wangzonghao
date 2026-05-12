@@ -22,10 +22,13 @@
 - `login()`、`me()`、`logout()`。
 - `createContact()`、`updateContact()`、`deleteContact()`。
 - `listConversations()`。
-- `sendMessage()`。
+- `sendMessage()`：`msg_type` 参数支持 `text | image | audio | video | file`。
+- `presignUpload(filename, mimeType)`：请求 presigned PUT URL。
+- `uploadPresignedFile(uploadUrl, file)`：PUT 文件到 S3 presigned URL。
+- `mediaUrl(storageKey)`：拼接 `/api/media/{key}?token=xxx`，用于 `<img>`/`<audio>`/`<video>` src。
 - `getMessages()`。
 
-主要 TS 类型：`Account`、`Contact`、`Conversation`、`Message`、`LoginResponse`。
+主要 TS 类型：`Account`、`Contact`、`Conversation`、`Message`、`MessageType`（`'text' | 'image' | 'audio' | 'video' | 'file'`）、`UploadPresignResponse`、`LoginResponse`。
 
 ## Hooks
 
@@ -106,14 +109,21 @@
 
 ### `Composer`
 
-- textarea 输入。
+- textarea 输入 + 附件按钮（📎）。
 - 发送视角 toggle（两个 tab：Me / Counterpart）。
-- Enter 发送（非 Shift+Enter、非 IME composing）；Shift+Enter 换行。
+- Enter 发送文本消息（非 Shift+Enter、非 IME composing）；Shift+Enter 换行。
+- 点击 📎 选择文件 → `presignUpload()` → `uploadPresignedFile()` → `sendMessage(msg_type, storage_key)`。`msg_type` 由前端根据文件 MIME 自动推断（image→image, audio→audio, video→video, 其他→file）。
 - 发送失败时保留未发送文本。
 
 ### `MessageList`
 
-- 渲染消息气泡。
+- 渲染消息气泡，根据 `msg_type` 决定渲染方式：
+  - `text` → 纯文本。
+  - `image` → `<img src={mediaUrl(key)}>`。
+  - `audio` → `<audio src={mediaUrl(key)} controls>`。
+  - `video` → `<video src={mediaUrl(key)} controls>`。
+  - `file` → `<a href={mediaUrl(key)}>` 下载链接。
+- `mediaUrl()` 拼接 `/api/media/{key}?token=xxx`，token 来自 localStorage。
 - 根据 perspective 决定左右（active perspective 在右侧）。
 - 用 `shouldShowSeparator()` 插入时间分隔（gap ≥ 5 分钟）。
 - conversation 切换时跳到底部；新消息时仅在接近底部时自动滚动。

@@ -146,13 +146,16 @@ Chat sandbox 当前支持 5 种消息类型：`text`、`image`、`audio`、`vide
 
 ### 下载流程
 
-- 前端请求 `GET /api/media/{storage_key}`，后端校验 auth + 所有权后 302 重定向到 presigned GET URL（5 分钟有效）。
+- 前端请求 `GET /api/media/{storage_key}`（或 `GET /api/media/{storage_key}?token=xxx`），后端校验 auth + 所有权后 302 重定向到 presigned GET URL（5 分钟有效）。
+- `<img>`、`<audio>`、`<video>` 等标签无法带 Authorization header，因此 `mediaUrl()` 函数在 URL 后附加 `?token=` 查询参数；后端 `_resolve_media_account` 依赖同时支持 Bearer header 和 `?token=` 两种认证方式。
 - 文件数据不经过 Chat 后端，浏览器直接从 S3 下载。
 
 ### S3 工具
 
-`s3.py` 新增函数：
+`s3.py` 当前行为：
 
+- 内部 S3 操作（`s3_put`、`s3_get`、`s3_key_exists`、`s3_head_content_type`）使用 `_s3_client`，endpoint 为 `S3_ENDPOINT`（容器内地址）。
+- Presigned URL 操作（`s3_presigned_put_url`、`s3_presigned_get_url`）使用 `_s3_public_client`，endpoint 为 `S3_PUBLIC_URL`（浏览器可达地址），因为 presigned URL 的签名绑定 host header。
 - `s3_generate_storage_key(account_id)`：生成 `media/{account_id}/{uuid4}` 格式 key。
 - `s3_presigned_put_url(key, content_type, expires=15min)`：生成 presigned PUT URL。
 - `s3_presigned_get_url(key, filename=None, expires=5min)`：生成 presigned GET URL，可选带 `Content-Disposition`。
@@ -161,6 +164,7 @@ Chat sandbox 当前支持 5 种消息类型：`text`、`image`、`audio`、`vide
 ### 环境变量
 
 - `UPLOAD_MAX_SIZE_MB`：必填，文件大小上限 MB，缺失时启动报错。
+- `S3_PUBLIC_URL`：必填，浏览器可达的 S3 地址（如 `https://s3.laborster.com`），用于生成 presigned URL。缺失时启动报错。
 
 ## Long polling
 

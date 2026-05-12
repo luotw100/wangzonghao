@@ -183,7 +183,9 @@ export async function uploadPresignedFile(uploadUrl: string, file: File): Promis
 }
 
 export function mediaUrl(storageKey: string): string {
-  return `${API_BASE}/media/${storageKey}`;
+  const token = getToken();
+  const base = `${API_BASE}/media/${storageKey}`;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
 /**

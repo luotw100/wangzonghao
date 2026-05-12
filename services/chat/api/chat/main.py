@@ -501,10 +501,43 @@ def presign_upload(
     return UploadPresignResponse(storage_key=storage_key, upload_url=upload_url)
 
 
+def _resolve_media_account(
+    db: Annotated[Session, Depends(get_db)],
+    authorization: Annotated[str | None, Header()] = None,
+    token: Annotated[str | None, Query()] = None,
+) -> Account:
+    raw_token: str | None = None
+    if authorization and authorization.startswith("Bearer "):
+        raw_token = authorization.removeprefix("Bearer ").strip()
+    elif token:
+        raw_token = token
+    if not raw_token:
+        raise HTTPException(status_code=401, detail="缺少登录令牌")
+    auth_session = (
+        db.query(AuthSession)
+        .options(joinedload(AuthSession.account))
+        .filter(AuthSession.token_hash == hash_token(raw_token))
+        .first()
+    )
+    if (
+        not auth_session
+        or not auth_session.account
+        or auth_session.account.is_deleted
+        or auth_session.account.status != AccountStatus.ACTIVE
+    ):
+        raise HTTPException(status_code=401, detail="登录已失效")
+    auth_session.last_seen_at = utc_now()
+    db.commit()
+    return auth_session.account
+
+
+MediaAccountDep = Annotated[Account, Depends(_resolve_media_account)]
+
+
 @app.get("/api/media/{storage_key:path}")
 def serve_media(
     storage_key: str,
-    account: CurrentAccountDep,
+    account: MediaAccountDep,
 ) -> RedirectResponse:
     expected_prefix = f"media/{account.id}/"
     if not storage_key.startswith(expected_prefix):

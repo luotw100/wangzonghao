@@ -18,3 +18,7 @@ for compose_file in "$PROJECT_ROOT"/services/chat/compose.yaml "$PROJECT_ROOT"/s
 done
 
 echo ">>> All services started"
+
+docker ps -a
+docker volume ls
+docker network ls

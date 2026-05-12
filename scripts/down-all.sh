@@ -8,7 +8,11 @@ for compose_file in "$PROJECT_ROOT"/services/chat/compose.yaml "$PROJECT_ROOT"/s
   compose_dir="$(dirname "$compose_file")"
   service_name="$(basename "$compose_dir")"
   echo ">>> Stopping $service_name"
-  docker compose -f "$compose_file" --project-directory "$compose_dir" down
+  docker compose -f "$compose_file" --project-directory "$compose_dir" down -v
 done
 
 echo ">>> All services stopped"
+
+docker ps -a
+docker volume ls
+docker network ls

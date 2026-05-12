@@ -1,4 +1,5 @@
 import argparse
+import uuid
 
 from chat.auth_utils import hash_password
 from chat.cli_render import danger, ok, render_table
@@ -8,9 +9,8 @@ from chat.migrate import run_migrations
 from chat.models import Account
 
 
-def base_account_id(username: str) -> str:
-    safe = "".join(ch for ch in username.lower() if ch.isalnum())[:12]
-    return f"acct_{safe}" if safe else "acct_user"
+def new_id(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex}"
 
 
 def create_account(args: argparse.Namespace) -> None:
@@ -20,11 +20,7 @@ def create_account(args: argparse.Namespace) -> None:
         existing = db.query(Account).filter(Account.username == args.username).first()
         if existing:
             raise SystemExit(f"account already exists: {args.username}")
-        account_id = base_account_id(args.username)
-        suffix = 1
-        while db.query(Account).filter(Account.id == account_id).first():
-            suffix += 1
-            account_id = f"{base_account_id(args.username)}_{suffix}"
+        account_id = new_id("acct")
         now = utc_now()
         account = Account(
             id=account_id,

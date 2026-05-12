@@ -6,7 +6,7 @@
 
 ## 数据库
 
-Studio 使用 PostgreSQL。Schema 由 Alembic 迁移管理。所有 DateTime 列使用 `timezone=True`（存储为 `timestamptz`）。所有自增主键使用 `BigInteger`。所有 String 列有明确长度限制，无长度限制的用 `Text`。枚举字段使用 `CheckConstraint` 约束合法值。JSON 列使用 PostgreSQL 原生 `JSONB`。
+Studio 使用 PostgreSQL。Schema 由 Alembic 迁移管理。所有 DateTime 列使用 `timezone=True`（存储为 `timestamptz`）。所有自增主键使用 `BigInteger`。所有 String 列有明确长度限制，无长度限制的用 `Text`。枚举字段使用 `CheckConstraint` 约束合法值。JSON 列使用 PostgreSQL 原生 `JSONB`。所有非自增 ID 使用 `new_id(prefix)` 生成（128 bit 完整 UUID hex），列类型为 `String(48)`。Session ID 使用 `hash_token(token)`（SHA-256，64 hex 字符），列类型为 `String(64)`。
 
 ## Tables
 
@@ -14,7 +14,7 @@ Studio 使用 PostgreSQL。Schema 由 Alembic 迁移管理。所有 DateTime 列
 
 字段：
 
-- `id`：`String(32)`，格式 `acc_...`。
+- `id`：`String(48)`，格式 `acc_` + 完整 UUID hex。
 - `username`：`String(64)`，唯一。
 - `password_hash`：`String(128)`。
 - `display_name`：`String(128)`，nullable。
@@ -27,15 +27,15 @@ Studio 使用 PostgreSQL。Schema 由 Alembic 迁移管理。所有 DateTime 列
 Web 登录 session。
 
 - `id`：`String(64)`，token sha256 主键。
-- `account_id`：`String(32)`。
+- `account_id`：`String(48)`。
 - `created_at`、`last_seen_at`（`timestamptz`）。
 
 ### `provider_configs` — `ProviderConfig`
 
 OpenAI-compatible LLM Provider。
 
-- `id`：`String(32)`，格式 `p_...`。
-- `owner_account_id`：`String(32)`。
+- `id`：`String(48)`，格式 `p_` + 完整 UUID hex。
+- `owner_account_id`：`String(48)`。
 - `name`：`String(128)`。
 - `base_url`：`String(512)`。
 - `api_key`：`Text`，nullable。
@@ -49,8 +49,8 @@ OpenAI-compatible LLM Provider。
 
 人设 markdown 资产。
 
-- `id`：`String(32)`，格式 `ps_...`。
-- `account_id`：`String(32)`。
+- `id`：`String(48)`，格式 `ps_` + 完整 UUID hex。
+- `account_id`：`String(48)`。
 - `name`：`String(128)`。
 - `persona_md`：`Text`，nullable。
 - `status`：`String(16)`，CHECK `active | archived`。
@@ -60,8 +60,8 @@ OpenAI-compatible LLM Provider。
 
 本地 daemon 注册行。
 
-- `id`：`String(32)`，格式 `br_...`。
-- `account_id`：`String(32)`。
+- `id`：`String(48)`，格式 `br_` + 完整 UUID hex。
+- `account_id`：`String(48)`。
 - `hostname`：`String(256)`。
 - `display_name`：`String(256)`。
 - `status`：`String(16)`，CHECK `online | offline | revoked`。
@@ -73,20 +73,20 @@ OpenAI-compatible LLM Provider。
 Bridge 运行时 token。
 
 - `id`：`String(64)`，token sha256 主键。
-- `bridge_id`：`String(32)`。
+- `bridge_id`：`String(48)`。
 - `created_at`、`last_seen_at`（`timestamptz`）。
 
 ### `inboxes` — `Inbox`
 
 平台侧身份。
 
-- `id`：`String(32)`，格式 `ib_...`。
-- `account_id`：`String(32)`。
-- `bridge_id`：`String(32)`，nullable。
+- `id`：`String(48)`，格式 `ib_` + 完整 UUID hex。
+- `account_id`：`String(48)`。
+- `bridge_id`：`String(48)`，nullable。
 - `platform`：`String(32)`。
 - `display_name`：`String(256)`。
-- `default_persona_id`：`String(32)`，nullable。
-- `reply_provider_config_id`：`String(32)`，nullable。
+- `default_persona_id`：`String(48)`，nullable。
+- `reply_provider_config_id`：`String(48)`，nullable。
 - `enabled`：Boolean。
 - `platform_self_id`：`String(128)`，nullable；Bridge handshake 上报。
 - timestamps（`timestamptz`）。
@@ -95,13 +95,13 @@ Bridge 运行时 token。
 
 粉丝/对方接管单元。
 
-- `id`：`String(32)`，格式 `ct_...`。
-- `inbox_id`：`String(32)`。
+- `id`：`String(48)`，格式 `ct_` + 完整 UUID hex。
+- `inbox_id`：`String(48)`。
 - `peer_platform_id`：`String(256)`。
 - `display_name`：`String(256)`。
 - `card_md`：`Text`，nullable。
-- `persona_id`：`String(32)`，nullable。
-- `reply_provider_config_id`：`String(32)`，nullable override。
+- `persona_id`：`String(48)`，nullable。
+- `reply_provider_config_id`：`String(48)`，nullable override。
 - `autoreply_enabled`：Boolean。
 - `pending_reply`：Boolean。
 - `status`：`String(16)`，CHECK `active | archived`。
@@ -112,9 +112,9 @@ Bridge 运行时 token。
 
 上传的 WeFlow 源文件 metadata。
 
-- `id`：`String(32)`，格式 `a_...`。
-- `account_id`：`String(32)`。
-- `inbox_id`：`String(32)`。
+- `id`：`String(48)`，格式 `a_` + 完整 UUID hex。
+- `account_id`：`String(48)`。
+- `inbox_id`：`String(48)`。
 - `filename`：`String(256)`。
 - `storage_key`：`String(512)`，S3 对象 key。
 - `file_hash`：`String(64)`，sha256 前 16 位。
@@ -129,8 +129,8 @@ Bridge 运行时 token。
 统一消息表，包含 archive 和 live。
 
 - `id`：`BigInteger`，自增主键。
-- `contact_id`：`String(32)`。
-- `archive_id`：`String(32)`，nullable。
+- `contact_id`：`String(48)`。
+- `archive_id`：`String(48)`，nullable。
 - `external_id`：`String(256)`。
 - `source`：`String(16)`，CHECK `archive | live`。
 - `role`：`String(16)`，CHECK `self | counterpart`。
@@ -146,11 +146,11 @@ Bridge 运行时 token。
 
 蒸馏 worker job。
 
-- `id`：`String(32)`，格式 `dj_...`。
-- `account_id`：`String(32)`。
-- `source_inbox_id`：`String(32)`。
-- `target_persona_id`：`String(32)`。
-- `provider_config_id`：`String(32)`。
+- `id`：`String(48)`，格式 `dj_` + 完整 UUID hex。
+- `account_id`：`String(48)`。
+- `source_inbox_id`：`String(48)`。
+- `target_persona_id`：`String(48)`。
+- `provider_config_id`：`String(48)`。
 - `status`：`String(16)`，CHECK `pending | running | done | failed`。
 - `progress`：`JSONB`。
 - `error_message`：`Text`，nullable。
@@ -161,8 +161,8 @@ Bridge 运行时 token。
 Studio → Bridge 队列。
 
 - `id`：`BigInteger`，自增 cursor。
-- `inbox_id`：`String(32)`。
-- `contact_id`：`String(32)`。
+- `inbox_id`：`String(48)`。
+- `contact_id`：`String(48)`。
 - `content`：`Text`。
 - `send_after`：`timestamptz`。
 - `status`：`String(16)`，CHECK `pending | delivered | failed | canceled`。
@@ -177,8 +177,8 @@ LLM 调用日志。
 
 - `id`：`BigInteger`，自增。
 - `purpose`：`String(16)`，CHECK `distill | reply`。
-- `persona_id`：`String(32)`，nullable。
-- `inbox_id`：`String(32)`，nullable。
+- `persona_id`：`String(48)`，nullable。
+- `inbox_id`：`String(48)`，nullable。
 - `request_messages`：`Text`。
 - `response_raw`：`Text`。
 - `model`：`String(128)`，nullable。

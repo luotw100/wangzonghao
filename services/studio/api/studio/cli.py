@@ -1,9 +1,9 @@
 import argparse
-from uuid import uuid4
 
 from studio.auth_utils import hash_password
 from studio.cli_render import danger, ok, render_table, warn
 from studio.db import get_db, utc_now
+from studio.deps import new_id
 from studio.enums import AccountRole, AccountStatus
 from studio.migrate import run_migrations
 from studio.models import Account
@@ -16,7 +16,7 @@ def create_account(args: argparse.Namespace) -> None:
         existing = db.query(Account).filter(Account.username == args.username).first()
         if existing:
             raise SystemExit(f"account already exists: {args.username}")
-        account_id = f"acc_{uuid4().hex[:8]}"
+        account_id = new_id("acc")
         now = utc_now()
         account = Account(
             id=account_id,

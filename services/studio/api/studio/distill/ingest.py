@@ -9,12 +9,12 @@ from __future__ import annotations
 
 import hashlib
 import json
-import uuid
 from typing import Any, Dict, List
 
 from sqlalchemy.orm import Session as ORMSession
 
 from studio.db import utc_now
+from studio.deps import new_id
 from studio.distill.converter import (
     build_name_map,
     clean_content,
@@ -69,7 +69,7 @@ def _ensure_contact(
         return contact
     now = utc_now()
     contact = Contact(
-        id=f"ct_{uuid.uuid4().hex[:8]}",
+        id=new_id("ct"),
         inbox_id=inbox.id,
         peer_platform_id=counterpart_wxid,
         display_name=counterpart_name,
@@ -114,7 +114,7 @@ async def ingest_archive(
     if duplicate:
         raise ValueError(f"该文件已上传过 (archive {duplicate.id})")
 
-    archive_id = f"a_{uuid.uuid4().hex[:8]}"
+    archive_id = new_id("a")
     s3_key = _persist_upload(account_id, archive_id, raw_data)
 
     contact = _ensure_contact(db, inbox, counterpart_wxid, counterpart_name)

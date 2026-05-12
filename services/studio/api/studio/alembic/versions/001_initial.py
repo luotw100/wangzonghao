@@ -21,7 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.create_table(
         "accounts",
-        sa.Column("id", sa.String(32), primary_key=True),
+        sa.Column("id", sa.String(48), primary_key=True),
         sa.Column("username", sa.String(64), nullable=False, unique=True),
         sa.Column("password_hash", sa.String(128), nullable=False),
         sa.Column("display_name", sa.String(128), nullable=True),
@@ -39,7 +39,7 @@ def upgrade() -> None:
     op.create_table(
         "auth_sessions",
         sa.Column("id", sa.String(64), primary_key=True),
-        sa.Column("account_id", sa.String(32), sa.ForeignKey("accounts.id"), nullable=False),
+        sa.Column("account_id", sa.String(48), sa.ForeignKey("accounts.id"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False),
     )
@@ -48,8 +48,8 @@ def upgrade() -> None:
 
     op.create_table(
         "provider_configs",
-        sa.Column("id", sa.String(32), primary_key=True),
-        sa.Column("owner_account_id", sa.String(32), sa.ForeignKey("accounts.id"), nullable=False),
+        sa.Column("id", sa.String(48), primary_key=True),
+        sa.Column("owner_account_id", sa.String(48), sa.ForeignKey("accounts.id"), nullable=False),
         sa.Column("name", sa.String(128), nullable=False),
         sa.Column("base_url", sa.String(512), nullable=False),
         sa.Column("api_key", sa.Text, nullable=True),
@@ -67,8 +67,8 @@ def upgrade() -> None:
 
     op.create_table(
         "personas",
-        sa.Column("id", sa.String(32), primary_key=True),
-        sa.Column("account_id", sa.String(32), sa.ForeignKey("accounts.id"), nullable=False),
+        sa.Column("id", sa.String(48), primary_key=True),
+        sa.Column("account_id", sa.String(48), sa.ForeignKey("accounts.id"), nullable=False),
         sa.Column("name", sa.String(128), nullable=False),
         sa.Column("persona_md", sa.Text, nullable=True),
         sa.Column("status", sa.String(16), nullable=False),
@@ -82,8 +82,8 @@ def upgrade() -> None:
 
     op.create_table(
         "bridges",
-        sa.Column("id", sa.String(32), primary_key=True),
-        sa.Column("account_id", sa.String(32), sa.ForeignKey("accounts.id"), nullable=False),
+        sa.Column("id", sa.String(48), primary_key=True),
+        sa.Column("account_id", sa.String(48), sa.ForeignKey("accounts.id"), nullable=False),
         sa.Column("hostname", sa.String(256), nullable=False),
         sa.Column("display_name", sa.String(256), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
@@ -99,7 +99,7 @@ def upgrade() -> None:
     op.create_table(
         "bridge_sessions",
         sa.Column("id", sa.String(64), primary_key=True),
-        sa.Column("bridge_id", sa.String(32), sa.ForeignKey("bridges.id"), nullable=False),
+        sa.Column("bridge_id", sa.String(48), sa.ForeignKey("bridges.id"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False),
     )
@@ -108,13 +108,13 @@ def upgrade() -> None:
 
     op.create_table(
         "inboxes",
-        sa.Column("id", sa.String(32), primary_key=True),
-        sa.Column("account_id", sa.String(32), sa.ForeignKey("accounts.id"), nullable=False),
-        sa.Column("bridge_id", sa.String(32), sa.ForeignKey("bridges.id"), nullable=True),
+        sa.Column("id", sa.String(48), primary_key=True),
+        sa.Column("account_id", sa.String(48), sa.ForeignKey("accounts.id"), nullable=False),
+        sa.Column("bridge_id", sa.String(48), sa.ForeignKey("bridges.id"), nullable=True),
         sa.Column("platform", sa.String(32), nullable=False),
         sa.Column("display_name", sa.String(256), nullable=False),
-        sa.Column("default_persona_id", sa.String(32), sa.ForeignKey("personas.id"), nullable=True),
-        sa.Column("reply_provider_config_id", sa.String(32), sa.ForeignKey("provider_configs.id"), nullable=True),
+        sa.Column("default_persona_id", sa.String(48), sa.ForeignKey("personas.id"), nullable=True),
+        sa.Column("reply_provider_config_id", sa.String(48), sa.ForeignKey("provider_configs.id"), nullable=True),
         sa.Column("enabled", sa.Boolean, nullable=False),
         sa.Column("platform_self_id", sa.String(128), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -126,13 +126,13 @@ def upgrade() -> None:
 
     op.create_table(
         "contacts",
-        sa.Column("id", sa.String(32), primary_key=True),
-        sa.Column("inbox_id", sa.String(32), sa.ForeignKey("inboxes.id"), nullable=False),
+        sa.Column("id", sa.String(48), primary_key=True),
+        sa.Column("inbox_id", sa.String(48), sa.ForeignKey("inboxes.id"), nullable=False),
         sa.Column("peer_platform_id", sa.String(256), nullable=False),
         sa.Column("display_name", sa.String(256), nullable=False),
         sa.Column("card_md", sa.Text, nullable=True),
-        sa.Column("persona_id", sa.String(32), sa.ForeignKey("personas.id"), nullable=True),
-        sa.Column("reply_provider_config_id", sa.String(32), sa.ForeignKey("provider_configs.id"), nullable=True),
+        sa.Column("persona_id", sa.String(48), sa.ForeignKey("personas.id"), nullable=True),
+        sa.Column("reply_provider_config_id", sa.String(48), sa.ForeignKey("provider_configs.id"), nullable=True),
         sa.Column("autoreply_enabled", sa.Boolean, nullable=False),
         sa.Column("pending_reply", sa.Boolean, nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
@@ -147,11 +147,11 @@ def upgrade() -> None:
 
     op.create_table(
         "archives",
-        sa.Column("id", sa.String(32), primary_key=True),
-        sa.Column("account_id", sa.String(32), sa.ForeignKey("accounts.id"), nullable=False),
-        sa.Column("inbox_id", sa.String(32), sa.ForeignKey("inboxes.id"), nullable=False),
+        sa.Column("id", sa.String(48), primary_key=True),
+        sa.Column("account_id", sa.String(48), sa.ForeignKey("accounts.id"), nullable=False),
+        sa.Column("inbox_id", sa.String(48), sa.ForeignKey("inboxes.id"), nullable=False),
         sa.Column("filename", sa.String(256), nullable=False),
-        sa.Column("file_path", sa.String(512), nullable=False),
+        sa.Column("storage_key", sa.String(512), nullable=False),
         sa.Column("file_hash", sa.String(64), nullable=False),
         sa.Column("platform_self_id", sa.String(128), nullable=False),
         sa.Column("message_count", sa.Integer, nullable=False),
@@ -167,8 +167,8 @@ def upgrade() -> None:
     op.create_table(
         "messages",
         sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
-        sa.Column("contact_id", sa.String(32), sa.ForeignKey("contacts.id"), nullable=False),
-        sa.Column("archive_id", sa.String(32), sa.ForeignKey("archives.id"), nullable=True),
+        sa.Column("contact_id", sa.String(48), sa.ForeignKey("contacts.id"), nullable=False),
+        sa.Column("archive_id", sa.String(48), sa.ForeignKey("archives.id"), nullable=True),
         sa.Column("external_id", sa.String(256), nullable=False),
         sa.Column("source", sa.String(16), nullable=False),
         sa.Column("role", sa.String(16), nullable=False),
@@ -188,11 +188,11 @@ def upgrade() -> None:
 
     op.create_table(
         "distill_jobs",
-        sa.Column("id", sa.String(32), primary_key=True),
-        sa.Column("account_id", sa.String(32), sa.ForeignKey("accounts.id"), nullable=False),
-        sa.Column("source_inbox_id", sa.String(32), sa.ForeignKey("inboxes.id"), nullable=False),
-        sa.Column("target_persona_id", sa.String(32), sa.ForeignKey("personas.id"), nullable=False),
-        sa.Column("provider_config_id", sa.String(32), sa.ForeignKey("provider_configs.id"), nullable=False),
+        sa.Column("id", sa.String(48), primary_key=True),
+        sa.Column("account_id", sa.String(48), sa.ForeignKey("accounts.id"), nullable=False),
+        sa.Column("source_inbox_id", sa.String(48), sa.ForeignKey("inboxes.id"), nullable=False),
+        sa.Column("target_persona_id", sa.String(48), sa.ForeignKey("personas.id"), nullable=False),
+        sa.Column("provider_config_id", sa.String(48), sa.ForeignKey("provider_configs.id"), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
         sa.Column("progress", postgresql.JSONB, nullable=False),
         sa.Column("error_message", sa.Text, nullable=True),
@@ -210,8 +210,8 @@ def upgrade() -> None:
     op.create_table(
         "outbound_messages",
         sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
-        sa.Column("inbox_id", sa.String(32), sa.ForeignKey("inboxes.id"), nullable=False),
-        sa.Column("contact_id", sa.String(32), sa.ForeignKey("contacts.id"), nullable=False),
+        sa.Column("inbox_id", sa.String(48), sa.ForeignKey("inboxes.id"), nullable=False),
+        sa.Column("contact_id", sa.String(48), sa.ForeignKey("contacts.id"), nullable=False),
         sa.Column("content", sa.Text, nullable=False),
         sa.Column("send_after", sa.DateTime(timezone=True), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
@@ -229,8 +229,8 @@ def upgrade() -> None:
         "llm_logs",
         sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
         sa.Column("purpose", sa.String(16), nullable=False),
-        sa.Column("persona_id", sa.String(32), nullable=True),
-        sa.Column("inbox_id", sa.String(32), nullable=True),
+        sa.Column("persona_id", sa.String(48), nullable=True),
+        sa.Column("inbox_id", sa.String(48), nullable=True),
         sa.Column("request_messages", sa.Text, nullable=False),
         sa.Column("response_raw", sa.Text, nullable=False),
         sa.Column("model", sa.String(128), nullable=True),

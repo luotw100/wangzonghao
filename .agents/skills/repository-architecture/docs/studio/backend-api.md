@@ -212,4 +212,4 @@ Bridge endpoints 见 `docs/bridge/protocol.md`。
 - `reset-password`
 - `set-role`
 
-当前 account id 生成规则是 `acc_{uuid8}`（UUID 随机 8 位）。Create 显式设置 role、active status 和 timestamps。CLI 输出使用带颜色的表格；账号管理的主路径是 Studio Web 设置页。
+当前 account id 生成规则是 `acc_{完整 UUID hex}`（128 bit，无截断）。Create 显式设置 role、active status 和 timestamps。CLI 输出使用带颜色的表格；账号管理的主路径是 Studio Web 设置页。

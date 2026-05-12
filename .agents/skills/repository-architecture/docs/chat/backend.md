@@ -118,7 +118,7 @@ Media：
 
 ## 关键 helper
 
-- `new_id(prefix, size)`：生成 id。
+- `new_id(prefix)`：生成 id，格式为 `{prefix}_{uuid4().hex}`（完整 128 bit UUID hex）。
 - `normalize_timestamp()`：确保 datetime 带时区信息；naive datetime 补 UTC。
 - `get_contact_or_404()` / `get_conversation_or_404()`：按 account 校验归属。
 - `get_or_create_direct_conversation()`：恢复软删除会话或创建一对一会话。

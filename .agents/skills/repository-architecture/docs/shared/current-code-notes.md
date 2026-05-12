@@ -22,9 +22,15 @@ Studio 和 Chat 都使用 PostgreSQL，由 Alembic 管理 schema 迁移。启动
 
 `studio/migrate.py` 和 `chat/migrate.py` 封装 Alembic `upgrade head`。API 启动通过 FastAPI lifespan 调用；Worker 和 CLI 在各自入口调用。
 
-## Account ID
+## ID 生成
 
-Account id 由 `studio/deps.py` 中的 `new_id("acc")` 生成，格式为 `acc_{uuid8}`（UUID 随机 8 位）。
+所有非自增主键使用 `new_id(prefix)` 生成，格式为 `{prefix}_{uuid4().hex}`（完整 128 bit UUID hex，32 字符随机部分）。128 bit 熵下碰撞概率可忽略，不需要重试逻辑。
+
+- Studio: `studio/deps.py` 中的 `new_id(prefix)` 函数。
+- Chat: `chat/main.py` 中的 `new_id(prefix)` 函数。
+- 辅助模块中的 ID 生成（`studio/cli.py`、`studio/distill/ingest.py`）也使用 `new_id()`，不内联 `uuid4().hex`。
+
+Auth/AuthSession 的 ID 使用 `hash_token(secrets.token_urlsafe(32))`（SHA-256，64 hex 字符），不会碰撞。
 
 ## API 模块结构
 

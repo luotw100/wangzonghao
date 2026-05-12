@@ -12,8 +12,8 @@ from studio.enums import AccountRole, AccountStatus, BridgeStatus
 from studio.models import Account, AuthSession, Bridge, BridgeSession, Inbox, Persona, ProviderConfig
 
 
-def new_id(prefix: str, size: int = 8) -> str:
-    return f"{prefix}_{uuid4().hex[:size]}"
+def new_id(prefix: str) -> str:
+    return f"{prefix}_{uuid4().hex}"
 
 
 def extract_bearer(authorization: Optional[str]) -> str:

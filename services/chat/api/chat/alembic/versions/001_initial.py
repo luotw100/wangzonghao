@@ -19,7 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.create_table(
         "chat_accounts",
-        sa.Column("id", sa.String(32), primary_key=True),
+        sa.Column("id", sa.String(48), primary_key=True),
         sa.Column("username", sa.String(64), nullable=False, unique=True),
         sa.Column("password_hash", sa.String(128), nullable=False),
         sa.Column("display_name", sa.String(128), nullable=False),
@@ -37,20 +37,18 @@ def upgrade() -> None:
 
     op.create_table(
         "chat_auth_sessions",
-        sa.Column("id", sa.String(32), primary_key=True),
-        sa.Column("account_id", sa.String(32), sa.ForeignKey("chat_accounts.id"), nullable=False),
-        sa.Column("token_hash", sa.String(64), nullable=False, unique=True),
+        sa.Column("id", sa.String(64), primary_key=True),
+        sa.Column("account_id", sa.String(48), sa.ForeignKey("chat_accounts.id"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False),
     )
     op.create_index("ix_chat_auth_sessions_id", "chat_auth_sessions", ["id"])
     op.create_index("ix_chat_auth_sessions_account_id", "chat_auth_sessions", ["account_id"])
-    op.create_index("ix_chat_auth_sessions_token_hash", "chat_auth_sessions", ["token_hash"])
 
     op.create_table(
         "chat_contacts",
-        sa.Column("id", sa.String(32), primary_key=True),
-        sa.Column("account_id", sa.String(32), sa.ForeignKey("chat_accounts.id"), nullable=False),
+        sa.Column("id", sa.String(48), primary_key=True),
+        sa.Column("account_id", sa.String(48), sa.ForeignKey("chat_accounts.id"), nullable=False),
         sa.Column("platform_contact_id", sa.String(256), nullable=False),
         sa.Column("display_name", sa.String(256), nullable=False),
         sa.Column("avatar_url", sa.String(512), nullable=True),
@@ -67,9 +65,9 @@ def upgrade() -> None:
 
     op.create_table(
         "chat_conversations",
-        sa.Column("id", sa.String(32), primary_key=True),
-        sa.Column("account_id", sa.String(32), sa.ForeignKey("chat_accounts.id"), nullable=False),
-        sa.Column("contact_id", sa.String(32), sa.ForeignKey("chat_contacts.id"), nullable=False),
+        sa.Column("id", sa.String(48), primary_key=True),
+        sa.Column("account_id", sa.String(48), sa.ForeignKey("chat_accounts.id"), nullable=False),
+        sa.Column("contact_id", sa.String(48), sa.ForeignKey("chat_contacts.id"), nullable=False),
         sa.Column("title", sa.String(256), nullable=False),
         sa.Column("is_deleted", sa.Boolean, nullable=False),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
@@ -84,10 +82,10 @@ def upgrade() -> None:
     op.create_table(
         "chat_messages",
         sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
-        sa.Column("account_id", sa.String(32), sa.ForeignKey("chat_accounts.id"), nullable=False),
-        sa.Column("conversation_id", sa.String(32), sa.ForeignKey("chat_conversations.id"), nullable=False),
+        sa.Column("account_id", sa.String(48), sa.ForeignKey("chat_accounts.id"), nullable=False),
+        sa.Column("conversation_id", sa.String(48), sa.ForeignKey("chat_conversations.id"), nullable=False),
         sa.Column("sender_type", sa.String(16), nullable=False),
-        sa.Column("sender_contact_id", sa.String(32), sa.ForeignKey("chat_contacts.id"), nullable=True),
+        sa.Column("sender_contact_id", sa.String(48), sa.ForeignKey("chat_contacts.id"), nullable=True),
         sa.Column("msg_type", sa.String(16), nullable=False),
         sa.Column("content", sa.Text, nullable=False),
         sa.Column("source", sa.String(16), nullable=False),

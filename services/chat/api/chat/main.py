@@ -88,8 +88,8 @@ app = FastAPI(title="Laborster Chat", lifespan=lifespan)
 DbDep = Annotated[Session, Depends(get_db)]
 
 
-def new_id(prefix: str, size: int = 10) -> str:
-    return f"{prefix}_{uuid.uuid4().hex[:size]}"
+def new_id(prefix: str) -> str:
+    return f"{prefix}_{uuid.uuid4().hex}"
 
 
 def normalize_timestamp(value: datetime) -> datetime:
@@ -110,7 +110,7 @@ def get_auth_session(
     auth_session = (
         db.query(AuthSession)
         .options(joinedload(AuthSession.account))
-        .filter(AuthSession.token_hash == hash_token(token))
+        .filter(AuthSession.id == hash_token(token))
         .first()
     )
     if (
@@ -194,7 +194,7 @@ def get_or_create_direct_conversation(
 
     now = utc_now()
     conversation = Conversation(
-        id=new_id("c", 12),
+        id=new_id("c"),
         account_id=account_id,
         contact_id=contact.id,
         title=title or contact.display_name,
@@ -280,9 +280,8 @@ def login(login_in: LoginRequest, db: DbDep) -> LoginResponse:
     token = new_session_token()
     now = utc_now()
     auth_session = AuthSession(
-        id=new_id("cs", 12),
+        id=hash_token(token),
         account_id=account.id,
-        token_hash=hash_token(token),
         created_at=now,
         last_seen_at=now,
     )
@@ -516,7 +515,7 @@ def _resolve_media_account(
     auth_session = (
         db.query(AuthSession)
         .options(joinedload(AuthSession.account))
-        .filter(AuthSession.token_hash == hash_token(raw_token))
+        .filter(AuthSession.id == hash_token(raw_token))
         .first()
     )
     if (

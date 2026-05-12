@@ -40,7 +40,7 @@ class Account(Base):
         CheckConstraint("status IN ('active', 'disabled')", name="ck_account_status"),
     )
 
-    id            = Column(String(32), primary_key=True, index=True)
+    id            = Column(String(48), primary_key=True, index=True)
     username      = Column(String(64), nullable=False, unique=True, index=True)
     password_hash = Column(String(128), nullable=False)
     display_name  = Column(String(128), nullable=True)
@@ -55,7 +55,7 @@ class AuthSession(Base):
     __tablename__ = "auth_sessions"
 
     id           = Column(String(64), primary_key=True, index=True)
-    account_id   = Column(String(32), ForeignKey("accounts.id"), nullable=False, index=True)
+    account_id   = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
     created_at   = Column(DateTime(timezone=True), nullable=False)
     last_seen_at = Column(DateTime(timezone=True), nullable=False)
 
@@ -71,8 +71,8 @@ class ProviderConfig(Base):
         CheckConstraint("status IN ('active', 'disabled')", name="ck_provider_status"),
     )
 
-    id               = Column(String(32), primary_key=True, index=True)
-    owner_account_id = Column(String(32), ForeignKey("accounts.id"), nullable=False, index=True)
+    id               = Column(String(48), primary_key=True, index=True)
+    owner_account_id = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
     name             = Column(String(128), nullable=False)
     base_url         = Column(String(512), nullable=False)
     api_key          = Column(Text, nullable=True)
@@ -95,8 +95,8 @@ class Persona(Base):
         CheckConstraint("status IN ('active', 'archived')", name="ck_persona_status"),
     )
 
-    id         = Column(String(32), primary_key=True, index=True)
-    account_id = Column(String(32), ForeignKey("accounts.id"), nullable=False, index=True)
+    id         = Column(String(48), primary_key=True, index=True)
+    account_id = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
     name       = Column(String(128), nullable=False)
     persona_md = Column(Text, nullable=True)
     status     = Column(String(16), nullable=False)
@@ -118,8 +118,8 @@ class Bridge(Base):
         CheckConstraint("status IN ('online', 'offline', 'revoked')", name="ck_bridge_status"),
     )
 
-    id           = Column(String(32), primary_key=True, index=True)
-    account_id   = Column(String(32), ForeignKey("accounts.id"), nullable=False, index=True)
+    id           = Column(String(48), primary_key=True, index=True)
+    account_id   = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
     hostname     = Column(String(256), nullable=False)
     display_name = Column(String(256), nullable=False)
     status       = Column(String(16), nullable=False)
@@ -132,7 +132,7 @@ class BridgeSession(Base):
     __tablename__ = "bridge_sessions"
 
     id           = Column(String(64), primary_key=True, index=True)
-    bridge_id    = Column(String(32), ForeignKey("bridges.id"), nullable=False, index=True)
+    bridge_id    = Column(String(48), ForeignKey("bridges.id"), nullable=False, index=True)
     created_at   = Column(DateTime(timezone=True), nullable=False)
     last_seen_at = Column(DateTime(timezone=True), nullable=False)
 
@@ -146,13 +146,13 @@ class BridgeSession(Base):
 class Inbox(Base):
     __tablename__ = "inboxes"
 
-    id                       = Column(String(32), primary_key=True, index=True)
-    account_id               = Column(String(32), ForeignKey("accounts.id"), nullable=False, index=True)
-    bridge_id                = Column(String(32), ForeignKey("bridges.id"), nullable=True, index=True)
+    id                       = Column(String(48), primary_key=True, index=True)
+    account_id               = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
+    bridge_id                = Column(String(48), ForeignKey("bridges.id"), nullable=True, index=True)
     platform                 = Column(String(32), nullable=False)
     display_name             = Column(String(256), nullable=False)
-    default_persona_id       = Column(String(32), ForeignKey("personas.id"), nullable=True)
-    reply_provider_config_id = Column(String(32), ForeignKey("provider_configs.id"), nullable=True)
+    default_persona_id       = Column(String(48), ForeignKey("personas.id"), nullable=True)
+    reply_provider_config_id = Column(String(48), ForeignKey("provider_configs.id"), nullable=True)
     enabled                  = Column(Boolean, nullable=False)
     platform_self_id         = Column(String(128), nullable=True)
     created_at               = Column(DateTime(timezone=True), nullable=False)
@@ -170,13 +170,13 @@ class Contact(Base):
         CheckConstraint("status IN ('active', 'archived')", name="ck_contact_status"),
     )
 
-    id                          = Column(String(32), primary_key=True, index=True)
-    inbox_id                    = Column(String(32), ForeignKey("inboxes.id"), nullable=False, index=True)
+    id                          = Column(String(48), primary_key=True, index=True)
+    inbox_id                    = Column(String(48), ForeignKey("inboxes.id"), nullable=False, index=True)
     peer_platform_id            = Column(String(256), nullable=False)
     display_name                = Column(String(256), nullable=False)
     card_md                     = Column(Text, nullable=True)
-    persona_id                  = Column(String(32), ForeignKey("personas.id"), nullable=True)
-    reply_provider_config_id    = Column(String(32), ForeignKey("provider_configs.id"), nullable=True)
+    persona_id                  = Column(String(48), ForeignKey("personas.id"), nullable=True)
+    reply_provider_config_id    = Column(String(48), ForeignKey("provider_configs.id"), nullable=True)
     autoreply_enabled           = Column(Boolean, nullable=False)
     pending_reply               = Column(Boolean, nullable=False)
     status                      = Column(String(16), nullable=False)
@@ -191,9 +191,9 @@ class Archive(Base):
         UniqueConstraint("account_id", "file_hash", name="uq_archive_account_hash"),
     )
 
-    id             = Column(String(32), primary_key=True, index=True)
-    account_id     = Column(String(32), ForeignKey("accounts.id"), nullable=False, index=True)
-    inbox_id       = Column(String(32), ForeignKey("inboxes.id"), nullable=False, index=True)
+    id             = Column(String(48), primary_key=True, index=True)
+    account_id     = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
+    inbox_id       = Column(String(48), ForeignKey("inboxes.id"), nullable=False, index=True)
     filename       = Column(String(256), nullable=False)
     storage_key    = Column(String(512), nullable=False)
     file_hash      = Column(String(64), nullable=False, index=True)
@@ -213,8 +213,8 @@ class Message(Base):
     )
 
     id              = Column(BigInteger, primary_key=True, autoincrement=True)
-    contact_id      = Column(String(32), ForeignKey("contacts.id"), nullable=False, index=True)
-    archive_id      = Column(String(32), ForeignKey("archives.id"), nullable=True, index=True)
+    contact_id      = Column(String(48), ForeignKey("contacts.id"), nullable=False, index=True)
+    archive_id      = Column(String(48), ForeignKey("archives.id"), nullable=True, index=True)
     external_id     = Column(String(256), nullable=False)
     source          = Column(String(16), nullable=False)
     role            = Column(String(16), nullable=False)
@@ -231,11 +231,11 @@ class DistillJob(Base):
         CheckConstraint("status IN ('pending', 'running', 'done', 'failed')", name="ck_distill_status"),
     )
 
-    id                 = Column(String(32), primary_key=True, index=True)
-    account_id         = Column(String(32), ForeignKey("accounts.id"), nullable=False, index=True)
-    source_inbox_id    = Column(String(32), ForeignKey("inboxes.id"), nullable=False, index=True)
-    target_persona_id  = Column(String(32), ForeignKey("personas.id"), nullable=False, index=True)
-    provider_config_id = Column(String(32), ForeignKey("provider_configs.id"), nullable=False, index=True)
+    id                 = Column(String(48), primary_key=True, index=True)
+    account_id         = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
+    source_inbox_id    = Column(String(48), ForeignKey("inboxes.id"), nullable=False, index=True)
+    target_persona_id  = Column(String(48), ForeignKey("personas.id"), nullable=False, index=True)
+    provider_config_id = Column(String(48), ForeignKey("provider_configs.id"), nullable=False, index=True)
     status             = Column(String(16), nullable=False)
     progress           = Column(JSONB, nullable=False)
     error_message      = Column(Text, nullable=True)
@@ -259,8 +259,8 @@ class OutboundMessage(Base):
     )
 
     id            = Column(BigInteger, primary_key=True, autoincrement=True)
-    inbox_id      = Column(String(32), ForeignKey("inboxes.id"), nullable=False, index=True)
-    contact_id    = Column(String(32), ForeignKey("contacts.id"), nullable=False, index=True)
+    inbox_id      = Column(String(48), ForeignKey("inboxes.id"), nullable=False, index=True)
+    contact_id    = Column(String(48), ForeignKey("contacts.id"), nullable=False, index=True)
     content       = Column(Text, nullable=False)
     send_after    = Column(DateTime(timezone=True), nullable=False)
     status        = Column(String(16), nullable=False)
@@ -277,8 +277,8 @@ class LlmLog(Base):
 
     id               = Column(BigInteger, primary_key=True, autoincrement=True)
     purpose          = Column(String(16), nullable=False)
-    persona_id       = Column(String(32), nullable=True, index=True)
-    inbox_id         = Column(String(32), nullable=True, index=True)
+    persona_id       = Column(String(48), nullable=True, index=True)
+    inbox_id         = Column(String(48), nullable=True, index=True)
     request_messages = Column(Text, nullable=False)
     response_raw     = Column(Text, nullable=False)
     model            = Column(String(128), nullable=True)

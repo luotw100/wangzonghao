@@ -210,6 +210,7 @@ class Message(Base):
         UniqueConstraint("contact_id", "external_id", name="uq_message_contact_external"),
         CheckConstraint("source IN ('archive', 'live')", name="ck_message_source"),
         CheckConstraint("role IN ('self', 'counterpart')", name="ck_message_role"),
+        CheckConstraint("msg_type IN ('text', 'image', 'audio', 'video', 'file')", name="ck_message_msg_type"),
     )
 
     id              = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -218,6 +219,7 @@ class Message(Base):
     external_id     = Column(String(256), nullable=False)
     source          = Column(String(16), nullable=False)
     role            = Column(String(16), nullable=False)
+    msg_type        = Column(String(16), nullable=False)
     sender_name     = Column(String(256), nullable=True)
     content         = Column(Text, nullable=False)
     timestamp       = Column(DateTime(timezone=True), nullable=False, index=True)
@@ -256,11 +258,13 @@ class OutboundMessage(Base):
         Index("idx_outbound_inbox_id", "inbox_id", "id"),
         Index("idx_outbound_send_after", "status", "send_after"),
         CheckConstraint("status IN ('pending', 'delivered', 'failed', 'canceled')", name="ck_outbound_status"),
+        CheckConstraint("msg_type IN ('text', 'image', 'audio', 'video', 'file')", name="ck_outbound_msg_type"),
     )
 
     id            = Column(BigInteger, primary_key=True, autoincrement=True)
     inbox_id      = Column(String(48), ForeignKey("inboxes.id"), nullable=False, index=True)
     contact_id    = Column(String(48), ForeignKey("contacts.id"), nullable=False, index=True)
+    msg_type      = Column(String(16), nullable=False)
     content       = Column(Text, nullable=False)
     send_after    = Column(DateTime(timezone=True), nullable=False)
     status        = Column(String(16), nullable=False)

@@ -15,8 +15,13 @@
 
 发送 self/contact 消息
   → POST /api/conversations/{conversation_id}/messages
-  → 写入 Chat Message
+  → 写入 Chat Message（含 msg_type）
   → 更新 conversation.updated_at
+
+媒体发送
+  → POST /api/uploads/presign → 获取 Chat S3 upload URL
+  → 客户端 PUT 二进制
+  → POST /api/conversations/{id}/messages (msg_type=image/audio/..., content=storage_key)
 
 读取 live messages
   → GET /api/conversations/{conversation_id}/messages?last_id=N&timeout=T
@@ -52,17 +57,19 @@ BridgeRuntime 绑定 adapters
   → 启动 heartbeat / inbound pump / outbound loop
 ```
 
-## 3. 对方消息进入 Studio
+## 3. 对方消息进入 Studio（含 media）
+
+### 纯文本 incoming
 
 ```text
 对方在 Chat sandbox 发送消息
-  → Chat API 写 chat_messages(sender_type='contact')
+  → Chat API 写 chat_messages(sender_type='contact', msg_type='text')
 
 ChatAdapter.stream_incoming()
   → refresh conversations
   → 拉取每个 conversation 中 id > last_msg_id 的消息
   → sender_type='contact' 转为 role='counterpart'
-  → yield IncomingMessage(peer_id, peer_display_name, platform_msg_id, role, content, sent_at)
+  → yield IncomingMessage(peer_id, peer_display_name, platform_msg_id, role, msg_type='text', content, sent_at)
 
 BridgeRuntime._adapter_inbound_loop()
   → 把 (inbox_id, IncomingMessage) 放入 inbound queue
@@ -70,14 +77,40 @@ BridgeRuntime._adapter_inbound_loop()
 BridgeRuntime._inbound_pump_loop()
   → 取第一条消息
   → 最多等待 0.4s 或凑满 30 条
+  → msg_type == 'text'：直接 _to_payload
   → POST Studio /api/bridge/incoming
 
 Studio bridge_incoming()
   → 校验 Inbox 属于当前 Bridge
   → 按 (inbox_id, peer_platform_id) upsert Contact
   → 按 external_id = live:{platform_msg_id} 去重
-  → 插入 Message(source='live', role='counterpart')
+  → 插入 Message(source='live', role='counterpart', msg_type=m.msg_type)
   → 如果 inbox.enabled 且 contact.autoreply_enabled，置 contact.pending_reply=True
+```
+
+### Media incoming
+
+```text
+对方在 Chat sandbox 发送语音
+  → Chat API 写 chat_messages(sender_type='contact', msg_type='audio', content='media/acct_xxx/abc.mp3')
+
+ChatAdapter.stream_incoming()
+  → yield IncomingMessage(..., msg_type='audio', content='media/acct_xxx/abc.mp3')
+
+BridgeRuntime._push_batch()
+  → 检测 msg_type != 'text'
+  → adapter.download_media('media/acct_xxx/abc.mp3')
+       → GET Chat /api/media/{storage_key} → 跟随 redirect 到 Chat S3 下载二进制
+  → studio.presign_upload(filename='media.mp3', mime_type='audio/mp3')
+       → POST Studio /api/bridge/media/presign-upload → 返回 storage_key + upload_url
+  → PUT 二进制到 upload_url (Studio S3)
+  → content 替换为 Studio storage_key（如 media/br_xxx/def456.mp3）
+  → msg_type 保持 'audio'
+  → POST Studio /api/bridge/incoming
+
+Studio bridge_incoming()
+  → 插入 Message(source='live', role='counterpart', msg_type='audio', content='media/br_xxx/def456.mp3')
+  → 后续流程同文本
 ```
 
 ## 4. Studio 自动回复流程
@@ -102,7 +135,7 @@ maybe_reply(contact_id)
   → ProviderClient.complete_chat()
   → 写 LlmLog(purpose='reply')
   → 解析 JSON {"messages": [...]}
-  → 每个 chunk 插入独立 OutboundMessage(status='pending', send_after=计算打字节奏)
+  → 每个 chunk 插入独立 OutboundMessage(msg_type='text', status='pending', send_after=计算打字节奏)
   → 清除 contact.pending_reply
 ```
 
@@ -118,18 +151,38 @@ maybe_reply(contact_id)
 - 最新消息来自 counterpart。
 - 最新 counterpart 消息距离当前至少 6 秒。
 
-## 5. Bridge 发送 outbound
+当前 LLM 只产出纯文本回复，因此 OutboundMessage 的 `msg_type` 始终为 `text`。
+
+## 5. Bridge 发送 outbound（含 media）
+
+### 纯文本 outbound
 
 ```text
 BridgeRuntime._outbound_loop()
   → GET Studio /api/bridge/outbound?cursor=N&timeout=30
-  → 获取当前 Bridge 绑定 Inbox 下的 pending outbound（每条是一条独立文本）
+  → 获取当前 Bridge 绑定 Inbox 下的 pending outbound
 
-每个 OutboundMessage
+每个 OutboundMessage (msg_type='text')
   → 按 inbox_id 找 adapter
   → 校验 peer_platform_id
   → 跳过空 content
   → adapter.send_text(peer_platform_id, content)
+  → POST Studio /api/bridge/outbound/{id}/ack result=sent
+  → Studio 标记 delivered
+```
+
+### Media outbound
+
+```text
+每个 OutboundMessage (msg_type='audio', content='media/br_xxx/def456.mp3')
+  → studio.get_media_url('media/br_xxx/def456.mp3')
+       → GET Studio /api/bridge/media/{storage_key} → 302 到 Studio S3 presigned GET URL
+  → 下载二进制 (data, mime_type)
+  → adapter.upload_and_send_media(peer_id, 'audio', data, filename, mime_type)
+       → POST Chat /api/uploads/presign → 获取 Chat S3 upload URL
+       → PUT 二进制到 Chat S3
+       → adapter.send(peer_id, 'audio', chat_storage_key)
+            → POST Chat /api/conversations/{conv_id}/messages (msg_type='audio', content=chat_storage_key)
   → POST Studio /api/bridge/outbound/{id}/ack result=sent
   → Studio 标记 delivered
 ```
@@ -159,7 +212,7 @@ ingest_archive()
   → 保存原文件到 S3（key: uploads/{account_id}/{archive_id}.json）
   → 确保 Contact 存在
   → filter/sort messages
-  → 插入 Message(source='archive', external_id=archive:{archive_id}:{idx})
+  → 插入 Message(source='archive', external_id=archive:{archive_id}:{idx}, msg_type='text')
   → 创建 Archive
 ```
 

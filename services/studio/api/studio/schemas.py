@@ -9,6 +9,7 @@ from studio.enums import (
     ContactStatus,
     MessageRole,
     OutboundAckResult,
+    OutboundMessageType,
     PersonaStatus,
 )
 
@@ -115,6 +116,7 @@ class DistillJobCreate(StrictModel):
 
 class OutboundCreate(StrictModel):
     contact_id: str
+    msg_type: OutboundMessageType = OutboundMessageType.TEXT
     content: str
 
 
@@ -144,6 +146,7 @@ class BridgeIncomingMessage(StrictModel):
     peer_display_name: str
     platform_msg_id: str
     role: MessageRole
+    msg_type: str = "text"
     content: str
     sent_at: datetime
 
@@ -156,3 +159,8 @@ class BridgeOutboundAck(StrictModel):
     result: OutboundAckResult
     platform_msg_id: Optional[str] = None
     reason: Optional[str] = None
+
+
+class BridgeMediaPresignRequest(StrictModel):
+    filename: str
+    mime_type: str

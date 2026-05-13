@@ -172,6 +172,7 @@ def upgrade() -> None:
         sa.Column("external_id", sa.String(256), nullable=False),
         sa.Column("source", sa.String(16), nullable=False),
         sa.Column("role", sa.String(16), nullable=False),
+        sa.Column("msg_type", sa.String(16), nullable=False, server_default="text"),
         sa.Column("sender_name", sa.String(256), nullable=True),
         sa.Column("content", sa.Text, nullable=False),
         sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False),
@@ -180,6 +181,7 @@ def upgrade() -> None:
         sa.UniqueConstraint("contact_id", "external_id", name="uq_message_contact_external"),
         sa.CheckConstraint("source IN ('archive', 'live')", name="ck_message_source"),
         sa.CheckConstraint("role IN ('self', 'counterpart')", name="ck_message_role"),
+        sa.CheckConstraint("msg_type IN ('text', 'image', 'audio', 'video', 'file')", name="ck_message_msg_type"),
     )
     op.create_index("ix_messages_contact_id", "messages", ["contact_id"])
     op.create_index("ix_messages_timestamp", "messages", ["timestamp"])
@@ -212,6 +214,7 @@ def upgrade() -> None:
         sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
         sa.Column("inbox_id", sa.String(48), sa.ForeignKey("inboxes.id"), nullable=False),
         sa.Column("contact_id", sa.String(48), sa.ForeignKey("contacts.id"), nullable=False),
+        sa.Column("msg_type", sa.String(16), nullable=False, server_default="text"),
         sa.Column("content", sa.Text, nullable=False),
         sa.Column("send_after", sa.DateTime(timezone=True), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
@@ -219,6 +222,7 @@ def upgrade() -> None:
         sa.Column("failed_reason", sa.Text, nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("status IN ('pending', 'delivered', 'failed', 'canceled')", name="ck_outbound_status"),
+        sa.CheckConstraint("msg_type IN ('text', 'image', 'audio', 'video', 'file')", name="ck_outbound_msg_type"),
     )
     op.create_index("ix_outbound_messages_inbox_id", "outbound_messages", ["inbox_id"])
     op.create_index("ix_outbound_messages_contact_id", "outbound_messages", ["contact_id"])

@@ -149,7 +149,7 @@ LLM 调用异常时写 `LlmLog(response_raw='ERROR: ...')`，当前不清 `pendi
 
 ### OutboundMessage 节奏
 
-每个解析到的 chunk 写一条独立 `OutboundMessage`。`send_after` 在 Studio 端计算：
+每个解析到的 chunk 写一条独立 `OutboundMessage`（`msg_type='text'`）。`send_after` 在 Studio 端计算：
 
 - 首条：`now + THINK_DELAY (1.5s)`。
 - 后续：前一条 `send_after + max(MIN, min(MAX, len(prev_chunk) / CHARS_PER_SEC))`。

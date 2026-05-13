@@ -17,6 +17,15 @@ Bridge 认证通过 handshake 动态获取 token，不需要预创建。认证�
 
 撤销 Bridge 时，Studio 删除 BridgeSession 并把 Bridge 状态置为 `revoked`；Bridge 下次调用会收到 401。
 
+## 消息类型
+
+Bridge 协议支持多种消息类型。`msg_type` 字段值：`text | image | audio | video | file`。
+
+- **text**：`content` 为纯文本。
+- **image / audio / video / file**：`content` 为 Studio S3 的 storage key（格式 `media/{bridge_id}/{uuid}`），媒体二进制数据通过 Studio S3 流转。
+
+媒体数据流向：Inbound 时 Bridge 从平台 S3 下载 → 上传到 Studio S3 → 用 Studio storage key 替换 content；Outbound 时 Bridge 从 Studio S3 下载 → 上传到平台 S3 → 发送。
+
 ## `POST /api/bridge/handshake`
 
 ### Request
@@ -116,14 +125,13 @@ Bridge 会停止本地存在但不在 response 中的 adapter。
       "peer_display_name": "粉丝名",
       "platform_msg_id": "123",
       "role": "counterpart",
-      "content": "hello",
+      "msg_type": "audio",
+      "content": "media/br_xxx/abc123.mp3",
       "sent_at": "2026-05-09T12:00:00"
     }
   ]
 }
 ```
-
-当前 Bridge 协议的 incoming/outbound 消息仅传输纯文本（`content` 为字符串），不包含 `msg_type` 或 `media` 字段。
 
 ### 当前行为
 
@@ -140,7 +148,7 @@ Bridge 会停止本地存在但不在 response 中的 adapter。
    - `status = active`。
 5. 构造 `external_id = live:{platform_msg_id}`。
 6. 如果 `(contact_id, external_id)` 已存在，`deduped += 1`。
-7. 插入 `Message(source='live')`。
+7. 插入 `Message(source='live', msg_type=m.msg_type)`。
 8. 更新 Contact last seen 和 updated_at。
 9. 如果 role 是 counterpart 且 inbox enabled 且 contact autoreply enabled，则置 `pending_reply=True`。
 10. `accepted += 1`。
@@ -165,7 +173,8 @@ Bearer Bridge session token。
 - 查询 `OutboundMessage`：
   - `inbox_id` 属于这些 Inbox；
   - `id > cursor`；
-  - `status == pending`。
+  - `status == pending`；
+  - `send_after <= now`。
 - 按 id 升序，limit 50。
 - 从 Contact 附加 `peer_platform_id`。
 - 有 payload 立即返回，否则 sleep 后重试。
@@ -179,9 +188,8 @@ Bearer Bridge session token。
     "inbox_id": "ib_xxxxxxxx",
     "contact_id": "ct_xxxxxxxx",
     "peer_platform_id": "peer-id",
-    "chunks": [
-      { "content": "第一条", "msg_type": "text" }
-    ],
+    "msg_type": "audio",
+    "content": "media/br_xxx/abc123.mp3",
     "status": "pending",
     "created_at": "...",
     "delivered_at": null,
@@ -217,3 +225,35 @@ Bearer Bridge session token。
 ```json
 { "status": "delivered" }
 ```
+
+## `POST /api/bridge/media/presign-upload`
+
+### Auth
+
+Bearer Bridge session token。
+
+### Request
+
+```json
+{ "filename": "voice.mp3", "mime_type": "audio/mp3" }
+```
+
+### Response
+
+```json
+{ "storage_key": "media/br_xxx/abc123", "upload_url": "https://s3.../" }
+```
+
+Bridge 拿到 `upload_url` 后 PUT 二进制数据，然后用 `storage_key` 作为 incoming message 的 `content`。
+
+## `GET /api/bridge/media/{storage_key}`
+
+### Auth
+
+Bearer Bridge session token。
+
+### 当前行为
+
+校验 `storage_key` 以 `media/{bridge.id}/` 开头（Bridge 只能访问自己上传的媒体），返回 302 重定向到 Studio S3 的 presigned GET URL。
+
+Bridge 用此端点下载媒体二进制数据以发送 outbound media message。

@@ -34,6 +34,10 @@ class StudioClient:
         self._http = httpx.AsyncClient(timeout=request_timeout)
         self._long_poll = httpx.AsyncClient(timeout=request_timeout + 30)
 
+    @property
+    def http(self) -> httpx.AsyncClient:
+        return self._http
+
     async def close(self) -> None:
         await self._http.aclose()
         await self._long_poll.aclose()
@@ -113,3 +117,38 @@ class StudioClient:
             headers=self._headers,
         )
         r.raise_for_status()
+
+    async def presign_upload(self, filename: str, mime_type: str) -> Dict[str, str]:
+        """Request a presigned upload URL from Studio S3.
+
+        Returns {"storage_key": "...", "upload_url": "..."}.
+        Bridge PUTs the binary to upload_url, then uses storage_key as
+        the content field in the incoming message.
+        """
+        r = await self._http.post(
+            f"{self.base}/api/bridge/media/presign-upload",
+            json={"filename": filename, "mime_type": mime_type},
+            headers=self._headers,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    async def get_media_url(self, storage_key: str) -> str:
+        """Get a presigned GET URL for downloading media from Studio S3.
+
+        Studio returns 302 redirect; we extract the Location header.
+        """
+        r = await self._http.get(
+            f"{self.base}/api/bridge/media/{storage_key}",
+            headers=self._headers,
+            follow_redirects=False,
+        )
+        if r.status_code in (301, 302, 303, 307, 308):
+            url = r.headers.get("location", "")
+            if not url:
+                raise RuntimeError(f"Studio returned redirect without Location header for {storage_key}")
+            return url
+        r.raise_for_status()
+        raise RuntimeError(
+            f"Studio media endpoint returned unexpected status {r.status_code} for {storage_key}"
+        )

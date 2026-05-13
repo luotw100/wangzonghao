@@ -145,6 +145,7 @@ async def ingest_archive(
             external_id=external_id,
             source=MessageSource.ARCHIVE,
             role=MessageRole.SELF if is_self else MessageRole.COUNTERPART,
+            msg_type="text",
             sender_name=sender_name,
             content=content,
             timestamp=ts,

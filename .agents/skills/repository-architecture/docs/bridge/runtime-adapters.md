@@ -12,7 +12,8 @@
 - `peer_display_name`：对方展示名，用于 Studio Contact 创建/展示。
 - `platform_msg_id`：平台消息 id，用于 Studio 去重。
 - `role`：`self | counterpart`。
-- `content`：文本内容。
+- `msg_type`：`text | image | audio | video | file`。text 时 content 为文本；media 时 content 为平台 S3 storage key。
+- `content`：文本内容或平台 storage key。
 - `sent_at`：naive UTC datetime。
 
 ### `Adapter`
@@ -22,7 +23,10 @@
 - `login() -> str`：登录平台并返回 `platform_self_id`。
 - `list_initial_messages(since_ms) -> list[IncomingMessage]`：启动时补抓消息。
 - `stream_incoming() -> AsyncIterator[IncomingMessage]`：持续产生新消息。
-- `send_text(peer_id, content) -> str`：发送一条文本，返回平台消息 id。
+- `send(peer_id, msg_type, content) -> str`：发送一条消息（text 或 media），返回平台消息 id。text 时 content 为纯文本；media 时 content 为平台 S3 storage key（Bridge runtime 已上传到平台 S3）。
+- `send_text(peer_id, content) -> str`：便捷方法，委托 `send()` 以 `msg_type='text'`。
+- `download_media(storage_key) -> (bytes, mime_type)`：从平台 S3 下载媒体二进制。
+- `upload_and_send_media(peer_id, msg_type, data, filename, mime_type) -> str`：上传二进制到平台 S3 后发送。
 - `close()`：释放资源。
 
 约定：
@@ -68,7 +72,7 @@
 
 - refresh threads。
 - 对每个 conversation 用 `last_id=0` 拉取全部 messages。
-- 转成 `IncomingMessage`。
+- 转成 `IncomingMessage`（包含 `msg_type`）。
 - 更新 thread 的 `last_msg_id`。
 
 ### `stream_incoming()`
@@ -76,15 +80,26 @@
 - 无限循环。
 - refresh threads。
 - 拉取每个 conversation 中 `id > last_msg_id` 的 messages。
-- yield 转换后的 IncomingMessage。
+- yield 转换后的 IncomingMessage（包含 `msg_type`）。
 - 无消息时 sleep 2s。
 - Chat 返回 401 时重新 login。
 
-### `send_text()`
+### `send()`
 
 - 通过 peer id 找 conversation id；找不到时 refresh 一次。
-- POST `/api/conversations/{conv_id}/messages`，body 使用 `sender_type='self'`。
+- POST `/api/conversations/{conv_id}/messages`，body 使用 `sender_type='self'` 和 `msg_type`。
 - 返回 response 中的 `id` 作为 `platform_msg_id`。
+
+### `download_media()`
+
+- GET `{base}/api/media/{storage_key}`（Chat 端 presigned GET URL redirect）。
+- 跟随重定向下载二进制，返回 `(data, mime_type)`。
+
+### `upload_and_send_media()`
+
+1. POST `{base}/api/uploads/presign` 获取 Chat S3 upload URL。
+2. PUT 二进制到 upload URL。
+3. 调用 `send(peer_id, msg_type, chat_storage_key)` 发送平台消息。
 
 ## BridgeRuntime state
 
@@ -103,7 +118,7 @@
 - `_stop: Event`。
 - `_loop_tasks`：heartbeat / inbound / outbound loop tasks。
 
-## Inbound pump
+## Inbound pump（含 media 上传）
 
 ```text
 adapter.stream_incoming()
@@ -111,14 +126,15 @@ adapter.stream_incoming()
   → _inbound_queue
   → _inbound_pump_loop()
   → _push_batch()
-  → StudioClient.push_incoming()
+    → 对每条消息：如果 msg_type != 'text'，走 media 上传
 ```
 
 Batch 规则：
 
 - 等第一条消息。
 - 最多收集 0.4s 或 30 条。
-- `_to_payload()` 转 Studio payload。
+- 每条 msg_type != 'text' 的消息：调 `adapter.download_media(msg.content)` 从平台 S3 下载 → 调 `studio.presign_upload()` 获取 Studio S3 upload URL → PUT 二进制 → 用 Studio S3 storage key 替换 content。
+- `_to_payload()` 转 Studio payload（包含 `msg_type` 和最终 `content`）。
 - POST `/api/bridge/incoming`。
 
 ## Heartbeat loop
@@ -131,7 +147,7 @@ Batch 规则：
 
 这使得 Studio UI 中 revoke/unbind 后，Bridge 能停止对应 adapter。
 
-## Outbound loop
+## Outbound loop（含 media 下发）
 
 ```text
 GET /api/bridge/outbound?cursor=current&timeout=30
@@ -145,7 +161,8 @@ GET /api/bridge/outbound?cursor=current&timeout=30
 - 用 `inbox_id` 找 adapter。
 - 校验 `peer_platform_id`。
 - 跳过空 content。
-- 调 `adapter.send_text(peer_id, content)`。
+- `msg_type == 'text'`：调 `adapter.send_text(peer_id, content)`。
+- `msg_type != 'text'`（media）：调 `studio.get_media_url(content)` 获取 Studio S3 presigned GET URL → 下载二进制 → 调 `adapter.upload_and_send_media()` 上传到平台 S3 并发送。
 - 成功时 ack `sent`，携带 platform message id。
 - 异常时 ack `failed`，携带 reason。
 

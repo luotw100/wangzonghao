@@ -2,7 +2,7 @@
 
 ## 当前角色
 
-`services/bridge` 是运行在主播/运营本机的 daemon。它持有平台登录态，并在 Channel adapters 和 Studio 之间桥接消息。
+`services/bridge` 是运行在主播/运营本机的 daemon。它持有平台登录态，并在 Channel adapters 和 Studio 之间桥接消息。对于媒体消息（image/audio/video/file），Bridge 作为管道在平台 S3 和 Studio S3 之间搬运二进制数据。
 
 Bridge 是无状态 daemon：不保存 DB、不保存长期 token；全部运行状态来自 CLI args、内存 token 和 adapter 内存状态。
 
@@ -60,8 +60,8 @@ main()
 4. 用 Studio 返回的 `inbox_id` 绑定本地 adapter。
 5. 执行 initial catch-up。
 6. 启动 heartbeat loop。
-7. 启动 inbound batching pump。
-8. 启动 outbound long-poll loop。
+7. 启动 inbound batching pump（包含 media 上传到 Studio S3）。
+8. 启动 outbound long-poll loop（包含 media 从 Studio S3 下载后推到平台）。
 9. 平台发送和 ack。
 
 ## Bridge 当前不做的事
@@ -71,3 +71,5 @@ main()
 - 不判断 autoreply 是否应该开启。
 - 不选择 ProviderConfig。
 - 不持久化 Studio session token。
+- 不做 media 缓存。
+- 不直接操作 Studio S3（通过 Studio API 的 media 端点间接操作）。

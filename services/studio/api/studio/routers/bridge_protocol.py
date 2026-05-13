@@ -1,22 +1,23 @@
 """Bridge daemon ↔ Studio protocol endpoints."""
 
+import uuid
+
 import asyncio
 import time
 from datetime import timezone
 from typing import Annotated, Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from studio.auth_utils import hash_password, verify_password, new_session_token, hash_token
+from studio.auth_utils import verify_password, new_session_token, hash_token
 from studio.db import get_db, utc_now
 from studio.deps import BridgeDep, new_id
 from studio.enums import (
     AccountStatus,
     BridgeStatus,
     ContactStatus,
-    DistillJobStatus,
     MessageRole,
     MessageSource,
     OutboundAckResult,
@@ -33,7 +34,8 @@ from studio.models import (
     OutboundMessage,
     Persona,
 )
-from studio.schemas import BridgeHandshake, BridgeIncomingBatch, BridgeOutboundAck
+from studio.s3 import s3_presigned_get_url, s3_presigned_put_url
+from studio.schemas import BridgeHandshake, BridgeIncomingBatch, BridgeOutboundAck, BridgeMediaPresignRequest
 from studio.serializers import s_bridge_inbox_view
 
 router = APIRouter()
@@ -223,7 +225,7 @@ def bridge_incoming(payload: BridgeIncomingBatch, db: Annotated[Session, Depends
         db.add(Message(
             contact_id=contact.id, archive_id=None,
             external_id=external_id, source=MessageSource.LIVE,
-            role=m.role, sender_name=None, content=m.content,
+            role=m.role, msg_type=m.msg_type, sender_name=None, content=m.content,
             timestamp=ts, archive_msg_idx=None, created_at=now,
         ))
         contact.last_seen_platform_msg_id = m.platform_msg_id
@@ -308,3 +310,24 @@ def bridge_outbound_ack(
         o.failed_reason = payload.reason
     db.commit()
     return {"status": o.status}
+
+
+@router.post("/api/bridge/media/presign-upload")
+def bridge_media_presign_upload(
+    payload: BridgeMediaPresignRequest,
+    bridge: BridgeDep,
+):
+    storage_key = f"media/{bridge.id}/{uuid.uuid4().hex}"
+    upload_url = s3_presigned_put_url(storage_key, payload.mime_type)
+    return {"storage_key": storage_key, "upload_url": upload_url}
+
+
+@router.get("/api/bridge/media/{storage_key:path}")
+def bridge_media_serve(
+    storage_key: str,
+    bridge: BridgeDep,
+):
+    if not storage_key.startswith(f"media/{bridge.id}/"):
+        raise HTTPException(status_code=403, detail="无权访问该文件")
+    url = s3_presigned_get_url(storage_key)
+    return RedirectResponse(url=url)

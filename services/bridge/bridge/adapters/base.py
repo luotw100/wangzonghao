@@ -13,6 +13,9 @@ Conventions:
 - One adapter instance owns one inbox. The runtime tags messages with
   inbox_id when forwarding to Studio (the adapter doesn't need to know its
   own inbox_id).
+- For media messages, content is a storage key (platform-specific on
+  inbound, Studio S3 key on outbound in `send()`). The adapter handles
+  download/upload between platform S3 and raw bytes.
 """
 
 from __future__ import annotations
@@ -27,9 +30,10 @@ class IncomingMessage:
     peer_id: str
     peer_display_name: str
     platform_msg_id: str
-    role: str          # 'self' | 'counterpart'
-    content: str
-    sent_at: datetime  # naive UTC
+    role: str              # 'self' | 'counterpart'
+    msg_type: str          # 'text' | 'image' | 'audio' | 'video' | 'file'
+    content: str            # text→plain text; media→platform storage key
+    sent_at: datetime       # naive UTC
 
 
 class Adapter:
@@ -48,8 +52,38 @@ class Adapter:
         raise NotImplementedError
         yield  # type: ignore[unreachable]  # pragma: no cover
 
+    async def send(self, peer_id: str, msg_type: str, content: str) -> str:
+        """Send one message to a peer; return its platform_msg_id.
+
+        For text: content is plain text.
+        For media: content has already been uploaded to platform S3 by the
+        runtime; this method sends the platform message with the storage key.
+        """
+        if msg_type == "text":
+            return await self.send_text(peer_id, content)
+        raise NotImplementedError(f"send() not implemented for msg_type={msg_type}")
+
     async def send_text(self, peer_id: str, content: str) -> str:
-        """Send one text to a peer; return its platform_msg_id."""
+        """Send one text message; return platform_msg_id. Default delegates to send()."""
+        return await self.send(peer_id, "text", content)
+
+    async def download_media(self, storage_key: str) -> tuple[bytes, str]:
+        """Download media from the platform by its storage key.
+
+        Returns (data, mime_type).
+        Used by the runtime to pull media from the platform S3 so it can
+        upload to Studio S3.
+        """
+        raise NotImplementedError
+
+    async def upload_and_send_media(
+        self, peer_id: str, msg_type: str, data: bytes, filename: str, mime_type: str,
+    ) -> str:
+        """Upload binary to platform S3 and send a media message; return platform_msg_id.
+
+        The runtime downloads media from Studio S3, then calls this method
+        to pipe the binary into the platform and send the message.
+        """
         raise NotImplementedError
 
     async def close(self) -> None:

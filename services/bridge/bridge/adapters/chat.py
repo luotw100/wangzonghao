@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import mimetypes
 from datetime import datetime
 from typing import AsyncIterator, Dict, List, Optional
 
@@ -113,11 +114,13 @@ class ChatAdapter(Adapter):
 
     def _msg_to_incoming(self, conv_state: Dict[str, object], m: Dict[str, object]) -> IncomingMessage:
         role = "self" if m["sender_type"] == "self" else "counterpart"
+        msg_type = m.get("msg_type", "text")
         return IncomingMessage(
             peer_id=str(conv_state["peer_id"]),
             peer_display_name=str(conv_state["peer_display_name"]),
             platform_msg_id=str(m["id"]),
             role=role,
+            msg_type=msg_type,
             content=str(m["content"]),
             sent_at=_parse_iso(str(m["created_at"])),
         )
@@ -158,7 +161,7 @@ class ChatAdapter(Adapter):
                 logger.error("chat poll error: %s", exc)
                 await asyncio.sleep(self._poll_sleep)
 
-    async def send_text(self, peer_id: str, content: str) -> str:
+    async def send(self, peer_id: str, msg_type: str, content: str) -> str:
         conv_id = self._conv_id_for_peer(peer_id)
         if conv_id is None:
             await self._refresh_threads()
@@ -167,15 +170,50 @@ class ChatAdapter(Adapter):
             raise ValueError(f"chat: no conversation for peer_id {peer_id}")
         r = await self.http.post(
             f"{self.base}/api/conversations/{conv_id}/messages",
-            json={"sender_type": "self", "msg_type": "text", "content": content},
+            json={"sender_type": "self", "msg_type": msg_type, "content": content},
             headers=self._auth_headers,
         )
         r.raise_for_status()
         platform_msg_id = str(r.json().get("id"))
-        # Pre-bump our cursor so we don't immediately re-yield our own send.
-        # The next poll will see the message but skip it (or yield it once,
-        # which is fine — Studio dedups by external_id).
         return platform_msg_id
+
+    async def send_text(self, peer_id: str, content: str) -> str:
+        return await self.send(peer_id, "text", content)
+
+    async def download_media(self, storage_key: str) -> tuple[bytes, str]:
+        r = await self.http.get(
+            f"{self.base}/api/media/{storage_key}",
+            headers=self._auth_headers,
+            follow_redirects=True,
+        )
+        r.raise_for_status()
+        mime_type = r.headers.get("content-type", "application/octet-stream")
+        return r.content, mime_type
+
+    async def upload_and_send_media(
+        self, peer_id: str, msg_type: str, data: bytes, filename: str, mime_type: str,
+    ) -> str:
+        conv_id = self._conv_id_for_peer(peer_id)
+        if conv_id is None:
+            await self._refresh_threads()
+            conv_id = self._conv_id_for_peer(peer_id)
+        if conv_id is None:
+            raise ValueError(f"chat: no conversation for peer_id {peer_id}")
+
+        presign_r = await self.http.post(
+            f"{self.base}/api/uploads/presign",
+            json={"filename": filename, "mime_type": mime_type},
+            headers=self._auth_headers,
+        )
+        presign_r.raise_for_status()
+        presign = presign_r.json()
+        storage_key = presign["storage_key"]
+        upload_url = presign["upload_url"]
+
+        put_r = await self.http.put(upload_url, content=data, headers={"Content-Type": mime_type})
+        put_r.raise_for_status()
+
+        return await self.send(peer_id, msg_type, storage_key)
 
     async def close(self) -> None:
         if self._http is not None:

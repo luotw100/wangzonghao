@@ -11,12 +11,19 @@ outbound long-poll across them.
 Bridge is a pure message forwarder: receive from Studio, send to platform.
 No pacing, no delay — Studio controls when each message becomes eligible
 via the send_after field on OutboundMessage.
+
+For media messages (image/audio/video/file), Bridge acts as a pipe:
+- Inbound: download binary from platform S3 → upload to Studio S3 →
+  replace content with Studio storage key before pushing to Studio.
+- Outbound: download binary from Studio S3 → upload to platform S3 →
+  send platform message with platform storage key.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import mimetypes
 from contextlib import suppress
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
@@ -64,6 +71,7 @@ class BridgeRuntime:
         self._cursor: int = 0
         self._stop = asyncio.Event()
         self._loop_tasks: List[asyncio.Task[Any]] = []
+        self._media_sem = asyncio.Semaphore(5)
 
     async def run(self) -> None:
         # 1) Log into each platform claim → get platform_self_id.
@@ -197,10 +205,88 @@ class BridgeRuntime:
             if msgs:
                 await self._push_batch([(inbox_id, m) for m in msgs])
 
+    async def _upload_inbound_media(self, adapter: Adapter, msg: IncomingMessage) -> Optional[str]:
+        """Download media from platform → upload to Studio S3. Return Studio storage key or None."""
+        try:
+            data, mime_type = await adapter.download_media(msg.content)
+        except Exception as exc:
+            logger.error("failed to download media from platform (inbox adapter): %s", exc)
+            return None
+
+        ext = mimetypes.guess_extension(mime_type) or ""
+        filename = f"media{ext}"
+        try:
+            presign = await self._studio.presign_upload(filename=filename, mime_type=mime_type)
+        except Exception as exc:
+            logger.error("failed to get presign upload from Studio: %s", exc)
+            return None
+
+        storage_key = presign["storage_key"]
+        upload_url = presign["upload_url"]
+
+        try:
+            r = await self._studio.http.put(upload_url, content=data, headers={"Content-Type": mime_type})
+            r.raise_for_status()
+        except Exception as exc:
+            logger.error("failed to upload media to Studio S3: %s", exc)
+            return None
+
+        return storage_key
+
     async def _push_batch(self, batch: List[Tuple[str, IncomingMessage]]) -> None:
         if not batch:
             return
-        payload = [self._to_payload(inbox_id, m) for inbox_id, m in batch]
+
+        # Phase 1: collect media upload tasks for parallel execution
+        upload_futures: List[Tuple[int, asyncio.Future]] = []
+        for idx, (inbox_id, m) in enumerate(batch):
+            if m.msg_type != "text":
+                entry = self._adapters.get(inbox_id)
+                if entry:
+
+                    async def _upload_with_sem(
+                        adapter: Adapter, msg: IncomingMessage,
+                    ) -> Optional[str]:
+                        async with self._media_sem:
+                            return await self._upload_inbound_media(adapter, msg)
+
+                    fut = asyncio.ensure_future(
+                        _upload_with_sem(entry.adapter, m)
+                    )
+                    upload_futures.append((idx, fut))
+
+        # Await all uploads in parallel
+        if upload_futures:
+            indices = [i for i, _ in upload_futures]
+            tasks = [f for _, f in upload_futures]
+            gathered = await asyncio.gather(*tasks, return_exceptions=True)
+            upload_results = dict(zip(indices, gathered))
+        else:
+            upload_results = {}
+
+        # Phase 2: build payload
+        payload = []
+        for idx, (inbox_id, m) in enumerate(batch):
+            content = m.content
+            msg_type = m.msg_type
+            if msg_type != "text":
+                if idx in upload_results:
+                    result = upload_results[idx]
+                    if isinstance(result, Exception) or result is None:
+                        logger.warning(
+                            "inbound media upload failed; falling back to text for msg %s",
+                            m.platform_msg_id,
+                        )
+                        msg_type = "text"
+                    else:
+                        content = result
+                else:
+                    logger.warning(
+                        "adapter gone for inbox %s; falling back to text for msg %s",
+                        inbox_id, m.platform_msg_id,
+                    )
+                    msg_type = "text"
+            payload.append(self._to_payload(inbox_id, m, content=content, msg_type=msg_type))
         try:
             res = await self._studio.push_incoming(payload)
             logger.info(
@@ -211,14 +297,15 @@ class BridgeRuntime:
             logger.error("inbound push failed: %s", exc)
 
     @staticmethod
-    def _to_payload(inbox_id: str, m: IncomingMessage) -> Dict[str, Any]:
+    def _to_payload(inbox_id: str, m: IncomingMessage, *, content: Optional[str] = None, msg_type: Optional[str] = None) -> Dict[str, Any]:
         return {
             "inbox_id": inbox_id,
             "peer_platform_id": m.peer_id,
             "peer_display_name": m.peer_display_name,
             "platform_msg_id": m.platform_msg_id,
             "role": m.role,
-            "content": m.content,
+            "msg_type": msg_type or m.msg_type,
+            "content": content or m.content,
             "sent_at": m.sent_at.isoformat(),
         }
 
@@ -289,6 +376,7 @@ class BridgeRuntime:
         outbound_id = int(item["id"])
         inbox_id = str(item.get("inbox_id"))
         platform_peer_id = item.get("peer_platform_id")
+        msg_type = str(item.get("msg_type", "text"))
         content = str(item.get("content", "")).strip()
 
         entry = self._adapters.get(inbox_id)
@@ -311,7 +399,22 @@ class BridgeRuntime:
             return
 
         try:
-            msg_id = await entry.adapter.send_text(platform_peer_id, content)
+            if msg_type == "text":
+                msg_id = await entry.adapter.send_text(platform_peer_id, content)
+            else:
+                # Media outbound: download from Studio S3, then upload+send via adapter
+                data, mime_type = await self._download_studio_media(content)
+                if data is None:
+                    await self._studio.ack_outbound(
+                        outbound_id, result="failed",
+                        reason=f"failed to download Studio media {content}",
+                    )
+                    return
+                ext = mimetypes.guess_extension(mime_type) or ".bin"
+                filename = f"media{ext}"
+                msg_id = await entry.adapter.upload_and_send_media(
+                    platform_peer_id, msg_type, data, filename, mime_type,
+                )
         except Exception as exc:
             logger.error("outbound %d send failed (inbox=%s): %s", outbound_id, inbox_id, exc)
             await self._studio.ack_outbound(
@@ -322,6 +425,18 @@ class BridgeRuntime:
         await self._studio.ack_outbound(
             outbound_id, result="sent", platform_msg_id=msg_id,
         )
+
+    async def _download_studio_media(self, storage_key: str) -> Tuple[Optional[bytes], str]:
+        """Download binary from Studio S3 via presigned GET URL."""
+        try:
+            url = await self._studio.get_media_url(storage_key)
+            r = await self._studio.http.get(url, follow_redirects=True)
+            r.raise_for_status()
+            mime_type = r.headers.get("content-type", "application/octet-stream")
+            return r.content, mime_type
+        except Exception as exc:
+            logger.error("failed to download Studio media %s: %s", storage_key, exc)
+            return None, ""
 
 
 def _redact(raw: Dict[str, str]) -> Dict[str, str]:

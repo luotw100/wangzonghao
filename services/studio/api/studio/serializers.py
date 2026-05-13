@@ -87,7 +87,7 @@ def s_message(m: Message) -> Dict[str, Any]:
     return {
         "id": m.id, "contact_id": m.contact_id, "archive_id": m.archive_id,
         "external_id": m.external_id, "source": m.source, "role": m.role,
-        "sender_name": m.sender_name, "content": m.content,
+        "msg_type": m.msg_type, "sender_name": m.sender_name, "content": m.content,
         "timestamp": m.timestamp, "created_at": m.created_at,
     }
 
@@ -115,7 +115,7 @@ def s_outbound(o: OutboundMessage, *, peer_platform_id: Optional[str] = None) ->
     return {
         "id": o.id, "inbox_id": o.inbox_id, "contact_id": o.contact_id,
         "peer_platform_id": peer_platform_id,
-        "content": o.content, "status": o.status, "created_at": o.created_at,
+        "msg_type": o.msg_type, "content": o.content, "status": o.status, "created_at": o.created_at,
         "delivered_at": o.delivered_at, "failed_reason": o.failed_reason,
     }
 

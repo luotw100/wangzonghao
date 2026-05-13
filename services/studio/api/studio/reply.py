@@ -32,6 +32,7 @@ from studio.enums import (
     ContactStatus,
     LlmPurpose,
     MessageRole,
+    OutboundMessageType,
     OutboundStatus,
 )
 from studio.models import (
@@ -173,11 +174,22 @@ def _decide(db: ORMSession, contact_id: str) -> _ReplyDecision:
 
 
 def _format_history_lines(history: List[Message]) -> str:
+    _MEDIA_LABELS = {
+        "image": "[图片]",
+        "audio": "[音频]",
+        "video": "[视频]",
+        "file": "[文件]",
+    }
     lines: List[str] = []
     for m in history:
         speaker = "我" if m.role == MessageRole.SELF else "对方"
         ts = m.timestamp.strftime("%m-%d %H:%M")
-        content = m.content.replace("\n", " ").strip()
+        msg_type = getattr(m, "msg_type", "text") or "text"
+        if msg_type == "text":
+            content = m.content.replace("\n", " ").strip()
+        else:
+            label = _MEDIA_LABELS.get(msg_type, f"[{msg_type}]")
+            content = label
         lines.append(f"[{ts}] {speaker}: {content}")
     return "\n".join(lines)
 
@@ -304,6 +316,7 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
                 ob = OutboundMessage(
                     inbox_id=ctx.inbox_id,
                     contact_id=ctx.contact_id,
+                    msg_type=OutboundMessageType.TEXT,
                     content=ch,
                     send_after=send_after,
                     status=OutboundStatus.PENDING,

@@ -95,6 +95,7 @@ def seed_outbound(inbox_id: str, payload: OutboundCreate, db: Annotated[Session,
     now_ts = utc_now()
     o = OutboundMessage(
         inbox_id=inbox.id, contact_id=contact.id,
+        msg_type=payload.msg_type,
         content=payload.content,
         send_after=now_ts,
         status=OutboundStatus.PENDING, delivered_at=None, failed_reason=None, created_at=now_ts,

@@ -18,7 +18,7 @@
 
 `db.py` 当前行为：
 
-- 读取 `DATABASE_URL` 和 S3 环境变量（`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`），缺失时报错。
+- 读取 `DATABASE_URL` 和 S3 环境变量（`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`），缺失时报错。`S3_PUBLIC_URL` 用于生成媒体上传/下载的 presigned URL。
 - PostgreSQL 连接池：`pool_size=10, max_overflow=20`。
 - 暴露 `Base`、`SessionLocal`、`get_db()`、`utc_now()`。
 - `utc_now()` 返回时区感知的 UTC datetime。
@@ -57,10 +57,10 @@
 - `s_bridge()`
 - `s_inbox()`
 - `s_contact()`
-- `s_message()`
+- `s_message()`：包含 `msg_type` 字段。
 - `s_archive()`
 - `s_distill_job()`
-- `s_outbound()`：可附加 `peer_platform_id`。
+- `s_outbound()`：包含 `msg_type` 字段，可附加 `peer_platform_id`。
 
 ## Ownership helpers
 
@@ -85,8 +85,8 @@
 - `InboxUpdate`——Inbox 仅由 bridge handshake 自动创建，没有独立创建 schema。
 - `ContactUpdate`。
 - `DistillJobCreate`。
-- `OutboundChunk`、`OutboundCreate`。
-- Bridge protocol：`BridgeHandshakeInbox`、`BridgeHandshake`、`BridgeIncomingMessage`、`BridgeIncomingBatch`、`BridgeOutboundAck`。
+- `OutboundCreate`：包含 `msg_type` 和 `content`。
+- Bridge protocol：`BridgeHandshakeInbox`、`BridgeHandshake`、`BridgeIncomingMessage`（含 `msg_type`）、`BridgeIncomingBatch`、`BridgeOutboundAck`、`BridgeMediaPresignRequest`。
 
 ## Web API endpoints
 
@@ -191,7 +191,15 @@ Create 当前校验 source Inbox、target Persona，并拒绝同一 target Perso
 
 ## Bridge API
 
-Bridge endpoints 见 `docs/bridge/protocol.md`。
+Bridge protocol endpoints 见 `docs/bridge/protocol.md`。当前包含：
+
+- `POST /api/bridge/handshake`
+- `POST /api/bridge/heartbeat`
+- `POST /api/bridge/incoming`
+- `GET /api/bridge/outbound`
+- `POST /api/bridge/outbound/{outbound_id}/ack`
+- `POST /api/bridge/media/presign-upload` — Bridge 获取 Studio S3 上传 presigned URL
+- `GET /api/bridge/media/{storage_key}` — Bridge 获取 Studio S3 下载 presigned URL（302 redirect）
 
 ## ProviderClient
 

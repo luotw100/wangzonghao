@@ -2,7 +2,7 @@
 
 ## 当前模型原则
 
-`models.py` 文件头明确写了当前原则：Studio 不使用 SQLAlchemy column-level defaults。每次 INSERT 应由应用层显式传入字段值。
+`models.py` 文件头明确写了当前原则：Studio 不使用 SQLAlchemy column-level defaults。每次 INSERT 应由应用层显式传入字段值。迁移中使用 `server_default` 仅为兼容已有数据。
 
 ## 数据库
 
@@ -134,6 +134,7 @@ Bridge 运行时 token。
 - `external_id`：`String(256)`。
 - `source`：`String(16)`，CHECK `archive | live`。
 - `role`：`String(16)`，CHECK `self | counterpart`。
+- `msg_type`：`String(16)`，CHECK `text | image | audio | video | file`。
 - `sender_name`：`String(256)`，nullable。
 - `content`：`Text`。
 - `timestamp`：`timestamptz`。
@@ -163,6 +164,7 @@ Studio → Bridge 队列。
 - `id`：`BigInteger`，自增 cursor。
 - `inbox_id`：`String(48)`。
 - `contact_id`：`String(48)`。
+- `msg_type`：`String(16)`，CHECK `text | image | audio | video | file`。
 - `content`：`Text`。
 - `send_after`：`timestamptz`。
 - `status`：`String(16)`，CHECK `pending | delivered | failed | canceled`。

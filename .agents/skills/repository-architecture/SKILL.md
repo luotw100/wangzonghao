@@ -37,16 +37,17 @@ Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Cha
 ## 当前核心不变量
 
 1. **Studio 不直连 Channel。** 当前 Chat sandbox 也只能通过 Bridge 的 `chat` adapter 进入 Studio。
-2. **Bridge 不做策略决策。** Bridge 只登录平台、收消息、推 Studio、拉 outbound、发送。
-3. **Studio DB 是 source of truth。** Studio 的 `messages` 表统一保存 archive/live 历史。
-4. **Contact 是接管单元。** Contact 持有 `persona_id`、可选 Provider override、`autoreply_enabled`、`card_md`、`pending_reply`。
-5. **Inbox 是平台身份。** Inbox 表示一个平台账号/身份，并给新 Contact 提供默认 Persona 和可选 Provider override。
-6. **Bridge 是本地 daemon 实例。** Bridge 行由 `(account_id, hostname)` 标识，可服务多个 Inbox。
-7. **Outbound 队列是数据库表。** `outbound_messages` 是 Studio → Bridge 的工作队列；Bridge long-poll 并维护 cursor。
-8. **Chat/Studio 数据库和 S3 环境变量必须显式提供。** 缺失 `DATABASE_URL`、`S3_ENDPOINT`、`S3_ACCESS_KEY`、`S3_SECRET_KEY` 或 `S3_BUCKET` 会直接报错。
-9. **Chat/Studio models 不用 SQLAlchemy column default。** 当前设计要求插入时显式写入字段值。
-10. **Studio Provider 是管理员维护的全局配置。** 普通用户 UI 不展示 Provider；reply/distill 解析顺序是 Contact override → Inbox override → 全局默认 Provider。
-11. **Studio 和 Chat 使用 PostgreSQL + Alembic 管理 schema。** 启动时自动执行 `run_migrations()`。
+2. **Bridge 不做策略决策。** Bridge 只登录平台、收消息、推 Studio、拉 outbound、发送。对媒体消息，Bridge 是粗管道：平台 S3 ↔ Studio S3 搬运二进制数据。
+3. **Studio S3 是媒体唯一源。** 所有媒体二进制最终存储在 Studio S3。Inbound 时 Bridge 下载平台媒体 → 上传 Studio S3 → 消息 content 为 Studio storage key。Outbound 时 content 指向 Studio S3 storage key → Bridge 下载 → 上传到平台 → 发送。
+4. **Studio DB 是 source of truth。** Studio 的 `messages` 表统一保存 archive/live 历史，每条消息有 `msg_type` 字段（text | image | audio | video | file）。
+5. **Contact 是接管单元。** Contact 持有 `persona_id`、可选 Provider override、`autoreply_enabled`、`card_md`、`pending_reply`。
+6. **Inbox 是平台身份。** Inbox 表示一个平台账号/身份，并给新 Contact 提供默认 Persona 和可选 Provider override。
+7. **Bridge 是本地 daemon 实例。** Bridge 行由 `(account_id, hostname)` 标识，可服务多个 Inbox。
+8. **Outbound 队列是数据库表。** `outbound_messages` 是 Studio → Bridge 的工作队列，每条携带 `msg_type`；Bridge long-poll 并维护 cursor。
+9. **Chat/Studio 数据库和 S3 环境变量必须显式提供。** 缺失 `DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY` 或 `S3_BUCKET` 会直接报错。
+10. **Chat/Studio models 不用 SQLAlchemy column default。** 当前设计要求插入时显式写入字段值。迁移中使用 `server_default` 仅为兼容已有数据。
+11. **Studio Provider 是管理员维护的全局配置。** 普通用户 UI 不展示 Provider；reply/distill 解析顺序是 Contact override → Inbox override → 全局默认 Provider。
+12. **Studio 和 Chat 使用 PostgreSQL + Alembic 管理 schema。** 启动时自动执行 `run_migrations()`。
 
 ## 文档地图
 
@@ -89,7 +90,7 @@ Contact.pending_reply=True
   → StudioRuntime ReplyScanner every 2s
   → maybe_reply()
   → ProviderClient.complete_chat()
-  → OutboundMessage(status=pending, send_after=打字节奏)
+  → OutboundMessage(msg_type='text', status=pending, send_after=打字节奏)
   → Bridge long-poll + 即发 + ack
 ```
 

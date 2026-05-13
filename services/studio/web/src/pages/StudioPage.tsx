@@ -699,7 +699,7 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
             <div key={message.id} style={{ display: 'flex', justifyContent: message.role === 'self' ? 'flex-end' : 'flex-start' }}>
               <div style={{ maxWidth: '76%' }}>
                 <div className="mono ink-3" style={{ fontSize: 10, textAlign: message.role === 'self' ? 'right' : 'left', marginBottom: 3 }}>
-                  {message.role === 'self' ? '我' : contact.display_name} · {formatDateTime(message.timestamp)} · {message.source}
+                  {message.role === 'self' ? '我' : contact.display_name} · {formatDateTime(message.timestamp)}
                 </div>
                 <div
                   style={{

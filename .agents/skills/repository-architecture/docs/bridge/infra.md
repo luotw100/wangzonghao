@@ -58,6 +58,6 @@ Bridge 容器访问本机 Compose 服务时当前命令使用：
 
 ## 当前运行限制
 
-- Bridge 运行时不使用本地离线缓存。
+- Bridge 通过 `--state-dir` 目录下的 `state.json` 持久化 `machine_id` 和 session token。
+- `machine_id` 由 Studio 生成，跨重启不变；token 重启时优先复用（成功则跳过 handshake）。
 - heartbeat response 能停 adapter，但不能启动 CLI 中不存在的新 adapter。
-- Bridge token 只在内存中；重启后重新 handshake。

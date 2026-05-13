@@ -62,11 +62,10 @@ OpenAI-compatible LLM Provider。
 
 - `id`：`String(48)`，格式 `br_` + 完整 UUID hex。
 - `account_id`：`String(48)`。
-- `hostname`：`String(256)`。
-- `display_name`：`String(256)`。
+- `machine_id`：`String(256)`，Studio 在首次握手时生成（`m_` + uuid hex），Bridge 本地持久化后跨重启复用。
 - `status`：`String(16)`，CHECK `online | offline | revoked`。
 - `last_seen_at`：nullable `timestamptz`。
-- unique `(account_id, hostname)`。
+- unique `(account_id, machine_id)`。
 
 ### `bridge_sessions` — `BridgeSession`
 

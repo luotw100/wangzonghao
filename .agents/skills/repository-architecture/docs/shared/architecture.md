@@ -105,7 +105,7 @@ Studio 登录账号，带 `admin | user` role。数据库没有任何账号时�
 
 ### Bridge
 
-本地 daemon 注册行，由 `(account_id, hostname)` 唯一标识。Handshake 会 upsert Bridge，并清除该 Bridge 旧 session。
+本地 daemon 注册行，由 `(account_id, machine_id)` 唯一标识。`machine_id` 由 Studio 在首次握手时生成并返回，Bridge 持久化后跨重启复用。Handshake 会 upsert Bridge，并清除该 Bridge 旧 session。
 
 ### Inbox
 

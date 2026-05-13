@@ -6,14 +6,14 @@
 
 Bridge 认证通过 handshake 动态获取 token，不需要预创建。认证流程是：
 
-1. Bridge 启动时持有 Studio username/password 和 hostname。
+1. Bridge 启动时持有 Studio username/password 和可选的本地持久化 `machine_id`。
 2. Bridge 调 handshake。
 3. Studio 校验账号密码。
-4. Studio 按 `(account_id, hostname)` upsert Bridge。
+4. 如果请求带 `machine_id`，Studio 按 `(account_id, machine_id)` 查找已有 Bridge；如果没有（首次启动），Studio 生成 `machine_id` 并创建新 Bridge。
 5. Studio 删除该 Bridge 的旧 BridgeSession。
 6. Studio 创建并返回新 session token。
 7. Bridge 后续请求带 `Authorization: Bearer {token}`。
-8. token 只在 Bridge 内存中保存。
+8. token 保存到 `state.json`，重启时优先尝试复用（成功则跳过 handshake）。
 
 撤销 Bridge 时，Studio 删除 BridgeSession 并把 Bridge 状态置为 `revoked`；Bridge 下次调用会收到 401。
 
@@ -34,7 +34,7 @@ Bridge 协议支持多种消息类型。`msg_type` 字段值：`text | image | a
 {
   "username": "demo",
   "password": "demo123",
-  "hostname": "pc-hostname",
+  "machine_id": "m_xxxxxxxxxxxx",
   "inboxes": [
     { "platform": "chat", "platform_self_id": "acct_alice" }
   ]
@@ -44,7 +44,7 @@ Bridge 协议支持多种消息类型。`msg_type` 字段值：`text | image | a
 ### Studio 当前行为
 
 1. 校验 Studio account username/password，且 account status 必须是 active。
-2. 按 `(account_id, hostname)` upsert `Bridge`。
+2. 如果请求带了 `machine_id`，按 `(account_id, machine_id)` 查找已有 Bridge；如果没带（首次启动），生成新 `machine_id`（`m_` + uuid hex 前 12 字符）并创建新 Bridge。
 3. 标记 Bridge online，更新 `last_seen_at`。
 4. 删除这个 Bridge 的旧 `BridgeSession`。
 5. 生成 token，插入新 `BridgeSession`。
@@ -62,6 +62,7 @@ Bridge 协议支持多种消息类型。`msg_type` 字段值：`text | image | a
 {
   "token": "opaque-session-token",
   "bridge_id": "br_xxxxxxxx",
+  "machine_id": "m_xxxxxxxxxxxx",
   "account_id": "acc_xxxxxxxx",
   "inboxes": [
     {

@@ -42,11 +42,11 @@ Inbox 仅由 Bridge handshake 自动 upsert 创建，没有独立的创建 API�
 
 ## Bridge offline 状态
 
-Studio 在 heartbeat 时更新 `Bridge.last_seen_at` 并保持 `status='online'`。Bridge offline 状态仅由手动 revoke 设置，没有自动 offline scanner。
+Studio worker 中 `BridgeOfflineScanner` 每 30s 扫描 `last_seen_at` 超过 45s 的 online Bridge，将其标为 offline。heartbeat 收到请求时会实时标回 online。offline 不影响已入队的 outbound 消息——它们会在 Bridge 恢复在线后被投递。
 
 ## Bridge token
 
-Bridge session token 只保存在 Bridge 内存中。Bridge 重启后重新 handshake；Studio 会清掉同一 Bridge 的旧 BridgeSession。
+Bridge session token 保存在本地 `state.json`（`--state-dir` 目录）中。Bridge 重启时优先尝试复用已保存的 token 调用 heartbeat；成功则跳过 handshake。如果 token 过期（401）或有新的 `--chat-inbox` 声明，则走完整 handshake。旧 BridgeSession 在 handshake 时被清除。
 
 ## Provider UI
 

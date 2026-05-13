@@ -42,7 +42,7 @@ Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Cha
 4. **Studio DB 是 source of truth。** Studio 的 `messages` 表保存全部聊天历史，每条消息有 `msg_type` 字段（text | image | audio | video | file）。
 5. **Contact 是接管单元。** Contact 持有 `persona_id`、可选 Provider override、`autoreply_enabled`、`card_md`、`pending_reply`。
 6. **Inbox 是平台身份。** Inbox 表示一个平台账号/身份，并给新 Contact 提供默认 Persona 和可选 Provider override。
-7. **Bridge 是本地 daemon 实例。** Bridge 行由 `(account_id, hostname)` 标识，可服务多个 Inbox。
+7. **Bridge 是本地 daemon 实例。** Bridge 行由 `(account_id, machine_id)` 标识，`machine_id` 由 Studio 在首次握手时生成并返回给 Bridge 本地持久化；可服务多个 Inbox。
 8. **Outbound 队列是数据库表。** `outbound_messages` 是 Studio → Bridge 的工作队列，每条携带 `msg_type`；Bridge long-poll 并维护 cursor。
 9. **Chat/Studio 数据库和 S3 环境变量必须显式提供。** 缺失 `DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY` 或 `S3_BUCKET` 会直接报错。
 10. **Chat/Studio models 不用 SQLAlchemy column default。** 当前设计要求插入时显式写入字段值。迁移中使用 `server_default` 仅为兼容已有数据。

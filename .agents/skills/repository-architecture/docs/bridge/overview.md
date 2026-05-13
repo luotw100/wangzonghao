@@ -33,7 +33,7 @@ services/bridge/
 - `--studio-username`：必填。
 - `--studio-password`：必填。
 - `--studio-url`：可选，默认 `https://studio.laborster.com`。
-- `--hostname`：可选，默认 `socket.gethostname()`。
+- `--state-dir`：必填，bridge 持久化目录（machine_id + token 存为 `state.json`）。
 - `--chat-inbox`：可重复，格式 `base_url=...,username=...,password=...`。
 
 一条 `--chat-inbox` 会变成 `InboxClaim(platform='chat', raw={...})`。
@@ -43,6 +43,7 @@ services/bridge/
 ```text
 main()
   → parse args
+  → 从 --state-dir 加载 BridgeState(state.json)
   → 创建 InboxClaim list
   → 创建 StudioClient
   → 创建 BridgeRuntime
@@ -56,7 +57,7 @@ main()
 
 1. 每个 claim build 一个 adapter。
 2. 登录每个 platform adapter。
-3. 用 `(platform, platform_self_id)` 列表 handshake Studio。
+3. 用 `(platform, platform_self_id)` 列表连接 Studio（优先尝试 token 复用，失败则 handshake）。
 4. 用 Studio 返回的 `inbox_id` 绑定本地 adapter。
 5. 执行 initial catch-up。
 6. 启动 heartbeat loop。
@@ -70,6 +71,5 @@ main()
 - 不存 Persona / Contact Card。
 - 不判断 autoreply 是否应该开启。
 - 不选择 ProviderConfig。
-- 不持久化 Studio session token。
 - 不做 media 缓存。
 - 不直接操作 Studio S3（通过 Studio API 的 media 端点间接操作）。

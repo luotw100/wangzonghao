@@ -10,7 +10,7 @@
 
 ## StudioRuntime
 
-`studio/runtime.py` 当前同时运行两个 scanner loop。
+`studio/runtime.py` 当前同时运行三个 scanner loop。
 
 ### `RuntimeOptions`
 
@@ -23,6 +23,7 @@
 - 创建 reply 用的 `ProviderClient`。
 - 启动 `_distill_scanner_loop()`。
 - 启动 `_reply_scanner_loop()`。
+- 启动 `_bridge_offline_scanner_loop()`。
 
 `stop()`：
 
@@ -57,6 +58,16 @@
 3. 对未 in-flight 的 Contact 创建 `_run_reply(contact_id)` task。
 
 `_run_reply()` 调 `maybe_reply()` 并记录 status log。
+
+### BridgeOfflineScanner
+
+每 30 秒：
+
+1. 查询所有 `status == "online"` 且 `last_seen_at < now - 45s` 的 Bridge。
+2. 将其 status 设为 `"offline"`。
+3. heartbeat 收到请求时会实时标回 `"online"`。
+
+离线判断使用 45 秒阈值（3 倍心跳间隔），容忍偶尔的网络抖动。
 
 ## Reply brain
 

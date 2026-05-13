@@ -32,7 +32,7 @@
 
 ```text
 bridge main 解析 CLI
-  → --studio-username / --studio-password / --studio-url / --hostname
+  → --studio-username / --studio-password / --studio-url / --state-dir
   → N x --chat-inbox base_url=...,username=...,password=...
 
 每个 InboxClaim
@@ -41,14 +41,16 @@ bridge main 解析 CLI
   → POST Chat /api/auth/login
   → platform_self_id = Chat account id
 
-BridgeRuntime.handshake()
+BridgeRuntime 加载本地 state
+  → 如果存了 token，优先尝试心跳复用
+  → 如果 token 过期或有新 inbox 声明，走 handshake
   → POST Studio /api/bridge/handshake
   → Studio 校验账号密码
-  → 按 (account_id, hostname) upsert Bridge
-  → 删除这个 Bridge 的旧 BridgeSession
-  → 创建新 BridgeSession token
+  → 如果带 machine_id 则按 (account_id, machine_id) 找已有 Bridge，否则生成新的
+  → 删除旧 BridgeSession，创建新 token
   → 按 (account_id, platform, platform_self_id) upsert Inbox
-  → 返回 token、bridge_id、account_id、inbox list、cursor
+  → 返回 token、bridge_id、machine_id、account_id、inbox list、cursor
+  → Bridge 保存 machine_id + token 到 state.json
 
 BridgeRuntime 绑定 adapters
   → 用 (platform, platform_self_id) 找到 inbox_id

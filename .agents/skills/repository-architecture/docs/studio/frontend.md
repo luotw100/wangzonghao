@@ -165,7 +165,7 @@ contact.reply_provider_config_id ?? inbox.reply_provider_config_id ?? global def
 
 - 顶部固定 `BridgeCommandPanel`：根据当前 username + studio_url + chat base_url + chat username 实时拼出 `docker compose run --rm bridge ...` 启动命令，密码留作占位符；按钮可一键复制。
 - 列出非 revoked Bridge。
-- 显示 status、hostname、last seen、承载的 Inboxes。
+- 显示 status、machine_id、last seen、承载的 Inboxes。
 - revoke 调 `api.deleteBridge()`。
 
 ## OverviewView (admin)

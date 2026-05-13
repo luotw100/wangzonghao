@@ -45,10 +45,11 @@ def bridge_handshake(payload: BridgeHandshake, db: Annotated[Session, Depends(ge
     """Login + register + report served inboxes, in one call.
 
     1. Verify Studio account credentials.
-    2. Upsert Bridge by (account_id, hostname).
+    2. Upsert Bridge by (account_id, machine_id). If no machine_id given
+       (first launch), Studio generates one with id_new("m").
     3. Wipe prior BridgeSession rows for this bridge; mint a fresh token.
     4. Upsert an Inbox per (platform, platform_self_id) the bridge logged into.
-    5. Return the token + authoritative inbox list + outbound cursor.
+    5. Return the token + authoritative inbox list + outbound cursor + machine_id.
     """
     account = (
         db.query(Account).filter(Account.username == payload.username).first()
@@ -59,17 +60,21 @@ def bridge_handshake(payload: BridgeHandshake, db: Annotated[Session, Depends(ge
         raise HTTPException(status_code=401, detail="Studio 账号或密码错误")
 
     now = utc_now()
-    bridge = (
-        db.query(Bridge)
-        .filter(Bridge.account_id == account.id, Bridge.hostname == payload.hostname)
-        .first()
-    )
+    if payload.machine_id:
+        bridge = (
+            db.query(Bridge)
+            .filter(Bridge.account_id == account.id, Bridge.machine_id == payload.machine_id)
+            .first()
+        )
+    else:
+        bridge = None
+
     if bridge is None:
+        machine_id = new_id("m")
         bridge = Bridge(
             id=new_id("br"),
             account_id=account.id,
-            hostname=payload.hostname,
-            display_name=payload.hostname,
+            machine_id=machine_id,
             status=BridgeStatus.ONLINE,
             last_seen_at=now,
             created_at=now,
@@ -78,6 +83,7 @@ def bridge_handshake(payload: BridgeHandshake, db: Annotated[Session, Depends(ge
         db.add(bridge)
         db.flush()
     else:
+        machine_id = bridge.machine_id
         bridge.status = BridgeStatus.ONLINE
         bridge.last_seen_at = now
         bridge.updated_at = now
@@ -152,6 +158,7 @@ def bridge_handshake(payload: BridgeHandshake, db: Annotated[Session, Depends(ge
     return {
         "token": raw_token,
         "bridge_id": bridge.id,
+        "machine_id": machine_id,
         "account_id": account.id,
         "inboxes": [s_bridge_inbox_view(i) for i in served],
         "cursor": cursor,

@@ -29,6 +29,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 from bridge.adapters.base import Adapter, IncomingMessage, build_adapter
+from bridge.state import BridgeState
 from bridge.studio_client import StudioClient
 
 logger = logging.getLogger(__name__)
@@ -60,11 +61,11 @@ class BridgeRuntime:
         self,
         *,
         studio: StudioClient,
-        hostname: str,
+        state: BridgeState,
         claims: List[InboxClaim],
     ) -> None:
         self._studio = studio
-        self._hostname = hostname
+        self._state = state
         self._claims = claims
         self._adapters: Dict[str, _AdapterEntry] = {}
         self._inbound_queue: asyncio.Queue[Tuple[str, IncomingMessage]] = asyncio.Queue()
@@ -73,7 +74,7 @@ class BridgeRuntime:
         self._loop_tasks: List[asyncio.Task[Any]] = []
         self._media_sem = asyncio.Semaphore(5)
 
-    async def run(self) -> None:
+    async def run(self, state_dir: str) -> None:
         # 1) Log into each platform claim → get platform_self_id.
         prelogged: List[Tuple[InboxClaim, Adapter, str]] = []
         for claim in self._claims:
@@ -88,33 +89,30 @@ class BridgeRuntime:
                 continue
             prelogged.append((claim, adapter, self_id))
 
-        # 2) Handshake with Studio. It auto-upserts Inbox rows for any new
-        # (platform, platform_self_id) under this account, and returns
-        # the authoritative inbox_id for each.
+        # 2) Connect to Studio: try token reuse first, fall back to handshake.
         handshake_payload = [
             {"platform": claim.platform, "platform_self_id": self_id}
             for (claim, _adapter, self_id) in prelogged
         ]
-        try:
-            info = await self._studio.handshake(
-                hostname=self._hostname, inboxes=handshake_payload,
-            )
-        except Exception as exc:
-            logger.error("handshake failed: %s", exc)
+
+        info = await self._connect(handshake_payload)
+        if info is None:
             for _claim, adapter, _ in prelogged:
                 with suppress(Exception):
                     await adapter.close()
             return
+        self._state.machine_id = str(info["machine_id"])
+        self._state.token = str(info["token"])
 
         self._cursor = int(info.get("cursor", 0))
-        served = info.get("inboxes", [])  # [{id, platform, platform_self_id, display_name, enabled, ...}]
+        served = info.get("inboxes", [])
         served_by_key: Dict[Tuple[str, str], Dict[str, Any]] = {
             (i["platform"], i["platform_self_id"]): i for i in served
         }
 
         logger.info(
-            "handshake ok: bridge=%s account=%s served=%d cursor=%d",
-            info.get("bridge_id"), info.get("account_id"), len(served), self._cursor,
+            "handshake ok: bridge=%s machine_id=%s account=%s served=%d cursor=%d",
+            info.get("bridge_id"), self._state.machine_id, info.get("account_id"), len(served), self._cursor,
         )
 
         # 3) Bind each prelogged adapter to its assigned inbox_id; drop any
@@ -165,6 +163,43 @@ class BridgeRuntime:
 
     def stop(self) -> None:
         self._stop.set()
+
+    async def _connect(self, handshake_payload: List[Dict[str, str]]) -> Optional[Dict[str, Any]]:
+        """Connect to Studio: try token reuse first, fall back to handshake.
+
+        Returns the info dict (handshake or heartbeat response) on success,
+        None on failure. Always includes machine_id / token / inboxes / cursor.
+        """
+        # 1) Try saved token — only if all handshake claims are already known
+        #    to Studio (i.e. no new --chat-inbox declarations since last run).
+        if self._state.token:
+            self._studio.token = self._state.token
+            try:
+                heartbeat_info = await self._studio.try_heartbeat()
+            except Exception:
+                heartbeat_info = None
+            if heartbeat_info is not None:
+                served_ids = {(i["platform"], i["platform_self_id"]) for i in heartbeat_info.get("inboxes", [])}
+                claim_ids = {(c["platform"], c["platform_self_id"]) for c in handshake_payload}
+                if not claim_ids - served_ids:
+                    logger.info("token reuse ok: machine_id=%s", self._state.machine_id)
+                    heartbeat_info.setdefault("machine_id", self._state.machine_id)
+                    heartbeat_info.setdefault("token", self._state.token)
+                    heartbeat_info.setdefault("cursor", 0)
+                    return heartbeat_info
+                else:
+                    logger.info("new inbox claims detected, skipping token reuse")
+
+        # 2) Full handshake
+        try:
+            info = await self._studio.handshake(
+                machine_id=self._state.machine_id, inboxes=handshake_payload,
+            )
+        except Exception as exc:
+            logger.error("handshake failed: %s", exc)
+            return None
+
+        return info
 
     # --- adapter lifecycle ----------------------------------------------
 

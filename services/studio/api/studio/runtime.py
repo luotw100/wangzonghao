@@ -1,13 +1,15 @@
 """Studio worker runtime.
 
-Two scanners run side-by-side:
+Three scanners run side-by-side:
 - DistillScanner: picks up DistillJob rows in 'pending' state and runs the
   rolling fold pipeline.
 - ReplyScanner: picks up Contacts with pending_reply=True, gates them
   through studio.reply._decide(), and (if all gates pass + quiet-period
   elapsed) calls the LLM and queues outbound messages.
+- BridgeOfflineScanner: marks bridges as offline when last_seen_at exceeds
+  the heartbeat grace period.
 
-Both scanners are simple poll loops (5s tick); concurrency is bounded by
+All scanners are simple poll loops; concurrency is bounded by
 in-flight task dictionaries to avoid double-processing the same row.
 
 Studio does not hold any long-lived platform connection. Live message I/O
@@ -18,16 +20,19 @@ import asyncio
 import logging
 from contextlib import suppress
 from dataclasses import dataclass
+from datetime import timedelta, timezone
 from typing import Any, Dict, Optional
 
 from studio.clients import ProviderClient
 from studio.db import SessionLocal, utc_now
 from studio.distill.pipeline import run_distill
-from studio.enums import DistillJobStatus
-from studio.models import DistillJob
+from studio.enums import BridgeStatus, DistillJobStatus
+from studio.models import Bridge, DistillJob
 from studio.reply import list_pending_contact_ids, maybe_reply
 
 logger = logging.getLogger(__name__)
+
+BRIDGE_OFFLINE_AFTER = timedelta(seconds=45)
 
 
 @dataclass(frozen=True)
@@ -43,6 +48,7 @@ class StudioRuntime:
         self._reply_scanner_task: Optional[asyncio.Task[Any]] = None
         self._reply_tasks: Dict[str, asyncio.Task[Any]] = {}
         self._reply_provider: Optional[ProviderClient] = None
+        self._bridge_offline_task: Optional[asyncio.Task[Any]] = None
 
     async def start(self):
         loop = asyncio.get_running_loop()
@@ -53,9 +59,12 @@ class StudioRuntime:
         self._reply_scanner_task = loop.create_task(
             self._reply_scanner_loop(), name="reply-scanner"
         )
+        self._bridge_offline_task = loop.create_task(
+            self._bridge_offline_scanner_loop(), name="bridge-offline-scanner"
+        )
 
     async def stop(self):
-        for t in (self._distill_scanner_task, self._reply_scanner_task):
+        for t in (self._distill_scanner_task, self._reply_scanner_task, self._bridge_offline_task):
             if t:
                 t.cancel()
                 with suppress(asyncio.CancelledError):
@@ -201,3 +210,33 @@ class StudioRuntime:
             logger.info("Reply [%s] %s", contact_id, status)
         except Exception as exc:
             logger.error("Reply task for %s crashed: %s", contact_id, exc)
+
+    # --- Bridge Offline --------------------------------------------------
+
+    async def _bridge_offline_scanner_loop(self):
+        while True:
+            try:
+                cutoff = utc_now() - BRIDGE_OFFLINE_AFTER
+                db = SessionLocal()
+                try:
+                    expired = (
+                        db.query(Bridge)
+                        .filter(
+                            Bridge.status == BridgeStatus.ONLINE,
+                            Bridge.last_seen_at < cutoff,
+                        )
+                        .all()
+                    )
+                    if expired:
+                        for b in expired:
+                            b.status = BridgeStatus.OFFLINE
+                        db.commit()
+                        logger.info("BridgeOfflineScanner: marked %d bridges offline", len(expired))
+                finally:
+                    db.close()
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.error("BridgeOfflineScanner error: %s", exc)
+
+            await asyncio.sleep(30)

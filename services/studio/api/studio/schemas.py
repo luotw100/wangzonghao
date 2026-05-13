@@ -130,13 +130,14 @@ class BridgeHandshakeInbox(StrictModel):
 class BridgeHandshake(StrictModel):
     """Initial handshake — also serves as login.
 
-    The bridge presents Studio account credentials + hostname; Studio
-    upserts a Bridge row keyed by (account, hostname) and mints a fresh
-    session token used for subsequent /api/bridge/* calls.
+    The bridge presents Studio account credentials + optional machine_id;
+    if machine_id is not provided (first launch), Studio generates one.
+    Studio upserts a Bridge row keyed by (account, machine_id) and mints
+    a fresh session token used for subsequent /api/bridge/* calls.
     """
     username: str
     password: str
-    hostname: str
+    machine_id: str | None = None
     inboxes: list[BridgeHandshakeInbox]
 
 

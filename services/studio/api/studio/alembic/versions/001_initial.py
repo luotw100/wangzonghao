@@ -85,13 +85,12 @@ def upgrade() -> None:
         "bridges",
         sa.Column("id", sa.String(48), primary_key=True),
         sa.Column("account_id", sa.String(48), sa.ForeignKey("accounts.id"), nullable=False),
-        sa.Column("hostname", sa.String(256), nullable=False),
-        sa.Column("display_name", sa.String(256), nullable=False),
+        sa.Column("machine_id", sa.String(256), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint("account_id", "hostname", name="uq_bridge_account_hostname"),
+        sa.UniqueConstraint("account_id", "machine_id", name="uq_bridge_account_machine_id"),
         sa.CheckConstraint("status IN ('online', 'offline', 'revoked')", name="ck_bridge_status"),
     )
     op.create_index("ix_bridges_id", "bridges", ["id"])

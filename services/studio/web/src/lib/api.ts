@@ -114,8 +114,7 @@ export type BridgeStatus = 'online' | 'offline' | 'revoked';
 export interface Bridge {
   id: string;
   account_id: string;
-  display_name: string;
-  hostname: string;
+  machine_id: string;
   status: BridgeStatus;
   last_seen_at: string | null;
   created_at: string;

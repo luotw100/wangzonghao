@@ -6,6 +6,11 @@ outbound long-poll / ack) use that token via Authorization: Bearer.
 
 Two http clients are kept: one normal-timeout for control calls, one with
 a longer timeout that's forgiving of long polls.
+
+Token reuse: after a successful handshake the Bridge stores the token locally.
+On restart the runtime tries heartbeat with the saved token; if that succeeds
+(200) the handshake is skipped entirely. If the token is stale (401) the
+runtime falls back to full handshake with credentials.
 """
 
 from __future__ import annotations
@@ -49,28 +54,55 @@ class StudioClient:
         return {"Authorization": f"Bearer {self._token}"}
 
     async def handshake(
-        self, hostname: str, inboxes: List[Dict[str, str]]
+        self, machine_id: Optional[str], inboxes: List[Dict[str, str]]
     ) -> Dict[str, Any]:
         """Login + register + report served inboxes in one call.
 
         inboxes: [{"platform": ..., "platform_self_id": ...}, ...].
+        machine_id: previously assigned machine id (None on first launch).
+
         Studio resolves each pair to an inbox_id (auto-creating Inbox rows
         for first-time pairs) and returns the authoritative served list,
         plus a session token for subsequent /api/bridge/* calls.
         """
+        body: Dict[str, object] = {
+            "username": self._username,
+            "password": self._password,
+            "inboxes": inboxes,
+        }
+        if machine_id is not None:
+            body["machine_id"] = machine_id
         r = await self._http.post(
             f"{self.base}/api/bridge/handshake",
-            json={
-                "username": self._username,
-                "password": self._password,
-                "hostname": hostname,
-                "inboxes": inboxes,
-            },
+            json=body,
         )
         r.raise_for_status()
         data = r.json()
         self._token = str(data["token"])
         return data
+
+    async def try_heartbeat(self) -> Optional[Dict[str, Any]]:
+        """Try a heartbeat call with the currently set token.
+
+        Returns the response dict on success, None if the token is stale (401).
+        Network errors propagate so the caller can distinguish transient
+        failures from expired credentials.
+        """
+        r = await self._http.post(
+            f"{self.base}/api/bridge/heartbeat", headers=self._headers,
+        )
+        if r.status_code == 401:
+            return None
+        r.raise_for_status()
+        return r.json()
+
+    @property
+    def token(self) -> Optional[str]:
+        return self._token
+
+    @token.setter
+    def token(self, value: Optional[str]) -> None:
+        self._token = value
 
     async def heartbeat(self) -> Dict[str, Any]:
         r = await self._http.post(

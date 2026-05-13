@@ -107,22 +107,21 @@ class Persona(Base):
 
 # ---------------------------------------------------------------------------
 # Bridge — a registered daemon. Auto-provisioned on first handshake, keyed by
-# (account_id, hostname). The bridge identifies itself by sending its Studio
-# account credentials on handshake; Studio mints a session token that the
-# bridge uses for subsequent /api/bridge/* calls.
+# (account_id, machine_id). Studio generates machine_id on first launch and
+# returns it to the bridge, which persists it locally so the same machine
+# gets the same Bridge row across restarts.
 # ---------------------------------------------------------------------------
 
 class Bridge(Base):
     __tablename__ = "bridges"
     __table_args__ = (
-        UniqueConstraint("account_id", "hostname", name="uq_bridge_account_hostname"),
+        UniqueConstraint("account_id", "machine_id", name="uq_bridge_account_machine_id"),
         CheckConstraint("status IN ('online', 'offline', 'revoked')", name="ck_bridge_status"),
     )
 
     id           = Column(String(48), primary_key=True, index=True)
     account_id   = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
-    hostname     = Column(String(256), nullable=False)
-    display_name = Column(String(256), nullable=False)
+    machine_id   = Column(String(256), nullable=False)
     status       = Column(String(16), nullable=False)
     last_seen_at = Column(DateTime(timezone=True), nullable=True)
     created_at   = Column(DateTime(timezone=True), nullable=False)

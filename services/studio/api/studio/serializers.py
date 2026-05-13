@@ -52,8 +52,8 @@ def s_persona(p: Persona) -> Dict[str, Any]:
 
 def s_bridge(b: Bridge) -> Dict[str, Any]:
     return {
-        "id": b.id, "account_id": b.account_id, "display_name": b.display_name,
-        "hostname": b.hostname, "status": b.status, "last_seen_at": b.last_seen_at,
+        "id": b.id, "account_id": b.account_id, "machine_id": b.machine_id,
+        "status": b.status, "last_seen_at": b.last_seen_at,
         "created_at": b.created_at, "updated_at": b.updated_at,
     }
 

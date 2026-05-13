@@ -431,7 +431,7 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, person
           <strong style={{ fontSize: 13 }}>{inbox.display_name}</strong>
           <span className="chip muted">{inbox.platform}</span>
           {!inbox.enabled && <span className="chip warn">已停用</span>}
-          {bridge && <span className="mono ink-3" style={{ fontSize: 11 }}>{bridge.hostname}</span>}
+          {bridge && <span className="mono ink-3" style={{ fontSize: 11 }}>{bridge.machine_id}</span>}
         </div>
         <button className="btn btn-sm btn-ghost" onClick={() => setShowSettings(value => !value)}>
           {showSettings ? '收起' : '默认值'}
@@ -653,7 +653,7 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
         {!canAutoreply && (
           <div className="mono" style={{ fontSize: 11, color: 'var(--warn)' }}>
             {!bridge && '— 这个接管号没绑定在线设备；'}
-            {bridge && bridge.status !== 'online' && `— 设备 ${bridge.hostname} 离线；`}
+            {bridge && bridge.status !== 'online' && `— 设备 ${bridge.machine_id} 离线；`}
             {!inbox.enabled && '— 接管号已停用；'}
             {!contact.persona_id && '— 没有人设；'}
             自动接管启不来。
@@ -757,7 +757,7 @@ function DevicesView({ bridges, inboxes, meUsername, onChanged, setError }: {
                   <div>
                     <div style={{ fontWeight: 500, display: 'flex', alignItems: 'center', gap: 8 }}>
                       <StatusDot status={bridge.status} />
-                      {bridge.hostname}
+                      {bridge.machine_id}
                       <span className={`chip ${statusChipClass(bridge.status)}`}>{statusText(bridge.status)}</span>
                     </div>
                     <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
@@ -768,7 +768,7 @@ function DevicesView({ bridges, inboxes, meUsername, onChanged, setError }: {
                     className="btn btn-sm btn-ghost"
                     style={{ color: 'var(--danger)' }}
                     onClick={async () => {
-                      if (!confirm(`确认撤销设备 ${bridge.hostname}？该机器上的接管号会从它身上脱钩，daemon 下次调用会被 401。`)) return;
+                      if (!confirm(`确认撤销设备 ${bridge.machine_id}？该机器上的接管号会从它身上脱钩，daemon 下次调用会被 401。`)) return;
                       try {
                         await api.deleteBridge(bridge.id);
                         await Promise.resolve(onChanged());

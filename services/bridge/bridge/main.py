@@ -1,9 +1,12 @@
 """Bridge daemon entry point.
 
-No persistent token. The daemon authenticates against Studio with the
-streamer's Studio account credentials (the same login used in the web UI)
-plus the local hostname; Studio auto-provisions a Bridge row keyed by
-(account, hostname) and mints a fresh session token at every handshake.
+The daemon authenticates against Studio with the streamer's Studio account
+credentials. Studio auto-provisions a Bridge row keyed by (account, machine_id)
+and mints a fresh session token at every handshake.
+
+State is persisted to --state-dir (required) so that:
+- machine_id survives restarts (same machine = same Bridge row)
+- session token can be reused on process restart
 
     bridge \\
       --studio-username=alice \\
@@ -21,7 +24,6 @@ import asyncio
 import logging
 import os
 import signal
-import socket
 import sys
 from typing import Dict, List
 
@@ -29,6 +31,7 @@ from typing import Dict, List
 import bridge.adapters.chat  # noqa: F401
 
 from bridge.runtime import BridgeRuntime, InboxClaim
+from bridge.state import BridgeState
 from bridge.studio_client import StudioClient
 
 logger = logging.getLogger("bridge")
@@ -69,8 +72,8 @@ def _build_arg_parser() -> argparse.ArgumentParser:
                    help="Your Studio account password.")
     p.add_argument("--studio-url", default=DEFAULT_STUDIO_URL,
                    help=f"Studio base URL (default: {DEFAULT_STUDIO_URL}).")
-    p.add_argument("--hostname", default=None,
-                   help="Identifier for this PC (defaults to socket.gethostname()).")
+    p.add_argument("--state-dir", required=True,
+                   help="Directory for persisting bridge state (e.g. /state).")
     p.add_argument(
         "--chat-inbox", action="append", default=[], dest="chat_inboxes",
         help="Repeat for each chat account, e.g. "
@@ -84,21 +87,24 @@ async def _run(
     studio_url: str,
     username: str,
     password: str,
-    hostname: str,
+    state_dir: str,
     claims: List[InboxClaim],
 ) -> None:
     if not claims:
         logger.warning("no --chat-inbox given; bridge will idle (only heartbeats).")
+    state = BridgeState.load(state_dir)
+    logger.info("loaded state: machine_id=%s token=%s", state.machine_id, "yes" if state.token else "no")
     studio = StudioClient(
         base_url=studio_url, username=username, password=password,
     )
-    runtime = BridgeRuntime(studio=studio, hostname=hostname, claims=claims)
+    runtime = BridgeRuntime(studio=studio, state=state, claims=claims)
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, runtime.stop)
     try:
-        await runtime.run()
+        await runtime.run(state_dir)
     finally:
+        state.save(state_dir)
         await studio.close()
 
 
@@ -112,13 +118,12 @@ def main() -> None:
         InboxClaim(platform="chat", raw=_parse_chat_inbox(spec))
         for spec in args.chat_inboxes
     ]
-    hostname = args.hostname or socket.gethostname()
     try:
         asyncio.run(_run(
             studio_url=args.studio_url,
             username=args.studio_username,
             password=args.studio_password,
-            hostname=hostname,
+            state_dir=args.state_dir,
             claims=claims,
         ))
     except KeyboardInterrupt:

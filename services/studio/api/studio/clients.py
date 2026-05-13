@@ -2,6 +2,10 @@ from typing import Dict, List
 
 import httpx
 
+ALLOWED_BASE_URLS = {
+    "https://api.deepseek.com",
+}
+
 
 class ProviderClient:
     def __init__(self, request_timeout: float):
@@ -17,8 +21,11 @@ class ProviderClient:
         model: str,
         messages: List[Dict[str, str]],
     ) -> tuple[str, Dict[str, int]]:
+        normalized = base_url.rstrip("/")
+        if normalized not in ALLOWED_BASE_URLS:
+            raise ValueError(f"Provider base_url {base_url!r} is not in the allowed list")
         response = await self.http.post(
-            f"{base_url.rstrip('/')}/chat/completions",
+            f"{normalized}/chat/completions",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json={
                 "model": model,

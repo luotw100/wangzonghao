@@ -1,7 +1,7 @@
 import asyncio
 import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
@@ -122,7 +122,14 @@ def get_auth_session(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已失效"
         )
+    if auth_session.expires_at is not None and auth_session.expires_at < utc_now():
+        db.delete(auth_session)
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已超时"
+        )
     auth_session.last_seen_at = utc_now()
+    auth_session.expires_at = utc_now() + timedelta(hours=24)
     db.commit()
     return auth_session
 
@@ -282,6 +289,7 @@ def login(login_in: LoginRequest, db: DbDep) -> LoginResponse:
     auth_session = AuthSession(
         id=hash_token(token),
         account_id=account.id,
+        expires_at=now + timedelta(hours=24),
         created_at=now,
         last_seen_at=now,
     )
@@ -525,7 +533,13 @@ def _resolve_media_account(
         or auth_session.account.status != AccountStatus.ACTIVE
     ):
         raise HTTPException(status_code=401, detail="登录已失效")
-    auth_session.last_seen_at = utc_now()
+    if auth_session.expires_at is not None and auth_session.expires_at < utc_now():
+        db.delete(auth_session)
+        db.commit()
+        raise HTTPException(status_code=401, detail="登录已超时")
+    now = utc_now()
+    auth_session.last_seen_at = now
+    auth_session.expires_at = now + timedelta(hours=24)
     db.commit()
     return auth_session.account
 

@@ -41,6 +41,7 @@ class AuthSession(Base):
 
     id = Column(String(64), primary_key=True, index=True)
     account_id = Column(String(48), ForeignKey("chat_accounts.id"), nullable=False, index=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False)
     last_seen_at = Column(DateTime(timezone=True), nullable=False)
 

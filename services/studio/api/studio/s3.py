@@ -64,7 +64,8 @@ def s3_presigned_get_url(
 ) -> str:
     params: dict = {"Bucket": S3_BUCKET, "Key": key}
     if filename:
-        params["ResponseContentDisposition"] = f'attachment; filename="{filename}"'
+        safe_filename = filename.replace('"', "").replace("\\", "")
+        params["ResponseContentDisposition"] = f'attachment; filename="{safe_filename}"'
     return _s3_public_client.generate_presigned_url(
         "get_object",
         Params=params,

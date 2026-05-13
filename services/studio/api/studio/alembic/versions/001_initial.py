@@ -40,6 +40,7 @@ def upgrade() -> None:
         "auth_sessions",
         sa.Column("id", sa.String(64), primary_key=True),
         sa.Column("account_id", sa.String(48), sa.ForeignKey("accounts.id"), nullable=False),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False),
     )

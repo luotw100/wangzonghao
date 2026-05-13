@@ -36,10 +36,14 @@ STUDIO_USER_USERNAME="${STUDIO_USER_USERNAME:-demo}"
 STUDIO_USER_PASSWORD="${STUDIO_USER_PASSWORD:-Demo123}"
 STUDIO_USER_DISPLAY_NAME="${STUDIO_USER_DISPLAY_NAME:-主播 demo}"
 
-# Provider — hard-coded for dev. Move to env if it ever gets sensitive.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/.env" ]; then
+  set -a; source "$SCRIPT_DIR/.env"; set +a
+fi
+
 PROVIDER_NAME="dev-deepseek"
 PROVIDER_BASE_URL="https://api.deepseek.com"
-PROVIDER_API_KEY="sk-3898e65a9f9b486b8ecf0eff724d32e2"
+PROVIDER_API_KEY="${PROVIDER_API_KEY:?PROVIDER_API_KEY is required (set in scripts/.env)}"
 PROVIDER_MODEL="deepseek-v4-flash"
 
 PERSONA_NAME="${PERSONA_NAME:-demo人设}"

@@ -1,5 +1,6 @@
 """FastAPI dependencies, auth helpers, ownership checks, and ID generation."""
 
+from datetime import timedelta
 from typing import Annotated, Optional
 from uuid import uuid4
 
@@ -59,7 +60,11 @@ def create_account_record(
 def create_auth_session(db: Session, account: Account) -> str:
     token = new_session_token()
     now = utc_now()
-    db.add(AuthSession(id=hash_token(token), account_id=account.id, created_at=now, last_seen_at=now))
+    expires_at = now + timedelta(hours=24)
+    db.add(AuthSession(
+        id=hash_token(token), account_id=account.id,
+        expires_at=expires_at, created_at=now, last_seen_at=now,
+    ))
     account.last_login_at = now
     account.updated_at = now
     return token
@@ -77,10 +82,16 @@ def get_account(
     s = db.query(AuthSession).filter(AuthSession.id == hash_token(token)).first()
     if not s:
         raise HTTPException(status_code=401, detail="登录已失效")
+    if s.expires_at is not None and s.expires_at < utc_now():
+        db.query(AuthSession).filter(AuthSession.id == s.id).delete()
+        db.commit()
+        raise HTTPException(status_code=401, detail="登录已超时")
     account = db.query(Account).filter(Account.id == s.account_id).first()
     if not account or account.status != AccountStatus.ACTIVE:
         raise HTTPException(status_code=401, detail="登录已失效")
-    s.last_seen_at = utc_now()
+    now = utc_now()
+    s.last_seen_at = now
+    s.expires_at = now + timedelta(hours=24)
     db.commit()
     return account
 

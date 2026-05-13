@@ -5,6 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from studio.clients import ALLOWED_BASE_URLS
 from studio.db import get_db, utc_now
 from studio.deps import AdminAccountDep, get_provider_or_404, new_id
 from studio.enums import ProviderScope, ProviderStatus
@@ -13,6 +14,16 @@ from studio.schemas import ProviderConfigCreate, ProviderConfigUpdate
 from studio.serializers import s_provider
 
 router = APIRouter()
+
+
+def _validate_base_url(base_url: str) -> str:
+    normalized = base_url.rstrip("/")
+    if normalized not in ALLOWED_BASE_URLS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"base_url {base_url!r} 不在白名单中",
+        )
+    return normalized
 
 
 @router.get("/api/provider-configs")
@@ -34,7 +45,7 @@ def create_provider(payload: ProviderConfigCreate, db: Annotated[Session, Depend
     )
     p = ProviderConfig(
         id=new_id("p"), owner_account_id=account.id,
-        name=payload.name, base_url=payload.base_url.rstrip("/"),
+        name=payload.name, base_url=_validate_base_url(payload.base_url),
         api_key=payload.api_key, default_model=payload.default_model,
         scope=ProviderScope.GLOBAL,
         status=ProviderStatus.ACTIVE,
@@ -56,7 +67,7 @@ def update_provider(
     if "name" in fields and payload.name is not None:
         p.name = payload.name
     if "base_url" in fields and payload.base_url is not None:
-        p.base_url = payload.base_url.rstrip("/")
+        p.base_url = _validate_base_url(payload.base_url)
     if "api_key" in fields:
         p.api_key = payload.api_key
     if "default_model" in fields and payload.default_model is not None:

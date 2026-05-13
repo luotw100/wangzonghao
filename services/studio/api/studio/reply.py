@@ -438,7 +438,7 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
             chunks = _parse_chunks(response_text)
         except Exception as exc:
             logger.warning("Reply parse failed for contact %s: %s; raw=%s",
-                           contact_id, exc, response_text[:300])
+                           contact_id, exc, response_text[:300].replace("\n", "\\n").replace("\r", "\\r"))
             c = db.query(Contact).filter(Contact.id == contact_id).first()
             if c:
                 c.pending_reply = False

@@ -10,6 +10,7 @@ storage/
 .tmp/
 
 .env
+scripts/.env
 
 # Frontend
 **/node_modules/

@@ -19,7 +19,6 @@ from studio.enums import (
     BridgeStatus,
     ContactStatus,
     MessageRole,
-    MessageSource,
     OutboundAckResult,
     OutboundStatus,
     PersonaStatus,
@@ -223,10 +222,10 @@ def bridge_incoming(payload: BridgeIncomingBatch, db: Annotated[Session, Depends
 
         ts = m.sent_at if m.sent_at.tzinfo else m.sent_at.replace(tzinfo=timezone.utc)
         db.add(Message(
-            contact_id=contact.id, archive_id=None,
-            external_id=external_id, source=MessageSource.LIVE,
+            contact_id=contact.id,
+            external_id=external_id,
             role=m.role, msg_type=m.msg_type, sender_name=None, content=m.content,
-            timestamp=ts, archive_msg_idx=None, created_at=now,
+            timestamp=ts, created_at=now,
         ))
         contact.last_seen_platform_msg_id = m.platform_msg_id
         contact.updated_at = now

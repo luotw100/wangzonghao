@@ -4,7 +4,6 @@ from typing import Any, Dict, Optional
 
 from studio.models import (
     Account,
-    Archive,
     Bridge,
     Contact,
     DistillJob,
@@ -85,19 +84,10 @@ def s_contact(c: Contact) -> Dict[str, Any]:
 
 def s_message(m: Message) -> Dict[str, Any]:
     return {
-        "id": m.id, "contact_id": m.contact_id, "archive_id": m.archive_id,
-        "external_id": m.external_id, "source": m.source, "role": m.role,
+        "id": m.id, "contact_id": m.contact_id,
+        "external_id": m.external_id, "role": m.role,
         "msg_type": m.msg_type, "sender_name": m.sender_name, "content": m.content,
         "timestamp": m.timestamp, "created_at": m.created_at,
-    }
-
-
-def s_archive(a: Archive) -> Dict[str, Any]:
-    return {
-        "id": a.id, "account_id": a.account_id, "inbox_id": a.inbox_id,
-        "filename": a.filename, "platform_self_id": a.platform_self_id,
-        "message_count": a.message_count, "contact_count": a.contact_count,
-        "uploaded_at": a.uploaded_at,
     }
 
 

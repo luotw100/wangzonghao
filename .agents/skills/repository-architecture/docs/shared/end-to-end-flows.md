@@ -84,7 +84,7 @@ Studio bridge_incoming()
   → 校验 Inbox 属于当前 Bridge
   → 按 (inbox_id, peer_platform_id) upsert Contact
   → 按 external_id = live:{platform_msg_id} 去重
-  → 插入 Message(source='live', role='counterpart', msg_type=m.msg_type)
+  → 插入 Message(role='counterpart', msg_type=m.msg_type)
   → 如果 inbox.enabled 且 contact.autoreply_enabled，置 contact.pending_reply=True
 ```
 
@@ -109,7 +109,7 @@ BridgeRuntime._push_batch()
   → POST Studio /api/bridge/incoming
 
 Studio bridge_incoming()
-  → 插入 Message(source='live', role='counterpart', msg_type='audio', content='media/br_xxx/def456.mp3')
+  → 插入 Message(role='counterpart', msg_type='audio', content='media/br_xxx/def456.mp3')
   → 后续流程同文本
 ```
 
@@ -189,34 +189,7 @@ BridgeRuntime._outbound_loop()
 
 adapter 缺失、peer id 缺失或平台发送异常时，Bridge ack `failed` 并携带 reason。
 
-## 6. Archive upload
-
-```text
-Studio web archive upload API
-  → 选择 Inbox
-  → 输入 platform_self_id
-  → 上传 WeFlow JSON
-  → POST /api/archives multipart
-
-Studio upload_archive()
-  → 校验 Inbox 属于当前 account
-  → 把 UploadFile 写到临时文件
-  → ingest_archive()
-
-ingest_archive()
-  → 解析 JSON messages
-  → 构造 wxid → display-name map
-  → 校验 platform_self_id 存在
-  → 要求只有一个 counterpart（当前只支持 1:1）
-  → 按 (account_id, file_hash) 拒绝重复文件
-  → 保存原文件到 S3（key: uploads/{account_id}/{archive_id}.json）
-  → 确保 Contact 存在
-  → filter/sort messages
-  → 插入 Message(source='archive', external_id=archive:{archive_id}:{idx}, msg_type='text')
-  → 创建 Archive
-```
-
-## 7. Distill pipeline
+## 6. Distill pipeline
 
 ```text
 Studio web distill API

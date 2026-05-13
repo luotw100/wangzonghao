@@ -157,36 +157,6 @@ LLM 调用异常时写 `LlmLog(response_raw='ERROR: ...')`，当前不清 `pendi
 
 Bridge 收到即发，不做延迟。
 
-## Distill ingest
-
-文件：`studio/distill/ingest.py`。
-
-当前作用：把一个 WeFlow JSON 导入 Studio DB 的指定 Inbox 下。
-
-行为：
-
-- 上传文件保存到 S3（key: `uploads/{account_id}/{archive_id}.json`）。
-- `_data_hash()` 使用 sha256 前 16 位。
-- 按 `(account_id, file_hash)` 拒绝重复 archive。
-- `_identify_counterpart()` 要求 `platform_self_id` 存在，并且只有一个 counterpart。
-- `_ensure_contact()` 在 Inbox 下创建或复用 Contact。
-- Message `external_id = archive:{archive_id}:{idx}`。
-- sender wxid 等于 `platform_self_id` 时 role 为 `self`，否则 `counterpart`。
-- 只插入 `should_keep()` 允许的消息。
-
-## Distill converter
-
-文件：`studio/distill/converter.py`。
-
-当前逻辑：
-
-- 保留 `文本消息`、`引用消息`。
-- `其他消息` 也可能保留。
-- 丢弃系统、动画表情、表情包、图片、视频、语音等类型。
-- 过滤 `[图片]`、`[文件]`、`[语音]`、`[视频]`、`[撤回了一条消息]`。
-- 构造 wxid → 最常见 display name。
-- 从 `createTime` 或 `formattedTime` 解析 timestamp。
-
 ## Distill packer
 
 文件：`studio/distill/packer.py`。

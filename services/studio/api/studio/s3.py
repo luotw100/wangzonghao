@@ -49,14 +49,6 @@ def s3_get(key: str) -> bytes:
     return resp["Body"].read()
 
 
-def s3_key_exists(key: str) -> bool:
-    try:
-        _s3_client.head_object(Bucket=S3_BUCKET, Key=key)
-        return True
-    except _s3_client.exceptions.ClientError:
-        return False
-
-
 def s3_presigned_put_url(key: str, content_type: str, expires: timedelta = UPLOAD_PRESIGN_EXPIRES) -> str:
     return _s3_public_client.generate_presigned_url(
         "put_object",

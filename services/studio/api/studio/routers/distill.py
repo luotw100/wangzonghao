@@ -1,48 +1,20 @@
-"""Archive upload and distill job endpoints."""
+"""Distill job endpoints."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from studio.db import get_db
-from studio.deps import CurrentAccountDep, get_account_inbox, get_account_persona, is_admin
-from studio.distill.ingest import ingest_archive
+from studio.deps import CurrentAccountDep, get_account_inbox, get_account_persona, is_admin, new_id
+from studio.db import utc_now
 from studio.enums import DistillJobStatus
 from studio.models import DistillJob
 from studio.provider_policy import resolve_provider_config
 from studio.schemas import DistillJobCreate
-from studio.serializers import s_archive, s_distill_job
+from studio.serializers import s_distill_job
 
 router = APIRouter()
-
-
-@router.get("/api/archives")
-def list_archives(db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
-    from studio.models import Archive
-    query = db.query(Archive)
-    if not is_admin(account):
-        query = query.filter(Archive.account_id == account.id)
-    items = query.order_by(Archive.uploaded_at.desc()).all()
-    return [s_archive(a) for a in items]
-
-
-@router.post("/api/archives")
-async def upload_archive(
-    db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep,
-    inbox_id: str = Form(...), platform_self_id: str = Form(...), file: UploadFile = File(...),
-):
-    inbox = get_account_inbox(db, account, inbox_id)
-    raw_data = await file.read()
-    try:
-        archive = await ingest_archive(
-            db=db, account_id=inbox.account_id, inbox=inbox,
-            platform_self_id=platform_self_id, raw_data=raw_data,
-            original_filename=file.filename or "upload.json",
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-    return s_archive(archive)
 
 
 @router.get("/api/distill-jobs")
@@ -56,8 +28,6 @@ def list_distill_jobs(db: Annotated[Session, Depends(get_db)], account: CurrentA
 
 @router.post("/api/distill-jobs")
 def create_distill_job(payload: DistillJobCreate, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
-    from studio.deps import new_id
-    from studio.db import utc_now
     inbox = get_account_inbox(db, account, payload.source_inbox_id)
     get_account_persona(db, account, payload.target_persona_id)
     if payload.provider_config_id is not None and not is_admin(account):

@@ -53,7 +53,7 @@ Bridge 当前不负责：
 
 ### Studio
 
-`services/studio` 是控制台和 AI brain。它提供 Web API 和 Bridge protocol API（含 media presign upload / download 端点），存储 live/archive 消息，执行 reply 和 distill，并写入 outbound queue。
+`services/studio` 是控制台和 AI brain。它提供 Web API 和 Bridge protocol API（含 media presign upload / download 端点），存储消息历史，执行 reply 和 distill，并写入 outbound queue。
 
 Studio 当前负责：
 
@@ -64,7 +64,6 @@ Studio 当前负责：
 - Bridge auto-registration 和 revoke；
 - Inbox list/default settings；
 - Contact takeover settings；
-- archive upload / ingest；
 - distill job create / worker execution；
 - reply scanning / LLM call；
 - outbound queue 管理；
@@ -83,8 +82,6 @@ Account
   │    │    └─ OutboundMessage
   │    ├─ default Persona ref
   │    └─ optional ProviderConfig override ref
-  ├─ Archive
-  │    └─ Message
   └─ DistillJob
        ├─ source Inbox
        ├─ target Persona
@@ -120,7 +117,7 @@ Studio 登录账号，带 `admin | user` role。数据库没有任何账号时�
 
 ### Message
 
-Studio `messages` 表统一保存 archive 和 live 消息。按 `(contact_id, external_id)` 去重。`source` 是 `archive | live`，`role` 是 `self | counterpart`，`msg_type` 是 `text | image | audio | video | file`。
+Studio `messages` 表保存全部消息历史，全部由 Bridge incoming 写入。按 `(contact_id, external_id)` 去重。`role` 是 `self | counterpart`，`msg_type` 是 `text | image | audio | video | file`。
 
 ### OutboundMessage
 

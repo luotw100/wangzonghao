@@ -108,37 +108,18 @@ Bridge 运行时 token。
 - `last_seen_platform_msg_id`：`String(256)`，nullable。
 - unique `(inbox_id, peer_platform_id)`。
 
-### `archives` — `Archive`
-
-上传的 WeFlow 源文件 metadata。
-
-- `id`：`String(48)`，格式 `a_` + 完整 UUID hex。
-- `account_id`：`String(48)`。
-- `inbox_id`：`String(48)`。
-- `filename`：`String(256)`。
-- `storage_key`：`String(512)`，S3 对象 key。
-- `file_hash`：`String(64)`，sha256 前 16 位。
-- `platform_self_id`：`String(128)`。
-- `message_count`：Integer。
-- `contact_count`：Integer。
-- `uploaded_at`（`timestamptz`）。
-- unique `(account_id, file_hash)`。
-
 ### `messages` — `Message`
 
-统一消息表，包含 archive 和 live。
+统一消息表，全部由 Bridge incoming 写入。
 
 - `id`：`BigInteger`，自增主键。
 - `contact_id`：`String(48)`。
-- `archive_id`：`String(48)`，nullable。
 - `external_id`：`String(256)`。
-- `source`：`String(16)`，CHECK `archive | live`。
 - `role`：`String(16)`，CHECK `self | counterpart`。
 - `msg_type`：`String(16)`，CHECK `text | image | audio | video | file`。
 - `sender_name`：`String(256)`，nullable。
 - `content`：`Text`。
 - `timestamp`：`timestamptz`。
-- `archive_msg_idx`：Integer，nullable。
 - `created_at`：`timestamptz`。
 - unique `(contact_id, external_id)`。
 - index `(contact_id, timestamp)`。
@@ -194,7 +175,6 @@ Account
   owns Persona
   owns Bridge
   owns Inbox
-  owns Archive
   owns DistillJob
 
 Bridge
@@ -212,30 +192,12 @@ Contact
   references Persona
   optionally references ProviderConfig override
 
-Archive
-  owns imported Message rows
-
-DistillJob
-  reads source Inbox messages
-  writes target Persona and Contact cards
-```
-
-## 创建时继承规则
-
 Bridge incoming 创建 Contact 时：
 
 - `persona_id = inbox.default_persona_id`。
 - `reply_provider_config_id = inbox.reply_provider_config_id`。
 - `autoreply_enabled = False`。
 - `pending_reply = False`。
-
-Archive ingest 创建 Contact 时：
-
-- `persona_id = inbox.default_persona_id`。
-- `reply_provider_config_id = inbox.reply_provider_config_id`。
-- `autoreply_enabled = False`。
-- `pending_reply = False`。
-- `status = active`。
 
 Contact 创建后，Contact 设置与 Inbox 默认值相互独立。
 

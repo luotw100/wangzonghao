@@ -42,11 +42,6 @@ class ContactStatus(StrEnum):
     ARCHIVED = "archived"
 
 
-class MessageSource(StrEnum):
-    ARCHIVE = "archive"
-    LIVE = "live"
-
-
 class MessageRole(StrEnum):
     SELF = "self"
     COUNTERPART = "counterpart"

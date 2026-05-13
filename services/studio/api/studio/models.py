@@ -160,7 +160,7 @@ class Inbox(Base):
 
 
 # ---------------------------------------------------------------------------
-# Contact, Archive, Message, DistillJob
+# Contact, Message, DistillJob
 # ---------------------------------------------------------------------------
 
 class Contact(Base):
@@ -185,45 +185,23 @@ class Contact(Base):
     updated_at                  = Column(DateTime(timezone=True), nullable=False)
 
 
-class Archive(Base):
-    __tablename__ = "archives"
-    __table_args__ = (
-        UniqueConstraint("account_id", "file_hash", name="uq_archive_account_hash"),
-    )
-
-    id             = Column(String(48), primary_key=True, index=True)
-    account_id     = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
-    inbox_id       = Column(String(48), ForeignKey("inboxes.id"), nullable=False, index=True)
-    filename       = Column(String(256), nullable=False)
-    storage_key    = Column(String(512), nullable=False)
-    file_hash      = Column(String(64), nullable=False, index=True)
-    platform_self_id = Column(String(128), nullable=False)
-    message_count  = Column(Integer, nullable=False)
-    contact_count  = Column(Integer, nullable=False)
-    uploaded_at    = Column(DateTime(timezone=True), nullable=False)
-
-
 class Message(Base):
     __tablename__ = "messages"
     __table_args__ = (
         Index("idx_msg_contact_ts", "contact_id", "timestamp"),
         UniqueConstraint("contact_id", "external_id", name="uq_message_contact_external"),
-        CheckConstraint("source IN ('archive', 'live')", name="ck_message_source"),
         CheckConstraint("role IN ('self', 'counterpart')", name="ck_message_role"),
         CheckConstraint("msg_type IN ('text', 'image', 'audio', 'video', 'file')", name="ck_message_msg_type"),
     )
 
     id              = Column(BigInteger, primary_key=True, autoincrement=True)
     contact_id      = Column(String(48), ForeignKey("contacts.id"), nullable=False, index=True)
-    archive_id      = Column(String(48), ForeignKey("archives.id"), nullable=True, index=True)
     external_id     = Column(String(256), nullable=False)
-    source          = Column(String(16), nullable=False)
     role            = Column(String(16), nullable=False)
     msg_type        = Column(String(16), nullable=False)
     sender_name     = Column(String(256), nullable=True)
     content         = Column(Text, nullable=False)
     timestamp       = Column(DateTime(timezone=True), nullable=False, index=True)
-    archive_msg_idx = Column(Integer, nullable=True)
     created_at      = Column(DateTime(timezone=True), nullable=False)
 
 

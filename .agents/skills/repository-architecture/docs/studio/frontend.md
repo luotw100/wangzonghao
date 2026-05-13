@@ -27,7 +27,6 @@
 - `Bridge`
 - `Inbox`
 - `Contact`
-- `Archive`
 - `Message`
 - `ConversationSummary`
 - `DistillJob`
@@ -42,7 +41,6 @@
 - Bridges：`getBridges`、`deleteBridge`。
 - Inboxes：`getInboxes`、`updateInbox`。
 - Contacts：`getConversations`、`getContactMessages`、`updateContact`。
-- Archives：`getArchives`、`uploadArchive`。
 - Distill：`getDistillJobs`、`getDistillJob`、`createDistillJob`。
 
 ## Auth context 和 routes

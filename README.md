@@ -38,7 +38,6 @@ UI 上你只直接接触 **接管 / 人设 / 设备 / 设置** 这几个区域�
 | **Account** | Studio 后台登录账号，分 admin / user；首个 admin 可在 Web 首次初始化时创建 | N |
 | **Persona** | 人设 — 纯内容资产（markdown），多个 Contact / Inbox 可共享 | N / Account |
 | **ProviderConfig** | 管理员维护的全局 LLM 后端配置池 | N / Studio |
-| **Archive** | 上传的 WeFlow JSON 历史聊天 | N / Account |
 | **DistillJob** | 把一个接管号的历史蒸出 Persona + 各 Contact 卡片 | N / Account |
 | **Inbox**（自动） | 一个 Channel 上的身份（一个 wxid / chat user）；bridge 登入时自动出现 | N / Account |
 | **Bridge**（自动） | 主播 PC 上的 daemon；按 (account, hostname) 自动注册 | N / Account |
@@ -105,7 +104,7 @@ Studio 后台在 http://localhost:23457 。
 2. 普通 user 登录后在 **人设** → 新建至少一个人设
 3. 在主播 PC 上启动 Bridge daemon（见下）—— Bridge / Inbox 会自动出现在 Studio
 4. **接管** → 选粉丝、设人设 / 开 autoreply、写关系卡
-5. 通过聊天档案 API 上传 WeFlow JSON（指明哪个 wxid 是"我" + 落地到哪个接管号）
+5. 在「接管」tab 配置 Contact 的人设和 autoreply；Bridge 积累一定消息后可创建 distill job 自动产出 Persona + Card
 6. 创建蒸馏任务，未显式指定 Provider 时使用全局默认 Provider
 
 ### 3. Bridge daemon
@@ -164,7 +163,7 @@ docker compose exec -T chat-api uv run python -m chat.cli list-accounts
 ## 现状
 
 - ✅ Chat sandbox 完整可用
-- ✅ Studio：Account / Persona / Inbox（自动）/ Bridge（自动）/ Contact / Archive / Distill 全齐
+- ✅ Studio：Account / Persona / Inbox（自动）/ Bridge（自动）/ Contact / Distill 全齐
 - ✅ Bridge 协议：账号密码握手 / heartbeat（带 inbox 同步）/ incoming / outbound 长轮询 / ack
 - ✅ Reply LLM brain：ReplyScanner + 静默期防抖 + chunks 写 outbound + per-contact provider override
 - ✅ Bridge daemon：零配置 CLI，多 adapter 共享一条到 Studio 的连接

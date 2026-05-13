@@ -12,7 +12,7 @@
 - Serializers：`studio/serializers.py`。
 - 依赖：`studio/deps.py`。
 - Migration：`studio/migrate.py`（封装 Alembic `upgrade head`）。
-- Routers：`studio/routers/`（auth, accounts, providers, personas, bridges, inboxes, contacts, archives, bridge_protocol）。
+- Routers：`studio/routers/`（auth, accounts, providers, personas, bridges, inboxes, contacts, distill, bridge_protocol）。
 
 ## DB 初始化
 
@@ -58,7 +58,6 @@
 - `s_inbox()`
 - `s_contact()`
 - `s_message()`：包含 `msg_type` 字段。
-- `s_archive()`
 - `s_distill_job()`
 - `s_outbound()`：包含 `msg_type` 字段，可附加 `peer_platform_id`。
 
@@ -167,19 +166,6 @@ Inbox 仅由 Bridge handshake 自动 upsert 创建，没有 `POST /api/inboxes` 
 - `PUT /api/contacts/{contact_id}`
 
 `GET /api/conversations` 当前返回 Contact + Inbox + latest_message + message_count，并按 latest timestamp 或 contact updated_at 排序。
-
-### Archives
-
-- `GET /api/archives`
-- `POST /api/archives`
-
-Upload 当前接收 multipart fields：
-
-- `inbox_id`
-- `platform_self_id`
-- `file`
-
-处理流程：写临时文件 → 调 `ingest_archive()` → ValueError 转 400 → 删除临时文件。
 
 ### Distill
 

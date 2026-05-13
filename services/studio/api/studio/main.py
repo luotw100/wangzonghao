@@ -17,11 +17,11 @@ app = FastAPI(title="Laborster Studio API", lifespan=lifespan)
 
 from studio.routers import (  # noqa: E402
     accounts,
-    archives,
     auth,
     bridge_protocol,
     bridges,
     contacts,
+    distill,
     inboxes,
     personas,
     providers,
@@ -34,5 +34,5 @@ app.include_router(personas.router)
 app.include_router(bridges.router)
 app.include_router(inboxes.router)
 app.include_router(contacts.router)
-app.include_router(archives.router)
+app.include_router(distill.router)
 app.include_router(bridge_protocol.router)

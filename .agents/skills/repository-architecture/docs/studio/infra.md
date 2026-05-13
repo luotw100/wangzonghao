@@ -87,11 +87,10 @@ Schema 变更流程：修改 `models.py` → 生成新的 Alembic migration → 
 
 ## Object Storage (S3)
 
-Studio 使用 S3 兼容对象存储（开发环境用 `infra/` 中的 MinIO）保存上传的 archive 文件。
+Studio 使用 S3 兼容对象存储（开发环境用 `infra/` 中的 MinIO）保存媒体文件。
 
-- `studio/s3.py` 提供 `s3_put`、`s3_get`、`s3_key_exists` 三个函数。
-- Archive 文件存储 key：`uploads/{account_id}/{archive_id}.json`。
-- `Archive.storage_key` 列存储 S3 key。
+- `studio/s3.py` 提供 `s3_put`、`s3_get`、`s3_presigned_put_url`、`s3_presigned_get_url`。
+- 媒体文件存储 key：`media/{bridge_id}/{uuid}.ext`。
 
 ## 进程耦合
 

@@ -39,7 +39,7 @@ Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Cha
 1. **Studio 不直连 Channel。** 当前 Chat sandbox 也只能通过 Bridge 的 `chat` adapter 进入 Studio。
 2. **Bridge 不做策略决策。** Bridge 只登录平台、收消息、推 Studio、拉 outbound、发送。对媒体消息，Bridge 是粗管道：平台 S3 ↔ Studio S3 搬运二进制数据。
 3. **Studio S3 是媒体唯一源。** 所有媒体二进制最终存储在 Studio S3。Inbound 时 Bridge 下载平台媒体 → 上传 Studio S3 → 消息 content 为 Studio storage key。Outbound 时 content 指向 Studio S3 storage key → Bridge 下载 → 上传到平台 → 发送。
-4. **Studio DB 是 source of truth。** Studio 的 `messages` 表统一保存 archive/live 历史，每条消息有 `msg_type` 字段（text | image | audio | video | file）。
+4. **Studio DB 是 source of truth。** Studio 的 `messages` 表保存全部聊天历史，每条消息有 `msg_type` 字段（text | image | audio | video | file）。
 5. **Contact 是接管单元。** Contact 持有 `persona_id`、可选 Provider override、`autoreply_enabled`、`card_md`、`pending_reply`。
 6. **Inbox 是平台身份。** Inbox 表示一个平台账号/身份，并给新 Contact 提供默认 Persona 和可选 Provider override。
 7. **Bridge 是本地 daemon 实例。** Bridge 行由 `(account_id, hostname)` 标识，可服务多个 Inbox。
@@ -54,7 +54,7 @@ Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Cha
 ### Shared / 跨服务
 
 - `docs/shared/architecture.md` — 产品模型、服务边界、核心实体、归属关系。
-- `docs/shared/end-to-end-flows.md` — 当前端到端流程：登录、incoming、自动回复、outbound、archive、distill。
+- `docs/shared/end-to-end-flows.md` — 当前端到端流程：登录、incoming、自动回复、outbound、distill。
 - `docs/shared/development-workflow.md` — 当前运行、账号 CLI、存储、验证方法。
 - `docs/shared/current-code-notes.md` — 当前代码事实与注意点，不包含规划。
 
@@ -77,7 +77,7 @@ Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Cha
 - `docs/studio/overview.md` — Studio 职责、进程划分、目录结构。
 - `docs/studio/backend-api.md` — FastAPI 依赖、auth、serializers、ownership helpers、web endpoints。
 - `docs/studio/data-model.md` — SQLAlchemy tables、constraints、relationships、状态值。
-- `docs/studio/worker-reply-distill.md` — worker scanners、reply brain、LLM logs、distill ingest/packer/pipeline/fold prompt。
+- `docs/studio/worker-reply-distill.md` — worker scanners、reply brain、LLM logs、distill packer/pipeline/fold prompt。
 - `docs/studio/frontend.md` — React routes、auth context、API client、StudioPage tabs 和数据流。
 - `docs/studio/infra.md` — Compose、Nginx、Dockerfile、worker 进程、storage。
 

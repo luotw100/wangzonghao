@@ -49,7 +49,7 @@ docker compose exec -T studio-api uv run python -m studio.cli create-account \
 5. 启动 Bridge（在 Studio 的 设备 tab 顶部有「快速生成命令」面板可一键复制）。
 6. 等 Bridge handshake 自动创建 Bridge/Inbox。
 7. 在 Takeover tab 中给 Contact 配置 Persona、autoreply 和 card；Provider override 只对 admin 可见，普通用户使用全局默认 Provider。
-8. 如需蒸馏，上传 archive 后创建 distill job。
+8. 在 Takeover tab 中给 Contact 配置 Persona、autoreply 和 card，可创建 distill job 蒸馏 Persona 和 Card。
 
 > 一键 dev seed：仓库根的 `scripts/seed-dev.sh` 会自动创建 chat 用户、Studio admin + 普通用户、provider、persona，并在 Chat 里灌几条样例消息（清空 volume 后可重复执行）。
 
@@ -132,11 +132,10 @@ docker compose exec -T studio-api uv run python -m studio.cli reset-password --u
 
 distill 改动：
 
-1. 上传一个小型已知 WeFlow JSON。
-2. 创建可用 ProviderConfig。
-3. 创建 DistillJob。
-4. 查看 job progress 和最终 Persona/Card。
-5. 需要排查 prompt/parse 时查看 `llm_logs`。
+1. 确保有活跃的 ProviderConfig。
+2. 创建 DistillJob。
+3. 查看 job progress 和最终 Persona/Card。
+4. 需要排查 prompt/parse 时查看 `llm_logs`。
 
 ## 跨服务改动检查表
 

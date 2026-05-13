@@ -7,7 +7,6 @@ from sqlalchemy import engine_from_config, pool
 from studio.db import Base
 from studio.models import (  # noqa: F401 — ensure all models imported for autogenerate
     Account,
-    Archive,
     AuthSession,
     Bridge,
     BridgeSession,

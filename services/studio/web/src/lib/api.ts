@@ -152,23 +152,10 @@ export interface Contact {
   updated_at: string;
 }
 
-export interface Archive {
-  id: string;
-  account_id: string;
-  inbox_id: string;
-  filename: string;
-  platform_self_id: string;
-  message_count: number;
-  contact_count: number;
-  uploaded_at: string;
-}
-
 export interface Message {
   id: number;
   contact_id: string;
-  archive_id: string | null;
   external_id: string;
-  source: 'archive' | 'live';
   role: 'self' | 'counterpart';
   sender_name: string | null;
   content: string;
@@ -411,33 +398,6 @@ export function updateContact(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-}
-
-// --- Archives ---
-
-export function getArchives() { return request<Archive[]>('/archives'); }
-export async function uploadArchive(
-  inboxId: string, selfWxid: string, file: File,
-): Promise<Archive> {
-  const form = new FormData();
-  form.append('inbox_id', inboxId);
-  form.append('platform_self_id', selfWxid);
-  form.append('file', file);
-  const headers = new Headers();
-  const token = getToken();
-  if (token) headers.set('Authorization', `Bearer ${token}`);
-  const res = await fetch(`${API_BASE}/archives`, { method: 'POST', headers, body: form });
-  if (res.status === 401) {
-    setToken(null);
-    if (unauthorizedHandler) unauthorizedHandler();
-    throw new UnauthorizedError('未登录');
-  }
-  if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
-    try { const body = await res.json(); if (body?.detail) detail = body.detail; } catch {}
-    throw new Error(detail);
-  }
-  return res.json();
 }
 
 // --- Distill ---

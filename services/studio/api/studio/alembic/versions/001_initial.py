@@ -146,46 +146,22 @@ def upgrade() -> None:
     op.create_index("ix_contacts_inbox_id", "contacts", ["inbox_id"])
 
     op.create_table(
-        "archives",
-        sa.Column("id", sa.String(48), primary_key=True),
-        sa.Column("account_id", sa.String(48), sa.ForeignKey("accounts.id"), nullable=False),
-        sa.Column("inbox_id", sa.String(48), sa.ForeignKey("inboxes.id"), nullable=False),
-        sa.Column("filename", sa.String(256), nullable=False),
-        sa.Column("storage_key", sa.String(512), nullable=False),
-        sa.Column("file_hash", sa.String(64), nullable=False),
-        sa.Column("platform_self_id", sa.String(128), nullable=False),
-        sa.Column("message_count", sa.Integer, nullable=False),
-        sa.Column("contact_count", sa.Integer, nullable=False),
-        sa.Column("uploaded_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint("account_id", "file_hash", name="uq_archive_account_hash"),
-    )
-    op.create_index("ix_archives_id", "archives", ["id"])
-    op.create_index("ix_archives_account_id", "archives", ["account_id"])
-    op.create_index("ix_archives_inbox_id", "archives", ["inbox_id"])
-    op.create_index("ix_archives_file_hash", "archives", ["file_hash"])
-
-    op.create_table(
         "messages",
         sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
         sa.Column("contact_id", sa.String(48), sa.ForeignKey("contacts.id"), nullable=False),
-        sa.Column("archive_id", sa.String(48), sa.ForeignKey("archives.id"), nullable=True),
         sa.Column("external_id", sa.String(256), nullable=False),
-        sa.Column("source", sa.String(16), nullable=False),
         sa.Column("role", sa.String(16), nullable=False),
         sa.Column("msg_type", sa.String(16), nullable=False, server_default="text"),
         sa.Column("sender_name", sa.String(256), nullable=True),
         sa.Column("content", sa.Text, nullable=False),
         sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("archive_msg_idx", sa.Integer, nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("contact_id", "external_id", name="uq_message_contact_external"),
-        sa.CheckConstraint("source IN ('archive', 'live')", name="ck_message_source"),
         sa.CheckConstraint("role IN ('self', 'counterpart')", name="ck_message_role"),
         sa.CheckConstraint("msg_type IN ('text', 'image', 'audio', 'video', 'file')", name="ck_message_msg_type"),
     )
     op.create_index("ix_messages_contact_id", "messages", ["contact_id"])
     op.create_index("ix_messages_timestamp", "messages", ["timestamp"])
-    op.create_index("ix_messages_archive_id", "messages", ["archive_id"])
     op.create_index("idx_msg_contact_ts", "messages", ["contact_id", "timestamp"])
 
     op.create_table(
@@ -250,7 +226,6 @@ def downgrade() -> None:
     op.drop_table("outbound_messages")
     op.drop_table("distill_jobs")
     op.drop_table("messages")
-    op.drop_table("archives")
     op.drop_table("contacts")
     op.drop_table("inboxes")
     op.drop_table("bridge_sessions")

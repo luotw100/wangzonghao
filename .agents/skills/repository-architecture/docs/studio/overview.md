@@ -32,8 +32,6 @@ services/studio/
       serializers.py           ← 响应序列化函数 s_account / s_provider / ...
       worker.py
       distill/
-        converter.py
-        ingest.py
         packer.py
         pipeline.py
         prompts/fold.md
@@ -46,7 +44,7 @@ services/studio/
         bridges.py             ← Bridge list + revoke
         inboxes.py             ← Inbox 操作（Inbox 创建仅通过 bridge handshake）
         contacts.py            ← Contact + conversation endpoints
-        archives.py            ← Archive upload + distill job endpoints
+        distill.py             ← Distill job endpoints
         bridge_protocol.py     ← Bridge daemon ↔ Studio protocol
   web/
     Dockerfile
@@ -98,7 +96,6 @@ services/studio/
 
 - Web auth。
 - CRUD endpoints。
-- Archive upload。
 - Distill job creation。
 - Bridge handshake / heartbeat / incoming / outbound / ack。
 

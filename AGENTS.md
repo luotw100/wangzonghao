@@ -56,7 +56,7 @@ Laborster 是一个**通用拟人自动化回复服务**，帮助职业用户在
 | 容器 | 内部端口 | 职责 |
 | --- | --- | --- |
 | `studio-web` (nginx) | `:23457` | 静态资源 + `/api/` 反向代理到 studio-api |
-| `studio-api` | `:23457` | FastAPI；账号与首次 admin 初始化 / Persona / Provider / Bridge 握手 / Inbox / Contact / Archive / Distill 全部 CRUD + Bridge 协议 |
+| `studio-api` | `:23457` | FastAPI；账号与首次 admin 初始化 / Persona / Provider / Bridge 握手 / Inbox / Contact / Distill 全部 CRUD + Bridge 协议 |
 | `studio-worker` | — | DistillScanner（扫 pending DistillJob 跑蒸馏）+ ReplyScanner（扫 `pending_reply=true` 的 Contact 调 LLM 写 outbound） |
 
 Studio 不再有任何"直连 Channel"的代码，所有平台 IO 都经过 Bridge。
@@ -103,8 +103,7 @@ Bridge 是单进程 daemon。一份 CLI 启动命令带：
 | `bridges` | `br_{uuid8}` | 主播 PC 上的 daemon；`(account_id, hostname)` 唯一 |
 | `inboxes` | `ib_{uuid8}` | 一个 Channel 上的身份；`bridge_id` 指向当前承载的 Bridge（可空） |
 | `contacts` | `ct_{uuid8}` | 粉丝；`(inbox_id, peer_platform_id)` 唯一。带 `persona_id`、`reply_provider_config_id`（可 override inbox 默认）、`autoreply_enabled`、`pending_reply` |
-| `messages` | 自增 Integer | 历史 + live 一起，`source ∈ {archive, live}`；`(contact_id, external_id)` 唯一 |
-| `archives` | `a_{uuid8}` | 上传的 WeFlow JSON；`(account_id, file_hash)` 唯一 |
+| `messages` | 自增 Integer | 全部消息历史；`(contact_id, external_id)` 唯一 |
 | `distill_jobs` | `dj_{uuid8}` | 蒸馏任务（pending/running/done/failed） |
 | `outbound_messages` | 自增 Integer | Studio→Bridge 出件队列 |
 | `llm_logs` | 自增 Integer | LLM 调用记录（purpose='reply' / 'distill'） |
@@ -120,7 +119,7 @@ Inbox   (auto-upsert by (account_id, platform, platform_self_id) on handshake)
   ↓ holds
 Contact (auto-upsert by (inbox_id, peer_platform_id) on first inbound)
   ↓ has
-messages (source=archive|live)
+messages
 ```
 
 Persona 跨 Inbox / Contact 共享。ProviderConfig 由 admin 全局维护，Inbox / Contact 只保存可选 override；普通 user UI 不展示 Provider。
@@ -139,7 +138,7 @@ Persona 跨 Inbox / Contact 共享。ProviderConfig 由 admin 全局维护，Inb
      --chat-inbox 'base_url=...,username=alice_chat,password=...'
 4. bridge daemon → handshake → Studio 自动建 Bridge 行 + Inbox 行（默认 persona = account 第一个 active persona）
 5. web 「接管」tab：第一条消息进来后 Contact 自动出现；选人设 / 开 autoreply / 写关系卡；Provider 默认由 admin 全局配置，admin 可 override
-6. （可选）「聊天档案」tab：上传 WeFlow JSON 落到目标接管号 → 「蒸馏」tab 跑 fold pipeline 自动产出 Persona + 各 Contact 的 Card
+6. 在「接管」tab 配置 Contact 的人设和 autoreply；Bridge 积累一定消息后可在「蒸馏」tab 创建 distill job 自动产出 Persona + 各 Contact 的 Card
 ```
 
 #### 用户发消息 → 机器人回复
@@ -160,13 +159,13 @@ Persona 跨 Inbox / Contact 共享。ProviderConfig 由 admin 全局维护，Inb
 
 - system prompt = 硬编码 `SYSTEM_INSTRUCTION`（拟人 + 红线规则）。
 - user message = persona.persona_md + contact.card_md + 最近 N 条历史（自然语言格式：`[mm-dd HH:MM] 我/对方: ...`）。
-- 历史包含 source=archive + source=live 的全部消息，按 timestamp 升序；最后一条必须是 counterpart 才会触发回复。
+- 历史包含全部消息，按 timestamp 升序；最后一条必须是 counterpart 才会触发回复。
 - LLM 必须返回 `{"messages": ["第一条", "第二条"]}`；空数组表示"装作没看见"。
 - 每条 LLM 回复 chunk 写一条独立 OutboundMessage，`send_after` 在 Studio 端按 `len(content) / 6 chars/sec` 计算打字节奏，最少 1s 最多 12s；首条多加 1.5s think delay。Bridge 收到即发，不做延迟。
 
 #### Distill Pipeline（studio/distill/）
 
-- 输入：一个 Inbox 下的全部历史消息（archive + live 都行，但通常是 archive）。
+- 输入：一个 Inbox 下的全部历史消息（由 Bridge incoming 积累）。
 - 切 session（30 分钟间隔）→ 切 window（40k token 上限）→ 滚动 fold：每个 window 调一次 LLM，更新 target Persona 的 `persona_md` + 当前 Contact 的 `card_md`（覆盖式）。
 - prompt 输出非对称：一段 `===== Operator Persona =====`（主播本人）+ 一段 `===== Contact Card =====`（当前粉丝）。
 - 进度回写 `distill_jobs.progress` JSON，前端轮询。

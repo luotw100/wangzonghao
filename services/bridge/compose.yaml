@@ -17,6 +17,8 @@ services:
   bridge:
     build:
       context: .
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     restart: "no"

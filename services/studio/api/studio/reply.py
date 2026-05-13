@@ -20,6 +20,10 @@ from __future__ import annotations
 
 import json
 import logging
+import random
+import struct
+import uuid
+import zlib
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Dict, List, Optional
@@ -44,6 +48,7 @@ from studio.models import (
     Persona,
 )
 from studio.provider_policy import resolve_provider_config
+from studio.s3 import s3_get, s3_put
 
 logger = logging.getLogger(__name__)
 
@@ -229,6 +234,143 @@ def _parse_chunks(raw: str) -> List[str]:
     return out
 
 
+_MEDIA_TYPE_LABELS = {
+    "image": "图片",
+    "audio": "音频",
+    "video": "视频",
+    "file": "文件",
+}
+
+
+def _detect_media_format(data: bytes) -> str:
+    if data[:4] == b'\x89PNG':
+        return "png"
+    if data[:3] == b'\xff\xd8\xff':
+        return "jpg"
+    if data[:4] == b'GIF8':
+        return "gif"
+    if data[:4] == b'RIFF' and len(data) >= 12 and data[8:12] == b'WEBP':
+        return "webp"
+    if data[:2] == b'\xff\xfb' or data[:3] == b'ID3':
+        return "mp3"
+    if len(data) >= 12 and data[4:8] == b'ftyp':
+        return "mp4"
+    if data[:4] == b'%PDF':
+        return "pdf"
+    return "unknown"
+
+
+def _format_file_size(size_bytes: int) -> str:
+    if size_bytes < 1024:
+        return f"{size_bytes:,} Bytes"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    else:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+
+
+def _make_solid_png(width: int, height: int, r: int, g: int, b: int) -> bytes:
+    sig = b'\x89PNG\r\n\x1a\n'
+    ihdr_data = struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)
+    ihdr_crc = zlib.crc32(b'IHDR' + ihdr_data) & 0xffffffff
+    ihdr = struct.pack('>I', 13) + b'IHDR' + ihdr_data + struct.pack('>I', ihdr_crc)
+    raw_rows = b''.join(b'\x00' + bytes([r, g, b]) * width for _ in range(height))
+    compressed = zlib.compress(raw_rows)
+    idat_crc = zlib.crc32(b'IDAT' + compressed) & 0xffffffff
+    idat = struct.pack('>I', len(compressed)) + b'IDAT' + compressed + struct.pack('>I', idat_crc)
+    iend_crc = zlib.crc32(b'IEND') & 0xffffffff
+    iend = struct.pack('>I', 0) + b'IEND' + struct.pack('>I', iend_crc)
+    return sig + ihdr + idat + iend
+
+
+def _handle_media_reply(ctx: _ReplyCtx, history: List[Message]) -> str:
+    latest = history[-1]
+    storage_key = latest.content
+    msg_type = latest.msg_type or "file"
+    type_label = _MEDIA_TYPE_LABELS.get(msg_type, msg_type)
+
+    data: Optional[bytes] = None
+    file_size = 0
+    file_ext = "unknown"
+    try:
+        data = s3_get(storage_key)
+        file_size = len(data)
+        file_ext = _detect_media_format(data)
+    except Exception as exc:
+        logger.warning("media reply: failed to download %s: %s", storage_key, exc)
+
+    size_str = _format_file_size(file_size)
+    text_content = f"收到一条{type_label}消息，文件大小{size_str}，文件类型为{file_ext}"
+
+    r, g, b = random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)
+    png_data = _make_solid_png(128, 128, r, g, b)
+
+    now_ts = utc_now()
+    db = SessionLocal()
+    try:
+        inbox = db.query(Inbox).filter(Inbox.id == ctx.inbox_id).first()
+        bridge_id = inbox.bridge_id if inbox else None
+
+        img_storage_key: Optional[str] = None
+        if bridge_id:
+            img_storage_key = f"media/{bridge_id}/{uuid.uuid4().hex}.png"
+            try:
+                s3_put(img_storage_key, png_data, "image/png")
+            except Exception as exc:
+                logger.warning("media reply: failed to upload test image: %s", exc)
+                img_storage_key = None
+
+        db.add(OutboundMessage(
+            inbox_id=ctx.inbox_id,
+            contact_id=ctx.contact_id,
+            msg_type=OutboundMessageType.TEXT,
+            content=text_content,
+            send_after=now_ts + timedelta(seconds=THINK_DELAY),
+            status=OutboundStatus.PENDING,
+            delivered_at=None,
+            failed_reason=None,
+            created_at=now_ts,
+        ))
+
+        if img_storage_key:
+            db.add(OutboundMessage(
+                inbox_id=ctx.inbox_id,
+                contact_id=ctx.contact_id,
+                msg_type=OutboundMessageType.IMAGE,
+                content=img_storage_key,
+                send_after=now_ts + timedelta(seconds=THINK_DELAY + 2),
+                status=OutboundStatus.PENDING,
+                delivered_at=None,
+                failed_reason=None,
+                created_at=now_ts,
+            ))
+
+        db.add(LlmLog(
+            purpose=LlmPurpose.REPLY,
+            persona_id=None,
+            inbox_id=ctx.inbox_id,
+            request_messages=json.dumps({"type": "media_test_reply", "storage_key": storage_key, "msg_type": msg_type}),
+            response_raw=json.dumps({"text": text_content, "image_key": img_storage_key, "color": [r, g, b], "file_size": file_size, "file_ext": file_ext}),
+            model="media_test",
+            created_at=now_ts,
+        ))
+
+        c = db.query(Contact).filter(Contact.id == ctx.contact_id).first()
+        if c:
+            c.pending_reply = False
+            c.updated_at = utc_now()
+
+        db.commit()
+        return f"media_reply: text='{text_content}' image={'sent' if img_storage_key else 'skipped'}"
+
+    except Exception as exc:
+        db.rollback()
+        logger.error("media reply db commit failed for contact %s: %s", ctx.contact_id, exc)
+        return f"media_reply_error: {exc}"
+    finally:
+        db.close()
+
+
 async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
     """Run one reply attempt for one contact. Returns a short status string for logging."""
     # Phase 1: decide (read-only)
@@ -255,6 +397,11 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
 
     ctx = decision.ctx
     assert ctx is not None
+
+    # Shortcut: if the latest message is media, reply with a test description + random image
+    if decision.history and decision.history[-1].msg_type != "text":
+        return _handle_media_reply(ctx, decision.history)
+
     request_messages = [
         {"role": "system", "content": SYSTEM_INSTRUCTION},
         {"role": "user", "content": _build_user_message(ctx, decision.history)},

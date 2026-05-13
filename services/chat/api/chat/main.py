@@ -323,9 +323,9 @@ def create_contact(
 ) -> Contact:
     now = utc_now()
     contact = Contact(
-        id=new_id("ct", 10),
+        id=new_id("ct"),
         account_id=account.id,
-        platform_contact_id=contact_in.platform_contact_id or new_id("chatid", 12),
+        platform_contact_id=contact_in.platform_contact_id or new_id("chatid"),
         display_name=contact_in.display_name,
         avatar_url=contact_in.avatar_url,
         note=contact_in.note,

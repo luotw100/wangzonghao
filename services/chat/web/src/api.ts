@@ -175,6 +175,21 @@ export function sendMessage(
   });
 }
 
+export function bulkSendMessages(
+  conversationId: string,
+  messages: Array<{ sender_type: 'self' | 'contact'; msg_type: MessageType; content: string; created_at: string }>
+) {
+  return request<{ status: string; count: number }>(
+    `/conversations/${conversationId}/messages/bulk`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages }),
+    },
+    60000,
+  );
+}
+
 export function presignUpload(filename: string, mimeType: string): Promise<UploadPresignResponse> {
   return request<UploadPresignResponse>('/uploads/presign', {
     method: 'POST',

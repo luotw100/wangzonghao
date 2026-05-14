@@ -34,6 +34,7 @@ from chat.schemas import (
     ConversationRead,
     LoginRequest,
     LoginResponse,
+    MessageBulkCreate,
     MessageCreate,
     StatusResponse,
     UploadPresignRequest,
@@ -476,6 +477,35 @@ def connector_send_message(
     db.commit()
     db.refresh(message)
     return StatusResponse(status=CommandStatus.SUCCESS, id=message.id)
+
+
+@app.post(
+    "/api/conversations/{conversation_id}/messages/bulk", response_model=StatusResponse
+)
+def bulk_import_messages(
+    conversation_id: str,
+    payload: MessageBulkCreate,
+    account: CurrentAccountDep,
+    db: DbDep,
+) -> StatusResponse:
+    conversation = get_conversation_or_404(db, account.id, conversation_id)
+    to_insert = [
+        Message(
+            account_id=account.id,
+            conversation_id=conversation.id,
+            sender_type=item.sender_type,
+            sender_contact_id=conversation.contact_id if item.sender_type == SenderType.CONTACT else None,
+            msg_type=item.msg_type,
+            content=item.content,
+            source=MessageSource.IMPORT,
+            created_at=normalize_timestamp(item.created_at),
+        )
+        for item in payload.messages
+    ]
+    db.add_all(to_insert)
+    conversation.updated_at = utc_now()
+    db.commit()
+    return StatusResponse(status=CommandStatus.SUCCESS, count=len(to_insert))
 
 
 @app.get(

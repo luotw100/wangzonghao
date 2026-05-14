@@ -97,9 +97,19 @@ class ConversationMessages(StrictModel):
     messages: list[MessageRead]
 
 
+class MessageBulkItem(StrictModel):
+    sender_type: SenderType
+    msg_type: MessageType = MessageType.TEXT
+    content: str
+    created_at: datetime
+
+class MessageBulkCreate(StrictModel):
+    messages: list[MessageBulkItem]
+
 class StatusResponse(StrictModel):
     status: CommandStatus
     id: int | None = None
+    count: int | None = None
 
 
 class UploadPresignRequest(StrictModel):

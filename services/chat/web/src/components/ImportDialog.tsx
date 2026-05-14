@@ -48,7 +48,6 @@ export default function ImportDialog({ onDone, onCancel }: Props) {
   const [parseError, setParseError] = useState('');
   const [myId, setMyId] = useState('');
   const [remarkName, setRemarkName] = useState('');
-  const [done, setDone] = useState(0);
   const [total, setTotal] = useState(0);
   const [skipped, setSkipped] = useState(0);
   const [importError, setImportError] = useState('');
@@ -104,7 +103,6 @@ export default function ImportDialog({ onDone, onCancel }: Props) {
 
     setTotal(textMsgs.length);
     setSkipped(skippedCount);
-    setDone(0);
     setImportError('');
     setStep('importing');
 
@@ -119,16 +117,15 @@ export default function ImportDialog({ onDone, onCancel }: Props) {
       const conv = conversations.find((c) => c.contact_id === contact.id);
       if (!conv) throw new Error('找不到对应的会话');
 
-      for (let i = 0; i < textMsgs.length; i++) {
-        const msg = textMsgs[i];
-        await api.sendMessage(conv.id, {
+      await api.bulkSendMessages(
+        conv.id,
+        textMsgs.map((msg) => ({
           sender_type: msg.sender === myId ? 'self' : 'contact',
-          msg_type: 'text',
+          msg_type: 'text' as const,
           content: msg.content!,
           created_at: new Date(msg.timestamp * 1000).toISOString(),
-        });
-        setDone(i + 1);
-      }
+        })),
+      );
 
       setResultConvId(conv.id);
       setStep('done');
@@ -142,7 +139,6 @@ export default function ImportDialog({ onDone, onCancel }: Props) {
   }
 
   const other = parsed ? parsed.members.find((m) => m.platformId !== myId) : null;
-  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
   return (
     <div className="modal-backdrop" onClick={handleBackdropClick}>
@@ -251,14 +247,12 @@ export default function ImportDialog({ onDone, onCancel }: Props) {
               <h2>正在导入…</h2>
             </div>
             <div className="modal-body">
-              <div className="import-progress-track">
-                <div className="import-progress-fill" style={{ width: `${pct}%` }} />
-              </div>
-              <div className="import-progress-text">
-                <span>已导入 {done} / {total} 条</span>
-                <span>{pct}%</span>
-              </div>
-              {importError && (
+              {!importError ? (
+                <div className="import-spinner-wrap">
+                  <div className="import-spinner" />
+                  <span>正在写入 {total} 条消息…</span>
+                </div>
+              ) : (
                 <>
                   <div className="error compact">{importError}</div>
                   <div className="modal-footer" style={{ padding: 0, border: 0 }}>
@@ -279,7 +273,7 @@ export default function ImportDialog({ onDone, onCancel }: Props) {
             </div>
             <div className="modal-body">
               <div className="import-done-stats">
-                <div className="big-num">{done}</div>
+                <div className="big-num">{total}</div>
                 <div className="big-label">条消息已导入</div>
                 {skipped > 0 && (
                   <div className="skip-info">另有 {skipped} 条媒体消息已跳过</div>

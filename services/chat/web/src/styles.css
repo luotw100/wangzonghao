@@ -928,6 +928,27 @@ label > span {
   background: rgba(0, 0, 0, 0.06);
 }
 
+.import-spinner-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 13px;
+  color: var(--wc-text-muted);
+}
+.import-spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--wc-divider);
+  border-top-color: var(--wc-green);
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 .import-progress-track {
   height: 6px;
   background: var(--wc-divider);

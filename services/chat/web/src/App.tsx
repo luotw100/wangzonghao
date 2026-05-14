@@ -106,6 +106,7 @@ export default function App() {
         onUpdateContactRemark={handleUpdateContactRemark}
         onDeleteContact={handleDeleteContact}
         onLogout={auth.logout}
+        onUpdateNickname={auth.updateNickname}
         lastMessages={lastMessages}
       />
 

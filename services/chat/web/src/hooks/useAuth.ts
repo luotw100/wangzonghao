@@ -50,5 +50,10 @@ export function useAuth() {
     setState({ account: null, loading: false, error: '' });
   }, []);
 
-  return { ...state, login, logout };
+  const updateNickname = useCallback(async (nickname: string) => {
+    const updated = await api.updateMe({ nickname });
+    setState((s) => ({ ...s, account: updated }));
+  }, []);
+
+  return { ...state, login, logout, updateNickname };
 }

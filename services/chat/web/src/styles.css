@@ -296,9 +296,6 @@ label > span {
   color: var(--wc-text);
   min-width: 0;
 }
-.me:hover {
-  background: rgba(0, 0, 0, 0.04);
-}
 .me-text {
   display: flex;
   flex-direction: column;
@@ -310,6 +307,18 @@ label > span {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  cursor: text;
+}
+.nickname-edit {
+  font-size: 14px;
+  font-weight: 500;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--wc-border);
+  outline: none;
+  padding: 0;
+  width: 100%;
+  color: var(--wc-text);
 }
 .me-text small {
   font-size: 11px;

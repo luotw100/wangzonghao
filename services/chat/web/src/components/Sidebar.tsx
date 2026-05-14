@@ -1,4 +1,4 @@
-import { useState, useRef, FormEvent, MouseEvent } from 'react';
+import { useState, useRef, FormEvent, MouseEvent, KeyboardEvent } from 'react';
 import type { Account, Conversation, Message } from '../api';
 import { contactDisplayName } from '../api';
 import Avatar from './Avatar';
@@ -14,6 +14,7 @@ interface SidebarProps {
   onUpdateContactRemark: (contactId: string, remarkName: string) => Promise<void>;
   onDeleteContact: (contactId: string) => Promise<void>;
   onLogout: () => void;
+  onUpdateNickname: (nickname: string) => Promise<void>;
   lastMessages: Record<string, Message | undefined>;
 }
 
@@ -26,6 +27,7 @@ export default function Sidebar({
   onUpdateContactRemark,
   onDeleteContact,
   onLogout,
+  onUpdateNickname,
   lastMessages,
 }: SidebarProps) {
   const [query, setQuery] = useState('');
@@ -34,7 +36,26 @@ export default function Sidebar({
   const [remarkName, setRemarkName] = useState('');
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; conversation: Conversation } | null>(null);
+  const [editingNickname, setEditingNickname] = useState(false);
+  const [nicknameInput, setNicknameInput] = useState('');
   const longPressTimer = useRef<number | null>(null);
+
+  function startEditNickname() {
+    setNicknameInput(account.nickname);
+    setEditingNickname(true);
+  }
+
+  async function commitNickname() {
+    const trimmed = nicknameInput.trim();
+    setEditingNickname(false);
+    if (!trimmed || trimmed === account.nickname) return;
+    await onUpdateNickname(trimmed);
+  }
+
+  function handleNicknameKeyDown(e: KeyboardEvent<HTMLInputElement>) {
+    if (e.key === 'Enter') e.currentTarget.blur();
+    if (e.key === 'Escape') setEditingNickname(false);
+  }
 
   const q = query.trim().toLowerCase();
   const filtered = q
@@ -87,7 +108,18 @@ export default function Sidebar({
         <div className="me">
           <Avatar name={account.nickname} seed={account.id} size={36} />
           <span className="me-text">
-            <strong>{account.nickname}</strong>
+            {editingNickname ? (
+              <input
+                className="nickname-edit"
+                value={nicknameInput}
+                onChange={(e) => setNicknameInput(e.target.value)}
+                onBlur={commitNickname}
+                onKeyDown={handleNicknameKeyDown}
+                autoFocus
+              />
+            ) : (
+              <strong onClick={startEditNickname} title="点击修改昵称">{account.nickname}</strong>
+            )}
             <small>@{account.username}</small>
           </span>
         </div>

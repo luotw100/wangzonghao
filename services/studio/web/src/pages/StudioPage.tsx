@@ -362,7 +362,7 @@ function TakeoverView({ inboxes, bridges, personas, providers, isAdmin, onChange
       <PageHead
         title={`${items.length} 个接管`}
         kicker="contacts"
-        right={<button className="btn btn-sm btn-ghost" onClick={reload}>{loading ? '刷新中…' : '刷新'}</button>}
+        right={<button className="btn btn-sm btn-ghost" onClick={() => reload()}>{loading ? '刷新中…' : '刷新'}</button>}
       />
       {inboxOrder.length === 0 ? (
         <div style={{ padding: '0 28px 24px' }}>
@@ -1436,7 +1436,7 @@ function OverviewView({ setError }: { setError: (message: string) => void }) {
       <PageHead
         title="总览"
         kicker="overview · SaaS 运营视角"
-        right={<button className="btn btn-sm btn-ghost" onClick={reload}>{loading ? '刷新中…' : '刷新'}</button>}
+        right={<button className="btn btn-sm btn-ghost" onClick={() => reload()}>{loading ? '刷新中…' : '刷新'}</button>}
       />
       <div style={{ padding: '0 28px 24px', display: 'grid', gap: 14 }}>
         {!data ? (

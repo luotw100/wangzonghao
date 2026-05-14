@@ -70,6 +70,8 @@ export function StudioPage() {
 
   useEffect(() => {
     loadAll();
+    const id = setInterval(loadAll, 10_000);
+    return () => clearInterval(id);
   }, [loadAll]);
 
   const handleLogout = async () => {
@@ -268,8 +270,8 @@ function TakeoverView({ inboxes, bridges, personas, providers, isAdmin, onChange
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const reload = useCallback(async () => {
-    setLoading(true);
+  const reload = useCallback(async (showLoading = true) => {
+    if (showLoading) setLoading(true);
     try {
       const next = await api.getConversations();
       setItems(next);
@@ -281,12 +283,14 @@ function TakeoverView({ inboxes, bridges, personas, providers, isAdmin, onChange
     } catch (err) {
       setError(String(err));
     } finally {
-      setLoading(false);
+      if (showLoading) setLoading(false);
     }
   }, [setError]);
 
   useEffect(() => {
     reload();
+    const id = setInterval(() => reload(false), 3_000);
+    return () => clearInterval(id);
   }, [reload]);
 
   const selected = items.find(item => item.contact.id === selectedId) ?? null;
@@ -312,6 +316,8 @@ function TakeoverView({ inboxes, bridges, personas, providers, isAdmin, onChange
 
   useEffect(() => {
     reloadMessages();
+    const id = setInterval(reloadMessages, 3_000);
+    return () => clearInterval(id);
   }, [reloadMessages]);
 
   const grouped = useMemo(() => {

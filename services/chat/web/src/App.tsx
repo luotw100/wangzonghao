@@ -64,10 +64,10 @@ export default function App() {
     setMobileView('chat');
   }
 
-  async function handleCreateContact(displayName: string, note: string) {
+  async function handleCreateContact(nickname: string, remarkName: string) {
     setGlobalError('');
     try {
-      await api.createContact({ display_name: displayName, note: note || undefined });
+      await api.createContact({ nickname, remark_name: remarkName || undefined });
       await workspace.reload();
     } catch (err) {
       setGlobalError(err instanceof Error ? err.message : String(err));
@@ -85,10 +85,10 @@ export default function App() {
     }
   }
 
-  async function handleUpdateContactNote(contactId: string, note: string) {
+  async function handleUpdateContactRemark(contactId: string, remarkName: string) {
     setGlobalError('');
     try {
-      await api.updateContact(contactId, { note: note || undefined });
+      await api.updateContact(contactId, { remark_name: remarkName || undefined });
       await workspace.reload();
     } catch (err) {
       setGlobalError(err instanceof Error ? err.message : String(err));
@@ -103,7 +103,7 @@ export default function App() {
         activeConversationId={activeConversationId}
         onSelectConversation={handleSelectConversation}
         onCreateContact={handleCreateContact}
-        onUpdateContactNote={handleUpdateContactNote}
+        onUpdateContactRemark={handleUpdateContactRemark}
         onDeleteContact={handleDeleteContact}
         onLogout={auth.logout}
         lastMessages={lastMessages}

@@ -4,7 +4,7 @@ const TOKEN_KEY = 'laborster-chat-token';
 export interface Account {
   id: string;
   username: string;
-  display_name: string;
+  nickname: string;
   avatar_url: string | null;
   status: string;
   is_deleted: boolean;
@@ -17,10 +17,10 @@ export interface Account {
 export interface Contact {
   id: string;
   account_id: string;
-  platform_contact_id: string;
-  display_name: string;
+  username: string;
+  nickname: string;
+  remark_name: string | null;
   avatar_url: string | null;
-  note: string | null;
   is_deleted: boolean;
   deleted_at: string | null;
   created_at: string;
@@ -61,6 +61,10 @@ export interface UploadPresignResponse {
 export interface LoginResponse {
   token: string;
   account: Account;
+}
+
+export function contactDisplayName(contact: Contact): string {
+  return contact.remark_name || contact.nickname;
 }
 
 export function getToken(): string | null {
@@ -121,10 +125,18 @@ export function logout(): Promise<void> {
   return request<void>('/auth/logout', { method: 'POST' });
 }
 
+export function updateMe(payload: { nickname: string }): Promise<Account> {
+  return request<Account>('/auth/me', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
 export function createContact(payload: {
-  display_name: string;
-  platform_contact_id?: string;
-  note?: string;
+  nickname: string;
+  username?: string;
+  remark_name?: string;
 }): Promise<Contact> {
   return request<Contact>('/contacts', {
     method: 'POST',
@@ -135,7 +147,7 @@ export function createContact(payload: {
 
 export function updateContact(
   contactId: string,
-  payload: { note?: string }
+  payload: { remark_name?: string }
 ): Promise<Contact> {
   return request<Contact>(`/contacts/${contactId}`, {
     method: 'PUT',

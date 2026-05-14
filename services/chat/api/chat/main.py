@@ -26,6 +26,7 @@ from chat.s3 import (
 )
 from chat.schemas import (
     AccountRead,
+    AccountUpdate,
     ContactCreate,
     ContactRead,
     ContactUpdate,
@@ -204,7 +205,7 @@ def get_or_create_direct_conversation(
         id=new_id("c"),
         account_id=account_id,
         contact_id=contact.id,
-        title=title or contact.display_name,
+        title=title or contact.nickname,
         is_deleted=False,
         deleted_at=None,
         created_at=now,
@@ -313,6 +314,15 @@ def me(account: CurrentAccountDep) -> Account:
     return account
 
 
+@app.patch("/api/auth/me", response_model=AccountRead)
+def update_me(update: AccountUpdate, account: CurrentAccountDep, db: DbDep) -> Account:
+    account.nickname = update.nickname
+    account.updated_at = utc_now()
+    db.commit()
+    db.refresh(account)
+    return account
+
+
 @app.get("/api/contacts", response_model=list[ContactRead])
 def list_contacts(
     account: CurrentAccountDep,
@@ -333,10 +343,10 @@ def create_contact(
     contact = Contact(
         id=new_id("ct"),
         account_id=account.id,
-        platform_contact_id=contact_in.platform_contact_id or new_id("chatid"),
-        display_name=contact_in.display_name,
+        username=contact_in.username or new_id("chatid"),
+        nickname=contact_in.nickname,
+        remark_name=contact_in.remark_name,
         avatar_url=contact_in.avatar_url,
-        note=contact_in.note,
         is_deleted=False,
         deleted_at=None,
         created_at=now,
@@ -358,12 +368,10 @@ def update_contact(
     db: DbDep,
 ) -> Contact:
     contact = get_contact_or_404(db, account.id, contact_id)
-    if contact_update.display_name is not None:
-        contact.display_name = contact_update.display_name
+    if contact_update.remark_name is not None:
+        contact.remark_name = contact_update.remark_name
     if contact_update.avatar_url is not None:
         contact.avatar_url = contact_update.avatar_url
-    if contact_update.note is not None:
-        contact.note = contact_update.note
     contact.updated_at = utc_now()
     db.commit()
     db.refresh(contact)

@@ -12,7 +12,7 @@ class StrictModel(BaseModel):
 class AccountRead(StrictModel):
     id: str
     username: str
-    display_name: str
+    nickname: str
     avatar_url: str | None
     status: AccountStatus
     is_deleted: bool
@@ -20,6 +20,10 @@ class AccountRead(StrictModel):
     created_at: datetime
     updated_at: datetime
     last_login_at: datetime | None
+
+
+class AccountUpdate(StrictModel):
+    nickname: str
 
 
 class LoginRequest(StrictModel):
@@ -33,25 +37,24 @@ class LoginResponse(StrictModel):
 
 
 class ContactCreate(StrictModel):
-    display_name: str
-    platform_contact_id: str | None = None
+    nickname: str
+    username: str | None = None
+    remark_name: str | None = None
     avatar_url: str | None = None
-    note: str | None = None
 
 
 class ContactUpdate(StrictModel):
-    display_name: str | None = None
+    remark_name: str | None = None
     avatar_url: str | None = None
-    note: str | None = None
 
 
 class ContactRead(StrictModel):
     id: str
     account_id: str
-    platform_contact_id: str
-    display_name: str
+    username: str
+    nickname: str
+    remark_name: str | None
     avatar_url: str | None
-    note: str | None
     is_deleted: bool
     deleted_at: datetime | None
     created_at: datetime

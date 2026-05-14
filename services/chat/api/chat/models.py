@@ -6,7 +6,6 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     String,
-    Text,
     UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
@@ -23,7 +22,7 @@ class Account(Base):
     id = Column(String(48), primary_key=True, index=True)
     username = Column(String(64), nullable=False, unique=True, index=True)
     password_hash = Column(String(128), nullable=False)
-    display_name = Column(String(128), nullable=False)
+    nickname = Column(String(128), nullable=False)
     avatar_url = Column(String(512), nullable=True)
     status = Column(String(16), nullable=False)
     is_deleted = Column(Boolean, nullable=False)
@@ -51,15 +50,15 @@ class AuthSession(Base):
 class Contact(Base):
     __tablename__ = "chat_contacts"
     __table_args__ = (
-        UniqueConstraint("account_id", "platform_contact_id", name="uq_chat_contact_platform_id"),
+        UniqueConstraint("account_id", "username", name="uq_chat_contact_username"),
     )
 
     id = Column(String(48), primary_key=True, index=True)
     account_id = Column(String(48), ForeignKey("chat_accounts.id"), nullable=False, index=True)
-    platform_contact_id = Column(String(256), nullable=False, index=True)
-    display_name = Column(String(256), nullable=False)
+    username = Column(String(256), nullable=False, index=True)
+    nickname = Column(String(256), nullable=False)
+    remark_name = Column(String(256), nullable=True)
     avatar_url = Column(String(512), nullable=True)
-    note = Column(Text, nullable=True)
     is_deleted = Column(Boolean, nullable=False)
     deleted_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), nullable=False)

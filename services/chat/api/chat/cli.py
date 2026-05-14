@@ -26,7 +26,7 @@ def create_account(args: argparse.Namespace) -> None:
             id=account_id,
             username=args.username,
             password_hash=hash_password(args.password),
-            display_name=args.display_name,
+            nickname=args.nickname,
             avatar_url=args.avatar_url,
             status=AccountStatus.ACTIVE,
             is_deleted=False,
@@ -39,8 +39,8 @@ def create_account(args: argparse.Namespace) -> None:
         db.commit()
         print(ok(f"created chat account {account.username}"))
         print(render_table(
-            ["id", "username", "display_name", "status"],
-            [[account.id, account.username, account.display_name, account.status]],
+            ["id", "username", "nickname", "status"],
+            [[account.id, account.username, account.nickname, account.status]],
         ))
     finally:
         db.close()
@@ -53,8 +53,8 @@ def list_accounts(_: argparse.Namespace) -> None:
         rows = []
         for account in db.query(Account).order_by(Account.created_at.asc()).all():
             status = danger(f"{account.status} deleted") if account.is_deleted else ok(account.status)
-            rows.append([account.id, account.username, account.display_name, status])
-        print(render_table(["id", "username", "display_name", "status"], rows))
+            rows.append([account.id, account.username, account.nickname, status])
+        print(render_table(["id", "username", "nickname", "status"], rows))
     finally:
         db.close()
 
@@ -81,7 +81,7 @@ def main() -> None:
     create_parser = subparsers.add_parser("create-account")
     create_parser.add_argument("--username", required=True)
     create_parser.add_argument("--password", required=True)
-    create_parser.add_argument("--display-name", required=True)
+    create_parser.add_argument("--nickname", required=True)
     create_parser.add_argument("--avatar-url")
     create_parser.set_defaults(func=create_account)
 

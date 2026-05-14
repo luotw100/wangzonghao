@@ -22,7 +22,7 @@ def upgrade() -> None:
         sa.Column("id", sa.String(48), primary_key=True),
         sa.Column("username", sa.String(64), nullable=False, unique=True),
         sa.Column("password_hash", sa.String(128), nullable=False),
-        sa.Column("display_name", sa.String(128), nullable=False),
+        sa.Column("nickname", sa.String(128), nullable=False),
         sa.Column("avatar_url", sa.String(512), nullable=True),
         sa.Column("status", sa.String(16), nullable=False),
         sa.Column("is_deleted", sa.Boolean, nullable=False),
@@ -50,19 +50,19 @@ def upgrade() -> None:
         "chat_contacts",
         sa.Column("id", sa.String(48), primary_key=True),
         sa.Column("account_id", sa.String(48), sa.ForeignKey("chat_accounts.id"), nullable=False),
-        sa.Column("platform_contact_id", sa.String(256), nullable=False),
-        sa.Column("display_name", sa.String(256), nullable=False),
+        sa.Column("username", sa.String(256), nullable=False),
+        sa.Column("nickname", sa.String(256), nullable=False),
+        sa.Column("remark_name", sa.String(256), nullable=True),
         sa.Column("avatar_url", sa.String(512), nullable=True),
-        sa.Column("note", sa.Text, nullable=True),
         sa.Column("is_deleted", sa.Boolean, nullable=False),
         sa.Column("deleted_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint("account_id", "platform_contact_id", name="uq_chat_contact_platform_id"),
+        sa.UniqueConstraint("account_id", "username", name="uq_chat_contact_username"),
     )
     op.create_index("ix_chat_contacts_id", "chat_contacts", ["id"])
     op.create_index("ix_chat_contacts_account_id", "chat_contacts", ["account_id"])
-    op.create_index("ix_chat_contacts_platform_contact_id", "chat_contacts", ["platform_contact_id"])
+    op.create_index("ix_chat_contacts_username", "chat_contacts", ["username"])
 
     op.create_table(
         "chat_conversations",

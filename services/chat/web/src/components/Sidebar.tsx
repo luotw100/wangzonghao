@@ -1,5 +1,6 @@
 import { useState, useRef, FormEvent, MouseEvent } from 'react';
 import type { Account, Conversation, Message } from '../api';
+import { contactDisplayName } from '../api';
 import Avatar from './Avatar';
 import ContextMenu from './ContextMenu';
 import { formatListPreview } from '../utils/time';
@@ -9,8 +10,8 @@ interface SidebarProps {
   conversations: Conversation[];
   activeConversationId: string | null;
   onSelectConversation: (id: string) => void;
-  onCreateContact: (name: string, note: string) => Promise<void>;
-  onUpdateContactNote: (contactId: string, note: string) => Promise<void>;
+  onCreateContact: (nickname: string, remarkName: string) => Promise<void>;
+  onUpdateContactRemark: (contactId: string, remarkName: string) => Promise<void>;
   onDeleteContact: (contactId: string) => Promise<void>;
   onLogout: () => void;
   lastMessages: Record<string, Message | undefined>;
@@ -22,15 +23,15 @@ export default function Sidebar({
   activeConversationId,
   onSelectConversation,
   onCreateContact,
-  onUpdateContactNote,
+  onUpdateContactRemark,
   onDeleteContact,
   onLogout,
   lastMessages,
 }: SidebarProps) {
   const [query, setQuery] = useState('');
   const [showAdd, setShowAdd] = useState(false);
-  const [name, setName] = useState('');
-  const [note, setNote] = useState('');
+  const [nickname, setNickname] = useState('');
+  const [remarkName, setRemarkName] = useState('');
   const [busy, setBusy] = useState(false);
   const [menu, setMenu] = useState<{ x: number; y: number; conversation: Conversation } | null>(null);
   const longPressTimer = useRef<number | null>(null);
@@ -38,21 +39,22 @@ export default function Sidebar({
   const q = query.trim().toLowerCase();
   const filtered = q
     ? conversations.filter((c) => {
-        const name = c.contact.display_name.toLowerCase();
-        const note = (c.contact.note || '').toLowerCase();
+        const name = contactDisplayName(c.contact).toLowerCase();
+        const remark = (c.contact.remark_name || '').toLowerCase();
+        const nick = c.contact.nickname.toLowerCase();
         const last = lastMessages[c.id]?.content.toLowerCase() || '';
-        return name.includes(q) || note.includes(q) || last.includes(q);
+        return name.includes(q) || remark.includes(q) || nick.includes(q) || last.includes(q);
       })
     : conversations;
 
   async function handleAdd(event: FormEvent) {
     event.preventDefault();
-    if (!name.trim() || busy) return;
+    if (!nickname.trim() || busy) return;
     setBusy(true);
     try {
-      await onCreateContact(name.trim(), note.trim());
-      setName('');
-      setNote('');
+      await onCreateContact(nickname.trim(), remarkName.trim());
+      setNickname('');
+      setRemarkName('');
       setShowAdd(false);
     } finally {
       setBusy(false);
@@ -82,18 +84,13 @@ export default function Sidebar({
   return (
     <aside className="sidebar">
       <header className="sidebar-header">
-        <button
-          type="button"
-          className="me"
-          onClick={onLogout}
-          title={`点击退出 @${account.username}`}
-        >
-          <Avatar name={account.display_name} seed={account.id} size={36} />
+        <div className="me">
+          <Avatar name={account.nickname} seed={account.id} size={36} />
           <span className="me-text">
-            <strong>{account.display_name}</strong>
+            <strong>{account.nickname}</strong>
             <small>@{account.username}</small>
           </span>
-        </button>
+        </div>
         <button
           type="button"
           className="icon-btn"
@@ -102,6 +99,19 @@ export default function Sidebar({
         >
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M12 5v14M5 12h14" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          className="icon-btn"
+          aria-label="退出登录"
+          onClick={onLogout}
+          title="退出登录"
+        >
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+            <polyline points="16 17 21 12 16 7" />
+            <line x1="21" y1="12" x2="9" y2="12" />
           </svg>
         </button>
       </header>
@@ -127,21 +137,21 @@ export default function Sidebar({
       {showAdd && (
         <form className="new-contact" onSubmit={handleAdd}>
           <input
-            placeholder="联系人昵称"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
+            placeholder="对方昵称"
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
             autoFocus
           />
           <input
-            placeholder="备注（可选）"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
+            placeholder="备注名（可选）"
+            value={remarkName}
+            onChange={(e) => setRemarkName(e.target.value)}
           />
           <div className="new-contact-actions">
             <button type="button" className="ghost" onClick={() => setShowAdd(false)}>
               取消
             </button>
-            <button className="primary" disabled={!name.trim() || busy}>
+            <button className="primary" disabled={!nickname.trim() || busy}>
               {busy ? '添加中…' : '添加'}
             </button>
           </div>
@@ -166,6 +176,7 @@ export default function Sidebar({
         {filtered.map((conversation) => {
           const last = lastMessages[conversation.id];
           const active = conversation.id === activeConversationId;
+          const displayName = contactDisplayName(conversation.contact);
           return (
             <button
               key={conversation.id}
@@ -178,14 +189,14 @@ export default function Sidebar({
               onTouchMove={cancelLongPress}
               onTouchCancel={cancelLongPress}
             >
-              <Avatar name={conversation.contact.display_name} seed={conversation.contact.id} size={44} />
+              <Avatar name={displayName} seed={conversation.contact.id} size={44} />
               <span className="conversation-body">
                 <span className="conversation-top">
-                  <strong>{conversation.title || conversation.contact.display_name}</strong>
+                  <strong>{displayName}</strong>
                   {last && <small>{formatListPreview(last.created_at)}</small>}
                 </span>
                 <span className="conversation-bottom">
-                  <small>{last ? last.content : conversation.contact.note || '暂无消息'}</small>
+                  <small>{last ? last.content : '暂无消息'}</small>
                 </span>
               </span>
             </button>
@@ -200,14 +211,14 @@ export default function Sidebar({
           onClose={() => setMenu(null)}
           items={[
             {
-              label: '编辑备注',
+              label: '编辑备注名',
               onClick: async () => {
                 const target = menu.conversation;
                 setMenu(null);
-                const current = target.contact.note || '';
-                const note = window.prompt('修改备注', current);
-                if (note === null) return;
-                await onUpdateContactNote(target.contact.id, note.trim());
+                const current = target.contact.remark_name || '';
+                const remark = window.prompt('修改备注名', current);
+                if (remark === null) return;
+                await onUpdateContactRemark(target.contact.id, remark.trim());
               },
             },
             {
@@ -217,7 +228,7 @@ export default function Sidebar({
                 const target = menu.conversation;
                 setMenu(null);
                 const ok = window.confirm(
-                  `删除联系人「${target.contact.display_name}」？该联系人下的会话也会被一起标记为删除。`
+                  `删除联系人「${contactDisplayName(target.contact)}」？该联系人下的会话也会被一起标记为删除。`
                 );
                 if (!ok) return;
                 await onDeleteContact(target.contact.id);

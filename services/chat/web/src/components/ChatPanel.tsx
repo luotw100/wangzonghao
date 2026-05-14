@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { Account, Conversation, Message } from '../api';
 import * as api from '../api';
+import { contactDisplayName } from '../api';
 import MessageList from './MessageList';
 import Composer from './Composer';
 import Avatar from './Avatar';
@@ -47,10 +48,10 @@ export default function ChatPanel({
             </svg>
           </button>
         )}
-        <Avatar name={conversation.contact.display_name} seed={conversation.contact.id} size={38} />
+        <Avatar name={contactDisplayName(conversation.contact)} seed={conversation.contact.id} size={38} />
         <div className="chat-title">
-          <h1>{conversation.contact.display_name}</h1>
-          {conversation.contact.note && <p>{conversation.contact.note}</p>}
+          <h1>{contactDisplayName(conversation.contact)}</h1>
+          {conversation.contact.remark_name && <p>{conversation.contact.nickname}</p>}
         </div>
       </header>
 

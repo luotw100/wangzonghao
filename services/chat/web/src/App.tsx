@@ -3,6 +3,7 @@ import * as api from './api';
 import Login from './components/Login';
 import Sidebar from './components/Sidebar';
 import ChatPanel from './components/ChatPanel';
+import ImportDialog from './components/ImportDialog';
 import { useAuth } from './hooks/useAuth';
 import { useWorkspace } from './hooks/useWorkspace';
 import { useMessages } from './hooks/useMessages';
@@ -13,6 +14,7 @@ export default function App() {
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [globalError, setGlobalError] = useState('');
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
+  const [showImport, setShowImport] = useState(false);
 
   // Auto-pick the first conversation once we have data and nothing is selected.
   useEffect(() => {
@@ -85,6 +87,13 @@ export default function App() {
     }
   }
 
+  async function handleImportDone(conversationId: string) {
+    setShowImport(false);
+    await workspace.reload();
+    setActiveConversationId(conversationId);
+    setMobileView('chat');
+  }
+
   async function handleUpdateContactRemark(contactId: string, remarkName: string) {
     setGlobalError('');
     try {
@@ -107,6 +116,7 @@ export default function App() {
         onDeleteContact={handleDeleteContact}
         onLogout={auth.logout}
         onUpdateNickname={auth.updateNickname}
+        onOpenImport={() => setShowImport(true)}
         lastMessages={lastMessages}
       />
 
@@ -127,6 +137,10 @@ export default function App() {
             <p>左侧选择联系人开始对话，或新建一个联系人。</p>
           </div>
         </section>
+      )}
+
+      {showImport && (
+        <ImportDialog onDone={handleImportDone} onCancel={() => setShowImport(false)} />
       )}
 
       {globalError && (

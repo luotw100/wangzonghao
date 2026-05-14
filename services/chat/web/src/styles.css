@@ -783,6 +783,192 @@ label > span {
   z-index: 100;
 }
 
+.modal-card {
+  background: #fff;
+  border-radius: 12px;
+  width: min(480px, 100%);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--wc-divider);
+}
+.modal-header h2 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+}
+.modal-close {
+  width: 28px;
+  height: 28px;
+  color: var(--wc-text-muted);
+}
+
+.modal-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.modal-footer {
+  padding: 14px 20px;
+  border-top: 1px solid var(--wc-divider);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.section-label {
+  font-size: 12px;
+  color: var(--wc-text-muted);
+  margin-bottom: 8px;
+}
+
+.import-dropzone {
+  border: 2px dashed var(--wc-divider-strong);
+  border-radius: 10px;
+  padding: 36px 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 150ms, background 150ms;
+  color: var(--wc-text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.import-dropzone:hover,
+.import-dropzone.drag-over {
+  border-color: var(--wc-green);
+  background: rgba(7, 193, 96, 0.04);
+  color: var(--wc-text);
+}
+.import-dropzone p {
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+.import-dropzone small {
+  font-size: 12px;
+}
+
+.import-preview {
+  background: var(--wc-bg);
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 13px;
+  display: grid;
+  gap: 6px;
+}
+.import-preview-row {
+  display: flex;
+  gap: 10px;
+}
+.import-preview-row .label {
+  color: var(--wc-text-muted);
+  min-width: 40px;
+  flex-shrink: 0;
+}
+
+.member-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.member-card {
+  border: 2px solid var(--wc-divider-strong);
+  border-radius: 8px;
+  padding: 12px;
+  cursor: pointer;
+  text-align: left;
+  background: #fff;
+  transition: border-color 120ms, background 120ms;
+  width: 100%;
+}
+.member-card:hover {
+  border-color: #a8d8b2;
+}
+.member-card.selected {
+  border-color: var(--wc-green);
+  background: rgba(7, 193, 96, 0.05);
+}
+.member-card .member-name {
+  font-weight: 500;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.member-card .member-id {
+  font-size: 11px;
+  color: var(--wc-text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.member-card .member-role {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--wc-green);
+  background: rgba(7, 193, 96, 0.12);
+  padding: 1px 7px;
+  border-radius: 4px;
+}
+.member-card .member-role-other {
+  color: var(--wc-text-muted);
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.import-progress-track {
+  height: 6px;
+  background: var(--wc-divider);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.import-progress-fill {
+  height: 100%;
+  background: var(--wc-green);
+  border-radius: 3px;
+  transition: width 80ms linear;
+}
+.import-progress-text {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--wc-text-muted);
+  margin-top: 6px;
+}
+
+.import-done-stats {
+  text-align: center;
+  padding: 12px 0 4px;
+}
+.import-done-stats .big-num {
+  font-size: 42px;
+  font-weight: 700;
+  color: var(--wc-green);
+  line-height: 1.1;
+}
+.import-done-stats .big-label {
+  font-size: 14px;
+  color: var(--wc-text-muted);
+  margin-top: 4px;
+}
+.import-done-stats .skip-info {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--wc-text-faint);
+}
+
 
 /* =========================================================================
    Context menu

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { Account, Conversation, Message } from '../api';
-import { mediaUrl } from '../api';
+import { contactDisplayName, mediaUrl } from '../api';
 import Avatar from './Avatar';
 import { formatBubbleSeparator, formatFullTime, shouldShowSeparator } from '../utils/time';
 
@@ -110,7 +110,7 @@ export default function MessageList({ account, conversation, messages, perspecti
           const message = row.message!;
           const isOnRight = message.sender_type === perspective;
           const senderName =
-            message.sender_type === 'self' ? account.display_name : conversation.contact.display_name;
+            message.sender_type === 'self' ? account.nickname : contactDisplayName(conversation.contact);
           const seed = message.sender_type === 'self' ? account.id : conversation.contact.id;
           return (
             <article key={row.key} className={isOnRight ? 'bubble-row right' : 'bubble-row left'}>

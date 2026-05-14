@@ -1,6 +1,6 @@
 import { KeyboardEvent, useRef, useState } from 'react';
 import type { Account, Conversation, MessageType } from '../api';
-import { presignUpload, sendMessage, uploadPresignedFile } from '../api';
+import { contactDisplayName, presignUpload, sendMessage, uploadPresignedFile } from '../api';
 
 interface ComposerProps {
   account: Account;
@@ -76,7 +76,7 @@ export default function Composer({
     }
   }
 
-  const speakingAs = perspective === 'self' ? account.display_name : conversation.contact.display_name;
+  const speakingAs = perspective === 'self' ? account.nickname : contactDisplayName(conversation.contact);
 
   return (
     <footer className="composer">
@@ -88,7 +88,7 @@ export default function Composer({
           className={perspective === 'self' ? 'selected' : ''}
           onClick={() => onChangePerspective('self')}
         >
-          我（{account.display_name}）
+          我（{account.nickname}）
         </button>
         <button
           type="button"
@@ -97,7 +97,7 @@ export default function Composer({
           className={perspective === 'contact' ? 'selected' : ''}
           onClick={() => onChangePerspective('contact')}
         >
-          对方（{conversation.contact.display_name}）
+          对方（{contactDisplayName(conversation.contact)}）
         </button>
       </div>
 

@@ -127,7 +127,7 @@ create_chat_account() {
     docker compose exec -T chat-api uv run python -m chat.cli create-account \
       --username "$CHAT_USERNAME" \
       --password "$CHAT_PASSWORD" \
-      --display-name "$CHAT_DISPLAY_NAME" \
+      --nickname "$CHAT_DISPLAY_NAME" \
   ) && ok "chat account ready" \
     || warn "chat-cli returned non-zero (likely 'account already exists') — continuing"
 }
@@ -240,7 +240,7 @@ print(arr[0]["id"] if arr else "")
   if [ -z "$contact_id" ]; then
     log "creating chat contact: $CHAT_CONTACT_NAME"
     local body
-    body=$(printf '{"display_name":%s}' "$(printf '%s' "$CHAT_CONTACT_NAME" | json_escape)")
+    body=$(printf '{"nickname":%s}' "$(printf '%s' "$CHAT_CONTACT_NAME" | json_escape)")
     out=$(http_post "$CHAT_URL/api/contacts" "$token" "$body")
     code="${out%% *}"; rest="${out#* }"
     [ "$code" = "200" ] || { warn "create contact failed (HTTP $code): $rest"; return; }

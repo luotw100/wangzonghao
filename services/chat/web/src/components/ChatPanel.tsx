@@ -10,6 +10,8 @@ interface ChatPanelProps {
   account: Account;
   conversation: Conversation;
   messages: Message[];
+  hasMore: boolean;
+  onLoadOlder: () => Promise<void>;
   onMessagesReload: () => Promise<void>;
   onWorkspaceReload: () => Promise<void>;
   onBack?: () => void;
@@ -19,6 +21,8 @@ export default function ChatPanel({
   account,
   conversation,
   messages,
+  hasMore,
+  onLoadOlder,
   onMessagesReload,
   onWorkspaceReload,
   onBack,
@@ -60,6 +64,8 @@ export default function ChatPanel({
         conversation={conversation}
         messages={messages}
         perspective={perspective}
+        hasMore={hasMore}
+        loadOlder={onLoadOlder}
       />
 
       <Composer

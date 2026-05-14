@@ -249,27 +249,43 @@ def add_message(
 
 
 def get_messages_after_id(
-    db: Session, account_id: str, conversation_id: str, last_id: int
+    db: Session, account_id: str, conversation_id: str, last_id: int, limit: int = 0
 ) -> list[Message]:
-    return (
+    q = db.query(Message).filter(
+        Message.account_id == account_id,
+        Message.conversation_id == conversation_id,
+        Message.id > last_id,
+    )
+    if limit > 0 and last_id == 0:
+        rows = q.order_by(Message.id.desc()).limit(limit).all()
+        return list(reversed(rows))
+    return q.order_by(Message.id.asc()).all()
+
+
+def get_messages_before_id(
+    db: Session, account_id: str, conversation_id: str, before_id: int, limit: int
+) -> list[Message]:
+    rows = (
         db.query(Message)
         .filter(
             Message.account_id == account_id,
             Message.conversation_id == conversation_id,
-            Message.id > last_id,
+            Message.id < before_id,
         )
-        .order_by(Message.id.asc())
+        .order_by(Message.id.desc())
+        .limit(limit)
         .all()
     )
+    return list(reversed(rows))
 
 
 def build_messages_payload(
-    db: Session, account_id: str, conversation_id: str, last_id: int
+    db: Session, account_id: str, conversation_id: str, last_id: int, limit: int = 0
 ) -> dict[str, object]:
     conversation = get_conversation_or_404(
         db, account_id, conversation_id, include_deleted=True
     )
-    messages = get_messages_after_id(db, account_id, conversation_id, last_id)
+    messages = get_messages_after_id(db, account_id, conversation_id, last_id, limit)
     return {"conversation": conversation, "messages": messages}
 
 
@@ -516,7 +532,28 @@ async def get_conversation_messages(
     account: CurrentAccountDep,
     last_id: Annotated[int, Query(ge=0)] = 0,
     timeout: Annotated[int, Query(ge=0)] = 0,
+    before_id: Annotated[int | None, Query(ge=1)] = None,
+    limit: Annotated[int, Query(ge=0, le=500)] = 0,
 ) -> dict[str, object]:
+    # Paginated fetch (before_id) or initial bounded load: always immediate, no polling.
+    if before_id is not None or (limit > 0 and last_id == 0 and timeout == 0):
+        db = SessionLocal()
+        try:
+            conversation = get_conversation_or_404(
+                db, account.id, conversation_id, include_deleted=True
+            )
+            if before_id is not None:
+                messages = get_messages_before_id(
+                    db, account.id, conversation_id, before_id, limit or 100
+                )
+            else:
+                messages = get_messages_after_id(
+                    db, account.id, conversation_id, 0, limit
+                )
+            return {"conversation": conversation, "messages": messages}
+        finally:
+            db.close()
+
     start_time = time.time()
 
     while True:

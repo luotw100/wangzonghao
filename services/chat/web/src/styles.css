@@ -1042,6 +1042,90 @@ label > span {
   max-width: 80vw;
 }
 
+/* ---------- Import button (text + icon) ---------- */
+.import-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--wc-text-muted);
+  background: transparent;
+  border: 1px solid var(--wc-divider-strong);
+  transition: background 120ms, color 120ms, border-color 120ms;
+  white-space: nowrap;
+}
+.import-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--wc-text);
+  border-color: #c0c0c0;
+}
+
+/* ---------- Bubble hover time tooltip ---------- */
+.bubble-time-tip {
+  font-size: 11px;
+  color: var(--wc-text-faint);
+  opacity: 0;
+  transition: opacity 120ms;
+  white-space: nowrap;
+  pointer-events: none;
+  line-height: 1.4;
+}
+.bubble-row:hover .bubble-time-tip {
+  opacity: 1;
+}
+
+/* ---------- Media lazy-load placeholder ---------- */
+.media-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 180px;
+  height: 120px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: var(--wc-radius);
+  cursor: pointer;
+  color: var(--wc-text-muted);
+  font-size: 12px;
+  border: 1px dashed var(--wc-divider-strong);
+  transition: background 120ms;
+}
+.media-placeholder:hover {
+  background: rgba(0, 0, 0, 0.09);
+  color: var(--wc-text);
+}
+.bubble-self .media-placeholder {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.15);
+}
+
+/* ---------- Load older messages ---------- */
+.messages-load-more {
+  display: flex;
+  justify-content: center;
+  padding: 8px 0 4px;
+}
+.messages-load-more-btn {
+  font-size: 12px;
+  color: var(--wc-text-muted);
+  padding: 4px 14px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.05);
+  transition: background 120ms;
+}
+.messages-load-more-btn:hover:not(:disabled) {
+  background: rgba(0, 0, 0, 0.09);
+}
+.messages-load-more-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* =========================================================================
    Responsive — mobile (≤ 860px)
    On mobile we toggle between full-screen list and full-screen chat. The

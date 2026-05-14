@@ -2,27 +2,24 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import * as api from '../api';
 import type { Message } from '../api';
 
+const INITIAL_LIMIT = 100;
+
 interface UseMessagesResult {
   messages: Message[];
+  hasMore: boolean;
+  loadOlder: () => Promise<void>;
   reload: () => Promise<void>;
   reset: (incoming: Message[]) => void;
 }
 
-/**
- * Loads messages for a conversation and keeps them live with long-polling.
- *
- * Fixes from previous version:
- *  - The initial fetch and the long-poll loop are sequenced (poll waits for
- *    initial load), so the poll can't race ahead with `lastId=0` while the
- *    server is still answering the immediate fetch.
- *  - Uses `serverTimeout=0` for the initial load (immediate, even if the
- *    conversation has zero messages — previously this hung).
- *  - StrictMode-safe: cancellation flag is checked before every state write.
- */
 export function useMessages(conversationId: string | null, enabled: boolean): UseMessagesResult {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [hasMore, setHasMore] = useState(false);
 
   const lastIdRef = useRef(0);
+  const oldestIdRef = useRef<number | null>(null);
+  const hasMoreRef = useRef(false);
+  const loadingOlderRef = useRef(false);
   const cancelledRef = useRef(false);
   const conversationIdRef = useRef<string | null>(null);
 
@@ -32,19 +29,20 @@ export function useMessages(conversationId: string | null, enabled: boolean): Us
     if (max > lastIdRef.current) lastIdRef.current = max;
   }, []);
 
-  const reset = useCallback(
-    (incoming: Message[]) => {
-      setMessages(incoming);
-      lastIdRef.current = incoming.reduce((m, x) => (x.id > m ? x.id : m), 0);
-    },
-    []
-  );
+  const reset = useCallback((incoming: Message[]) => {
+    setMessages(incoming);
+    lastIdRef.current = incoming.reduce((m, x) => (x.id > m ? x.id : m), 0);
+    oldestIdRef.current = incoming.length > 0 ? incoming[0].id : null;
+    const more = incoming.length === INITIAL_LIMIT;
+    hasMoreRef.current = more;
+    setHasMore(more);
+  }, []);
 
   const reload = useCallback(async () => {
     if (!conversationIdRef.current) return;
     const id = conversationIdRef.current;
     try {
-      const initial = await api.getMessages(id, 0, 0);
+      const initial = await api.getMessages(id, 0, 0, { limit: INITIAL_LIMIT });
       if (cancelledRef.current || conversationIdRef.current !== id) return;
       reset(initial);
     } catch {
@@ -52,13 +50,44 @@ export function useMessages(conversationId: string | null, enabled: boolean): Us
     }
   }, [reset]);
 
+  const loadOlder = useCallback(async () => {
+    if (!conversationIdRef.current || !hasMoreRef.current || loadingOlderRef.current) return;
+    const id = conversationIdRef.current;
+    const beforeId = oldestIdRef.current;
+    if (!beforeId) return;
+
+    loadingOlderRef.current = true;
+    try {
+      const older = await api.getMessages(id, 0, 0, { beforeId, limit: INITIAL_LIMIT });
+      if (cancelledRef.current || conversationIdRef.current !== id) return;
+      const more = older.length === INITIAL_LIMIT;
+      if (older.length > 0) {
+        oldestIdRef.current = older[0].id;
+        setMessages((prev) => {
+          const seen = new Set(prev.map((m) => m.id));
+          const fresh = older.filter((m) => !seen.has(m.id));
+          return fresh.length > 0 ? [...fresh, ...prev] : prev;
+        });
+      }
+      hasMoreRef.current = more;
+      setHasMore(more);
+    } catch {
+      // silent
+    } finally {
+      loadingOlderRef.current = false;
+    }
+  }, []);
+
   useEffect(() => {
     cancelledRef.current = false;
     conversationIdRef.current = conversationId;
 
     if (!enabled || !conversationId) {
       setMessages([]);
+      setHasMore(false);
       lastIdRef.current = 0;
+      oldestIdRef.current = null;
+      hasMoreRef.current = false;
       return () => {
         cancelledRef.current = true;
       };
@@ -67,16 +96,23 @@ export function useMessages(conversationId: string | null, enabled: boolean): Us
     let cancelled = false;
     cancelledRef.current = false;
     lastIdRef.current = 0;
+    oldestIdRef.current = null;
+    hasMoreRef.current = false;
     setMessages([]);
+    setHasMore(false);
 
     const id = conversationId;
 
     (async () => {
       try {
-        const initial = await api.getMessages(id, 0, 0);
+        const initial = await api.getMessages(id, 0, 0, { limit: INITIAL_LIMIT });
         if (cancelled || conversationIdRef.current !== id) return;
         setMessages(initial);
         lastIdRef.current = initial.reduce((m, x) => (x.id > m ? x.id : m), 0);
+        oldestIdRef.current = initial.length > 0 ? initial[0].id : null;
+        const more = initial.length === INITIAL_LIMIT;
+        hasMoreRef.current = more;
+        setHasMore(more);
       } catch {
         if (!cancelled) {
           await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -95,10 +131,7 @@ export function useMessages(conversationId: string | null, enabled: boolean): Us
               if (!fresh.length) return previous;
               return [...previous, ...fresh].sort((a, b) => a.id - b.id);
             });
-            lastIdRef.current = incoming.reduce(
-              (m, x) => (x.id > m ? x.id : m),
-              lastIdRef.current
-            );
+            updateLastId(incoming);
           }
         } catch {
           await new Promise((resolve) => setTimeout(resolve, 1500));
@@ -110,7 +143,7 @@ export function useMessages(conversationId: string | null, enabled: boolean): Us
       cancelled = true;
       cancelledRef.current = true;
     };
-  }, [conversationId, enabled]);
+  }, [conversationId, enabled, updateLastId]);
 
-  return { messages, reload, reset };
+  return { messages, hasMore, loadOlder, reload, reset };
 }

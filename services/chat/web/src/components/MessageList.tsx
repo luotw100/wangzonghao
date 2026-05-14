@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Account, Conversation, Message } from '../api';
 import { contactDisplayName, mediaUrl } from '../api';
 import Avatar from './Avatar';
@@ -9,6 +9,8 @@ interface MessageListProps {
   conversation: Conversation;
   messages: Message[];
   perspective: 'self' | 'contact';
+  hasMore: boolean;
+  loadOlder: () => Promise<void>;
 }
 
 interface Row {
@@ -18,13 +20,27 @@ interface Row {
   label?: string;
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 function MediaContent({ message }: { message: Message }) {
+  const [loaded, setLoaded] = useState(false);
+
+  if (!loaded) {
+    const label =
+      message.msg_type === 'image' ? '图片'
+      : message.msg_type === 'audio' ? '音频'
+      : message.msg_type === 'video' ? '视频'
+      : '文件';
+    return (
+      <button className="media-placeholder" onClick={() => setLoaded(true)} type="button">
+        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+          <polyline points="7 10 12 15 17 10" />
+          <line x1="12" y1="15" x2="12" y2="3" />
+        </svg>
+        <span>{label}</span>
+      </button>
+    );
+  }
+
   const url = mediaUrl(message.content);
   switch (message.msg_type) {
     case 'image':
@@ -44,10 +60,20 @@ function MediaContent({ message }: { message: Message }) {
   }
 }
 
-export default function MessageList({ account, conversation, messages, perspective }: MessageListProps) {
+export default function MessageList({
+  account,
+  conversation,
+  messages,
+  perspective,
+  hasMore,
+  loadOlder,
+}: MessageListProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const previousLengthRef = useRef(0);
   const previousConversationRef = useRef<string | null>(null);
+  const savedScrollHeightRef = useRef(0);
+  const pendingPrependRef = useRef(false);
+  const loadingOlderRef = useRef(false);
 
   const rows: Row[] = useMemo(() => {
     const out: Row[] = [];
@@ -66,19 +92,31 @@ export default function MessageList({ account, conversation, messages, perspecti
     return out;
   }, [messages]);
 
+  // Preserve scroll position when older messages are prepended.
+  useLayoutEffect(() => {
+    if (!pendingPrependRef.current) return;
+    pendingPrependRef.current = false;
+    const node = containerRef.current;
+    if (!node) return;
+    const delta = node.scrollHeight - savedScrollHeightRef.current;
+    if (delta > 0) node.scrollTop += delta;
+  }, [messages]);
+
+  // Auto-scroll on conversation switch or new messages near bottom.
   useEffect(() => {
     const node = containerRef.current;
     if (!node) return;
     const conversationChanged = previousConversationRef.current !== conversation.id;
     previousConversationRef.current = conversation.id;
-    const grew = messages.length > previousLengthRef.current;
+    const prevLen = previousLengthRef.current;
     previousLengthRef.current = messages.length;
 
     if (conversationChanged) {
       node.scrollTop = node.scrollHeight;
       return;
     }
-    if (grew) {
+    // New messages appended (not prepended)
+    if (messages.length > prevLen && !pendingPrependRef.current) {
       const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
       if (distanceFromBottom < 120) {
         node.scrollTop = node.scrollHeight;
@@ -86,19 +124,53 @@ export default function MessageList({ account, conversation, messages, perspecti
     }
   }, [messages.length, conversation.id]);
 
+  async function handleLoadOlder() {
+    if (loadingOlderRef.current || !hasMore) return;
+    loadingOlderRef.current = true;
+    savedScrollHeightRef.current = containerRef.current?.scrollHeight ?? 0;
+    pendingPrependRef.current = true;
+    try {
+      await loadOlder();
+    } finally {
+      loadingOlderRef.current = false;
+    }
+  }
+
+  function handleScroll() {
+    const node = containerRef.current;
+    if (!node || !hasMore || loadingOlderRef.current) return;
+    if (node.scrollTop < 80) {
+      handleLoadOlder();
+    }
+  }
+
   if (messages.length === 0) {
     return (
-      <div className="messages-empty">
-        <EmptyChatArt />
-        <h3>开始一段对话</h3>
-        <p>选择 Enter 发送文本消息，或点击附件按钮发送图片/音频/视频/文件。</p>
+      <div className="messages">
+        <div className="messages-empty">
+          <EmptyChatArt />
+          <h3>开始一段对话</h3>
+          <p>选择 Enter 发送文本消息，或点击附件按钮发送图片/音频/视频/文件。</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="messages" ref={containerRef}>
+    <div className="messages" ref={containerRef} onScroll={handleScroll}>
       <div className="messages-inner">
+        {hasMore && (
+          <div className="messages-load-more">
+            <button
+              type="button"
+              className="messages-load-more-btn"
+              onClick={handleLoadOlder}
+              disabled={loadingOlderRef.current}
+            >
+              加载更早的消息
+            </button>
+          </div>
+        )}
         {rows.map((row) => {
           if (row.type === 'separator') {
             return (
@@ -112,6 +184,7 @@ export default function MessageList({ account, conversation, messages, perspecti
           const senderName =
             message.sender_type === 'self' ? account.nickname : contactDisplayName(conversation.contact);
           const seed = message.sender_type === 'self' ? account.id : conversation.contact.id;
+          const sourceLabel = message.source === 'import' ? '导入' : '实时';
           return (
             <article key={row.key} className={isOnRight ? 'bubble-row right' : 'bubble-row left'}>
               <Avatar name={senderName} seed={seed} size={36} />
@@ -122,7 +195,6 @@ export default function MessageList({ account, conversation, messages, perspecti
                       ? 'bubble bubble-self'
                       : 'bubble bubble-contact'
                   }
-                  title={formatFullTime(message.created_at)}
                 >
                   {message.msg_type === 'text' ? (
                     message.content
@@ -130,7 +202,9 @@ export default function MessageList({ account, conversation, messages, perspecti
                     <MediaContent message={message} />
                   )}
                 </div>
-                {message.source === 'import' && <span className="bubble-tag">导入</span>}
+                <span className="bubble-time-tip">
+                  {formatFullTime(message.created_at)} · {sourceLabel}
+                </span>
               </div>
             </article>
           );

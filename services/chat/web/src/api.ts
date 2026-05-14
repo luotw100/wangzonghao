@@ -216,30 +216,36 @@ export function mediaUrl(storageKey: string): string {
 }
 
 /**
- * Fetch messages newer than `lastId`.
+ * Fetch messages for a conversation.
  *
- * Server-side long-polling: `serverTimeout` (seconds) tells the server how long
- * to wait for new messages before returning an empty list. Pass `0` for an
- * immediate, non-blocking fetch (used for the initial load). Pass e.g. `30`
- * for the live tail.
+ * Modes:
+ *  - Long-poll (new messages): lastId > 0 or serverTimeout > 0
+ *  - Initial load (latest N):  lastId=0, serverTimeout=0, options.limit set
+ *  - Load older (scroll up):   options.beforeId set (always immediate)
  */
 export async function getMessages(
   conversationId: string,
   lastId: number,
-  serverTimeout = 30
+  serverTimeout = 30,
+  options?: { beforeId?: number; limit?: number }
 ): Promise<Message[]> {
   const token = getToken();
   const controller = new AbortController();
-  // Client abort guard: server timeout + 5s, capped at 10s minimum for the
-  // immediate (timeout=0) case.
   const clientTimeout = serverTimeout > 0 ? serverTimeout * 1000 + 5000 : 10000;
   const timeoutId = setTimeout(() => controller.abort(), clientTimeout);
   const headers = new Headers();
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
+  const params = new URLSearchParams({
+    last_id: String(lastId),
+    timeout: String(serverTimeout),
+  });
+  if (options?.beforeId !== undefined) params.set('before_id', String(options.beforeId));
+  if (options?.limit !== undefined) params.set('limit', String(options.limit));
+
   try {
     const res = await fetch(
-      `${API_BASE}/conversations/${conversationId}/messages?last_id=${lastId}&timeout=${serverTimeout}`,
+      `${API_BASE}/conversations/${conversationId}/messages?${params}`,
       { headers, signal: controller.signal }
     );
     clearTimeout(timeoutId);

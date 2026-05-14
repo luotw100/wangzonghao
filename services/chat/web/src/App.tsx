@@ -125,6 +125,8 @@ export default function App() {
           account={auth.account}
           conversation={activeConversation}
           messages={messagesState.messages}
+          hasMore={messagesState.hasMore}
+          onLoadOlder={messagesState.loadOlder}
           onMessagesReload={messagesState.reload}
           onWorkspaceReload={workspace.reload}
           onBack={() => setMobileView('list')}

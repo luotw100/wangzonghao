@@ -127,16 +127,17 @@ export default function Sidebar({
         </div>
         <button
           type="button"
-          className="icon-btn"
+          className="import-btn"
           aria-label="导入聊天记录"
           title="导入聊天记录"
           onClick={onOpenImport}
         >
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-            <polyline points="7 10 12 15 17 10" />
-            <line x1="12" y1="15" x2="12" y2="3" />
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+            <polyline points="8 12 12 16 16 12" />
+            <line x1="12" y1="3" x2="12" y2="16" />
           </svg>
+          <span>导入</span>
         </button>
         <button
           type="button"

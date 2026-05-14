@@ -23,7 +23,7 @@
 
 - `Account`
 - `ProviderConfig`
-- `Persona`
+- `Persona`（含 `timezone: string`）
 - `Bridge`
 - `Inbox`
 - `Contact`
@@ -37,7 +37,7 @@
 - Admin overview：`getAdminOverview`（admin-only，返回 `AdminOverview { totals, accounts[] }`）。
 - Account admin：`getAccounts`、`createAccount`、`updateAccount`、`resetAccountPassword`。
 - Providers：`getProviderConfigs`、`createProviderConfig`、`updateProviderConfig`、`deleteProviderConfig`。
-- Personas：`getPersonas`、`getPersona`、`createPersona`、`updatePersona`、`deletePersona`。
+- Personas：`getPersonas`、`getPersona`、`createPersona`（含 `timezone?`）、`updatePersona`（含 `timezone?`）、`deletePersona`。
 - Bridges：`getBridges`、`deleteBridge`。
 - Inboxes：`getInboxes`、`updateInbox`。
 - Contacts：`getConversations`、`getContactMessages`、`updateContact`。
@@ -88,7 +88,7 @@ Tab 类型按角色区分：
 - `providers`
 - `error`
 
-`loadAll()` 并发拉取 bridges、personas、inboxes。当前账号 role 是 admin 时额外拉 providers；普通 user 不拉 ProviderConfig。
+`loadAll()` 并发拉取 bridges、personas、inboxes。当前账号 role 是 admin 时额外拉 providers；普通 user 不拉 ProviderConfig。`loadAll()` 每 10 秒后台静默轮询一次（`setInterval`，不触发 loading 状态）。
 
 ## TakeoverView
 
@@ -103,9 +103,9 @@ State：
 
 流程：
 
-1. 拉 `/conversations`。
+1. 拉 `/conversations`，每 3 秒后台静默轮询（`setInterval`）。
 2. 没有 selected 时选第一个 contact。
-3. selected contact 变化时拉 messages。
+3. selected contact 变化时拉 messages；messages 同样每 3 秒静默轮询。
 4. 按 Inbox 分组 contacts。
 5. 左侧显示 Inbox/Contact list，右侧显示 ContactDetail。
 
@@ -177,8 +177,8 @@ contact.reply_provider_config_id ?? inbox.reply_provider_config_id ?? global def
 ## PersonasView
 
 - 列出 Persona。
-- Create modal 调 `api.createPersona()`。
-- Edit modal 调 `api.updatePersona()`。
+- Create modal 调 `api.createPersona()`，包含 `name`、`persona_md`、`timezone` 字段。
+- Edit modal 调 `api.updatePersona()`，同样暴露 `timezone` 字段。
 - Delete 调 `api.deletePersona()`。
 
 ## SettingsView

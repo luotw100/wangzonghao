@@ -103,6 +103,7 @@
 - `card_md`
 - provider `base_url`、`api_key`、`model`
 - `inbox_id`
+- `display_tz`：来自 `persona.timezone or "UTC"`，IANA 时区字符串，用于历史消息时间戳本地化。
 
 `_ReplyDecision` 包含 skip reason、ctx、history。
 
@@ -131,7 +132,7 @@
 
 1. `## 你的人设` + Persona markdown。
 2. `## 关于对方（display_name）` + Contact card。
-3. `## 最近的对话` + `_format_history_lines()`。
+3. `## 最近的对话` + `_format_history_lines(history, ctx.display_tz)`。
 4. “现在轮到你回复了，按要求输出 JSON。”
 
 历史格式：
@@ -140,6 +141,8 @@
 [05-09 12:00] 我: ...
 [05-09 12:01] 对方: ...
 ```
+
+时间戳通过 `ZoneInfo(display_tz)` 将 UTC-aware `m.timestamp` 转换为 persona 所在时区后格式化（`%m-%d %H:%M`）。`ZoneInfo` 失败时回退到 UTC。
 
 ### Parse 和 commit
 
@@ -185,11 +188,11 @@ Bridge 收到即发，不做延迟。
 
 当前流程：
 
-1. `_load_ctx()` 加载 Inbox、target Persona、ProviderConfig，并校验 Provider active 且有 API key。
+1. `_load_ctx()` 加载 Inbox、target Persona、ProviderConfig，并校验 Provider active 且有 API key。`ctx` 包含 `display_tz`（来自 `persona.timezone or "UTC"`）。
 2. `run_distill()` 列出 source Inbox 下 active Contacts。
 3. 每个有消息的 Contact：
    - 读取消息，按 timestamp/id 升序；
-   - 转为 `TextMessage`；
+   - `_messages_to_text_messages(msgs, ctx.display_tz)`：将 UTC-aware 时间戳转换为 persona 时区后格式化；
    - split sessions；
    - pack windows；
    - 顺序 fold 每个 window。

@@ -14,7 +14,7 @@
 - `role`：`self | counterpart`。
 - `msg_type`：`text | image | audio | video | file`。text 时 content 为文本；media 时 content 为平台 S3 storage key。
 - `content`：文本内容或平台 storage key。
-- `sent_at`：naive UTC datetime。
+- `sent_at`：UTC-aware datetime（`tzinfo` 已设置）。ChatAdapter 的 `_parse_iso()` 确保：若解析结果为 naive datetime，则补 `timezone.utc`。
 
 ### `Adapter`
 

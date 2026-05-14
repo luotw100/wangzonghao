@@ -45,7 +45,8 @@ Account
 
 当前约束和字段事实：
 
-- `Contact` 唯一约束：`(account_id, platform_contact_id)`。
+- `Account` 使用 `nickname`（不再是 `display_name`）。
+- `Contact` 字段：`username`（平台侧联系人 id，原 `platform_contact_id`）、`nickname`（原 `display_name`）、`remark_name`（用户备注名，nullable）。唯一约束 `(account_id, username)`。
 - `Conversation` 唯一约束：`(account_id, contact_id)`。
 - Contact / Conversation 通过 `is_deleted`、`deleted_at` 软删除。
 - `Message.sender_type` 是 `self | contact`，有 CHECK 约束。
@@ -78,12 +79,12 @@ Account
 
 主要 schema：
 
-- Auth：`AccountRead`、`LoginRequest`、`LoginResponse`。
-- Contacts：`ContactCreate`、`ContactUpdate`、`ContactRead`。
+- Auth：`AccountRead`、`AccountUpdate`（只有 `nickname`）、`LoginRequest`、`LoginResponse`。
+- Contacts：`ContactCreate`（`nickname`、`username`、`remark_name`、`avatar_url`）、`ContactUpdate`（只有 `remark_name`；`username` 不可变）、`ContactRead`。
 - Conversations：`ConversationRead`。
-- Messages：`MessageCreate`、`MessageRead`、`ConversationMessages`。
+- Messages：`MessageCreate`、`MessageRead`、`ConversationMessages`、`MessageBulkItem`、`MessageBulkCreate`。
 - Media：`UploadPresignRequest`、`UploadPresignResponse`。
-- Generic：`StatusResponse`。
+- Generic：`StatusResponse`（含可选 `count` 字段）。
 
 ## API endpoints
 
@@ -93,6 +94,7 @@ Auth：
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 - `GET /api/auth/me`
+- `PATCH /api/auth/me`：更新自己的 nickname（body: `AccountUpdate`）。
 
 Contacts：
 
@@ -109,7 +111,8 @@ Messages：
 
 - `POST /api/conversations/{conversation_id}/messages`
 - `POST /api/connector/conversations/{conversation_id}/messages`
-- `GET /api/conversations/{conversation_id}/messages?last_id=N&timeout=T`
+- `POST /api/conversations/{conversation_id}/messages/bulk`：批量导入，body: `MessageBulkCreate`（list of `MessageBulkItem`），单个事务写入，保留插入顺序。
+- `GET /api/conversations/{conversation_id}/messages?last_id=N&timeout=T[&before_id=M&limit=L]`：新增 `before_id` 参数支持向上翻页（拉 `id < before_id` 的旧消息，立即返回不 long-poll）。
 
 Media：
 
@@ -123,7 +126,8 @@ Media：
 - `get_contact_or_404()` / `get_conversation_or_404()`：按 account 校验归属。
 - `get_or_create_direct_conversation()`：恢复软删除会话或创建一对一会话。
 - `add_message()`：校验 sender_type 和 msg_type（media 类型要求 content 必须以 `media/{account_id}/` 开头），写 Message，并更新 conversation timestamp。
-- `get_messages_after_id()`：按 last id 拉消息。
+- `get_messages_after_id()`：按 last id 拉消息（用于 long-poll）。
+- `get_messages_before_id()`：按 before_id 倒序拉旧消息（用于向上翻页）。
 - `build_messages_payload()`：返回 conversation + messages。
 
 ## 媒体消息流程
@@ -166,15 +170,22 @@ Chat sandbox 当前支持 5 种消息类型：`text`、`image`、`audio`、`vide
 - `UPLOAD_MAX_SIZE_MB`：必填，文件大小上限 MB，缺失时启动报错。
 - `S3_PUBLIC_URL`：必填，浏览器可达的 S3 地址（如 `https://s3.laborster.com`），用于生成 presigned URL。缺失时启动报错。
 
-## Long polling
+## Long polling / 分页拉取
 
-`GET /api/conversations/{conversation_id}/messages` 当前行为：
+`GET /api/conversations/{conversation_id}/messages?last_id=N&timeout=T[&before_id=M&limit=L]` 当前行为：
 
+**立即返回路径**（不 long-poll）：
+- `before_id` 有值：调 `get_messages_before_id(before_id, limit or 100)`，返回 `id < before_id` 的最近 N 条（用于向上翻页）。
+- `limit > 0` 且 `last_id == 0` 且 `timeout == 0`：调 `get_messages_after_id(0, limit)` 返回最新 N 条（初始加载有界拉取）。
+
+**Long-poll 路径**：
 1. 每轮打开新的 DB session。
 2. 查询 `Message.id > last_id`。
 3. 有消息立即返回。
 4. 到达 `timeout` 返回空 messages。
 5. 每轮 sleep 最多 0.2 秒。
+
+`limit` 查询参数范围 `[0, 500]`；`before_id` 最小 1。
 
 Chat web 和 Bridge ChatAdapter 都使用这个 endpoint。
 

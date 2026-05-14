@@ -53,6 +53,7 @@ OpenAI-compatible LLM Provider。
 - `account_id`：`String(48)`。
 - `name`：`String(128)`。
 - `persona_md`：`Text`，nullable。
+- `timezone`：`String(64)`，IANA 时区（如 `"Asia/Shanghai"`），`server_default="UTC"`，应用层默认 `"UTC"`。
 - `status`：`String(16)`，CHECK `active | archived`。
 - unique `(account_id, name)`。
 

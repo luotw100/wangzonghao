@@ -2,7 +2,7 @@
 
 The Chat sandbox stands in for "platform A" while we dogfood the bridge
 protocol. The bridge logs into a chat account (which is the streamer's
-on-chat identity) and round-robin polls all of that account's conversations.
+on-chat identity) and polls all of that account's conversations.
 """
 
 from __future__ import annotations
@@ -50,9 +50,8 @@ class ChatAdapter(Adapter):
         self._http: Optional[httpx.AsyncClient] = None
         self._token: Optional[str] = None
         self._self_account_id: Optional[str] = None
-        # Per-conversation state: keyed by conversation_id
+        # conv_id → {peer_id, peer_display_name}
         self._threads: Dict[str, Dict[str, object]] = {}
-        # Refresh-conversations interval in stream loop
         self._poll_sleep = 2.0
 
     @property
@@ -85,15 +84,19 @@ class ChatAdapter(Adapter):
         for conv in r.json():
             cid = conv["id"]
             contact = conv["contact"]
-            entry = self._threads.get(cid)
-            if entry is None:
+            display_name = (
+                contact.get("remark_name")
+                or contact.get("nickname")
+                or contact.get("username")
+                or contact["id"]
+            )
+            if cid not in self._threads:
                 self._threads[cid] = {
                     "peer_id": contact["id"],
-                    "peer_display_name": contact["display_name"],
-                    "last_msg_id": 0,
+                    "peer_display_name": display_name,
                 }
             else:
-                entry["peer_display_name"] = contact["display_name"]
+                self._threads[cid]["peer_display_name"] = display_name
 
     def _conv_id_for_peer(self, peer_id: str) -> Optional[str]:
         for cid, t in self._threads.items():
@@ -101,51 +104,53 @@ class ChatAdapter(Adapter):
                 return cid
         return None
 
-    async def _fetch_conv_messages(self, conv_id: str, last_id: int) -> List[Dict[str, object]]:
+    async def _fetch_since(self, conv_id: str, since_id: int) -> List[Dict[str, object]]:
         r = await self.http.get(
             f"{self.base}/api/conversations/{conv_id}/messages",
-            params={"last_id": last_id, "timeout": 0},
+            params={"last_id": since_id, "timeout": 0},
             headers=self._auth_headers,
         )
         r.raise_for_status()
         return r.json().get("messages", [])
 
-    def _msg_to_incoming(self, conv_state: Dict[str, object], m: Dict[str, object]) -> IncomingMessage:
-        role = "self" if m["sender_type"] == "self" else "counterpart"
-        msg_type = m.get("msg_type", "text")
+    def _msg_to_incoming(
+        self, conv_state: Dict[str, object], m: Dict[str, object]
+    ) -> IncomingMessage:
+        if m["sender_type"] == "self":
+            sender_id = self._self_account_id or ""
+        else:
+            sender_id = str(conv_state["peer_id"])
         return IncomingMessage(
             peer_id=str(conv_state["peer_id"]),
             peer_display_name=str(conv_state["peer_display_name"]),
             platform_msg_id=str(m["id"]),
-            role=role,
-            msg_type=msg_type,
+            sender_id=sender_id,
+            msg_type=str(m.get("msg_type", "text")),
             content=str(m["content"]),
             sent_at=_parse_iso(str(m["created_at"])),
         )
 
-    async def list_initial_messages(self, since_ms: int) -> List[IncomingMessage]:
-        await self._refresh_threads()
-        out: List[IncomingMessage] = []
-        for cid, conv_state in self._threads.items():
-            msgs = await self._fetch_conv_messages(cid, last_id=0)
-            for m in msgs:
-                out.append(self._msg_to_incoming(conv_state, m))
-                if int(m["id"]) > int(conv_state["last_msg_id"]):
-                    conv_state["last_msg_id"] = int(m["id"])
-        return out
-
-    async def stream_incoming(self) -> AsyncIterator[IncomingMessage]:
+    async def scan(
+        self,
+        cursors: dict[str, str | None],
+    ) -> AsyncIterator[IncomingMessage]:
+        """Continuously yield messages. Merges historical and live in one loop."""
         while True:
             try:
                 await self._refresh_threads()
                 yielded = 0
                 for cid, conv_state in list(self._threads.items()):
-                    msgs = await self._fetch_conv_messages(cid, int(conv_state["last_msg_id"]))
+                    peer_id = str(conv_state["peer_id"])
+                    since_str = cursors.get(peer_id)
+                    since_id = int(since_str) if since_str else 0
+                    msgs = await self._fetch_since(cid, since_id)
                     for m in msgs:
                         yield self._msg_to_incoming(conv_state, m)
                         yielded += 1
-                        if int(m["id"]) > int(conv_state["last_msg_id"]):
-                            conv_state["last_msg_id"] = int(m["id"])
+                        msg_id = int(m["id"])
+                        prev = int(cursors.get(peer_id) or 0)
+                        if msg_id > prev:
+                            cursors[peer_id] = str(msg_id)
                 if yielded == 0:
                     await asyncio.sleep(self._poll_sleep)
             except httpx.HTTPStatusError as exc:
@@ -155,6 +160,8 @@ class ChatAdapter(Adapter):
                 else:
                     logger.error("chat poll http error: %s", exc)
                     await asyncio.sleep(self._poll_sleep)
+            except asyncio.CancelledError:
+                return
             except Exception as exc:
                 logger.error("chat poll error: %s", exc)
                 await asyncio.sleep(self._poll_sleep)
@@ -172,8 +179,7 @@ class ChatAdapter(Adapter):
             headers=self._auth_headers,
         )
         r.raise_for_status()
-        platform_msg_id = str(r.json().get("id"))
-        return platform_msg_id
+        return str(r.json().get("id"))
 
     async def send_text(self, peer_id: str, content: str) -> str:
         return await self.send(peer_id, "text", content)
@@ -205,13 +211,11 @@ class ChatAdapter(Adapter):
         )
         presign_r.raise_for_status()
         presign = presign_r.json()
-        storage_key = presign["storage_key"]
-        upload_url = presign["upload_url"]
-
-        put_r = await self.http.put(upload_url, content=data, headers={"Content-Type": mime_type})
+        put_r = await self.http.put(
+            presign["upload_url"], content=data, headers={"Content-Type": mime_type},
+        )
         put_r.raise_for_status()
-
-        return await self.send(peer_id, msg_type, storage_key)
+        return await self.send(peer_id, msg_type, presign["storage_key"])
 
     async def close(self) -> None:
         if self._http is not None:

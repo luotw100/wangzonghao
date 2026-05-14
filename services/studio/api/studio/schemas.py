@@ -7,7 +7,6 @@ from studio.enums import (
     AccountRole,
     AccountStatus,
     ContactStatus,
-    MessageRole,
     OutboundAckResult,
     OutboundMessageType,
     PersonaStatus,
@@ -147,10 +146,11 @@ class BridgeIncomingMessage(StrictModel):
     inbox_id: str
     peer_platform_id: str
     peer_display_name: str
-    platform_msg_id: str
-    role: MessageRole
+    platform_msg_id: Optional[str] = None   # nullable; advisory only
+    sender_id: str                           # platform id of the sender (replaces role)
     msg_type: str = "text"
     content: str
+    content_hash: Optional[str] = None      # for media: "sha256:{hex}"; None for text
     sent_at: datetime
 
 
@@ -165,5 +165,11 @@ class BridgeOutboundAck(StrictModel):
 
 
 class BridgeMediaPresignRequest(StrictModel):
+    filename: str
+    mime_type: str
+
+
+class BridgeMediaCheckOrPresignRequest(StrictModel):
+    content_hash: str   # "sha256:{hex}"
     filename: str
     mime_type: str

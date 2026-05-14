@@ -198,12 +198,31 @@ class Message(Base):
     id              = Column(BigInteger, primary_key=True, autoincrement=True)
     contact_id      = Column(String(48), ForeignKey("contacts.id"), nullable=False, index=True)
     external_id     = Column(String(256), nullable=False)
+    msg_hash        = Column(String(64), nullable=True)   # SHA256 content hash for cross-device dedup
     role            = Column(String(16), nullable=False)
+    sender_id       = Column(String(256), nullable=True)  # platform id of the sender
     msg_type        = Column(String(16), nullable=False)
     sender_name     = Column(String(256), nullable=True)
     content         = Column(Text, nullable=False)
     timestamp       = Column(DateTime(timezone=True), nullable=False, index=True)
     created_at      = Column(DateTime(timezone=True), nullable=False)
+
+
+class MediaHash(Base):
+    """Maps (account_id, content_hash) → Studio S3 storage_key.
+
+    Populated when Bridge sends a new media message. Used by check-or-presign
+    to avoid re-uploading identical files across Bridge instances or restarts.
+    """
+    __tablename__ = "media_hashes"
+    __table_args__ = (
+        UniqueConstraint("account_id", "content_hash", name="uq_media_hash_account"),
+    )
+
+    id           = Column(BigInteger, primary_key=True, autoincrement=True)
+    account_id   = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
+    content_hash = Column(String(71), nullable=False)   # "sha256:{64hexchars}"
+    storage_key  = Column(String(256), nullable=False)
 
 
 class DistillJob(Base):

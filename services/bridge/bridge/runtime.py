@@ -1,48 +1,38 @@
-"""Bridge daemon runtime — multi-adapter, single connection to Studio.
+"""Bridge daemon runtime — producer-consumer inbound model.
 
-The daemon is given an opaque list of platform login claims (e.g. chat
-username/password tuples) on the CLI. It logs each one in to obtain a
-`platform_self_id`, then handshakes Studio with `(platform, platform_self_id)`
-pairs. Studio owns the inbox_id (auto-creating an Inbox if it's the first
-time we've seen this self_id under this account) and returns the resolved
-mapping. The daemon then opens an inbound stream per inbox and shares one
-outbound long-poll across them.
+Inbound (platform → Bridge → Studio):
+  Producer per inbox: adapter.scan() → INSERT local_messages (dedup by local_hash)
+  Consumer (global):  read unsent rows → check-or-presign for media → push incoming
 
-Bridge is a pure message forwarder: receive from Studio, send to platform.
-No pacing, no delay — Studio controls when each message becomes eligible
-via the send_after field on OutboundMessage.
-
-For media messages (image/audio/video/file), Bridge acts as a pipe:
-- Inbound: download binary from platform S3 → upload to Studio S3 →
-  replace content with Studio storage key before pushing to Studio.
-- Outbound: download binary from Studio S3 → upload to platform S3 →
-  send platform message with platform storage key.
+Outbound (Studio → Bridge → platform): unchanged from prior design.
 """
 
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import mimetypes
 from contextlib import suppress
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from bridge.adapters.base import Adapter, IncomingMessage, build_adapter
+from bridge.local_store import LocalMessage, LocalStore, canonical_sent_at, compute_local_hash
 from bridge.state import BridgeState
 from bridge.studio_client import StudioClient
 
 logger = logging.getLogger(__name__)
 
 HEARTBEAT_INTERVAL = 15.0
-INBOUND_BATCH_LINGER = 0.4
-INBOUND_BATCH_MAX = 30
 OUTBOUND_LONG_POLL_TIMEOUT = 30
+CONSUMER_SLEEP = 1.0         # seconds to sleep when no unsent messages
+CONSUMER_BATCH = 50          # messages per consumer loop iteration
 
 
 @dataclass(frozen=True)
 class InboxClaim:
-    """One chat-platform login the user asked us to run."""
     platform: str
     raw: Dict[str, str]
 
@@ -53,7 +43,7 @@ class _AdapterEntry:
     platform: str
     platform_self_id: str
     adapter: Adapter
-    inbound_task: Optional[asyncio.Task[Any]] = None
+    producer_task: Optional[asyncio.Task[Any]] = None
 
 
 class BridgeRuntime:
@@ -63,19 +53,22 @@ class BridgeRuntime:
         studio: StudioClient,
         state: BridgeState,
         claims: List[InboxClaim],
+        store: LocalStore,
+        media_cache_dir: Path,
     ) -> None:
         self._studio = studio
         self._state = state
         self._claims = claims
+        self._store = store
+        self._media_cache_dir = media_cache_dir
         self._adapters: Dict[str, _AdapterEntry] = {}
-        self._inbound_queue: asyncio.Queue[Tuple[str, IncomingMessage]] = asyncio.Queue()
         self._cursor: int = 0
         self._stop = asyncio.Event()
         self._loop_tasks: List[asyncio.Task[Any]] = []
         self._media_sem = asyncio.Semaphore(5)
 
-    async def run(self, state_dir: str) -> None:
-        # 1) Log into each platform claim → get platform_self_id.
+    async def run(self) -> None:
+        # 1) Login each platform claim.
         prelogged: List[Tuple[InboxClaim, Adapter, str]] = []
         for claim in self._claims:
             adapter = build_adapter(claim.platform, claim.raw)
@@ -89,66 +82,62 @@ class BridgeRuntime:
                 continue
             prelogged.append((claim, adapter, self_id))
 
-        # 2) Connect to Studio: try token reuse first, fall back to handshake.
+        # 2) Connect to Studio.
         handshake_payload = [
-            {"platform": claim.platform, "platform_self_id": self_id}
-            for (claim, _adapter, self_id) in prelogged
+            {"platform": c.platform, "platform_self_id": self_id}
+            for (c, _, self_id) in prelogged
         ]
-
         info = await self._connect(handshake_payload)
         if info is None:
-            for _claim, adapter, _ in prelogged:
+            for _, adapter, _ in prelogged:
                 with suppress(Exception):
                     await adapter.close()
             return
         self._state.machine_id = str(info["machine_id"])
         self._state.token = str(info["token"])
-
         self._cursor = int(info.get("cursor", 0))
-        served = info.get("inboxes", [])
-        served_by_key: Dict[Tuple[str, str], Dict[str, Any]] = {
-            (i["platform"], i["platform_self_id"]): i for i in served
+        served_by_key = {
+            (i["platform"], i["platform_self_id"]): i for i in info.get("inboxes", [])
         }
-
         logger.info(
             "handshake ok: bridge=%s machine_id=%s account=%s served=%d cursor=%d",
-            info.get("bridge_id"), self._state.machine_id, info.get("account_id"), len(served), self._cursor,
+            info.get("bridge_id"), self._state.machine_id,
+            info.get("account_id"), len(served_by_key), self._cursor,
         )
 
-        # 3) Bind each prelogged adapter to its assigned inbox_id; drop any
-        # that Studio refused because the identity is invalid for this account.
+        # 3) Initialise local store.
+        self._store.migrate()
+
+        # 4) Bind adapters and start producers.
         loop = asyncio.get_running_loop()
         for claim, adapter, self_id in prelogged:
             assigned = served_by_key.get((claim.platform, self_id))
             if not assigned:
-                logger.warning(
-                    "platform=%s self=%s not served by Studio; dropping adapter",
-                    claim.platform, self_id,
-                )
+                logger.warning("platform=%s self=%s not served by Studio; dropping",
+                               claim.platform, self_id)
                 with suppress(Exception):
                     await adapter.close()
                 continue
+            inbox_id = assigned["id"]
             entry = _AdapterEntry(
-                inbox_id=assigned["id"],
+                inbox_id=inbox_id,
                 platform=claim.platform,
                 platform_self_id=self_id,
                 adapter=adapter,
             )
-            entry.inbound_task = loop.create_task(
-                self._adapter_inbound_loop(entry.inbox_id, adapter),
-                name=f"inbound-{entry.inbox_id}",
+            cursors = self._store.get_cursors(inbox_id)
+            entry.producer_task = loop.create_task(
+                self._producer_loop(inbox_id, adapter, self_id, cursors),
+                name=f"producer-{inbox_id}",
             )
-            self._adapters[entry.inbox_id] = entry
-            logger.info("adapter up: inbox=%s platform=%s self=%s display=%s",
-                        entry.inbox_id, claim.platform, self_id, assigned.get("display_name"))
-
-        # 4) Initial catch-up batch (idempotent on Studio side).
-        await self._push_initial_catchup()
+            self._adapters[inbox_id] = entry
+            logger.info("adapter up: inbox=%s platform=%s self=%s",
+                        inbox_id, claim.platform, self_id)
 
         # 5) Main loops.
         self._loop_tasks = [
             loop.create_task(self._heartbeat_loop(), name="heartbeat"),
-            loop.create_task(self._inbound_pump_loop(), name="inbound-pump"),
+            loop.create_task(self._consumer_loop(), name="consumer"),
             loop.create_task(self._outbound_loop(), name="outbound"),
         ]
         try:
@@ -164,53 +153,47 @@ class BridgeRuntime:
     def stop(self) -> None:
         self._stop.set()
 
-    async def _connect(self, handshake_payload: List[Dict[str, str]]) -> Optional[Dict[str, Any]]:
-        """Connect to Studio: try token reuse first, fall back to handshake.
+    # ------------------------------------------------------------------
+    # Studio connection
+    # ------------------------------------------------------------------
 
-        Returns the info dict (handshake or heartbeat response) on success,
-        None on failure. Always includes machine_id / token / inboxes / cursor.
-        """
-        # 1) Try saved token — only if all handshake claims are already known
-        #    to Studio (i.e. no new --chat-inbox declarations since last run).
+    async def _connect(self, handshake_payload: List[Dict[str, str]]) -> Optional[Dict[str, Any]]:
         if self._state.token:
             self._studio.token = self._state.token
             try:
-                heartbeat_info = await self._studio.try_heartbeat()
+                hb = await self._studio.try_heartbeat()
             except Exception:
-                heartbeat_info = None
-            if heartbeat_info is not None:
-                served_ids = {(i["platform"], i["platform_self_id"]) for i in heartbeat_info.get("inboxes", [])}
+                hb = None
+            if hb is not None:
+                served_ids = {(i["platform"], i["platform_self_id"]) for i in hb.get("inboxes", [])}
                 claim_ids = {(c["platform"], c["platform_self_id"]) for c in handshake_payload}
                 if not claim_ids - served_ids:
                     logger.info("token reuse ok: machine_id=%s", self._state.machine_id)
-                    heartbeat_info.setdefault("machine_id", self._state.machine_id)
-                    heartbeat_info.setdefault("token", self._state.token)
-                    heartbeat_info.setdefault("cursor", 0)
-                    return heartbeat_info
-                else:
-                    logger.info("new inbox claims detected, skipping token reuse")
-
-        # 2) Full handshake
+                    hb.setdefault("machine_id", self._state.machine_id)
+                    hb.setdefault("token", self._state.token)
+                    hb.setdefault("cursor", 0)
+                    return hb
+                logger.info("new inbox claims detected, skipping token reuse")
         try:
-            info = await self._studio.handshake(
+            return await self._studio.handshake(
                 machine_id=self._state.machine_id, inboxes=handshake_payload,
             )
         except Exception as exc:
             logger.error("handshake failed: %s", exc)
             return None
 
-        return info
-
-    # --- adapter lifecycle ----------------------------------------------
+    # ------------------------------------------------------------------
+    # Adapter lifecycle
+    # ------------------------------------------------------------------
 
     async def _stop_adapter(self, inbox_id: str) -> None:
         entry = self._adapters.pop(inbox_id, None)
         if not entry:
             return
-        if entry.inbound_task:
-            entry.inbound_task.cancel()
+        if entry.producer_task:
+            entry.producer_task.cancel()
             with suppress(asyncio.CancelledError):
-                await entry.inbound_task
+                await entry.producer_task
         with suppress(Exception):
             await entry.adapter.close()
         logger.info("adapter down: inbox=%s", inbox_id)
@@ -219,164 +202,205 @@ class BridgeRuntime:
         for inbox_id in list(self._adapters.keys()):
             await self._stop_adapter(inbox_id)
 
-    # --- per-adapter inbound feed --------------------------------------
+    # ------------------------------------------------------------------
+    # Producer loop (one per inbox)
+    # ------------------------------------------------------------------
 
-    async def _adapter_inbound_loop(self, inbox_id: str, adapter: Adapter) -> None:
+    async def _producer_loop(
+        self,
+        inbox_id: str,
+        adapter: Adapter,
+        platform_self_id: str,
+        cursors: dict[str, str | None],
+    ) -> None:
         try:
-            async for msg in adapter.stream_incoming():
-                await self._inbound_queue.put((inbox_id, msg))
+            async for msg in adapter.scan(cursors):
+                local_msg = await self._to_local_message(inbox_id, adapter, msg)
+                if local_msg is None:
+                    continue
+                inserted = self._store.insert_message(local_msg)
+                if not inserted:
+                    logger.debug("producer: local dedup inbox=%s peer=%s", inbox_id, msg.peer_id)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
-            logger.error("adapter inbound loop crashed (inbox=%s): %s", inbox_id, exc)
+            logger.error("producer crashed inbox=%s: %s", inbox_id, exc)
 
-    async def _push_initial_catchup(self) -> None:
-        for inbox_id, entry in self._adapters.items():
-            try:
-                msgs = await entry.adapter.list_initial_messages(since_ms=0)
-            except Exception as exc:
-                logger.error("initial catchup failed for inbox=%s: %s", inbox_id, exc)
-                continue
-            if msgs:
-                await self._push_batch([(inbox_id, m) for m in msgs])
+    async def _to_local_message(
+        self,
+        inbox_id: str,
+        adapter: Adapter,
+        msg: IncomingMessage,
+    ) -> Optional[LocalMessage]:
+        sent_at_str = canonical_sent_at(msg.sent_at)
 
-    async def _upload_inbound_media(self, adapter: Adapter, msg: IncomingMessage) -> Optional[str]:
-        """Download media from platform → upload to Studio S3. Return Studio storage key or None."""
-        try:
-            data, mime_type = await adapter.download_media(msg.content)
-        except Exception as exc:
-            logger.error("failed to download media from platform (inbox adapter): %s", exc)
-            return None
-
-        ext = mimetypes.guess_extension(mime_type) or ""
-        filename = f"media{ext}"
-        try:
-            presign = await self._studio.presign_upload(filename=filename, mime_type=mime_type)
-        except Exception as exc:
-            logger.error("failed to get presign upload from Studio: %s", exc)
-            return None
-
-        storage_key = presign["storage_key"]
-        upload_url = presign["upload_url"]
-
-        try:
-            r = await self._studio.http.put(upload_url, content=data, headers={"Content-Type": mime_type})
-            r.raise_for_status()
-        except Exception as exc:
-            logger.error("failed to upload media to Studio S3: %s", exc)
-            return None
-
-        return storage_key
-
-    async def _push_batch(self, batch: List[Tuple[str, IncomingMessage]]) -> None:
-        if not batch:
-            return
-
-        # Phase 1: collect media upload tasks for parallel execution
-        upload_futures: List[Tuple[int, asyncio.Future]] = []
-        for idx, (inbox_id, m) in enumerate(batch):
-            if m.msg_type != "text":
-                entry = self._adapters.get(inbox_id)
-                if entry:
-
-                    async def _upload_with_sem(
-                        adapter: Adapter, msg: IncomingMessage,
-                    ) -> Optional[str]:
-                        async with self._media_sem:
-                            return await self._upload_inbound_media(adapter, msg)
-
-                    fut = asyncio.ensure_future(
-                        _upload_with_sem(entry.adapter, m)
-                    )
-                    upload_futures.append((idx, fut))
-
-        # Await all uploads in parallel
-        if upload_futures:
-            indices = [i for i, _ in upload_futures]
-            tasks = [f for _, f in upload_futures]
-            gathered = await asyncio.gather(*tasks, return_exceptions=True)
-            upload_results = dict(zip(indices, gathered))
+        if msg.msg_type == "text":
+            content = msg.content
+            mime_type = None
         else:
-            upload_results = {}
+            # Download from platform, compute sha256, cache locally.
+            async with self._media_sem:
+                try:
+                    data, mime_type = await adapter.download_media(msg.content)
+                except Exception as exc:
+                    logger.error("media download failed inbox=%s peer=%s: %s",
+                                 inbox_id, msg.peer_id, exc)
+                    return None
+            sha256hex = hashlib.sha256(data).hexdigest()
+            cache_path = self._media_cache_dir / sha256hex
+            if not cache_path.exists():
+                cache_path.write_bytes(data)
+            content = f"sha256:{sha256hex}"
 
-        # Phase 2: build payload
-        payload = []
-        for idx, (inbox_id, m) in enumerate(batch):
-            content = m.content
-            msg_type = m.msg_type
-            if msg_type != "text":
-                if idx in upload_results:
-                    result = upload_results[idx]
-                    if isinstance(result, Exception) or result is None:
-                        logger.warning(
-                            "inbound media upload failed; falling back to text for msg %s",
-                            m.platform_msg_id,
-                        )
-                        msg_type = "text"
-                    else:
-                        content = result
-                else:
-                    logger.warning(
-                        "adapter gone for inbox %s; falling back to text for msg %s",
-                        inbox_id, m.platform_msg_id,
-                    )
-                    msg_type = "text"
-            payload.append(self._to_payload(inbox_id, m, content=content, msg_type=msg_type))
-        try:
-            res = await self._studio.push_incoming(payload)
-            logger.info(
-                "inbound: pushed %d (accepted=%s deduped=%s rejected=%s)",
-                len(batch), res.get("accepted"), res.get("deduped"), res.get("rejected"),
-            )
-        except Exception as exc:
-            logger.error("inbound push failed: %s", exc)
+        local_hash = compute_local_hash(
+            inbox_id, msg.peer_id, msg.sender_id, sent_at_str, msg.msg_type, content,
+        )
+        return LocalMessage(
+            inbox_id=inbox_id,
+            peer_id=msg.peer_id,
+            peer_display_name=msg.peer_display_name,
+            platform_msg_id=msg.platform_msg_id,
+            sender_id=msg.sender_id,
+            sent_at=sent_at_str,
+            msg_type=msg.msg_type,
+            content=content,
+            mime_type=mime_type,
+            local_hash=local_hash,
+        )
+
+    # ------------------------------------------------------------------
+    # Consumer loop (global)
+    # ------------------------------------------------------------------
+
+    async def _consumer_loop(self) -> None:
+        while not self._stop.is_set():
+            batch = self._store.get_unsent(limit=CONSUMER_BATCH)
+            if not batch:
+                try:
+                    await asyncio.wait_for(self._stop.wait(), timeout=CONSUMER_SLEEP)
+                except asyncio.TimeoutError:
+                    pass
+                continue
+
+            payload: List[Dict[str, Any]] = []
+            payload_ids: List[int] = []
+            permanent_skip_ids: List[int] = []
+
+            for msg in batch:
+                assert msg.id is not None
+                try:
+                    content, content_hash = await self._resolve_content(msg)
+                    if content is None:
+                        # Permanently unresolvable (e.g. cache deleted + platform gone).
+                        permanent_skip_ids.append(msg.id)
+                        continue
+                    payload.append(self._to_incoming_payload(msg, content, content_hash))
+                    payload_ids.append(msg.id)
+                except Exception as exc:
+                    # Transient failure — leave unsent, retry next round.
+                    logger.warning("consumer: resolve failed id=%s: %s", msg.id, exc)
+
+            for mid in permanent_skip_ids:
+                self._store.mark_sent(mid)
+
+            if not payload:
+                continue
+
+            try:
+                res = await self._studio.push_incoming(payload)
+                logger.info(
+                    "consumer: pushed %d accepted=%s deduped=%s rejected=%s",
+                    len(payload), res.get("accepted"), res.get("deduped"), res.get("rejected"),
+                )
+                for mid in payload_ids:
+                    self._store.mark_sent(mid)
+            except Exception as exc:
+                logger.warning("consumer: push failed, will retry: %s", exc)
+
+    async def _resolve_content(
+        self, msg: LocalMessage
+    ) -> Tuple[Optional[str], Optional[str]]:
+        """Return (content_for_protocol, content_hash_for_protocol).
+
+        For text: (plain_text, None).
+        For media: (studio_storage_key, "sha256:xxx") — uploads if needed.
+        Returns (None, None) if the message must be skipped permanently.
+        """
+        if msg.msg_type == "text":
+            return msg.content, None
+
+        content_hash = msg.content  # "sha256:xxx"
+        sha256hex = content_hash.removeprefix("sha256:")
+        ext = mimetypes.guess_extension(msg.mime_type or "") or ".bin"
+        filename = f"media{ext}"
+        mime_type = msg.mime_type or "application/octet-stream"
+
+        status, storage_key, upload_url = await self._studio.check_or_presign_media(
+            content_hash, filename, mime_type,
+        )
+        if status == "exists":
+            return storage_key, content_hash
+
+        # Need to upload.
+        cache_path = self._media_cache_dir / sha256hex
+        if not cache_path.exists():
+            # Cache was manually deleted; try to re-download from platform.
+            entry = self._adapters.get(msg.inbox_id)
+            if entry is None:
+                logger.warning(
+                    "consumer: media cache missing and no adapter for inbox=%s; skipping id=%s",
+                    msg.inbox_id, msg.id,
+                )
+                return None, None
+            try:
+                data, _ = await entry.adapter.download_media(
+                    # We no longer have the platform key; the content field is now a sha256.
+                    # This re-download path is best-effort only.
+                    sha256hex,
+                )
+                cache_path.write_bytes(data)
+            except Exception as exc:
+                logger.warning(
+                    "consumer: re-download failed id=%s: %s; skipping", msg.id, exc,
+                )
+                return None, None
+
+        data = cache_path.read_bytes()
+        r = await self._studio.http.put(
+            upload_url, content=data, headers={"Content-Type": mime_type},
+        )
+        r.raise_for_status()
+        return storage_key, content_hash
 
     @staticmethod
-    def _to_payload(inbox_id: str, m: IncomingMessage, *, content: Optional[str] = None, msg_type: Optional[str] = None) -> Dict[str, Any]:
-        return {
-            "inbox_id": inbox_id,
-            "peer_platform_id": m.peer_id,
-            "peer_display_name": m.peer_display_name,
-            "platform_msg_id": m.platform_msg_id,
-            "role": m.role,
-            "msg_type": msg_type or m.msg_type,
-            "content": content or m.content,
-            "sent_at": m.sent_at.isoformat(),
+    def _to_incoming_payload(
+        msg: LocalMessage,
+        content: str,
+        content_hash: Optional[str],
+    ) -> Dict[str, Any]:
+        d: Dict[str, Any] = {
+            "inbox_id": msg.inbox_id,
+            "peer_platform_id": msg.peer_id,
+            "peer_display_name": msg.peer_display_name,
+            "platform_msg_id": msg.platform_msg_id,
+            "sender_id": msg.sender_id,
+            "msg_type": msg.msg_type,
+            "content": content,
+            "sent_at": msg.sent_at,
         }
+        if content_hash is not None:
+            d["content_hash"] = content_hash
+        return d
 
-    # --- inbound pump --------------------------------------------------
-
-    async def _inbound_pump_loop(self) -> None:
-        while not self._stop.is_set():
-            try:
-                first = await self._inbound_queue.get()
-            except asyncio.CancelledError:
-                return
-            batch: List[Tuple[str, IncomingMessage]] = [first]
-            deadline_t = asyncio.get_running_loop().time() + INBOUND_BATCH_LINGER
-            while len(batch) < INBOUND_BATCH_MAX:
-                remaining = deadline_t - asyncio.get_running_loop().time()
-                if remaining <= 0:
-                    break
-                try:
-                    item = await asyncio.wait_for(self._inbound_queue.get(), timeout=remaining)
-                except asyncio.TimeoutError:
-                    break
-                except asyncio.CancelledError:
-                    break
-                batch.append(item)
-            await self._push_batch(batch)
-
-    # --- heartbeat -----------------------------------------------------
+    # ------------------------------------------------------------------
+    # Heartbeat
+    # ------------------------------------------------------------------
 
     async def _heartbeat_loop(self) -> None:
         while not self._stop.is_set():
             try:
                 resp = await self._studio.heartbeat()
                 served = {ix["id"] for ix in resp.get("inboxes", [])}
-                # If Studio dropped a binding (UI deleted the inbox), stop
-                # the adapter; we don't auto-restart anything here — adding
-                # a new login means restarting bridge with another --chat-inbox.
                 for inbox_id in list(self._adapters.keys()):
                     if inbox_id not in served:
                         logger.info("inbox %s no longer served; stopping adapter", inbox_id)
@@ -388,7 +412,9 @@ class BridgeRuntime:
             except asyncio.TimeoutError:
                 pass
 
-    # --- outbound ------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Outbound (unchanged logic)
+    # ------------------------------------------------------------------
 
     async def _outbound_loop(self) -> None:
         while not self._stop.is_set():
@@ -423,21 +449,17 @@ class BridgeRuntime:
             return
         if not platform_peer_id:
             await self._studio.ack_outbound(
-                outbound_id, result="failed",
-                reason="missing peer_platform_id",
+                outbound_id, result="failed", reason="missing peer_platform_id",
             )
             return
         if not content:
-            await self._studio.ack_outbound(
-                outbound_id, result="sent",
-            )
+            await self._studio.ack_outbound(outbound_id, result="sent")
             return
 
         try:
             if msg_type == "text":
                 msg_id = await entry.adapter.send_text(platform_peer_id, content)
             else:
-                # Media outbound: download from Studio S3, then upload+send via adapter
                 data, mime_type = await self._download_studio_media(content)
                 if data is None:
                     await self._studio.ack_outbound(
@@ -446,29 +468,23 @@ class BridgeRuntime:
                     )
                     return
                 ext = mimetypes.guess_extension(mime_type) or ".bin"
-                filename = f"media{ext}"
                 msg_id = await entry.adapter.upload_and_send_media(
-                    platform_peer_id, msg_type, data, filename, mime_type,
+                    platform_peer_id, msg_type, data, f"media{ext}", mime_type,
                 )
         except Exception as exc:
-            logger.error("outbound %d send failed (inbox=%s): %s", outbound_id, inbox_id, exc)
+            logger.error("outbound %d send failed inbox=%s: %s", outbound_id, inbox_id, exc)
             await self._studio.ack_outbound(
-                outbound_id, result="failed", reason=str(exc)[:500]
+                outbound_id, result="failed", reason=str(exc)[:500],
             )
             return
-
-        await self._studio.ack_outbound(
-            outbound_id, result="sent", platform_msg_id=msg_id,
-        )
+        await self._studio.ack_outbound(outbound_id, result="sent", platform_msg_id=msg_id)
 
     async def _download_studio_media(self, storage_key: str) -> Tuple[Optional[bytes], str]:
-        """Download binary from Studio S3 via presigned GET URL."""
         try:
             url = await self._studio.get_media_url(storage_key)
             r = await self._studio.http.get(url, follow_redirects=True)
             r.raise_for_status()
-            mime_type = r.headers.get("content-type", "application/octet-stream")
-            return r.content, mime_type
+            return r.content, r.headers.get("content-type", "application/octet-stream")
         except Exception as exc:
             logger.error("failed to download Studio media %s: %s", storage_key, exc)
             return None, ""

@@ -1,5 +1,6 @@
 """Bridge daemon ↔ Studio protocol endpoints."""
 
+import hashlib
 import uuid
 
 import asyncio
@@ -18,7 +19,6 @@ from studio.enums import (
     AccountStatus,
     BridgeStatus,
     ContactStatus,
-    MessageRole,
     OutboundAckResult,
     OutboundStatus,
     PersonaStatus,
@@ -29,12 +29,19 @@ from studio.models import (
     BridgeSession,
     Contact,
     Inbox,
+    MediaHash,
     Message,
     OutboundMessage,
     Persona,
 )
 from studio.s3 import s3_presigned_get_url, s3_presigned_put_url
-from studio.schemas import BridgeHandshake, BridgeIncomingBatch, BridgeOutboundAck, BridgeMediaPresignRequest
+from studio.schemas import (
+    BridgeHandshake,
+    BridgeIncomingBatch,
+    BridgeMediaCheckOrPresignRequest,
+    BridgeMediaPresignRequest,
+    BridgeOutboundAck,
+)
 from studio.serializers import s_bridge_inbox_view
 
 router = APIRouter()
@@ -177,13 +184,40 @@ def bridge_heartbeat(db: Annotated[Session, Depends(get_db)], bridge: BridgeDep)
     return {"inboxes": [s_bridge_inbox_view(i) for i in inboxes]}
 
 
+def _canonical_sent_at(dt: Any) -> str:
+    """Normalize datetime to UTC ISO8601 with microseconds — must match Bridge's canonical_sent_at."""
+    from datetime import datetime as _dt
+    if not isinstance(dt, _dt):
+        raise ValueError(f"expected datetime, got {type(dt)}")
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f+00:00")
+
+
+def _compute_msg_hash(
+    contact_id: str,
+    sender_id: str,
+    sent_at_canonical: str,
+    msg_type: str,
+    content_for_hash: str,
+) -> str:
+    """SHA256 of null-separated fields. Must match Bridge's compute_local_hash logic."""
+    raw = "\x00".join([contact_id, sender_id, sent_at_canonical, msg_type, content_for_hash])
+    return hashlib.sha256(raw.encode()).hexdigest()
+
+
 @router.post("/api/bridge/incoming")
-def bridge_incoming(payload: BridgeIncomingBatch, db: Annotated[Session, Depends(get_db)], bridge: BridgeDep):
+def bridge_incoming(
+    payload: BridgeIncomingBatch,
+    db: Annotated[Session, Depends(get_db)],
+    bridge: BridgeDep,
+):
     accepted = 0
     deduped = 0
     rejected = 0
     now = utc_now()
     inbox_cache: Dict[str, Inbox] = {}
+
     for m in payload.messages:
         inbox = inbox_cache.get(m.inbox_id)
         if inbox is None:
@@ -215,28 +249,75 @@ def bridge_incoming(payload: BridgeIncomingBatch, db: Annotated[Session, Depends
                 status=ContactStatus.ACTIVE, last_seen_platform_msg_id=None,
                 created_at=now, updated_at=now,
             )
-            db.add(contact); db.flush()
+            db.add(contact)
+            db.flush()
 
-        external_id = f"live:{m.platform_msg_id}"
+        # Compute msg_hash for primary dedup.
+        sent_at_str = _canonical_sent_at(m.sent_at)
+        content_for_hash = m.content_hash if (m.msg_type != "text" and m.content_hash) else m.content
+        msg_hash = _compute_msg_hash(contact.id, m.sender_id, sent_at_str, m.msg_type, content_for_hash)
+
+        # Primary dedup: msg_hash.
         existing = (
-            db.query(Message)
-            .filter(Message.contact_id == contact.id, Message.external_id == external_id)
+            db.query(Message.id)
+            .filter(Message.contact_id == contact.id, Message.msg_hash == msg_hash)
             .first()
         )
         if existing:
             deduped += 1
             continue
 
+        # Secondary dedup: external_id (backward compat for pre-migration rows with msg_hash=NULL).
+        if m.platform_msg_id:
+            external_id = f"live:{m.platform_msg_id}"
+            existing_ext = (
+                db.query(Message.id)
+                .filter(Message.contact_id == contact.id, Message.external_id == external_id)
+                .first()
+            )
+            if existing_ext:
+                deduped += 1
+                continue
+        else:
+            external_id = f"hash:{msg_hash}"
+
+        # Compute role from sender_id vs inbox platform_self_id.
+        role = "self" if m.sender_id == inbox.platform_self_id else "counterpart"
+
         ts = m.sent_at if m.sent_at.tzinfo else m.sent_at.replace(tzinfo=timezone.utc)
         db.add(Message(
             contact_id=contact.id,
             external_id=external_id,
-            role=m.role, msg_type=m.msg_type, sender_name=None, content=m.content,
-            timestamp=ts, created_at=now,
+            msg_hash=msg_hash,
+            role=role,
+            sender_id=m.sender_id,
+            msg_type=m.msg_type,
+            sender_name=None,
+            content=m.content,
+            timestamp=ts,
+            created_at=now,
         ))
+
+        # Record media hash mapping so check-or-presign can skip re-uploads.
+        if m.msg_type != "text" and m.content_hash:
+            existing_hash = (
+                db.query(MediaHash)
+                .filter(
+                    MediaHash.account_id == bridge.account_id,
+                    MediaHash.content_hash == m.content_hash,
+                )
+                .first()
+            )
+            if not existing_hash:
+                db.add(MediaHash(
+                    account_id=bridge.account_id,
+                    content_hash=m.content_hash,
+                    storage_key=m.content,
+                ))
+
         contact.last_seen_platform_msg_id = m.platform_msg_id
         contact.updated_at = now
-        if m.role == MessageRole.COUNTERPART and inbox.enabled and contact.autoreply_enabled:
+        if role == "counterpart" and inbox.enabled and contact.autoreply_enabled:
             contact.pending_reply = True
         accepted += 1
 
@@ -326,6 +407,35 @@ def bridge_media_presign_upload(
     storage_key = f"media/{bridge.id}/{uuid.uuid4().hex}"
     upload_url = s3_presigned_put_url(storage_key, payload.mime_type)
     return {"storage_key": storage_key, "upload_url": upload_url}
+
+
+@router.post("/api/bridge/media/check-or-presign")
+def bridge_media_check_or_presign(
+    payload: BridgeMediaCheckOrPresignRequest,
+    db: Annotated[Session, Depends(get_db)],
+    bridge: BridgeDep,
+):
+    """Check whether Studio already has a file with this content hash.
+
+    Returns {"status": "exists", "storage_key": "..."} if the file is
+    already in Studio S3 (skip upload). Returns {"status": "new",
+    "storage_key": "...", "upload_url": "..."} otherwise; Bridge should
+    PUT the file binary to upload_url before calling /incoming.
+    """
+    existing = (
+        db.query(MediaHash)
+        .filter(
+            MediaHash.account_id == bridge.account_id,
+            MediaHash.content_hash == payload.content_hash,
+        )
+        .first()
+    )
+    if existing:
+        return {"status": "exists", "storage_key": existing.storage_key}
+
+    storage_key = f"media/{bridge.id}/{uuid.uuid4().hex}"
+    upload_url = s3_presigned_put_url(storage_key, payload.mime_type)
+    return {"status": "new", "storage_key": storage_key, "upload_url": upload_url}
 
 
 @router.get("/api/bridge/media/{storage_key:path}")

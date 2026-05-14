@@ -4,51 +4,60 @@ Each adapter wraps one platform (chat sandbox, wechat, feishu, ...). The
 runtime instantiates one adapter per inbox served by this Bridge daemon.
 
 Conventions:
-- A "thread" is a 1:1 conversation. peer_id identifies the other side.
-- Time is reported as UTC-aware datetime.
-- platform_msg_id must be unique within (thread, direction). Studio
-  de-duplicates on /api/bridge/incoming using external_id='live:<msg_id>'.
-- Bridge is a pure forwarder: no pacing, no delay. Studio controls when each
-  message becomes eligible for delivery.
+- A "thread" is a 1:1 conversation (or group). peer_id identifies the other
+  side (group id for group chats).
+- sender_id is the platform id of whoever sent the message. For 1:1 chats
+  this is either the inbox owner (platform_self_id) or the peer. Storing
+  sender_id instead of role keeps the contract neutral for group chats.
+- Time is reported as UTC datetime (naive or aware — runtime normalizes).
+- platform_msg_id is the platform's own message id for this adapter
+  instance. It is used as an incremental scan cursor and is NOT expected
+  to be stable across devices or imports. Studio uses msg_hash for dedup.
+- For media messages, content is a platform-side storage key that the
+  adapter knows how to download via download_media().
 - One adapter instance owns one inbox. The runtime tags messages with
-  inbox_id when forwarding to Studio (the adapter doesn't need to know its
+  inbox_id when storing locally (the adapter doesn't need to know its
   own inbox_id).
-- For media messages, content is a storage key (platform-specific on
-  inbound, Studio S3 key on outbound in `send()`). The adapter handles
-  download/upload between platform S3 and raw bytes.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, AsyncIterator, Dict, List
+from typing import Any, AsyncIterator, Dict, Optional
 
 
 @dataclass(frozen=True)
 class IncomingMessage:
-    peer_id: str
-    peer_display_name: str
-    platform_msg_id: str
-    role: str              # 'self' | 'counterpart'
-    msg_type: str          # 'text' | 'image' | 'audio' | 'video' | 'file'
-    content: str            # text→plain text; media→platform storage key
-    sent_at: datetime       # UTC-aware
+    peer_id:            str
+    peer_display_name:  str
+    sender_id:          str          # platform id of the sender
+    msg_type:           str          # 'text' | 'image' | 'audio' | 'video' | 'file'
+    content:            str          # text→plain text; media→platform storage key
+    sent_at:            datetime     # UTC (naive treated as UTC)
+    platform_msg_id:    Optional[str] = None  # advisory; may be None
 
 
 class Adapter:
     platform: str = ""
 
     async def login(self) -> str:
-        """Authenticate and return platform_self_id (the streamer's id on this platform)."""
+        """Authenticate and return platform_self_id (the account's id on this platform)."""
         raise NotImplementedError
 
-    async def list_initial_messages(self, since_ms: int) -> List[IncomingMessage]:
-        """Snapshot any messages we missed before the live stream started."""
-        raise NotImplementedError
+    async def scan(
+        self,
+        cursors: dict[str, str | None],
+    ) -> AsyncIterator[IncomingMessage]:
+        """Continuously yield messages — both historical and live — in one loop.
 
-    async def stream_incoming(self) -> AsyncIterator[IncomingMessage]:
-        """Yield new messages as they arrive."""
+        cursors maps peer_id → last platform_msg_id already stored locally
+        (None for peers seen for the first time). The adapter uses these to
+        avoid re-fetching already-known messages and updates them in memory
+        as it progresses.
+
+        This method never returns; it loops forever until cancelled.
+        """
         raise NotImplementedError
         yield  # type: ignore[unreachable]  # pragma: no cover
 
@@ -71,19 +80,13 @@ class Adapter:
         """Download media from the platform by its storage key.
 
         Returns (data, mime_type).
-        Used by the runtime to pull media from the platform S3 so it can
-        upload to Studio S3.
         """
         raise NotImplementedError
 
     async def upload_and_send_media(
         self, peer_id: str, msg_type: str, data: bytes, filename: str, mime_type: str,
     ) -> str:
-        """Upload binary to platform S3 and send a media message; return platform_msg_id.
-
-        The runtime downloads media from Studio S3, then calls this method
-        to pipe the binary into the platform and send the message.
-        """
+        """Upload binary to platform S3 and send a media message; return platform_msg_id."""
         raise NotImplementedError
 
     async def close(self) -> None:
@@ -92,10 +95,9 @@ class Adapter:
 
 # ---------------------------------------------------------------------------
 # Adapter factory registry — keyed by platform name.
-# Each entry constructs an Adapter from the InboxConfig.raw dict.
 # ---------------------------------------------------------------------------
 
-AdapterFactory = "callable[[Dict[str, Any]], Adapter]"  # informational
+AdapterFactory = "callable[[Dict[str, Any]], Adapter]"
 _REGISTRY: Dict[str, Any] = {}
 
 

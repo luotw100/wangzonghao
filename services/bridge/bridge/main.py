@@ -30,6 +30,7 @@ from typing import Dict, List
 # Side-effect imports: adapters call register_adapter() at module load.
 import bridge.adapters.chat  # noqa: F401
 
+from bridge.local_store import LocalStore
 from bridge.runtime import BridgeRuntime, InboxClaim
 from bridge.state import BridgeState
 from bridge.studio_client import StudioClient
@@ -90,21 +91,33 @@ async def _run(
     state_dir: str,
     claims: List[InboxClaim],
 ) -> None:
+    import pathlib
     if not claims:
         logger.warning("no --chat-inbox given; bridge will idle (only heartbeats).")
     state = BridgeState.load(state_dir)
     logger.info("loaded state: machine_id=%s token=%s", state.machine_id, "yes" if state.token else "no")
-    studio = StudioClient(
-        base_url=studio_url, username=username, password=password,
+
+    state_path = pathlib.Path(state_dir)
+    store = LocalStore(state_path / "messages.db")
+    media_cache_dir = state_path / "media"
+    media_cache_dir.mkdir(parents=True, exist_ok=True)
+
+    studio = StudioClient(base_url=studio_url, username=username, password=password)
+    runtime = BridgeRuntime(
+        studio=studio,
+        state=state,
+        claims=claims,
+        store=store,
+        media_cache_dir=media_cache_dir,
     )
-    runtime = BridgeRuntime(studio=studio, state=state, claims=claims)
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         loop.add_signal_handler(sig, runtime.stop)
     try:
-        await runtime.run(state_dir)
+        await runtime.run()
     finally:
         state.save(state_dir)
+        store.close()
         await studio.close()
 
 

@@ -45,7 +45,7 @@ def s_provider(p: ProviderConfig) -> Dict[str, Any]:
 def s_persona(p: Persona) -> Dict[str, Any]:
     return {
         "id": p.id, "account_id": p.account_id, "name": p.name,
-        "persona_md": p.persona_md, "status": p.status,
+        "persona_md": p.persona_md, "timezone": p.timezone, "status": p.status,
         "created_at": p.created_at, "updated_at": p.updated_at,
     }
 

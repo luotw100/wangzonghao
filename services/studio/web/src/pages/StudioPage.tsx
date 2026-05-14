@@ -904,13 +904,14 @@ function CreatePersonaModal({ onClose, onCreated, setError }: {
 }) {
   const [name, setName] = useState('');
   const [md, setMd] = useState('');
+  const [tz, setTz] = useState('Asia/Shanghai');
   const [busy, setBusy] = useState(false);
 
   const handle = async () => {
     if (!name.trim()) return;
     setBusy(true);
     try {
-      await api.createPersona({ name: name.trim(), persona_md: md || null });
+      await api.createPersona({ name: name.trim(), persona_md: md || null, timezone: tz.trim() || 'UTC' });
       await Promise.resolve(onCreated());
     } catch (err) {
       setError(String(err));
@@ -922,6 +923,7 @@ function CreatePersonaModal({ onClose, onCreated, setError }: {
   return (
     <ModalShell onClose={onClose} title="新建人设">
       <FormField label="名称"><input className="input" value={name} onChange={event => setName(event.target.value)} autoFocus /></FormField>
+      <FormField label="时区 (IANA)"><input className="input" value={tz} onChange={event => setTz(event.target.value)} placeholder="Asia/Shanghai" /></FormField>
       <FormField label="persona_md (可空)">
         <textarea className="textarea mono" style={{ minHeight: 200 }} value={md} onChange={event => setMd(event.target.value)} />
       </FormField>
@@ -938,12 +940,13 @@ function EditPersonaModal({ persona, onClose, onSaved, setError }: {
 }) {
   const [name, setName] = useState(persona.name);
   const [md, setMd] = useState(persona.persona_md ?? '');
+  const [tz, setTz] = useState(persona.timezone ?? 'UTC');
   const [busy, setBusy] = useState(false);
 
   const handle = async () => {
     setBusy(true);
     try {
-      await api.updatePersona(persona.id, { name, persona_md: md || null });
+      await api.updatePersona(persona.id, { name, persona_md: md || null, timezone: tz.trim() || 'UTC' });
       await Promise.resolve(onSaved());
     } catch (err) {
       setError(String(err));
@@ -955,6 +958,7 @@ function EditPersonaModal({ persona, onClose, onSaved, setError }: {
   return (
     <ModalShell onClose={onClose} title={`编辑人设 · ${persona.name}`}>
       <FormField label="名称"><input className="input" value={name} onChange={event => setName(event.target.value)} /></FormField>
+      <FormField label="时区 (IANA)"><input className="input" value={tz} onChange={event => setTz(event.target.value)} placeholder="Asia/Shanghai" /></FormField>
       <FormField label="persona_md">
         <textarea className="textarea mono" style={{ minHeight: 320 }} value={md} onChange={event => setMd(event.target.value)} />
       </FormField>

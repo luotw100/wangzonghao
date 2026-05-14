@@ -1,6 +1,7 @@
 """Persona CRUD endpoints."""
 
 from typing import Annotated
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -15,6 +16,14 @@ from studio.serializers import s_persona
 router = APIRouter()
 
 
+def _validate_timezone(tz: str) -> str:
+    try:
+        ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, KeyError):
+        raise HTTPException(status_code=422, detail=f"无效的时区名称: {tz!r}")
+    return tz
+
+
 @router.get("/api/personas")
 def list_personas(db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
     query = db.query(Persona)
@@ -26,11 +35,12 @@ def list_personas(db: Annotated[Session, Depends(get_db)], account: CurrentAccou
 
 @router.post("/api/personas")
 def create_persona(payload: PersonaCreate, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
+    tz = _validate_timezone(payload.timezone)
     now = utc_now()
     p = Persona(
         id=new_id("ps"), account_id=account.id,
         name=payload.name, persona_md=payload.persona_md,
-        status=PersonaStatus.ACTIVE, created_at=now, updated_at=now,
+        timezone=tz, status=PersonaStatus.ACTIVE, created_at=now, updated_at=now,
     )
     db.add(p); db.commit(); db.refresh(p)
     return s_persona(p)
@@ -49,6 +59,8 @@ def update_persona(persona_id: str, payload: PersonaUpdate, db: Annotated[Sessio
         p.name = payload.name
     if "persona_md" in fields:
         p.persona_md = payload.persona_md
+    if "timezone" in fields and payload.timezone is not None:
+        p.timezone = _validate_timezone(payload.timezone)
     if "status" in fields and payload.status is not None:
         p.status = payload.status
     p.updated_at = utc_now()

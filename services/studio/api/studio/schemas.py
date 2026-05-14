@@ -68,11 +68,13 @@ class ProviderConfigUpdate(StrictModel):
 class PersonaCreate(StrictModel):
     name: str
     persona_md: Optional[str]
+    timezone: str = "UTC"
 
 
 class PersonaUpdate(StrictModel):
     name: Optional[str] = None
     persona_md: Optional[str] = None
+    timezone: Optional[str] = None
     status: Optional[PersonaStatus] = None
 
 

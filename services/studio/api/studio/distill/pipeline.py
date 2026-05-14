@@ -14,6 +14,7 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.orm import Session as ORMSession
 
@@ -64,6 +65,7 @@ class _DistillCtx:
     base_url: str
     api_key: str
     model: str
+    display_tz: str
 
 
 def _load_ctx(
@@ -95,6 +97,7 @@ def _load_ctx(
         base_url=pc.base_url,
         api_key=pc.api_key,
         model=pc.default_model,
+        display_tz=persona.timezone or "UTC",
     )
 
 
@@ -107,14 +110,19 @@ def _load_contact_messages(db: ORMSession, contact_id: str) -> List[Message]:
     )
 
 
-def _messages_to_text_messages(msgs: List[Message]) -> List[TextMessage]:
+def _messages_to_text_messages(msgs: List[Message], display_tz: str) -> List[TextMessage]:
+    try:
+        tz = ZoneInfo(display_tz)
+    except (ZoneInfoNotFoundError, KeyError):
+        tz = ZoneInfo("UTC")
     out: List[TextMessage] = []
     for m in msgs:
         sender = m.sender_name or ("我" if m.role == MessageRole.SELF else "对方")
-        line = f"[{m.timestamp.strftime('%Y-%m-%d %H:%M:%S')}] {sender}: {m.content}"
+        ts_local = m.timestamp.astimezone(tz)
+        line = f"[{ts_local.strftime('%Y-%m-%d %H:%M:%S')}] {sender}: {m.content}"
         out.append(
             TextMessage(
-                timestamp=m.timestamp,
+                timestamp=ts_local,
                 sender=sender,
                 content=m.content,
                 raw_line=line,
@@ -202,7 +210,7 @@ async def _fold_contact(
         logger.info("Contact %s 没有消息，跳过", contact_id)
         return
 
-    text_msgs = _messages_to_text_messages(messages)
+    text_msgs = _messages_to_text_messages(messages, ctx.display_tz)
     sessions = split_sessions(text_msgs)
     windows = pack_windows(sessions)
     if not windows:
@@ -321,7 +329,7 @@ async def run_distill(
             db.close()
         if not msgs:
             continue
-        text_msgs = _messages_to_text_messages(msgs)
+        text_msgs = _messages_to_text_messages(msgs, ctx.display_tz)
         sessions = split_sessions(text_msgs)
         windows = pack_windows(sessions)
         total_windows += len(windows)

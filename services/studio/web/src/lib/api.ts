@@ -104,6 +104,7 @@ export interface Persona {
   account_id: string;
   name: string;
   persona_md: string | null;
+  timezone: string;
   status: 'active' | 'archived';
   created_at: string;
   updated_at: string;
@@ -324,7 +325,7 @@ export function deleteProviderConfig(id: string) {
 
 export function getPersonas() { return request<Persona[]>('/personas'); }
 export function getPersona(id: string) { return request<Persona>(`/personas/${id}`); }
-export function createPersona(data: { name: string; persona_md: string | null }) {
+export function createPersona(data: { name: string; persona_md: string | null; timezone?: string }) {
   return request<Persona>('/personas', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -333,7 +334,7 @@ export function createPersona(data: { name: string; persona_md: string | null })
 }
 export function updatePersona(
   id: string,
-  data: { name?: string; persona_md?: string | null; status?: 'active' | 'archived' },
+  data: { name?: string; persona_md?: string | null; timezone?: string; status?: 'active' | 'archived' },
 ) {
   return request<Persona>(`/personas/${id}`, {
     method: 'PUT',

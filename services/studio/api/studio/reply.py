@@ -27,6 +27,7 @@ import zlib
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import Dict, List, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy.orm import Session as ORMSession
 
@@ -114,6 +115,7 @@ class _ReplyCtx:
     api_key: str
     model: str
     inbox_id: str
+    display_tz: str
 
 
 @dataclass(frozen=True)
@@ -174,11 +176,16 @@ def _decide(db: ORMSession, contact_id: str) -> _ReplyDecision:
         api_key=pc.api_key,
         model=pc.default_model,
         inbox_id=inbox.id,
+        display_tz=persona.timezone or "UTC",
     )
     return _ReplyDecision(None, ctx, history)
 
 
-def _format_history_lines(history: List[Message]) -> str:
+def _format_history_lines(history: List[Message], display_tz: str) -> str:
+    try:
+        tz = ZoneInfo(display_tz)
+    except (ZoneInfoNotFoundError, KeyError):
+        tz = ZoneInfo("UTC")
     _MEDIA_LABELS = {
         "image": "[图片]",
         "audio": "[音频]",
@@ -188,7 +195,7 @@ def _format_history_lines(history: List[Message]) -> str:
     lines: List[str] = []
     for m in history:
         speaker = "我" if m.role == MessageRole.SELF else "对方"
-        ts = m.timestamp.strftime("%m-%d %H:%M")
+        ts = m.timestamp.astimezone(tz).strftime("%m-%d %H:%M")
         msg_type = getattr(m, "msg_type", "text") or "text"
         if msg_type == "text":
             content = m.content.replace("\n", " ").strip()
@@ -205,7 +212,7 @@ def _build_user_message(ctx: _ReplyCtx, history: List[Message]) -> str:
         parts.append(f"## 你的人设\n{ctx.persona_md.strip()}")
     if ctx.card_md.strip():
         parts.append(f"## 关于对方（{ctx.contact_display_name}）\n{ctx.card_md.strip()}")
-    parts.append(f"## 最近的对话\n{_format_history_lines(history)}")
+    parts.append(f"## 最近的对话\n{_format_history_lines(history, ctx.display_tz)}")
     parts.append("现在轮到你回复了，按要求输出 JSON。")
     return "\n\n".join(parts)
 

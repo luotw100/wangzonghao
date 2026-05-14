@@ -5,7 +5,7 @@ runtime instantiates one adapter per inbox served by this Bridge daemon.
 
 Conventions:
 - A "thread" is a 1:1 conversation. peer_id identifies the other side.
-- Time is reported as naive UTC datetime.
+- Time is reported as UTC-aware datetime.
 - platform_msg_id must be unique within (thread, direction). Studio
   de-duplicates on /api/bridge/incoming using external_id='live:<msg_id>'.
 - Bridge is a pure forwarder: no pacing, no delay. Studio controls when each
@@ -33,7 +33,7 @@ class IncomingMessage:
     role: str              # 'self' | 'counterpart'
     msg_type: str          # 'text' | 'image' | 'audio' | 'video' | 'file'
     content: str            # text→plain text; media→platform storage key
-    sent_at: datetime       # naive UTC
+    sent_at: datetime       # UTC-aware
 
 
 class Adapter:

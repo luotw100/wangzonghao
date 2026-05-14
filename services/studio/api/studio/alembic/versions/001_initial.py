@@ -72,6 +72,7 @@ def upgrade() -> None:
         sa.Column("account_id", sa.String(48), sa.ForeignKey("accounts.id"), nullable=False),
         sa.Column("name", sa.String(128), nullable=False),
         sa.Column("persona_md", sa.Text, nullable=True),
+        sa.Column("timezone", sa.String(64), nullable=False, server_default="UTC"),
         sa.Column("status", sa.String(16), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),

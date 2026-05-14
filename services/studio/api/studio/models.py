@@ -100,6 +100,7 @@ class Persona(Base):
     account_id = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
     name       = Column(String(128), nullable=False)
     persona_md = Column(Text, nullable=True)
+    timezone   = Column(String(64), nullable=False, server_default="UTC")
     status     = Column(String(16), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)
     updated_at = Column(DateTime(timezone=True), nullable=False)

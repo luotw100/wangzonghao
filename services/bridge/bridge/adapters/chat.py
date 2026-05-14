@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import mimetypes
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import AsyncIterator, Dict, List, Optional
 
 import httpx
@@ -36,10 +36,8 @@ def _build_chat_adapter(raw_config: dict) -> Adapter:
 
 
 def _parse_iso(s: str) -> datetime:
-    # Chat returns naive ISO without timezone; treat as UTC.
-    if s.endswith("Z"):
-        s = s[:-1]
-    return datetime.fromisoformat(s)
+    dt = datetime.fromisoformat(s)
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 class ChatAdapter(Adapter):

@@ -141,18 +141,15 @@ Bridge 会停止本地存在但不在 response 中的 adapter。
 1. 校验 Inbox 存在、属于 Bridge account、且绑定到当前 Bridge。
 2. 不合法则 `rejected += 1`。
 3. 按 `(inbox_id, peer_platform_id)` upsert Contact。
-4. 新 Contact 字段：
-   - `persona_id = inbox.default_persona_id`；
-   - `reply_provider_config_id = inbox.reply_provider_config_id`；
-   - `autoreply_enabled = False`；
-   - `pending_reply = False`；
-   - `status = active`。
-5. 构造 `external_id = live:{platform_msg_id}`。
-6. 如果 `(contact_id, external_id)` 已存在，`deduped += 1`。
-7. 插入 `Message(source='live', msg_type=m.msg_type)`。
-8. 更新 Contact last seen 和 updated_at。
-9. 如果 role 是 counterpart 且 inbox enabled 且 contact autoreply enabled，则置 `pending_reply=True`。
-10. `accepted += 1`。
+4. 新 Contact 字段：`persona_id = inbox.default_persona_id`；`reply_provider_config_id = inbox.reply_provider_config_id`；`takeover = False`；`reply_policy = disabled`；`pending_reply = False`；`status = active`。
+5. 主去重：计算 `msg_hash = sha256(contact_id \x00 sender_id \x00 sent_at_canonical \x00 msg_type \x00 content_for_hash)`，`content_for_hash` 对媒体消息使用 `content_hash` 字段；已有相同 `msg_hash` 则 `deduped += 1`。
+6. 次级去重（后向兼容）：若 `platform_msg_id` 存在，检查 `external_id = live:{platform_msg_id}` 是否已存在。
+7. 计算 `role = 'self'`（sender_id == inbox.platform_self_id）或 `'counterpart'`。
+8. 插入 `Message`（含 `msg_hash`、`msg_type`）。
+9. 媒体消息写入 `MediaHash(account_id, content_hash, storage_key)`（已有则跳过）。
+10. 更新 Contact last seen 和 updated_at。
+11. 如果 role 是 counterpart 且 inbox enabled 且 contact `reply_policy == 'autoreply'`，则置 `pending_reply=True`。
+12. `accepted += 1`。
 
 ### Response
 
@@ -225,6 +222,60 @@ Bearer Bridge session token。
 
 ```json
 { "status": "delivered" }
+```
+
+## `POST /api/bridge/peers`
+
+Bridge 上报登录 inbox 后发现的 peer 列表（会话目录），Studio 据此 upsert Contact 行，供前端展示全量会话列表而不依赖消息到达。
+
+### Request
+
+```json
+{ "inbox_id": "ib_xxx", "peers": [{ "peer_platform_id": "peer-id", "display_name": "粉丝名" }] }
+```
+
+### 当前行为
+
+- 校验 inbox 属于当前 Bridge。
+- 对每个 peer：已有 Contact 时只更新 `display_name`；不存在时创建（`takeover=False`，`reply_policy=disabled`）。
+- 不覆盖已有 Contact 的 `takeover`/`reply_policy`。
+
+### Response
+
+```json
+{ "upserted": 2 }
+```
+
+## `GET /api/bridge/active-peers`
+
+查询当前 Bridge 绑定 inbox 下所有 `takeover=True` 的 Contact，Bridge runtime 用此结果决定哪些 peer 的消息要上传到 Studio。
+
+### Response
+
+```json
+{ "peers": [{ "inbox_id": "ib_xxx", "peer_platform_id": "peer-id" }] }
+```
+
+## `POST /api/bridge/media/check-or-presign`
+
+Bridge 上传媒体前调用。按 `content_hash` 查 `MediaHash` 表，若已存在直接返回 storage key（skip upload），否则生成新 storage key 和 presigned PUT URL。
+
+### Request
+
+```json
+{ "content_hash": "sha256:abcdef...", "filename": "voice.ogg", "mime_type": "audio/ogg" }
+```
+
+### Response（已存在）
+
+```json
+{ "status": "exists", "storage_key": "media/br_xxx/abc" }
+```
+
+### Response（新文件）
+
+```json
+{ "status": "new", "storage_key": "media/br_xxx/abc", "upload_url": "https://s3.../" }
 ```
 
 ## `POST /api/bridge/media/presign-upload`

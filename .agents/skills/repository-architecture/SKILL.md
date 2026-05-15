@@ -40,7 +40,7 @@ Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Cha
 2. **Bridge 不做策略决策。** Bridge 只登录平台、收消息、推 Studio、拉 outbound、发送。对媒体消息，Bridge 是粗管道：平台 S3 ↔ Studio S3 搬运二进制数据。
 3. **Studio S3 是媒体唯一源。** 所有媒体二进制最终存储在 Studio S3。Inbound 时 Bridge 下载平台媒体 → 上传 Studio S3 → 消息 content 为 Studio storage key。Outbound 时 content 指向 Studio S3 storage key → Bridge 下载 → 上传到平台 → 发送。
 4. **Studio DB 是 source of truth。** Studio 的 `messages` 表保存全部聊天历史，每条消息有 `msg_type` 字段（text | image | audio | video | file）。
-5. **Contact 是接管单元。** Contact 持有 `persona_id`、可选 Provider override、`autoreply_enabled`、`card_md`、`pending_reply`。
+5. **Contact 是接管单元。** Contact 持有 `persona_id`、可选 Provider override、`takeover`（bool，Bridge 是否上报消息）、`reply_policy`（`disabled | autoreply`，Studio 是否自动回复）、`card_md`、`pending_reply`。
 6. **Inbox 是平台身份。** Inbox 表示一个平台账号/身份，并给新 Contact 提供默认 Persona 和可选 Provider override。
 7. **Bridge 是本地 daemon 实例。** Bridge 行由 `(account_id, machine_id)` 标识，`machine_id` 由 Studio 在首次握手时生成并返回给 Bridge 本地持久化；可服务多个 Inbox。
 8. **Outbound 队列是数据库表。** `outbound_messages` 是 Studio → Bridge 的工作队列，每条携带 `msg_type`；Bridge long-poll 并维护 cursor。

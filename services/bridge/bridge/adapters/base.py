@@ -45,6 +45,14 @@ class Adapter:
         """Authenticate and return platform_self_id (the account's id on this platform)."""
         raise NotImplementedError
 
+    async def list_peers(self) -> list[dict[str, str]]:
+        """Return currently known peers as [{"peer_platform_id": ..., "display_name": ...}].
+
+        Called after login and periodically to refresh the peer directory reported to Studio.
+        Default returns empty list; adapters should override.
+        """
+        return []
+
     async def scan(
         self,
         cursors: dict[str, str | None],

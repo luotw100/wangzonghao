@@ -113,7 +113,7 @@ Studio 登录账号，带 `admin | user` role。数据库没有任何账号时�
 
 ### Contact
 
-接管单元，属于一个 Inbox，对应平台里的一个 peer。Contact 保存 display name、关系卡、Persona 引用、可选 Provider override、autoreply 开关、pending reply flag 和 status。
+接管单元，属于一个 Inbox，对应平台里的一个 peer。Contact 保存 display name、关系卡、Persona 引用、可选 Provider override、`takeover`（Bridge 是否上报消息）、`reply_policy`（`disabled | autoreply`，Studio 是否自动回复）、`pending_reply` flag 和 status。
 
 ### Message
 

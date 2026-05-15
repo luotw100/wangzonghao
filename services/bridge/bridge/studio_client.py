@@ -136,6 +136,23 @@ class StudioClient:
         )
         r.raise_for_status()
 
+    async def report_peers(self, inbox_id: str, peers: List[Dict[str, str]]) -> None:
+        r = await self._http.post(
+            f"{self.base}/api/bridge/peers",
+            json={"inbox_id": inbox_id, "peers": peers},
+            headers=self._headers,
+        )
+        r.raise_for_status()
+
+    async def get_active_peers(self) -> List[Dict[str, str]]:
+        """Return [{inbox_id, peer_platform_id}] for peers with takeover=True."""
+        r = await self._http.get(
+            f"{self.base}/api/bridge/active-peers",
+            headers=self._headers,
+        )
+        r.raise_for_status()
+        return r.json()["peers"]
+
     async def presign_upload(self, filename: str, mime_type: str) -> Dict[str, str]:
         r = await self._http.post(
             f"{self.base}/api/bridge/media/presign-upload",

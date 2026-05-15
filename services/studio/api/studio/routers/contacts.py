@@ -85,8 +85,10 @@ def update_contact(contact_id: str, payload: ContactUpdate, db: Annotated[Sessio
         c.reply_provider_config_id = payload.reply_provider_config_id
     if payload.clear_reply_provider:
         c.reply_provider_config_id = None
-    if "autoreply_enabled" in fields and payload.autoreply_enabled is not None:
-        c.autoreply_enabled = payload.autoreply_enabled
+    if "takeover" in fields and payload.takeover is not None:
+        c.takeover = payload.takeover
+    if "reply_policy" in fields and payload.reply_policy is not None:
+        c.reply_policy = payload.reply_policy
     if "status" in fields and payload.status is not None: c.status = payload.status
     c.updated_at = utc_now()
     db.commit(); db.refresh(c)

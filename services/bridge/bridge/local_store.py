@@ -159,17 +159,40 @@ class LocalStore:
         conn.commit()
         return conn.execute("SELECT changes()").fetchone()[0] > 0
 
-    def get_unsent(self, limit: int = 50) -> list[LocalMessage]:
-        """Return up to `limit` unsent messages ordered by insertion id."""
+    def get_unsent(
+        self,
+        limit: int = 50,
+        active_peers: frozenset[tuple[str, str]] | None = None,
+    ) -> list[LocalMessage]:
+        """Return up to `limit` unsent messages ordered by insertion id.
+
+        active_peers: frozenset of (inbox_id, peer_id) pairs. When provided,
+        only messages for those pairs are returned. An empty frozenset returns
+        nothing (no peers active yet).
+        """
         conn = self._conn_()
-        rows = conn.execute("""
-            SELECT id, inbox_id, peer_id, peer_display_name, platform_msg_id, sender_id,
-                   sent_at, msg_type, content, mime_type, local_hash, sent
-            FROM local_messages
-            WHERE sent = 0
-            ORDER BY id
-            LIMIT ?
-        """, (limit,)).fetchall()
+        if active_peers is not None and not active_peers:
+            return []
+        if active_peers is None:
+            rows = conn.execute("""
+                SELECT id, inbox_id, peer_id, peer_display_name, platform_msg_id, sender_id,
+                       sent_at, msg_type, content, mime_type, local_hash, sent
+                FROM local_messages
+                WHERE sent = 0
+                ORDER BY id
+                LIMIT ?
+            """, (limit,)).fetchall()
+        else:
+            placeholders = ",".join("(?,?)" for _ in active_peers)
+            flat = [v for pair in active_peers for v in pair]
+            rows = conn.execute(f"""
+                SELECT id, inbox_id, peer_id, peer_display_name, platform_msg_id, sender_id,
+                       sent_at, msg_type, content, mime_type, local_hash, sent
+                FROM local_messages
+                WHERE sent = 0 AND (inbox_id, peer_id) IN ({placeholders})
+                ORDER BY id
+                LIMIT ?
+            """, flat + [limit]).fetchall()
         return [_row_to_msg(r) for r in rows]
 
     def mark_sent(self, msg_id: int) -> None:

@@ -10,6 +10,7 @@ from studio.enums import (
     OutboundAckResult,
     OutboundMessageType,
     PersonaStatus,
+    ReplyPolicy,
 )
 
 
@@ -101,7 +102,8 @@ class ContactUpdate(StrictModel):
     persona_id: Optional[str] = None
     reply_provider_config_id: Optional[str] = None
     clear_reply_provider: Optional[bool] = None
-    autoreply_enabled: Optional[bool] = None
+    takeover: Optional[bool] = None
+    reply_policy: Optional[ReplyPolicy] = None
     status: Optional[ContactStatus] = None
 
 
@@ -173,3 +175,13 @@ class BridgeMediaCheckOrPresignRequest(StrictModel):
     content_hash: str   # "sha256:{hex}"
     filename: str
     mime_type: str
+
+
+class BridgePeer(StrictModel):
+    peer_platform_id: str
+    display_name: str
+
+
+class BridgeReportPeers(StrictModel):
+    inbox_id: str
+    peers: list[BridgePeer]

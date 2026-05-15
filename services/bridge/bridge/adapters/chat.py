@@ -166,6 +166,16 @@ class ChatAdapter(Adapter):
                 logger.error("chat poll error: %s", exc)
                 await asyncio.sleep(self._poll_sleep)
 
+    async def list_peers(self) -> list[dict[str, str]]:
+        await self._refresh_threads()
+        return [
+            {
+                "peer_platform_id": str(t["peer_id"]),
+                "display_name": str(t["peer_display_name"]),
+            }
+            for t in self._threads.values()
+        ]
+
     async def send(self, peer_id: str, msg_type: str, content: str) -> str:
         conv_id = self._conv_id_for_peer(peer_id)
         if conv_id is None:

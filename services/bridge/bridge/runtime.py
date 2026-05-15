@@ -29,6 +29,8 @@ HEARTBEAT_INTERVAL = 15.0
 OUTBOUND_LONG_POLL_TIMEOUT = 30
 CONSUMER_SLEEP = 1.0         # seconds to sleep when no unsent messages
 CONSUMER_BATCH = 50          # messages per consumer loop iteration
+ANNOUNCE_INTERVAL = 60.0     # how often bridge reports peer list to Studio
+ACTIVE_PEERS_INTERVAL = 10.0 # how often bridge refreshes active-peers from Studio
 
 
 @dataclass(frozen=True)
@@ -66,6 +68,7 @@ class BridgeRuntime:
         self._stop = asyncio.Event()
         self._loop_tasks: List[asyncio.Task[Any]] = []
         self._media_sem = asyncio.Semaphore(5)
+        self._active_peers: frozenset[tuple[str, str]] = frozenset()
 
     async def run(self) -> None:
         # 1) Login each platform claim.
@@ -139,6 +142,8 @@ class BridgeRuntime:
             loop.create_task(self._heartbeat_loop(), name="heartbeat"),
             loop.create_task(self._consumer_loop(), name="consumer"),
             loop.create_task(self._outbound_loop(), name="outbound"),
+            loop.create_task(self._announce_loop(), name="announce"),
+            loop.create_task(self._active_peers_loop(), name="active-peers"),
         ]
         try:
             await self._stop.wait()
@@ -274,7 +279,7 @@ class BridgeRuntime:
 
     async def _consumer_loop(self) -> None:
         while not self._stop.is_set():
-            batch = self._store.get_unsent(limit=CONSUMER_BATCH)
+            batch = self._store.get_unsent(limit=CONSUMER_BATCH, active_peers=self._active_peers)
             if not batch:
                 try:
                     await asyncio.wait_for(self._stop.wait(), timeout=CONSUMER_SLEEP)
@@ -391,6 +396,44 @@ class BridgeRuntime:
         if content_hash is not None:
             d["content_hash"] = content_hash
         return d
+
+    # ------------------------------------------------------------------
+    # Peer directory — announce known peers to Studio
+    # ------------------------------------------------------------------
+
+    async def _announce_loop(self) -> None:
+        while not self._stop.is_set():
+            for inbox_id, entry in list(self._adapters.items()):
+                try:
+                    peers = await entry.adapter.list_peers()
+                    if peers:
+                        await self._studio.report_peers(inbox_id, peers)
+                        logger.debug("announced %d peers for inbox=%s", len(peers), inbox_id)
+                except Exception as exc:
+                    logger.warning("announce failed inbox=%s: %s", inbox_id, exc)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=ANNOUNCE_INTERVAL)
+            except asyncio.TimeoutError:
+                pass
+
+    # ------------------------------------------------------------------
+    # Active peers — poll Studio for which peers are taken over
+    # ------------------------------------------------------------------
+
+    async def _active_peers_loop(self) -> None:
+        while not self._stop.is_set():
+            try:
+                peers = await self._studio.get_active_peers()
+                self._active_peers = frozenset(
+                    (p["inbox_id"], p["peer_platform_id"]) for p in peers
+                )
+                logger.debug("active peers refreshed: %d", len(self._active_peers))
+            except Exception as exc:
+                logger.warning("active peers refresh failed: %s", exc)
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=ACTIVE_PEERS_INTERVAL)
+            except asyncio.TimeoutError:
+                pass
 
     # ------------------------------------------------------------------
     # Heartbeat

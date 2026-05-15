@@ -112,7 +112,7 @@ def admin_overview(db: Annotated[Session, Depends(get_db)], account: AdminAccoun
     autoreply_rows = (
         db.query(Inbox.account_id, func.count(Contact.id))
         .join(Contact, Contact.inbox_id == Inbox.id)
-        .filter(Contact.autoreply_enabled.is_(True))
+        .filter(Contact.takeover.is_(True))
         .group_by(Inbox.account_id).all()
     )
     autoreply_counts: Dict[str, int] = dict(autoreply_rows)

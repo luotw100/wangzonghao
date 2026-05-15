@@ -87,7 +87,7 @@ Studio bridge_incoming()
   → 按 (inbox_id, peer_platform_id) upsert Contact
   → 按 external_id = live:{platform_msg_id} 去重
   → 插入 Message(role='counterpart', msg_type=m.msg_type)
-  → 如果 inbox.enabled 且 contact.autoreply_enabled，置 contact.pending_reply=True
+  → 如果 inbox.enabled 且 contact.reply_policy == 'autoreply'，置 contact.pending_reply=True
 ```
 
 ### Media incoming
@@ -144,7 +144,7 @@ maybe_reply(contact_id)
 `_decide()` 当前 gate：
 
 - Contact 存在且 `status == active`。
-- Contact `autoreply_enabled=True`。
+- Contact `reply_policy == 'autoreply'`。
 - Inbox 存在且 enabled。
 - Provider 来自 `contact.reply_provider_config_id or inbox.reply_provider_config_id or global default provider`。
 - Provider 存在且有 API key。

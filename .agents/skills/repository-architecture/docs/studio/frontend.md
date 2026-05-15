@@ -26,7 +26,7 @@
 - `Persona`（含 `timezone: string`）
 - `Bridge`
 - `Inbox`
-- `Contact`
+- `Contact`（含 `takeover: boolean`、`reply_policy: 'disabled' | 'autoreply'`）
 - `Message`
 - `ConversationSummary`
 - `DistillJob`
@@ -96,7 +96,7 @@ Tab 类型按角色区分：
 
 State：
 
-- `items: ConversationSummary[]`
+- `items: ConversationSummary[]`（全量，含接管和未接管）
 - `selectedId`
 - `messages`
 - `loading`
@@ -106,13 +106,18 @@ State：
 1. 拉 `/conversations`，每 3 秒后台静默轮询（`setInterval`）。
 2. 没有 selected 时选第一个 contact。
 3. selected contact 变化时拉 messages；messages 同样每 3 秒静默轮询。
-4. 按 Inbox 分组 contacts。
-5. 左侧显示 Inbox/Contact list，右侧显示 ContactDetail。
+4. 按 `contact.takeover` 分为两组：`takenItems`（已接管）和 `availableItems`（未接管）。
+5. 左侧两个分区：
+   - **已接管**：`InboxGroup` 组件，富卡片（含消息预览、reply_policy chip），可选中进入 ContactDetail。
+   - **未接管**：简化行，每行有"接管"按钮（调 `updateContact(id, { takeover: true })`）；点击行也可以在右侧展示 ContactDetail 以便编辑。
+6. 右侧显示 ContactDetail（接管和未接管的 contact 均可选中展示）。
 
 分组：
 
-- `grouped`：Inbox id → conversations。
-- `inboxOrder`：有 conversations 的 inbox 在前，再补空 inbox。
+- `takenGrouped` / `availableGrouped`：各自按 Inbox id → conversations 的映射。
+- `inboxOrder`：有 conversations 的 inbox 在前，再补空 inbox（共用）。
+
+Chip 三态：`takeover=false` → `未接管`；`takeover=true && reply_policy='disabled'` → `已接管`；`takeover=true && reply_policy='autoreply'` → `自动回复`。
 
 ## InboxGroup
 

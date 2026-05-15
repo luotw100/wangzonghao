@@ -39,6 +39,7 @@ from studio.enums import (
     MessageRole,
     OutboundMessageType,
     OutboundStatus,
+    ReplyPolicy,
 )
 from studio.models import (
     Contact,
@@ -132,8 +133,8 @@ def _decide(db: ORMSession, contact_id: str) -> _ReplyDecision:
         return _ReplyDecision("contact 不存在", None, [])
     if contact.status != ContactStatus.ACTIVE:
         return _ReplyDecision("contact archived", None, [])
-    if not contact.autoreply_enabled:
-        return _ReplyDecision("autoreply disabled on contact", None, [])
+    if contact.reply_policy != ReplyPolicy.AUTOREPLY:
+        return _ReplyDecision("reply_policy is not autoreply", None, [])
 
     inbox = db.query(Inbox).filter(Inbox.id == contact.inbox_id).first()
     if not inbox or not inbox.enabled:

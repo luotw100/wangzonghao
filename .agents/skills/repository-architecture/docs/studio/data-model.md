@@ -97,12 +97,13 @@ Bridge 运行时 token。
 
 - `id`：`String(48)`，格式 `ct_` + 完整 UUID hex。
 - `inbox_id`：`String(48)`。
-- `peer_platform_id`：`String(256)`。
-- `display_name`：`String(256)`。
+- `peer_platform_id`：`String(256)`，平台侧稳定 ID，是 Contact 的索引键。
+- `display_name`：`String(256)`，展示名（mutable）。
 - `card_md`：`Text`，nullable。
 - `persona_id`：`String(48)`，nullable。
 - `reply_provider_config_id`：`String(48)`，nullable override。
-- `autoreply_enabled`：Boolean。
+- `takeover`：Boolean。Bridge 是否上报该会话消息。`True` → Bridge 将此 peer 的本地消息上传到 Studio；`False` → Bridge 本地采集但不推送。
+- `reply_policy`：`String(16)`，CHECK `disabled | autoreply`。Studio reply brain 是否自动回复。默认 `disabled`；设为 `autoreply` 后对方发消息会触发 LLM 回复。
 - `pending_reply`：Boolean。
 - `status`：`String(16)`，CHECK `active | archived`。
 - `last_seen_platform_msg_id`：`String(256)`，nullable。
@@ -192,14 +193,28 @@ Contact
   references Persona
   optionally references ProviderConfig override
 
-Bridge incoming 创建 Contact 时：
+Contact 有两个创建入口：
 
-- `persona_id = inbox.default_persona_id`。
-- `reply_provider_config_id = inbox.reply_provider_config_id`。
-- `autoreply_enabled = False`。
-- `pending_reply = False`。
+**`POST /api/bridge/peers`**（Bridge 上报发现的 peer 列表）：
+- `takeover = False`；`reply_policy = disabled`；`pending_reply = False`；`status = active`。
+- 已有 Contact 时只更新 `display_name`，不覆盖 `takeover`/`reply_policy`。
+
+**`POST /api/bridge/incoming`**（Bridge 推送消息时按需创建）：
+- 字段初始值同上。
 
 Contact 创建后，Contact 设置与 Inbox 默认值相互独立。
+
+### `media_hashes` — `MediaHash`
+
+内容哈希 → Studio S3 storage key 映射表，用于跨 Bridge 实例/重启的媒体去重。
+
+- `id`：`BigInteger`，自增。
+- `account_id`：`String(48)`。
+- `content_hash`：`String(71)`，格式 `sha256:{64hexchars}`。
+- `storage_key`：`String(256)`，Studio S3 key。
+- unique `(account_id, content_hash)`。
+
+Bridge 上传新媒体时写入；`POST /api/bridge/media/check-or-presign` 查询此表决定是否跳过重复上传。
 
 ## Provider 解析规则
 

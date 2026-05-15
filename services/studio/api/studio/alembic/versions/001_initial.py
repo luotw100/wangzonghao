@@ -134,7 +134,8 @@ def upgrade() -> None:
         sa.Column("card_md", sa.Text, nullable=True),
         sa.Column("persona_id", sa.String(48), sa.ForeignKey("personas.id"), nullable=True),
         sa.Column("reply_provider_config_id", sa.String(48), sa.ForeignKey("provider_configs.id"), nullable=True),
-        sa.Column("autoreply_enabled", sa.Boolean, nullable=False),
+        sa.Column("takeover", sa.Boolean, nullable=False),
+        sa.Column("reply_policy", sa.String(16), nullable=False),
         sa.Column("pending_reply", sa.Boolean, nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
         sa.Column("last_seen_platform_msg_id", sa.String(256), nullable=True),
@@ -142,6 +143,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("inbox_id", "peer_platform_id", name="uq_contact_inbox_peer"),
         sa.CheckConstraint("status IN ('active', 'archived')", name="ck_contact_status"),
+        sa.CheckConstraint("reply_policy IN ('disabled', 'autoreply')", name="ck_contact_reply_policy"),
     )
     op.create_index("ix_contacts_id", "contacts", ["id"])
     op.create_index("ix_contacts_inbox_id", "contacts", ["inbox_id"])

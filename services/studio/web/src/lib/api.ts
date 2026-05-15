@@ -144,7 +144,8 @@ export interface Contact {
   card_md: string | null;
   persona_id: string | null;
   reply_provider_config_id: string | null;
-  autoreply_enabled: boolean;
+  takeover: boolean;
+  reply_policy: 'disabled' | 'autoreply';
   pending_reply: boolean;
   status: 'active' | 'archived';
   last_seen_platform_msg_id: string | null;
@@ -389,7 +390,8 @@ export function updateContact(
     persona_id?: string;
     reply_provider_config_id?: string;
     clear_reply_provider?: boolean;
-    autoreply_enabled?: boolean;
+    takeover?: boolean;
+    reply_policy?: 'disabled' | 'autoreply';
     status?: 'active' | 'archived';
   },
 ) {

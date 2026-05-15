@@ -169,6 +169,7 @@ class Contact(Base):
     __table_args__ = (
         UniqueConstraint("inbox_id", "peer_platform_id", name="uq_contact_inbox_peer"),
         CheckConstraint("status IN ('active', 'archived')", name="ck_contact_status"),
+        CheckConstraint("reply_policy IN ('disabled', 'autoreply')", name="ck_contact_reply_policy"),
     )
 
     id                          = Column(String(48), primary_key=True, index=True)
@@ -178,7 +179,8 @@ class Contact(Base):
     card_md                     = Column(Text, nullable=True)
     persona_id                  = Column(String(48), ForeignKey("personas.id"), nullable=True)
     reply_provider_config_id    = Column(String(48), ForeignKey("provider_configs.id"), nullable=True)
-    autoreply_enabled           = Column(Boolean, nullable=False)
+    takeover                    = Column(Boolean, nullable=False)
+    reply_policy                = Column(String(16), nullable=False)
     pending_reply               = Column(Boolean, nullable=False)
     status                      = Column(String(16), nullable=False)
     last_seen_platform_msg_id   = Column(String(256), nullable=True)

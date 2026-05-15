@@ -320,15 +320,20 @@ function TakeoverView({ inboxes, bridges, personas, providers, isAdmin, onChange
     return () => clearInterval(id);
   }, [reloadMessages]);
 
-  const grouped = useMemo(() => {
+  const takenItems = useMemo(() => items.filter(item => item.contact.takeover), [items]);
+  const availableItems = useMemo(() => items.filter(item => !item.contact.takeover), [items]);
+
+  const groupByInbox = (list: ConversationSummary[]) => {
     const result: Record<string, ConversationSummary[]> = {};
-    for (const item of items) {
-      const key = item.inbox.id;
-      if (!result[key]) result[key] = [];
-      result[key].push(item);
+    for (const item of list) {
+      if (!result[item.inbox.id]) result[item.inbox.id] = [];
+      result[item.inbox.id].push(item);
     }
     return result;
-  }, [items]);
+  };
+
+  const takenGrouped = useMemo(() => groupByInbox(takenItems), [takenItems]);
+  const availableGrouped = useMemo(() => groupByInbox(availableItems), [availableItems]);
 
   const inboxOrder = useMemo(() => {
     const seen = new Set<string>();
@@ -360,7 +365,7 @@ function TakeoverView({ inboxes, bridges, personas, providers, isAdmin, onChange
   return (
     <div>
       <PageHead
-        title={`${items.length} 个接管`}
+        title={`${takenItems.length} 个接管 · ${availableItems.length} 个未接管`}
         kicker="contacts"
         right={<button className="btn btn-sm btn-ghost" onClick={() => reload()}>{loading ? '刷新中…' : '刷新'}</button>}
       />
@@ -372,23 +377,71 @@ function TakeoverView({ inboxes, bridges, personas, providers, isAdmin, onChange
         </div>
       ) : (
         <div style={{ padding: '0 28px 24px', display: 'grid', gridTemplateColumns: 'minmax(300px, 380px) minmax(0, 1fr)', gap: 12, alignItems: 'start' }}>
-          <div style={{ display: 'grid', gap: 12 }}>
-            {inboxOrder.map(inbox => (
-              <InboxGroup
-                key={inbox.id}
-                inbox={inbox}
-                bridge={bridges.find(bridge => bridge.id === inbox.bridge_id) ?? null}
-                conversations={grouped[inbox.id] ?? []}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                personas={personas}
-                providers={providers}
-                isAdmin={isAdmin}
-                onChanged={onChanged}
-                onLocalRefresh={reload}
-                setError={setError}
-              />
-            ))}
+          <div style={{ display: 'grid', gap: 16 }}>
+            <div style={{ display: 'grid', gap: 12 }}>
+              <span className="eyebrow" style={{ paddingLeft: 2 }}>已接管 {takenItems.length}</span>
+              {inboxOrder.map(inbox => {
+                const convs = takenGrouped[inbox.id] ?? [];
+                if (convs.length === 0) return null;
+                return (
+                  <InboxGroup
+                    key={`taken-${inbox.id}`}
+                    inbox={inbox}
+                    bridge={bridges.find(bridge => bridge.id === inbox.bridge_id) ?? null}
+                    conversations={convs}
+                    selectedId={selectedId}
+                    onSelect={setSelectedId}
+                    personas={personas}
+                    providers={providers}
+                    isAdmin={isAdmin}
+                    onChanged={onChanged}
+                    onLocalRefresh={reload}
+                    setError={setError}
+                  />
+                );
+              })}
+              {takenItems.length === 0 && (
+                <div className="ink-3" style={{ fontSize: 12, padding: '4px 2px' }}>
+                  还没有接管任何会话。从下方列表点击「接管」。
+                </div>
+              )}
+            </div>
+
+            <div style={{ display: 'grid', gap: 8 }}>
+              <span className="eyebrow" style={{ paddingLeft: 2 }}>未接管 {availableItems.length}</span>
+              {inboxOrder.map(inbox => {
+                const convs = availableGrouped[inbox.id] ?? [];
+                if (convs.length === 0) return null;
+                return (
+                  <div key={`avail-${inbox.id}`} className="card" style={{ padding: '10px 14px', display: 'grid', gap: 6 }}>
+                    <span className="mono ink-3" style={{ fontSize: 11 }}>{inbox.display_name}</span>
+                    {convs.map(item => (
+                      <div
+                        key={item.contact.id}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--line-subtle)' }}
+                      >
+                        <button
+                          className="card"
+                          style={{ flex: 1, textAlign: 'left', padding: '6px 8px', background: selectedId === item.contact.id ? 'var(--brass-soft)' : undefined, borderColor: selectedId === item.contact.id ? 'var(--brass-line)' : 'var(--line-subtle)' }}
+                          onClick={() => setSelectedId(item.contact.id)}
+                        >
+                          <span style={{ fontSize: 13 }}>{item.contact.display_name}</span>
+                        </button>
+                        <button
+                          className="btn btn-sm"
+                          onClick={() => patchContact(item.contact.id, { takeover: true })}
+                        >
+                          接管
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+              {availableItems.length === 0 && (
+                <div className="ink-3" style={{ fontSize: 12, padding: '4px 2px' }}>暂无未接管会话。</div>
+              )}
+            </div>
           </div>
 
           <div className="card" style={{ padding: 16, minHeight: 420 }}>
@@ -479,7 +532,11 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, person
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
                 <strong style={{ fontSize: 13 }}>{item.contact.display_name}</strong>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {item.contact.autoreply_enabled ? <span className="chip live">接管中</span> : <span className="chip muted">手动</span>}
+                  {item.contact.takeover
+                    ? (item.contact.reply_policy === 'autoreply'
+                        ? <span className="chip live">自动回复</span>
+                        : <span className="chip">已接管</span>)
+                    : <span className="chip muted">未接管</span>}
                   <span className="chip muted">{item.message_count}</span>
                 </div>
               </div>
@@ -649,11 +706,21 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
           <label className="mono" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
             <input
               type="checkbox"
-              checked={contact.autoreply_enabled}
-              disabled={!canAutoreply && !contact.autoreply_enabled}
-              onChange={event => onPatch(contact.id, { autoreply_enabled: event.target.checked })}
+              checked={contact.takeover}
+              onChange={event => onPatch(contact.id, { takeover: event.target.checked })}
             />
-            自动接管
+            接管
+          </label>
+          <label className="mono" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
+            <select
+              value={contact.reply_policy}
+              disabled={!contact.takeover || (!canAutoreply && contact.reply_policy !== 'autoreply')}
+              onChange={event => onPatch(contact.id, { reply_policy: event.target.value as 'disabled' | 'autoreply' })}
+              style={{ fontSize: 11 }}
+            >
+              <option value="disabled">不自动回复</option>
+              <option value="autoreply">自动回复</option>
+            </select>
           </label>
         </div>
         {!canAutoreply && (

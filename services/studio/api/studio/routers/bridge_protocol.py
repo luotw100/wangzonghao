@@ -22,6 +22,7 @@ from studio.enums import (
     OutboundAckResult,
     OutboundStatus,
     PersonaStatus,
+    ReplyPolicy,
 )
 from studio.models import (
     Account,
@@ -41,6 +42,7 @@ from studio.schemas import (
     BridgeMediaCheckOrPresignRequest,
     BridgeMediaPresignRequest,
     BridgeOutboundAck,
+    BridgeReportPeers,
 )
 from studio.serializers import s_bridge_inbox_view
 
@@ -245,7 +247,7 @@ def bridge_incoming(
                 display_name=m.peer_display_name or m.peer_platform_id,
                 card_md=None, persona_id=inbox.default_persona_id,
                 reply_provider_config_id=inbox.reply_provider_config_id,
-                autoreply_enabled=False, pending_reply=False,
+                takeover=False, reply_policy=ReplyPolicy.DISABLED, pending_reply=False,
                 status=ContactStatus.ACTIVE, last_seen_platform_msg_id=None,
                 created_at=now, updated_at=now,
             )
@@ -317,7 +319,7 @@ def bridge_incoming(
 
         contact.last_seen_platform_msg_id = m.platform_msg_id
         contact.updated_at = now
-        if role == "counterpart" and inbox.enabled and contact.autoreply_enabled:
+        if role == "counterpart" and inbox.enabled and contact.reply_policy == ReplyPolicy.AUTOREPLY:
             contact.pending_reply = True
         accepted += 1
 
@@ -436,6 +438,86 @@ def bridge_media_check_or_presign(
     storage_key = f"media/{bridge.id}/{uuid.uuid4().hex}"
     upload_url = s3_presigned_put_url(storage_key, payload.mime_type)
     return {"status": "new", "storage_key": storage_key, "upload_url": upload_url}
+
+
+@router.post("/api/bridge/peers")
+def bridge_report_peers(
+    payload: BridgeReportPeers,
+    db: Annotated[Session, Depends(get_db)],
+    bridge: BridgeDep,
+):
+    """Upsert contacts from the peer list the bridge discovered on the platform.
+
+    Creates new contacts with takeover=False; updates display_name for existing ones.
+    Does not touch takeover or reply_policy so user state is preserved.
+    """
+    inbox = (
+        db.query(Inbox)
+        .filter(Inbox.id == payload.inbox_id, Inbox.bridge_id == bridge.id)
+        .first()
+    )
+    if not inbox:
+        raise HTTPException(status_code=404, detail="Inbox 不存在")
+
+    now = utc_now()
+    upserted = 0
+    for peer in payload.peers:
+        contact = (
+            db.query(Contact)
+            .filter(
+                Contact.inbox_id == inbox.id,
+                Contact.peer_platform_id == peer.peer_platform_id,
+            )
+            .first()
+        )
+        if contact:
+            contact.display_name = peer.display_name
+            contact.updated_at = now
+        else:
+            db.add(Contact(
+                id=new_id("ct"),
+                inbox_id=inbox.id,
+                peer_platform_id=peer.peer_platform_id,
+                display_name=peer.display_name,
+                card_md=None,
+                persona_id=inbox.default_persona_id,
+                reply_provider_config_id=inbox.reply_provider_config_id,
+                takeover=False,
+                reply_policy=ReplyPolicy.DISABLED,
+                pending_reply=False,
+                status=ContactStatus.ACTIVE,
+                last_seen_platform_msg_id=None,
+                created_at=now,
+                updated_at=now,
+            ))
+            upserted += 1
+
+    db.commit()
+    return {"upserted": upserted}
+
+
+@router.get("/api/bridge/active-peers")
+def bridge_active_peers(
+    db: Annotated[Session, Depends(get_db)],
+    bridge: BridgeDep,
+):
+    """Return peers with takeover=True for inboxes served by this bridge."""
+    rows = (
+        db.query(Contact.peer_platform_id, Inbox.id.label("inbox_id"))
+        .join(Inbox, Inbox.id == Contact.inbox_id)
+        .filter(
+            Inbox.bridge_id == bridge.id,
+            Contact.takeover.is_(True),
+            Contact.status == ContactStatus.ACTIVE,
+        )
+        .all()
+    )
+    return {
+        "peers": [
+            {"inbox_id": r.inbox_id, "peer_platform_id": r.peer_platform_id}
+            for r in rows
+        ]
+    }
 
 
 @router.get("/api/bridge/media/{storage_key:path}")

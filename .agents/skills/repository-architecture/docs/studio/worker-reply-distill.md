@@ -113,7 +113,7 @@
 
 1. Contact 存在。
 2. Contact status 是 active。
-3. Contact autoreply enabled。
+3. Contact `reply_policy == 'autoreply'`（`disabled` 时跳过）。
 4. Inbox 存在且 enabled。
 5. Provider 从 `contact.reply_provider_config_id or inbox.reply_provider_config_id or global default provider` 解析到，且状态 active。
 6. Provider 存在且有 API key。

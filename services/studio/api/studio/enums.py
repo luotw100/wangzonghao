@@ -74,6 +74,11 @@ class OutboundMessageType(StrEnum):
     FILE = "file"
 
 
+class ReplyPolicy(StrEnum):
+    DISABLED = "disabled"
+    AUTOREPLY = "autoreply"
+
+
 class OutboundAckResult(StrEnum):
     SENT = "sent"
     FAILED = "failed"

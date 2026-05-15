@@ -9,22 +9,22 @@
 字段：
 
 - `peer_id`：平台侧对方 id。
-- `peer_display_name`：对方展示名，用于 Studio Contact 创建/展示。
-- `platform_msg_id`：平台消息 id，用于 Studio 去重。
-- `role`：`self | counterpart`。
+- `peer_display_name`：对方展示名。
+- `platform_msg_id`：平台消息 id（nullable），advisory，用于平台侧 cursor。
+- `sender_id`：发送者平台 id（区分 self/counterpart 用 inbox.platform_self_id 比较）。
 - `msg_type`：`text | image | audio | video | file`。text 时 content 为文本；media 时 content 为平台 S3 storage key。
 - `content`：文本内容或平台 storage key。
-- `sent_at`：UTC-aware datetime（`tzinfo` 已设置）。ChatAdapter 的 `_parse_iso()` 确保：若解析结果为 naive datetime，则补 `timezone.utc`。
+- `sent_at`：UTC-aware datetime。
 
 ### `Adapter`
 
 必须实现的 async 方法：
 
-- `login() -> str`：登录平台并返回 `platform_self_id`。
-- `list_initial_messages(since_ms) -> list[IncomingMessage]`：启动时补抓消息。
-- `stream_incoming() -> AsyncIterator[IncomingMessage]`：持续产生新消息。
-- `send(peer_id, msg_type, content) -> str`：发送一条消息（text 或 media），返回平台消息 id。text 时 content 为纯文本；media 时 content 为平台 S3 storage key（Bridge runtime 已上传到平台 S3）。
-- `send_text(peer_id, content) -> str`：便捷方法，委托 `send()` 以 `msg_type='text'`。
+- `login() -> str`：登录平台，返回 `platform_self_id`。
+- `list_peers() -> list[dict]`：返回 `[{"peer_platform_id": ..., "display_name": ...}]`，供 announce loop 上报 Studio；默认空列表，子类应覆盖。
+- `scan(cursors: dict[str, str | None]) -> AsyncIterator[IncomingMessage]`：无限循环，持续 yield 历史和实时消息。`cursors` 是 `{peer_id: last_platform_msg_id}` 映射，adapter 读取并在 yield 后更新。
+- `send(peer_id, msg_type, content) -> str`：发送消息，返回平台消息 id。
+- `send_text(peer_id, content) -> str`：便捷方法，委托 `send()`。
 - `download_media(storage_key) -> (bytes, mime_type)`：从平台 S3 下载媒体二进制。
 - `upload_and_send_media(peer_id, msg_type, data, filename, mime_type) -> str`：上传二进制到平台 S3 后发送。
 - `close()`：释放资源。
@@ -34,7 +34,6 @@
 - Adapter 不知道 Studio `inbox_id`。
 - Adapter 不实现 typing delay。
 - Runtime 给 inbound 消息加 `inbox_id`。
-- Studio 用 `external_id = live:{platform_msg_id}` 去重。
 
 ## Adapter registry
 
@@ -44,7 +43,7 @@
 
 ## ChatAdapter
 
-`bridge/adapters/chat.py` 当前把 Chat sandbox 包装成 Channel adapter。
+`bridge/adapters/chat.py` 把 Chat sandbox 包装成 Channel adapter。
 
 内部状态：
 
@@ -52,100 +51,119 @@
 - `_http`：`httpx.AsyncClient`。
 - `_token`：Chat auth token。
 - `_self_account_id`：Chat 登录后返回的 account id。
-- `_threads`：conversation id → `peer_id`、`peer_display_name`、`last_msg_id`。
+- `_threads`：`{conv_id: {peer_id, peer_display_name}}`。
 - `_poll_sleep = 2.0`。
 
 ### `login()`
 
-- POST `{base}/api/auth/login`。
-- 保存返回 token。
-- 保存 Chat account id。
-- 返回 account id 作为 `platform_self_id`。
+- POST `{base}/api/auth/login`，保存 token 和 account id，返回 account id 作为 `platform_self_id`。
 
 ### `_refresh_threads()`
 
-- GET `/api/conversations`。
-- 对每个 conversation 记录 peer contact id 和 display name。
-- 新 thread 的 `last_msg_id = 0`。
+- GET `/api/conversations`，更新 `self._threads`（新 thread 初始化，已有 thread 更新 display name）。
 
-### `list_initial_messages()`
+### `list_peers()`
 
-- refresh threads。
-- 对每个 conversation 用 `last_id=0` 拉取全部 messages。
-- 转成 `IncomingMessage`（包含 `msg_type`）。
-- 更新 thread 的 `last_msg_id`。
+- 调 `_refresh_threads()`，返回 `self._threads` 中所有 peer 的 `{peer_platform_id, display_name}` 列表。
 
-### `stream_incoming()`
+### `scan(cursors)`
 
-- 无限循环。
-- refresh threads。
-- 拉取每个 conversation 中 `id > last_msg_id` 的 messages。
-- yield 转换后的 IncomingMessage（包含 `msg_type`）。
+- 无限循环：`_refresh_threads()` → 对每个 thread 用 `since_id = cursors.get(peer_id) or 0` 拉取消息 → yield `IncomingMessage` → 更新 `cursors[peer_id]`。
 - 无消息时 sleep 2s。
-- Chat 返回 401 时重新 login。
+- 401 时重新 login；其它异常 log 后继续。
 
-### `send()`
+### `send()` / `upload_and_send_media()`
 
-- 通过 peer id 找 conversation id；找不到时 refresh 一次。
-- POST `/api/conversations/{conv_id}/messages`，body 使用 `sender_type='self'` 和 `msg_type`。
-- 返回 response 中的 `id` 作为 `platform_msg_id`。
+与 outbound dispatch 协作，流程见 Outbound loop 节。
 
-### `download_media()`
+## LocalStore
 
-- GET `{base}/api/media/{storage_key}`（Chat 端 presigned GET URL redirect）。
-- 跟随重定向下载二进制，返回 `(data, mime_type)`。
+`bridge/local_store.py`，SQLite-backed 本地消息持久化。WAL 模式。
 
-### `upload_and_send_media()`
+### 表：`local_messages`
 
-1. POST `{base}/api/uploads/presign` 获取 Chat S3 upload URL。
-2. PUT 二进制到 upload URL。
-3. 调用 `send(peer_id, msg_type, chat_storage_key)` 发送平台消息。
+字段：`id`（autoincrement）、`inbox_id`、`peer_id`、`peer_display_name`、`platform_msg_id`（nullable）、`sender_id`、`sent_at`（canonical UTC ISO8601）、`msg_type`、`content`（text: 明文；media: `sha256:{hex}`）、`mime_type`（media 时非 null）、`local_hash`（SHA256 去重键）、`sent`（0/1）。
 
-## BridgeRuntime state
+索引：`UNIQUE(inbox_id, local_hash)`（本地去重）、`(sent, id)`（consumer 查询）、`(inbox_id, peer_id, id)`（cursor 查询）。
 
-`runtime.py` 当前常量：
+### 关键方法
 
-- heartbeat interval：15s。
-- inbound batch linger：0.4s。
-- inbound batch max：30。
-- outbound long-poll timeout：30s。
+- `migrate()`：建表，每次启动安全调用。
+- `get_cursors(inbox_id) -> {peer_id: last_platform_msg_id}`：从已插入行推导各 peer 的扫描位置。
+- `insert_message(msg) -> bool`：`INSERT OR IGNORE`，返回是否实际插入（local_hash 去重）。
+- `get_unsent(limit, active_peers) -> list[LocalMessage]`：返回 `sent=0` 的行；`active_peers` 为 `frozenset[(inbox_id, peer_id)]`，非 None 时按 `(inbox_id, peer_id) IN (...)` 过滤，空 frozenset 直接返回 `[]`。
+- `mark_sent(id)`：将行标记为已发送。
 
-关键字段：
+### local_hash 计算
 
-- `_adapters: dict[inbox_id, _AdapterEntry]`。
-- `_inbound_queue: Queue[(inbox_id, IncomingMessage)]`。
-- `_cursor: int`：outbound cursor。
+`sha256("\x00".join([inbox_id, peer_id, sender_id, sent_at_canonical, msg_type, content]))`
+
+content 是 *存储形式*：text 用明文，media 用 `sha256:{hex}`（文件内容 hash）。
+
+## BridgeRuntime
+
+`bridge/runtime.py`，当前采用 producer-consumer inbound 模型。
+
+### 常量
+
+- `HEARTBEAT_INTERVAL = 15.0`
+- `OUTBOUND_LONG_POLL_TIMEOUT = 30`
+- `CONSUMER_SLEEP = 1.0`
+- `CONSUMER_BATCH = 50`
+- `ANNOUNCE_INTERVAL = 60.0`
+- `ACTIVE_PEERS_INTERVAL = 10.0`
+
+### 关键字段
+
+- `_adapters: dict[inbox_id, _AdapterEntry]`：每个 inbox 一个 adapter entry，含 `producer_task`。
+- `_cursor: int`：outbound cursor（Studio→Bridge 队列游标）。
+- `_active_peers: frozenset[(inbox_id, peer_id)]`：当前 `takeover=True` 的 peer 集合，由 `_active_peers_loop` 维护。
 - `_stop: Event`。
-- `_loop_tasks`：heartbeat / inbound / outbound loop tasks。
+- `_loop_tasks`：heartbeat / consumer / outbound / announce / active-peers loop tasks。
+- `_media_sem`：限制并发媒体下载（最多 5）。
 
-## Inbound pump（含 media 上传）
+### 启动序列（`run()`）
+
+1. 对每个 claim：build adapter → login → 收集 `(claim, adapter, self_id)`。
+2. handshake 或 token 复用。
+3. `store.migrate()`。
+4. 对每个成功登录的 claim：绑定 inbox_id → 初始化 `cursors = store.get_cursors(inbox_id)` → 启动 `producer_task`。
+5. 启动 heartbeat / consumer / outbound / announce / active-peers 五个 loop task。
+
+## Inbound 流程（producer-consumer 模型）
 
 ```text
-adapter.stream_incoming()
-  → _adapter_inbound_loop()
-  → _inbound_queue
-  → _inbound_pump_loop()
-  → _push_batch()
-    → 对每条消息：如果 msg_type != 'text'，走 media 上传
+adapter.scan(cursors)
+  → _producer_loop (per inbox)
+      → _to_local_message()        # 文本直接用；媒体 download + sha256 + 落磁盘
+      → store.insert_message()     # UNIQUE(inbox_id, local_hash) 本地去重
+
+store.get_unsent(active_peers=self._active_peers)
+  → _consumer_loop (global, 1s sleep)
+      → _resolve_content()         # text 直接取；media check-or-presign → 必要时 PUT S3
+      → studio.push_incoming()     # POST /api/bridge/incoming
+      → store.mark_sent()
 ```
 
-Batch 规则：
+**媒体处理（producer）**：下载 → `sha256(data)` → 缓存到 `{media_cache_dir}/{sha256hex}` → content 存 `sha256:{hex}`；mime_type 同步记录。
 
-- 等第一条消息。
-- 最多收集 0.4s 或 30 条。
-- 每条 msg_type != 'text' 的消息：调 `adapter.download_media(msg.content)` 从平台 S3 下载 → 调 `studio.presign_upload()` 获取 Studio S3 upload URL → PUT 二进制 → 用 Studio S3 storage key 替换 content。
-- `_to_payload()` 转 Studio payload（包含 `msg_type` 和最终 `content`）。
-- POST `/api/bridge/incoming`。
+**媒体处理（consumer）**：调 `check-or-presign`；status=exists 跳过上传；status=new 从 cache 读 bytes → PUT Studio S3 → 用 storage_key 作为 content 上传。
+
+**active_peers 过滤**：consumer 只推送 `(inbox_id, peer_id)` 在 `_active_peers` 集合中的消息。不在集合的消息 `sent=0` 留在本地 store，待接管后由 consumer 自动补发历史。Producer 和 cursor 不受影响——无论是否接管，Bridge 本地全量采集。
+
+## Peer 目录与接管同步
+
+### `_announce_loop`（60s 周期）
+
+对每个 adapter 调 `list_peers()` → 调 `POST /api/bridge/peers` 上报发现的 peer 列表，供 Studio 前端展示会话目录。启动后立即执行第一次。
+
+### `_active_peers_loop`（10s 周期）
+
+调 `GET /api/bridge/active-peers` 拉取 `takeover=True` 的 peer 集合 → 更新 `self._active_peers`。启动后立即执行第一次，确保 consumer 在首次 1s sleep 前即有正确的 active peers。
 
 ## Heartbeat loop
 
-每 15 秒：
-
-1. POST `/api/bridge/heartbeat`。
-2. 收到 Studio 当前认可的 Inbox 列表。
-3. 停掉本地存在但不在列表中的 adapter。
-
-这使得 Studio UI 中 revoke/unbind 后，Bridge 能停止对应 adapter。
+每 15 秒：POST `/api/bridge/heartbeat`，收到当前 Studio 认可的 inbox 列表，停掉不在列表中的 adapter。
 
 ## Outbound loop（含 media 下发）
 
@@ -158,12 +176,9 @@ GET /api/bridge/outbound?cursor=current&timeout=30
 
 `_dispatch_outbound()` 当前行为：
 
-- 用 `inbox_id` 找 adapter。
-- 校验 `peer_platform_id`。
-- 跳过空 content。
-- `msg_type == 'text'`：调 `adapter.send_text(peer_id, content)`。
-- `msg_type != 'text'`（media）：调 `studio.get_media_url(content)` 获取 Studio S3 presigned GET URL → 下载二进制 → 调 `adapter.upload_and_send_media()` 上传到平台 S3 并发送。
-- 成功时 ack `sent`，携带 platform message id。
-- 异常时 ack `failed`，携带 reason。
+- 用 `inbox_id` 找 adapter；找不到 ack failed。
+- `msg_type == 'text'`：调 `adapter.send_text()`。
+- `msg_type != 'text'`（media）：调 `studio.get_media_url(content)` → 下载二进制 → `adapter.upload_and_send_media()`。
+- 成功 ack `sent`（携带 platform_msg_id），异常 ack `failed`（携带 reason）。
 
-Bridge 不实现任何 delay 或 pacing。打字节奏由 Studio 在创建 OutboundMessage 时通过 `send_after` 时间戳控制。
+打字节奏由 Studio 在创建 OutboundMessage 时通过 `send_after` 时间戳控制；Bridge 直接按 `send_after <= now` 消费，不实现额外 delay。

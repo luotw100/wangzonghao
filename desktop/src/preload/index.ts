@@ -4,6 +4,9 @@ import type { DaemonState, LogLine, InboxClaim } from '../main/daemon/types'
 export type BridgeAPI = typeof api
 
 const api = {
+  // Host platform (renderer has no `process` under contextIsolation)
+  platform: process.platform,
+
   // Snapshot
   getState: (): Promise<DaemonState> => ipcRenderer.invoke('bridge:get-state'),
   getCreds: (): Promise<{

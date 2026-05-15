@@ -97,7 +97,7 @@ export function App() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh', overflow: 'hidden', background: 'var(--bg-deep)' }}>
       {/* macOS traffic-light spacer when titleBarStyle=hiddenInset */}
-      {process.platform === 'darwin' && (
+      {window.bridge.platform === 'darwin' && (
         <div style={{ height: 28, flexShrink: 0, WebkitAppRegion: 'drag' } as React.CSSProperties} />
       )}
 

@@ -249,6 +249,7 @@ function registerIpc(): void {
 app.whenReady().then(() => {
   creds = new CredentialStore(app.getPath('userData'))
 
+  Menu.setApplicationMenu(null)  // no default browser-style menu bar
   createWindow()
   registerIpc()
 

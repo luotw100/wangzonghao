@@ -23,13 +23,11 @@ mac:
 
 win:
   target:
-    - target: nsis
+    - target: portable
       arch: [x64]
 
-nsis:
-  oneClick: true
-  perMachine: false
-  allowToChangeInstallationDirectory: false
+portable:
+  artifactName: LaborsterBridge-${version}-portable.exe
 
 dmg:
   title: Laborster Bridge ${version}

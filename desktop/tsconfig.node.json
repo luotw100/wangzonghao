@@ -12,5 +12,5 @@
     "resolveJsonModule": true,
     "noEmit": false
   },
-  "include": ["src/main/**/*", "src/preload/**/*", "electron-vite.config.ts"]
+  "include": ["src/main/**/*", "src/preload/**/*"]
 }

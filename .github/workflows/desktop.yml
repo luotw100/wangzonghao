@@ -6,9 +6,10 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false   # let both platforms complete even if one fails
       matrix:
         include:
-          - os: macos-14          # arm64 M1; builds universal via Rosetta
+          - os: macos-14          # arm64 M1
             platform: mac
           - os: windows-latest
             platform: win
@@ -24,12 +25,11 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          node-version: 22   # LTS; avoids Node 20 deprecation warning
 
       - name: Install dependencies
-        run: npm ci
+        # npm install (not ci) until package-lock.json is committed
+        run: npm install
 
       # Rebuild native modules (better-sqlite3) for Electron's Node ABI
       - name: Rebuild native modules
@@ -41,12 +41,13 @@ jobs:
       - name: Package (macOS)
         if: matrix.platform == 'mac'
         run: npm run dist:mac
-        # No signing: unsigned DMG, users bypass Gatekeeper with xattr
+        # No signing: unsigned DMG, bypass Gatekeeper with:
+        #   xattr -rd com.apple.quarantine /Applications/Laborster\ Bridge.app
 
       - name: Package (Windows)
         if: matrix.platform == 'win'
         run: npm run dist:win
-        # No signing: SmartScreen will warn on first launch
+        # No signing: SmartScreen warns on first launch, click "More info → Run anyway"
 
       - name: Upload artifacts (macOS)
         if: matrix.platform == 'mac'
@@ -64,7 +65,7 @@ jobs:
           path: desktop/dist-release/*.exe
           retention-days: 14
 
-  # Download artifacts and create a draft GitHub Release (manual step)
+  # Create a draft GitHub Release and attach both binaries
   release:
     needs: build
     runs-on: ubuntu-latest

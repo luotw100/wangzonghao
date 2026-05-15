@@ -13,6 +13,9 @@ let creds: CredentialStore
 let runtime: BridgeRuntime | null = null
 let currentState: DaemonState | null = null
 let isQuitting = false
+// Studio account password — kept in memory only for the session, never on disk.
+// Required for the daemon's authoritative handshake; null after cold start → re-login.
+let studioPassword: string | null = null
 
 // ── Renderer communication ──────────────────────────────────────────────────
 
@@ -121,8 +124,10 @@ async function startDaemon(): Promise<void> {
   await runtime.run({
     handshakeToken: creds.token,
     machineId: creds.machineId,
+    studioPassword,
     onAuthError: () => {
       creds.clearToken()
+      studioPassword = null
       sendToRenderer('bridge:state-change', buildIdleState('error401'))
     },
     onCursorInit: (_cursor) => {},
@@ -194,6 +199,8 @@ function registerIpc(): void {
         machineId: hs.machineId,
         bridgeId: hs.bridgeId,
       })
+      // Retain for the daemon's authoritative handshake (memory only).
+      studioPassword = opts.password
       return { ok: true, machineId: hs.machineId, bridgeId: hs.bridgeId }
     } catch (err: any) {
       return { ok: false, error: String(err) }
@@ -230,6 +237,7 @@ function registerIpc(): void {
   ipcMain.handle('bridge:logout', () => {
     stopDaemon()
     creds.clearToken()
+    studioPassword = null
     sendToRenderer('bridge:state-change', buildIdleState('idle'))
   })
 
@@ -241,6 +249,9 @@ function registerIpc(): void {
     bridgeId: creds.bridgeId,
     hasToken: creds.hasToken(),
     hasInboxes: creds.hasInboxes(),
+    // No in-memory Studio password (cold start / after logout) → must re-login
+    // before the daemon can perform its authenticated handshake.
+    needsLogin: studioPassword == null,
   }))
 }
 
@@ -265,10 +276,10 @@ app.whenReady().then(() => {
   tray.setContextMenu(buildTrayMenu(null))
   tray.on('double-click', () => { win?.show(); win?.focus() })
 
-  // Auto-start daemon if credentials ready
-  if (creds.hasToken() && creds.hasInboxes()) {
-    startDaemon()
-  }
+  // No cold-start auto-start: the daemon's handshake needs the Studio
+  // password, which is memory-only and absent on a fresh launch. The
+  // renderer routes to the Login screen (get-creds.needsLogin) and the
+  // daemon starts from the post-login flow instead.
 })
 
 app.on('before-quit', () => {

@@ -33,6 +33,7 @@ export class BridgeRuntime {
   private adapters = new Map<string, AdapterEntry>()
   private activePeers = new Set<string>() // "inboxId|peerId"
   private outboundCursor = 0
+  private lastError?: string
   private stopped = false
   private timers: ReturnType<typeof setInterval>[] = []
   private store: LocalStore
@@ -69,20 +70,24 @@ export class BridgeRuntime {
       inboxes,
       inCount5m: this.store.countRecentIncoming(5 * 60 * 1000),
       outboundPending: this.store.countUnsent(),
+      lastError: this.lastError,
     })
   }
 
   async run(opts: {
     handshakeToken: string | null
     machineId: string | undefined
+    studioPassword: string | null
     onAuthError: () => void
     onCursorInit: (cursor: number) => void
   }): Promise<void> {
+    this.lastError = undefined
     this.pushState('connecting')
     this.log('core', 'info', `starting · claims=${this.claims.length}`)
 
     // 1. Login all adapters
     const loggedIn: Array<{ claim: InboxClaim; adapter: ChatAdapter; selfId: string }> = []
+    const loginErrors: string[] = []
     for (const claim of this.claims) {
       const adapter = new ChatAdapter(claim.baseUrl, claim.username, claim.password)
       try {
@@ -90,11 +95,14 @@ export class BridgeRuntime {
         this.log('adapter', 'ok', `login ok · ${claim.username}@${claim.baseUrl} selfId=${selfId}`)
         loggedIn.push({ claim, adapter, selfId })
       } catch (err) {
-        this.log('adapter', 'err', `login failed · ${claim.username}: ${err}`)
+        const m = `${claim.username}@${claim.baseUrl}: ${err instanceof Error ? err.message : err}`
+        this.log('adapter', 'err', `login failed · ${m}`)
+        loginErrors.push(m)
       }
     }
 
     if (loggedIn.length === 0) {
+      this.lastError = `无法登录聊天平台(检查 Chat Base URL 是否可达):${loginErrors.join(' / ')}`
       this.log('core', 'err', 'no adapters logged in — stopping')
       this.pushState('offline')
       return
@@ -109,7 +117,7 @@ export class BridgeRuntime {
     try {
       const hs = await this.studio.handshake({
         username: this.getState().username!,
-        password: '',  // token reuse path handled by studio-client bearer header
+        password: opts.studioPassword ?? '',
         machineId,
         inboxes: loggedIn.map(l => ({ platform: 'chat', platformSelfId: l.selfId })),
       })
@@ -122,9 +130,11 @@ export class BridgeRuntime {
       this.log('studio', 'ok', `handshake ok · bridge_id=${hs.bridgeId} machine_id=${machineId}`)
     } catch (err: any) {
       if (String(err).includes('401')) {
+        this.lastError = 'Studio 鉴权失败,请重新登录'
         opts.onAuthError()
         this.pushState('error401')
       } else {
+        this.lastError = `Studio handshake 失败: ${err instanceof Error ? err.message : err}`
         this.log('studio', 'err', `handshake failed: ${err}`)
         this.pushState('offline')
       }

@@ -39,13 +39,13 @@ export function App() {
         bridgeId: creds.bridgeId,
       }))
 
-      if (!creds.hasToken) {
+      if (creds.needsLogin) {
+        // Cold start: Studio password is memory-only and gone → re-login.
         setScreen('login')
       } else if (!creds.hasInboxes) {
         setScreen('inbox')
       } else {
         setScreen('panel')
-        // Daemon auto-started by main process; sync displayed state
         if (state.status !== 'idle') setDaemonState(state)
       }
       setLoading(false)

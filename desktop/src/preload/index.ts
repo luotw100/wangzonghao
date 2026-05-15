@@ -16,6 +16,7 @@ const api = {
     bridgeId?: string
     hasToken: boolean
     hasInboxes: boolean
+    needsLogin: boolean
   }> => ipcRenderer.invoke('bridge:get-creds'),
 
   // Auth

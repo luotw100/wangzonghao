@@ -56,6 +56,7 @@ export interface DaemonState {
   inboxes: InboxStatus[]
   inCount5m: number
   outboundPending: number
+  lastError?: string
 }
 
 export interface LogLine {

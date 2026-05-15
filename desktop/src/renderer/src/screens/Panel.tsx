@@ -30,6 +30,7 @@ export function Panel({ state, onNav }: Props) {
   const kpis = buildKpis(state)
   const is401 = state.status === 'error401'
   const isDegraded = state.status === 'degraded'
+  const isOffline = state.status === 'offline'
 
   return (
     <div style={{ display: 'flex', width: '100%', height: '100%', minHeight: 0 }}>
@@ -67,6 +68,11 @@ export function Panel({ state, onNav }: Props) {
           {isDegraded && (
             <Banner kind="warn" title="降级运行 · 部分 inbox 掉线" sub="其余 inbox 仍正常收发">
               <Btn sm onClick={() => window.bridge.stop()}>停止 daemon</Btn>
+            </Banner>
+          )}
+          {isOffline && state.lastError && (
+            <Banner kind="danger" title="daemon 离线 · 启动失败" sub={state.lastError}>
+              <Btn sm onClick={() => onNav('inbox')}>检查 Inbox →</Btn>
             </Banner>
           )}
 

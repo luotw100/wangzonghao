@@ -148,8 +148,8 @@ Chip 三态：`takeover=false` → `未接管`；`takeover=true && reply_policy=
 - peer platform id。
 - Persona select。
 - admin 可看到 Provider override select；普通 user 看到“模型由管理员统一配置”。
-- autoreply switch。
-- card markdown editor。
+- autoreply switch。切换到 `autoreply` 前的 warning gate：若该 contact 没有 persona（或 persona `persona_md` 为空）或 `card_md` 为空，`confirm()` 警告"人设和关系卡缺一不可，自动回复不会真正生效"，取消则不 patch。
+- card markdown editor。下方一个「✶ 自动创建关系卡」按钮：调 `api.createDistillJob({ contact_ids: [contact.id], target_persona_id: null })`，后台从该粉丝全部聊天记录提取关系卡、不动人设；提交后显示 note，靠 3s 轮询自动刷新出新 `card_md`。
 - recent messages。
 
 Provider 运行时解析：
@@ -182,9 +182,12 @@ contact.reply_provider_config_id ?? inbox.reply_provider_config_id ?? global def
 ## PersonasView
 
 - 列出 Persona。
-- Create modal 调 `api.createPersona()`，包含 `name`、`persona_md`、`timezone` 字段。
+- 页头两个入口：「✶ 自动创建」（主按钮）和「+ 手动新建」。
+- `CreatePersonaModal`（手动）：顶部有醒目提示卡片，引导改用自动创建（按钮回调 `onSwitchToAuto` 切到自动创建 modal）；其余 `name`、`persona_md`、`timezone` 字段调 `api.createPersona()`。
+- `AutoCreatePersonaModal`（自动创建即蒸馏入口）：输入人设 `name` + `timezone`；`api.getConversations()` 拉接管列表（`takeover` 的 contact），按 inbox 分组多选，默认全选，可整组全选/取消；提交时先 `api.createPersona({ persona_md: null })` 建空人设，再 `api.createDistillJob({ contact_ids, target_persona_id: persona.id })`。无进度条，后台执行。
 - Edit modal 调 `api.updatePersona()`，同样暴露 `timezone` 字段。
 - Delete 调 `api.deletePersona()`。
+- 设计取舍：persona 不做版本历史（用户建多个 persona 即可），card 单张直接覆盖——二者均可从 source-of-truth 消息重新蒸出，无需快照。
 
 ## SettingsView
 

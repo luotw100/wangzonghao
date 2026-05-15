@@ -1,7 +1,15 @@
 """Distill pipeline: per-contact rolling fold.
 
-Reads messages of one source Inbox from studio.db, runs windows through the
-fold prompt, writes target Persona persona_md + Contact card_md back to DB.
+A distill job is a list of contacts plus an optional target persona:
+
+- Each contact's messages are folded into that contact's ``card_md``.
+- If ``target_persona_id`` is set, the same folds also accumulate into the
+  persona's ``persona_md``. If it is ``None`` the persona section of the fold
+  output is discarded — single-contact card refresh must not redefine the
+  streamer's persona.
+
+There is exactly one code path. The only conditional is "is a persona target
+set". No scope enum, no per-granularity branching.
 """
 
 from __future__ import annotations
@@ -27,7 +35,7 @@ from studio.distill.packer import (
     pack_windows,
     split_sessions,
 )
-from studio.enums import ContactStatus, LlmPurpose, MessageRole, ProviderStatus
+from studio.enums import LlmPurpose, MessageRole, ProviderStatus
 from studio.models import (
     Contact,
     Inbox,
@@ -58,10 +66,8 @@ ProgressCb = Callable[[Dict[str, int]], None]
 
 @dataclass
 class _DistillCtx:
-    persona_id: str
+    persona_id: Optional[str]
     persona_name: str
-    inbox_id: str
-    inbox_platform_self_id: Optional[str]
     base_url: str
     api_key: str
     model: str
@@ -71,16 +77,20 @@ class _DistillCtx:
 def _load_ctx(
     db: ORMSession,
     *,
-    source_inbox_id: str,
-    target_persona_id: str,
+    target_persona_id: Optional[str],
     provider_config_id: str,
 ) -> _DistillCtx:
-    inbox = db.query(Inbox).filter(Inbox.id == source_inbox_id).first()
-    if not inbox:
-        raise ValueError(f"Inbox {source_inbox_id} 不存在")
-    persona = db.query(Persona).filter(Persona.id == target_persona_id).first()
-    if not persona:
-        raise ValueError(f"Persona {target_persona_id} 不存在")
+    persona_id: Optional[str] = None
+    persona_name = ""
+    display_tz = "UTC"
+    if target_persona_id is not None:
+        persona = db.query(Persona).filter(Persona.id == target_persona_id).first()
+        if not persona:
+            raise ValueError(f"Persona {target_persona_id} 不存在")
+        persona_id = persona.id
+        persona_name = persona.name
+        display_tz = persona.timezone or "UTC"
+
     pc = db.query(ProviderConfig).filter(
         ProviderConfig.id == provider_config_id,
         ProviderConfig.status == ProviderStatus.ACTIVE,
@@ -89,15 +99,14 @@ def _load_ctx(
         raise ValueError(f"Provider Config {provider_config_id} 不存在")
     if not pc.api_key:
         raise ValueError(f"Provider Config {pc.id} 缺少 api_key")
+
     return _DistillCtx(
-        persona_id=persona.id,
-        persona_name=persona.name,
-        inbox_id=inbox.id,
-        inbox_platform_self_id=inbox.platform_self_id,
+        persona_id=persona_id,
+        persona_name=persona_name,
         base_url=pc.base_url,
         api_key=pc.api_key,
         model=pc.default_model,
-        display_tz=persona.timezone or "UTC",
+        display_tz=display_tz,
     )
 
 
@@ -135,6 +144,7 @@ def _build_user_message(
     *,
     ctx: _DistillCtx,
     contact: Contact,
+    inbox_platform_self_id: Optional[str],
     window: Window,
     total_windows: int,
     sessions_so_far: int,
@@ -144,7 +154,7 @@ def _build_user_message(
     return (
         f"```yaml\n"
         f"character_name: {json.dumps(ctx.persona_name, ensure_ascii=False)}\n"
-        f"character_wxid: {json.dumps(ctx.inbox_platform_self_id or '', ensure_ascii=False)}\n"
+        f"character_wxid: {json.dumps(inbox_platform_self_id or '', ensure_ascii=False)}\n"
         f"contact_name: {json.dumps(contact.display_name, ensure_ascii=False)}\n"
         f"contact_wxid: {json.dumps(contact.peer_platform_id or '', ensure_ascii=False)}\n"
         f"window: {window.window_id}/{total_windows}\n"
@@ -169,7 +179,7 @@ def _parse_fold_output(text: str) -> Tuple[Optional[str], Optional[str]]:
 def _log_llm_call(
     db: ORMSession,
     *,
-    persona_id: str,
+    persona_id: Optional[str],
     inbox_id: str,
     request_messages: List[Dict[str, str]],
     response_raw: str,
@@ -202,6 +212,9 @@ async def _fold_contact(
         contact = db.query(Contact).filter(Contact.id == contact_id).first()
         if not contact:
             return
+        inbox = db.query(Inbox).filter(Inbox.id == contact.inbox_id).first()
+        inbox_id = contact.inbox_id
+        inbox_platform_self_id = inbox.platform_self_id if inbox else None
         messages = _load_contact_messages(db, contact_id)
     finally:
         db.close()
@@ -222,16 +235,19 @@ async def _fold_contact(
 
         db = SessionLocal()
         try:
-            persona = db.query(Persona).filter(Persona.id == ctx.persona_id).first()
+            persona_md = ""
+            if ctx.persona_id is not None:
+                persona = db.query(Persona).filter(Persona.id == ctx.persona_id).first()
+                persona_md = (persona.persona_md or "") if persona else ""
             ct = db.query(Contact).filter(Contact.id == contact_id).first()
-            persona_md = persona.persona_md or ""
             card_md = ct.card_md or ""
         finally:
             db.close()
 
         user_msg = _build_user_message(
-            ctx=ctx, contact=ct, window=window,
-            total_windows=len(windows), sessions_so_far=sessions_so_far,
+            ctx=ctx, contact=ct, inbox_platform_self_id=inbox_platform_self_id,
+            window=window, total_windows=len(windows),
+            sessions_so_far=sessions_so_far,
             persona_md=persona_md, card_md=card_md,
         )
         request_messages = [
@@ -249,7 +265,7 @@ async def _fold_contact(
             db = SessionLocal()
             try:
                 _log_llm_call(
-                    db, persona_id=ctx.persona_id, inbox_id=ctx.inbox_id,
+                    db, persona_id=ctx.persona_id, inbox_id=inbox_id,
                     request_messages=request_messages,
                     response_raw=f"ERROR: {exc}", model=ctx.model,
                 )
@@ -260,7 +276,7 @@ async def _fold_contact(
         db = SessionLocal()
         try:
             _log_llm_call(
-                db, persona_id=ctx.persona_id, inbox_id=ctx.inbox_id,
+                db, persona_id=ctx.persona_id, inbox_id=inbox_id,
                 request_messages=request_messages,
                 response_raw=response_text, model=ctx.model,
             )
@@ -276,14 +292,15 @@ async def _fold_contact(
         else:
             db = SessionLocal()
             try:
-                persona = db.query(Persona).filter(Persona.id == ctx.persona_id).first()
                 ct = db.query(Contact).filter(Contact.id == contact_id).first()
-                if new_persona is not None:
-                    persona.persona_md = new_persona
-                    persona.updated_at = utc_now()
                 if new_card is not None:
                     ct.card_md = new_card
                     ct.updated_at = utc_now()
+                if ctx.persona_id is not None and new_persona is not None:
+                    persona = db.query(Persona).filter(Persona.id == ctx.persona_id).first()
+                    if persona:
+                        persona.persona_md = new_persona
+                        persona.updated_at = utc_now()
                 db.commit()
             finally:
                 db.close()
@@ -295,36 +312,37 @@ async def _fold_contact(
 
 async def run_distill(
     *,
-    source_inbox_id: str,
-    target_persona_id: str,
+    contact_ids: List[str],
+    target_persona_id: Optional[str],
     provider_config_id: str,
     request_timeout: float,
     progress_cb: Optional[ProgressCb] = None,
 ) -> None:
-    """Run distill across all contacts of one inbox; updates target persona + each contact card."""
+    """Fold the given contacts into their cards; optionally into a persona.
+
+    ``contact_ids``: contacts to process (1..N). Length 1 = single-contact
+    card refresh. ``target_persona_id``: when set, persona_md is also updated
+    from the same folds; when None, persona is left untouched.
+    """
     db = SessionLocal()
     try:
         ctx = _load_ctx(
             db,
-            source_inbox_id=source_inbox_id,
             target_persona_id=target_persona_id,
             provider_config_id=provider_config_id,
-        )
-        contacts = (
-            db.query(Contact)
-            .filter(Contact.inbox_id == source_inbox_id, Contact.status == ContactStatus.ACTIVE)
-            .order_by(Contact.created_at.asc())
-            .all()
         )
     finally:
         db.close()
 
     total_windows = 0
-    contact_ids: List[str] = []
-    for ct in contacts:
+    runnable_ids: List[str] = []
+    for cid in contact_ids:
         db = SessionLocal()
         try:
-            msgs = _load_contact_messages(db, ct.id)
+            ct = db.query(Contact).filter(Contact.id == cid).first()
+            if not ct:
+                continue
+            msgs = _load_contact_messages(db, cid)
         finally:
             db.close()
         if not msgs:
@@ -334,14 +352,14 @@ async def run_distill(
         windows = pack_windows(sessions)
         total_windows += len(windows)
         if windows:
-            contact_ids.append(ct.id)
+            runnable_ids.append(cid)
 
     if total_windows == 0:
-        logger.info("Inbox %s 没有可蒸馏的聊天记录", source_inbox_id)
+        logger.info("蒸馏任务没有可处理的聊天记录（contacts=%d）", len(contact_ids))
         return
 
     progress_state = {
-        "contacts_total": len(contact_ids),
+        "contacts_total": len(runnable_ids),
         "contacts_done": 0,
         "windows_total": total_windows,
         "windows_done": 0,
@@ -351,7 +369,7 @@ async def run_distill(
 
     client = ProviderClient(request_timeout=request_timeout)
     try:
-        for cid in contact_ids:
+        for cid in runnable_ids:
             await _fold_contact(
                 client=client, ctx=ctx, contact_id=cid,
                 progress_state=progress_state, progress_cb=progress_cb,
@@ -366,8 +384,8 @@ async def run_distill(
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     parser = argparse.ArgumentParser(description="Distill 蒸馏（CLI / 调试用）")
-    parser.add_argument("--source-inbox-id", required=True)
-    parser.add_argument("--target-persona-id", required=True)
+    parser.add_argument("--contact-ids", required=True, help="逗号分隔的 contact id 列表")
+    parser.add_argument("--target-persona-id", default=None)
     parser.add_argument("--provider-config-id", required=True)
     parser.add_argument("--request-timeout", type=float, required=True)
     args = parser.parse_args()
@@ -379,7 +397,7 @@ def main() -> None:
 
     asyncio.run(
         run_distill(
-            source_inbox_id=args.source_inbox_id,
+            contact_ids=[c for c in args.contact_ids.split(",") if c],
             target_persona_id=args.target_persona_id,
             provider_config_id=args.provider_config_id,
             request_timeout=args.request_timeout,

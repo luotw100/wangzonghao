@@ -181,8 +181,8 @@ export interface DistillJobProgress {
 export interface DistillJob {
   id: string;
   account_id: string;
-  source_inbox_id: string;
-  target_persona_id: string;
+  contact_ids: string[];
+  target_persona_id: string | null;
   provider_config_id: string;
   status: 'pending' | 'running' | 'done' | 'failed';
   progress: DistillJobProgress;
@@ -409,7 +409,7 @@ export function getDistillJob(jobId: string) {
   return request<DistillJob>(`/distill-jobs/${jobId}`);
 }
 export function createDistillJob(data: {
-  source_inbox_id: string; target_persona_id: string; provider_config_id?: string | null;
+  contact_ids: string[]; target_persona_id?: string | null; provider_config_id?: string | null;
 }) {
   return request<DistillJob>('/distill-jobs', {
     method: 'POST',

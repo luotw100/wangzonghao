@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -110,8 +110,8 @@ class ContactUpdate(StrictModel):
 # --- Distill Jobs ---
 
 class DistillJobCreate(StrictModel):
-    source_inbox_id: str
-    target_persona_id: str
+    contact_ids: List[str]
+    target_persona_id: Optional[str] = None
     provider_config_id: Optional[str] = None
 
 

@@ -6,10 +6,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from studio.db import get_db
-from studio.deps import CurrentAccountDep, get_account_inbox, get_account_persona, is_admin, new_id
+from studio.deps import CurrentAccountDep, get_account_contact, get_account_persona, is_admin, new_id
 from studio.db import utc_now
 from studio.enums import DistillJobStatus
-from studio.models import DistillJob
+from studio.models import DistillJob, Inbox
 from studio.provider_policy import resolve_provider_config
 from studio.schemas import DistillJobCreate
 from studio.serializers import s_distill_job
@@ -28,25 +28,37 @@ def list_distill_jobs(db: Annotated[Session, Depends(get_db)], account: CurrentA
 
 @router.post("/api/distill-jobs")
 def create_distill_job(payload: DistillJobCreate, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
-    inbox = get_account_inbox(db, account, payload.source_inbox_id)
-    get_account_persona(db, account, payload.target_persona_id)
+    if not payload.contact_ids:
+        raise HTTPException(status_code=422, detail="contact_ids 不能为空")
+    contact_ids = list(dict.fromkeys(payload.contact_ids))  # dedup, keep order
+    contacts = [get_account_contact(db, account, cid) for cid in contact_ids]
+    first_inbox = db.query(Inbox).filter(Inbox.id == contacts[0].inbox_id).first()
+    account_id = first_inbox.account_id
+
+    if payload.target_persona_id is not None:
+        get_account_persona(db, account, payload.target_persona_id)
     if payload.provider_config_id is not None and not is_admin(account):
         raise HTTPException(status_code=403, detail="只有管理员可以指定 Provider")
     provider_config = resolve_provider_config(db, payload.provider_config_id)
     if not provider_config:
         raise HTTPException(status_code=409, detail="没有可用的全局默认 Provider")
-    pending = (
+
+    in_flight = (
         db.query(DistillJob).filter(
-            DistillJob.account_id == inbox.account_id,
-            DistillJob.target_persona_id == payload.target_persona_id,
+            DistillJob.account_id == account_id,
             DistillJob.status.in_([DistillJobStatus.PENDING, DistillJobStatus.RUNNING]),
-        ).first()
+        ).all()
     )
-    if pending:
-        raise HTTPException(status_code=409, detail=f"该 persona 已有进行中的蒸馏任务 {pending.id}")
+    requested = set(contact_ids)
+    for ex in in_flight:
+        if requested.intersection(ex.contact_ids or []):
+            raise HTTPException(status_code=409, detail=f"选中的联系人已有进行中的蒸馏任务 {ex.id}")
+        if payload.target_persona_id and ex.target_persona_id == payload.target_persona_id:
+            raise HTTPException(status_code=409, detail=f"该人设已有进行中的蒸馏任务 {ex.id}")
+
     j = DistillJob(
-        id=new_id("dj"), account_id=inbox.account_id,
-        source_inbox_id=payload.source_inbox_id,
+        id=new_id("dj"), account_id=account_id,
+        contact_ids=contact_ids,
         target_persona_id=payload.target_persona_id,
         provider_config_id=provider_config.id,
         status=DistillJobStatus.PENDING, progress={}, error_message=None,

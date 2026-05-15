@@ -87,14 +87,25 @@ class StudioRuntime:
             try:
                 db = SessionLocal()
                 try:
+                    running = (
+                        db.query(DistillJob)
+                        .filter(DistillJob.status == DistillJobStatus.RUNNING)
+                        .all()
+                    )
                     pending = (
                         db.query(DistillJob)
                         .filter(DistillJob.status == DistillJobStatus.PENDING)
                         .order_by(DistillJob.created_at.asc())
                         .all()
                     )
-                    pending_ids = [
-                        (j.id, j.source_inbox_id, j.target_persona_id, j.provider_config_id)
+                    busy_contacts: set[str] = set()
+                    busy_personas: set[str] = set()
+                    for j in running:
+                        busy_contacts.update(j.contact_ids or [])
+                        if j.target_persona_id:
+                            busy_personas.add(j.target_persona_id)
+                    pending_specs = [
+                        (j.id, list(j.contact_ids or []), j.target_persona_id, j.provider_config_id)
                         for j in pending
                     ]
                 finally:
@@ -104,12 +115,22 @@ class StudioRuntime:
                     if self._distill_tasks[jid].done():
                         del self._distill_tasks[jid]
 
-                for job_id, source_inbox_id, target_persona_id, provider_config_id in pending_ids:
+                for job_id, contact_ids, target_persona_id, provider_config_id in pending_specs:
                     if job_id in self._distill_tasks:
                         continue
+                    # Serialize jobs that would double-write the same card or
+                    # the same persona. Conflicting pending jobs wait for the
+                    # next scan.
+                    if any(c in busy_contacts for c in contact_ids):
+                        continue
+                    if target_persona_id and target_persona_id in busy_personas:
+                        continue
+                    busy_contacts.update(contact_ids)
+                    if target_persona_id:
+                        busy_personas.add(target_persona_id)
                     self._distill_tasks[job_id] = asyncio.get_running_loop().create_task(
                         self._run_distill_job(
-                            job_id, source_inbox_id, target_persona_id, provider_config_id
+                            job_id, contact_ids, target_persona_id, provider_config_id
                         ),
                         name=f"distill-{job_id}",
                     )
@@ -123,8 +144,8 @@ class StudioRuntime:
     async def _run_distill_job(
         self,
         job_id: str,
-        source_inbox_id: str,
-        target_persona_id: str,
+        contact_ids: list[str],
+        target_persona_id: Optional[str],
         provider_config_id: str,
     ):
         db = SessionLocal()
@@ -150,7 +171,7 @@ class StudioRuntime:
 
         try:
             await run_distill(
-                source_inbox_id=source_inbox_id,
+                contact_ids=contact_ids,
                 target_persona_id=target_persona_id,
                 provider_config_id=provider_config_id,
                 request_timeout=self.options.request_timeout,

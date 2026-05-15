@@ -645,6 +645,8 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
 }) {
   const [draftCard, setDraftCard] = useState(contact.card_md ?? '');
   const [savingCard, setSavingCard] = useState(false);
+  const [cardJobBusy, setCardJobBusy] = useState(false);
+  const [cardJobNote, setCardJobNote] = useState('');
 
   useEffect(() => {
     setDraftCard(contact.card_md ?? '');
@@ -715,7 +717,19 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
             <select
               value={contact.reply_policy}
               disabled={!contact.takeover || (!canAutoreply && contact.reply_policy !== 'autoreply')}
-              onChange={event => onPatch(contact.id, { reply_policy: event.target.value as 'disabled' | 'autoreply' })}
+              onChange={event => {
+                const next = event.target.value as 'disabled' | 'autoreply';
+                if (next === 'autoreply') {
+                  const persona = personas.find(p => p.id === contact.persona_id);
+                  const hasPersona = Boolean(contact.persona_id && persona?.persona_md && persona.persona_md.trim());
+                  const hasCard = Boolean(contact.card_md && contact.card_md.trim());
+                  if (!hasPersona || !hasCard) {
+                    const missing = [hasPersona ? null : '人设', hasCard ? null : '关系卡'].filter(Boolean).join(' 和 ');
+                    if (!confirm(`还缺${missing}（人设和关系卡缺一不可），自动回复不会真正生效。可以去「人设」页自动创建。仍要切换到自动回复吗？`)) return;
+                  }
+                }
+                onPatch(contact.id, { reply_policy: next });
+              }}
               style={{ fontSize: 11 }}
             >
               <option value="disabled">不自动回复</option>
@@ -741,27 +755,51 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
           onChange={event => setDraftCard(event.target.value)}
           placeholder="例如：北京大学生，喜欢户外，去年送过我一袋茶叶，叫我 alice 姐"
         />
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
-          {draftCard !== (contact.card_md ?? '') && (
-            <button className="btn btn-sm btn-ghost" onClick={() => setDraftCard(contact.card_md ?? '')}>
-              放弃修改
-            </button>
-          )}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
           <button
-            className="btn btn-sm btn-primary"
-            disabled={savingCard || draftCard === (contact.card_md ?? '')}
+            className="btn btn-sm btn-ghost"
+            disabled={cardJobBusy}
+            title="从这个粉丝的全部聊天记录里自动提取关系卡（后台执行，不更新人设）"
             onClick={async () => {
-              setSavingCard(true);
+              setCardJobBusy(true);
+              setCardJobNote('');
               try {
-                await onPatch(contact.id, { card_md: draftCard });
+                await api.createDistillJob({ contact_ids: [contact.id], target_persona_id: null });
+                setCardJobNote('已提交，正在后台从聊天记录生成关系卡，稍后自动刷新。');
+              } catch (err) {
+                setCardJobNote(String(err));
               } finally {
-                setSavingCard(false);
+                setCardJobBusy(false);
               }
             }}
           >
-            {savingCard ? '保存中…' : '保存关系卡'}
+            {cardJobBusy ? '提交中…' : '✶ 自动创建关系卡'}
           </button>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {draftCard !== (contact.card_md ?? '') && (
+              <button className="btn btn-sm btn-ghost" onClick={() => setDraftCard(contact.card_md ?? '')}>
+                放弃修改
+              </button>
+            )}
+            <button
+              className="btn btn-sm btn-primary"
+              disabled={savingCard || draftCard === (contact.card_md ?? '')}
+              onClick={async () => {
+                setSavingCard(true);
+                try {
+                  await onPatch(contact.id, { card_md: draftCard });
+                } finally {
+                  setSavingCard(false);
+                }
+              }}
+            >
+              {savingCard ? '保存中…' : '保存关系卡'}
+            </button>
+          </div>
         </div>
+        {cardJobNote && (
+          <div className="mono ink-3" style={{ fontSize: 11 }}>{cardJobNote}</div>
+        )}
       </div>
 
       {messages.length === 0 ? (
@@ -896,6 +934,7 @@ function PersonasView({ personas, onChanged, setError }: {
   setError: (message: string) => void;
 }) {
   const [showCreate, setShowCreate] = useState(false);
+  const [showAuto, setShowAuto] = useState(false);
   const [editing, setEditing] = useState<Persona | null>(null);
 
   return (
@@ -903,7 +942,12 @@ function PersonasView({ personas, onChanged, setError }: {
       <PageHead
         title="人设"
         kicker="personas"
-        right={<button className="btn btn-primary btn-sm" onClick={() => setShowCreate(true)}>+ 新建</button>}
+        right={
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="btn btn-primary btn-sm" onClick={() => setShowAuto(true)}>✶ 自动创建</button>
+            <button className="btn btn-ghost btn-sm" onClick={() => setShowCreate(true)}>+ 手动新建</button>
+          </div>
+        }
       />
       <div style={{ padding: '0 28px 24px' }}>
         {personas.length === 0 ? (
@@ -948,8 +992,19 @@ function PersonasView({ personas, onChanged, setError }: {
       {showCreate && (
         <CreatePersonaModal
           onClose={() => setShowCreate(false)}
+          onSwitchToAuto={() => { setShowCreate(false); setShowAuto(true); }}
           onCreated={async () => {
             setShowCreate(false);
+            await Promise.resolve(onChanged());
+          }}
+          setError={setError}
+        />
+      )}
+      {showAuto && (
+        <AutoCreatePersonaModal
+          onClose={() => setShowAuto(false)}
+          onSubmitted={async () => {
+            setShowAuto(false);
             await Promise.resolve(onChanged());
           }}
           setError={setError}
@@ -970,9 +1025,10 @@ function PersonasView({ personas, onChanged, setError }: {
   );
 }
 
-function CreatePersonaModal({ onClose, onCreated, setError }: {
+function CreatePersonaModal({ onClose, onCreated, onSwitchToAuto, setError }: {
   onClose: () => void;
   onCreated: () => void | Promise<void>;
+  onSwitchToAuto: () => void;
   setError: (message: string) => void;
 }) {
   const [name, setName] = useState('');
@@ -995,12 +1051,148 @@ function CreatePersonaModal({ onClose, onCreated, setError }: {
 
   return (
     <ModalShell onClose={onClose} title="新建人设">
+      <div
+        className="card"
+        style={{ padding: '12px 14px', marginBottom: 16, background: 'var(--brass-soft)', borderColor: 'var(--brass-line)' }}
+      >
+        <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>不用自己写 ——可以从聊天记录自动创建</div>
+        <div className="ink-3" style={{ fontSize: 12, marginBottom: 10 }}>
+          选几段你和粉丝的真实对话，AI 会读完后替你总结出人设和每个粉丝的关系卡。
+        </div>
+        <button className="btn btn-primary btn-sm" onClick={onSwitchToAuto}>✶ 用聊天记录自动创建</button>
+      </div>
       <FormField label="名称"><input className="input" value={name} onChange={event => setName(event.target.value)} autoFocus /></FormField>
       <FormField label="时区 (IANA)"><input className="input" value={tz} onChange={event => setTz(event.target.value)} placeholder="Asia/Shanghai" /></FormField>
       <FormField label="persona_md (可空)">
         <textarea className="textarea mono" style={{ minHeight: 200 }} value={md} onChange={event => setMd(event.target.value)} />
       </FormField>
       <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建'} disabled={busy || !name.trim()} />
+    </ModalShell>
+  );
+}
+
+function AutoCreatePersonaModal({ onClose, onSubmitted, setError }: {
+  onClose: () => void;
+  onSubmitted: () => void | Promise<void>;
+  setError: (message: string) => void;
+}) {
+  const [name, setName] = useState('');
+  const [tz, setTz] = useState('Asia/Shanghai');
+  const [items, setItems] = useState<ConversationSummary[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const next = await api.getConversations();
+        const taken = next.filter(item => item.contact.takeover);
+        setItems(taken);
+        setSelected(new Set(taken.map(item => item.contact.id)));
+      } catch (err) {
+        setError(String(err));
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [setError]);
+
+  const grouped = useMemo(() => {
+    const result: Record<string, { inbox: ConversationSummary['inbox']; rows: ConversationSummary[] }> = {};
+    for (const item of items) {
+      if (!result[item.inbox.id]) result[item.inbox.id] = { inbox: item.inbox, rows: [] };
+      result[item.inbox.id].rows.push(item);
+    }
+    return Object.values(result);
+  }, [items]);
+
+  const toggle = (id: string) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const submit = async () => {
+    if (!name.trim() || selected.size === 0) return;
+    setBusy(true);
+    try {
+      const persona = await api.createPersona({
+        name: name.trim(), persona_md: null, timezone: tz.trim() || 'UTC',
+      });
+      await api.createDistillJob({
+        contact_ids: Array.from(selected),
+        target_persona_id: persona.id,
+      });
+      await Promise.resolve(onSubmitted());
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <ModalShell onClose={onClose} title="✶ 自动创建人设">
+      <div className="ink-3" style={{ fontSize: 12, marginBottom: 14 }}>
+        给人设起个名字，再选几段真实对话。AI 会在后台读完这些聊天，自动写出人设；同时也会顺手生成每个被选中粉丝的关系卡。生成在后台进行，关掉窗口也没关系。
+      </div>
+      <FormField label="人设名称"><input className="input" value={name} onChange={event => setName(event.target.value)} autoFocus placeholder="例如：阿言（抖音）" /></FormField>
+      <FormField label="时区 (IANA)"><input className="input" value={tz} onChange={event => setTz(event.target.value)} placeholder="Asia/Shanghai" /></FormField>
+      <div className="mono ink-3" style={{ fontSize: 11, marginBottom: 6 }}>
+        从这些对话里提取（已选 {selected.size} / {items.length}）
+      </div>
+      {loading ? (
+        <Empty>加载接管列表中…</Empty>
+      ) : items.length === 0 ? (
+        <Empty>还没有接管任何会话。先去「接管」页接管一些粉丝。</Empty>
+      ) : (
+        <div style={{ display: 'grid', gap: 12, maxHeight: '40vh', overflow: 'auto', marginBottom: 8 }}>
+          {grouped.map(group => (
+            <div key={group.inbox.id} className="card" style={{ padding: '10px 12px', display: 'grid', gap: 4 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span className="mono ink-3" style={{ fontSize: 11 }}>{group.inbox.display_name}</span>
+                <button
+                  className="btn btn-sm btn-ghost"
+                  onClick={() => {
+                    const ids = group.rows.map(r => r.contact.id);
+                    const allOn = ids.every(id => selected.has(id));
+                    setSelected(prev => {
+                      const next = new Set(prev);
+                      for (const id of ids) { if (allOn) next.delete(id); else next.add(id); }
+                      return next;
+                    });
+                  }}
+                >
+                  {group.rows.every(r => selected.has(r.contact.id)) ? '取消整组' : '全选整组'}
+                </button>
+              </div>
+              {group.rows.map(item => (
+                <label
+                  key={item.contact.id}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '3px 0', cursor: 'pointer' }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected.has(item.contact.id)}
+                    onChange={() => toggle(item.contact.id)}
+                  />
+                  <span style={{ flex: 1 }}>{item.contact.display_name}</span>
+                  <span className="mono ink-3" style={{ fontSize: 11 }}>{item.message_count} 条</span>
+                </label>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+      <ModalActions
+        onCancel={onClose}
+        onConfirm={submit}
+        confirmLabel={busy ? '提交中…' : `开始自动创建（${selected.size}）`}
+        disabled={busy || loading || !name.trim() || selected.size === 0}
+      />
     </ModalShell>
   );
 }

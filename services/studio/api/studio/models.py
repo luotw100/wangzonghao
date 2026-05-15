@@ -195,6 +195,7 @@ class Message(Base):
         UniqueConstraint("contact_id", "external_id", name="uq_message_contact_external"),
         CheckConstraint("role IN ('self', 'counterpart')", name="ck_message_role"),
         CheckConstraint("msg_type IN ('text', 'image', 'audio', 'video', 'file')", name="ck_message_msg_type"),
+        CheckConstraint("authored_by IN ('unknown')", name="ck_message_authored_by"),
     )
 
     id              = Column(BigInteger, primary_key=True, autoincrement=True)
@@ -202,6 +203,7 @@ class Message(Base):
     external_id     = Column(String(256), nullable=False)
     msg_hash        = Column(String(64), nullable=True)   # SHA256 content hash for cross-device dedup
     role            = Column(String(16), nullable=False)
+    authored_by     = Column(String(16), nullable=False)  # reserved provenance flag; only 'unknown' for now
     sender_id       = Column(String(256), nullable=True)  # platform id of the sender
     msg_type        = Column(String(16), nullable=False)
     sender_name     = Column(String(256), nullable=True)
@@ -235,8 +237,8 @@ class DistillJob(Base):
 
     id                 = Column(String(48), primary_key=True, index=True)
     account_id         = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
-    source_inbox_id    = Column(String(48), ForeignKey("inboxes.id"), nullable=False, index=True)
-    target_persona_id  = Column(String(48), ForeignKey("personas.id"), nullable=False, index=True)
+    contact_ids        = Column(JSONB, nullable=False)
+    target_persona_id  = Column(String(48), ForeignKey("personas.id"), nullable=True, index=True)
     provider_config_id = Column(String(48), ForeignKey("provider_configs.id"), nullable=False, index=True)
     status             = Column(String(16), nullable=False)
     progress           = Column(JSONB, nullable=False)

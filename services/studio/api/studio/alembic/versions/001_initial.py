@@ -154,6 +154,7 @@ def upgrade() -> None:
         sa.Column("contact_id", sa.String(48), sa.ForeignKey("contacts.id"), nullable=False),
         sa.Column("external_id", sa.String(256), nullable=False),
         sa.Column("role", sa.String(16), nullable=False),
+        sa.Column("authored_by", sa.String(16), nullable=False),
         sa.Column("msg_type", sa.String(16), nullable=False, server_default="text"),
         sa.Column("sender_name", sa.String(256), nullable=True),
         sa.Column("sender_id", sa.String(256), nullable=True),
@@ -163,6 +164,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("contact_id", "external_id", name="uq_message_contact_external"),
         sa.CheckConstraint("role IN ('self', 'counterpart')", name="ck_message_role"),
+        sa.CheckConstraint("authored_by IN ('unknown')", name="ck_message_authored_by"),
         sa.CheckConstraint("msg_type IN ('text', 'image', 'audio', 'video', 'file')", name="ck_message_msg_type"),
     )
     op.create_index("ix_messages_contact_id", "messages", ["contact_id"])
@@ -190,8 +192,8 @@ def upgrade() -> None:
         "distill_jobs",
         sa.Column("id", sa.String(48), primary_key=True),
         sa.Column("account_id", sa.String(48), sa.ForeignKey("accounts.id"), nullable=False),
-        sa.Column("source_inbox_id", sa.String(48), sa.ForeignKey("inboxes.id"), nullable=False),
-        sa.Column("target_persona_id", sa.String(48), sa.ForeignKey("personas.id"), nullable=False),
+        sa.Column("contact_ids", postgresql.JSONB, nullable=False),
+        sa.Column("target_persona_id", sa.String(48), sa.ForeignKey("personas.id"), nullable=True),
         sa.Column("provider_config_id", sa.String(48), sa.ForeignKey("provider_configs.id"), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
         sa.Column("progress", postgresql.JSONB, nullable=False),
@@ -203,7 +205,6 @@ def upgrade() -> None:
     )
     op.create_index("ix_distill_jobs_id", "distill_jobs", ["id"])
     op.create_index("ix_distill_jobs_account_id", "distill_jobs", ["account_id"])
-    op.create_index("ix_distill_jobs_source_inbox_id", "distill_jobs", ["source_inbox_id"])
     op.create_index("ix_distill_jobs_target_persona_id", "distill_jobs", ["target_persona_id"])
     op.create_index("ix_distill_jobs_provider_config_id", "distill_jobs", ["provider_config_id"])
 

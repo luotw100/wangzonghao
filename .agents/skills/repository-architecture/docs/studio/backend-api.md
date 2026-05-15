@@ -173,7 +173,7 @@ Inbox 仅由 Bridge handshake 自动 upsert 创建，没有 `POST /api/inboxes` 
 - `POST /api/distill-jobs`
 - `GET /api/distill-jobs/{job_id}`
 
-Create 当前校验 source Inbox、target Persona，并拒绝同一 target Persona 已有 pending/running job。`provider_config_id` 可空；为空时解析全局默认 Provider。普通 user 不能显式指定 Provider。
+`DistillJobCreate`：`contact_ids: list[str]`（非空）、`target_persona_id: str | None`、`provider_config_id: str | None`。Create 逻辑：dedup `contact_ids` 并逐个 `get_account_contact` 校验归属；job `account_id` 取首个 contact 所属 Inbox 的 account；设置了 `target_persona_id` 才校验 Persona 归属；拒绝与已有 pending/running job 的 `contact_ids` 有交集，或（指定了 persona 时）该 persona 已有 in-flight job。`provider_config_id` 可空；为空时解析全局默认 Provider。普通 user 不能显式指定 Provider。
 
 ## Bridge API
 

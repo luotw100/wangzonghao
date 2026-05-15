@@ -47,6 +47,12 @@ class MessageRole(StrEnum):
     COUNTERPART = "counterpart"
 
 
+class MessageAuthoredBy(StrEnum):
+    # Reserved provenance flag. Only 'unknown' exists for now; 'ai' / 'human'
+    # may be added later once a reliable signal exists.
+    UNKNOWN = "unknown"
+
+
 class DistillJobStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"

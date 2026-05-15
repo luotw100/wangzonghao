@@ -117,6 +117,7 @@ Bridge 运行时 token。
 - `contact_id`：`String(48)`。
 - `external_id`：`String(256)`。
 - `role`：`String(16)`，CHECK `self | counterpart`。
+- `authored_by`：`String(16)`，CHECK 仅 `unknown`，`server_default="unknown"`。预留的来源标识位；目前只有 `unknown` 一个取值，将来可能加 `ai` / `human`。Bridge incoming 写入时应用层显式传 `MessageAuthoredBy.UNKNOWN`，蒸馏目前不读这列。
 - `msg_type`：`String(16)`，CHECK `text | image | audio | video | file`。
 - `sender_name`：`String(256)`，nullable。
 - `content`：`Text`。
@@ -127,12 +128,12 @@ Bridge 运行时 token。
 
 ### `distill_jobs` — `DistillJob`
 
-蒸馏 worker job。
+蒸馏 worker job。一个 job = 一组 contact + 可选 target persona（见 [worker-reply-distill](worker-reply-distill.md)）。
 
 - `id`：`String(48)`，格式 `dj_` + 完整 UUID hex。
 - `account_id`：`String(48)`。
-- `source_inbox_id`：`String(48)`。
-- `target_persona_id`：`String(48)`。
+- `contact_ids`：`JSONB`，要处理的 contact id 列表（长度 1..N）。长度 1 = 单粉丝关系卡刷新。
+- `target_persona_id`：`String(48)`，**nullable**。设置时同时覆盖该 persona 的 `persona_md`；为 null 时只写 card、不动任何 persona。
 - `provider_config_id`：`String(48)`。
 - `status`：`String(16)`，CHECK `pending | running | done | failed`。
 - `progress`：`JSONB`。

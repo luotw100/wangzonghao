@@ -95,7 +95,7 @@ def s_message(m: Message) -> Dict[str, Any]:
 def s_distill_job(j: DistillJob) -> Dict[str, Any]:
     return {
         "id": j.id, "account_id": j.account_id,
-        "source_inbox_id": j.source_inbox_id, "target_persona_id": j.target_persona_id,
+        "contact_ids": j.contact_ids, "target_persona_id": j.target_persona_id,
         "provider_config_id": j.provider_config_id, "status": j.status,
         "progress": j.progress, "error_message": j.error_message,
         "created_at": j.created_at, "started_at": j.started_at, "finished_at": j.finished_at,

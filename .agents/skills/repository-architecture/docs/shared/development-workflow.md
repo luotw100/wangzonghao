@@ -51,7 +51,7 @@ docker compose exec -T studio-api uv run python -m studio.cli create-account \
 7. 在 Takeover tab 中给 Contact 配置 Persona、autoreply 和 card；Provider override 只对 admin 可见，普通用户使用全局默认 Provider。
 8. 在 Takeover tab 中给 Contact 配置 Persona、autoreply 和 card，可创建 distill job 蒸馏 Persona 和 Card。
 
-> 一键 dev seed：仓库根的 `scripts/seed-dev.sh` 会自动创建 chat 用户、Studio admin + 普通用户、provider、persona，并在 Chat 里灌几条样例消息（清空 volume 后可重复执行）。
+> 一键 dev seed：`python3 scripts/seed_dev.py`，全部配置走 `scripts/.env`（参考 `scripts/.env.example`，所有键必填、无代码默认值）。它创建一个 Studio admin、`CHAT_SEED_USERS` / `STUDIO_SEED_USERS` 两份独立清单里的用户（格式严格为 `username:password:display`，Studio role=user），以及一个共享 Provider。仅建账号 + provider，不播种 persona/contact/消息（清空 volume 后可重复执行，已存在的账号会告警跳过）。
 
 ## 启动 Bridge 连接本地 Chat 和 Studio
 

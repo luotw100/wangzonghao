@@ -20,6 +20,7 @@ mac:
     # app is unsigned anyway (user runs xattr/codesign manually).
     - target: zip
       arch: [x64, arm64]
+  artifactName: LaborsterBridge-${version}-${arch}-mac.zip
   category: public.app-category.productivity
 
 win:

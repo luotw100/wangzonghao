@@ -50,12 +50,20 @@ jobs:
         run: npm run dist:win
         # No signing: SmartScreen warns on first launch, click "More info → Run anyway"
 
-      - name: Upload artifacts (macOS)
+      - name: Upload artifacts (macOS arm64)
         if: matrix.platform == 'mac'
         uses: actions/upload-artifact@v4
         with:
-          name: LaborsterBridge-mac
-          path: desktop/dist-release/*.zip
+          name: LaborsterBridge-mac-arm64
+          path: desktop/dist-release/*arm64-mac.zip
+          retention-days: 14
+
+      - name: Upload artifacts (macOS x64)
+        if: matrix.platform == 'mac'
+        uses: actions/upload-artifact@v4
+        with:
+          name: LaborsterBridge-mac-x64
+          path: desktop/dist-release/*x64-mac.zip
           retention-days: 14
 
       - name: Upload artifacts (Windows)

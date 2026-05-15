@@ -2,7 +2,7 @@
   "name": "laborster-bridge",
   "version": "0.1.0",
   "description": "Laborster Bridge — local daemon shell",
-  "main": "dist-electron/main/index.js",
+  "main": "out/main/index.js",
   "private": true,
   "scripts": {
     "dev": "electron-vite dev",

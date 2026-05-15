@@ -26,10 +26,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22   # LTS; avoids Node 20 deprecation warning
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
 
       - name: Install dependencies
-        # npm install (not ci) until package-lock.json is committed
-        run: npm install
+        run: npm ci
 
       # Rebuild native modules (better-sqlite3) for Electron's Node ABI
       - name: Rebuild native modules

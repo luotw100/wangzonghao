@@ -13,26 +13,26 @@ description: Laborster 仓库架构全景 Skill。用于理解当前代码、服
 
 在处理以下任务前，先读这个 Skill：
 
-- 需要改动 `services/chat`、`services/bridge`、`services/studio` 中任意两个以上服务。
+- 需要改动 `desktop/`、`services/chat`、`services/studio` 中任意两个以上服务。
 - 需要理解 Studio API、worker、reply brain、distill pipeline、数据库 schema 或 Bridge protocol。
 - 需要理解 Chat sandbox 的联系人、会话、消息、导入、long polling 或 connector 行为。
-- 需要理解 Bridge daemon 的 CLI、adapter 生命周期、inbound/outbound、heartbeat 或 typing delay。
+- 需要理解 Bridge daemon 的 adapter 生命周期、inbound/outbound、heartbeat 或 Electron IPC。
 - 需要排查从 Chat → Bridge → Studio → LLM → Bridge → Chat 的端到端消息链路。
-- 需要改 Docker Compose、Dockerfile、Nginx、本地开发或部署相关配置。
+- 需要改 Docker Compose、Dockerfile、Nginx、Electron 打包或本地开发配置。
 
 ## 一句话总览
 
-Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Channel ↔ Bridge ↔ Studio`。其中 Chat sandbox 是可控 Channel，Bridge 是本地 IO daemon，Studio 是云端控制台、消息源、LLM 回复脑和蒸馏脑。
+Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Channel ↔ Bridge ↔ Studio`。其中 Chat sandbox 是可控 Channel，Bridge 是 Electron 桌面 daemon app，Studio 是云端控制台、消息源、LLM 回复脑和蒸馏脑。
 
 ## 三个独立项目
 
 | 项目 | 路径 | 当前职责 | 边界规则 |
 | --- | --- | --- | --- |
 | Chat sandbox | `services/chat/` | dogfood Channel / 可控聊天平台 | 只模拟平台；Studio 不直接调用它。 |
-| Bridge daemon | `services/bridge/` | 登录本地平台账号并桥接到 Studio | 不调 LLM、不存人设、不保存长期 token。 |
+| Bridge desktop | `desktop/` | Electron 桌面 app，内嵌 TS daemon，登录本地平台账号并桥接到 Studio | 不调 LLM、不存人设、不持久化密码。 |
 | Studio | `services/studio/` | 控制台、source of truth、reply/distill brain | 不直连任何 Channel，只接受 Bridge protocol。 |
 
-每个项目都有独立的依赖、Dockerfile、Compose 配置和运行边界。不要把它们当成一个 Python/Node 单体项目处理。
+`desktop/` 使用独立 npm 工作区，含 Electron 主进程（daemon 核心）、preload、React renderer。Chat/Studio 保持 Python/Docker 工作流不变。
 
 ## 当前核心不变量
 
@@ -65,12 +65,12 @@ Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Cha
 - `docs/chat/frontend.md` — React 状态、hooks、components、API client、导入 UI。
 - `docs/chat/infra.md` — Compose、Nginx、Dockerfile、端口、storage、本地 dev。
 
-### Bridge daemon
+### Bridge desktop app
 
-- `docs/bridge/overview.md` — daemon 目的、CLI、claims、启动生命周期。
-- `docs/bridge/runtime-adapters.md` — adapter contract、Chat adapter、inbound pump、heartbeat、outbound dispatch。
-- `docs/bridge/protocol.md` — 当前 Studio `/api/bridge/*` protocol。
-- `docs/bridge/infra.md` — Compose、Dockerfile、配置面、运行行为。
+- `docs/bridge/overview.md` — Electron 桌面 app 结构、进程划分、IPC schema、启动生命周期。
+- `docs/bridge/runtime-adapters.md` — TS adapter contract、ChatAdapter、daemon 循环（producer/consumer/heartbeat/outbound/announce）。
+- `docs/bridge/protocol.md` — 当前 Studio `/api/bridge/*` protocol（协议本身与语言无关）。
+- `docs/bridge/infra.md` — npm 依赖、electron-vite 构建、electron-builder 打包、GitHub Actions 发布。
 
 ### Studio
 

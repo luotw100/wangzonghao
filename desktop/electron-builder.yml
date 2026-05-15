@@ -1,0 +1,35 @@
+appId: com.laborster.bridge
+productName: Laborster Bridge
+copyright: Copyright © 2026 Laborster
+
+directories:
+  output: dist-release
+  buildResources: resources
+
+files:
+  - dist-electron/**
+  - resources/**
+
+asar: true
+asarUnpack:
+  - "**/*.node"  # native modules (better-sqlite3)
+
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  category: public.app-category.productivity
+  # notarize: true  # enable when Apple credentials are configured
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+
+nsis:
+  oneClick: true
+  perMachine: false
+  allowToChangeInstallationDirectory: false
+
+dmg:
+  title: Laborster Bridge ${version}

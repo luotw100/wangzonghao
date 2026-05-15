@@ -1,0 +1,85 @@
+name: Desktop Build
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-14          # arm64 M1; builds universal via Rosetta
+            platform: mac
+          - os: windows-latest
+            platform: win
+
+    runs-on: ${{ matrix.os }}
+
+    defaults:
+      run:
+        working-directory: desktop
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Rebuild native modules (better-sqlite3) for Electron's Node ABI
+      - name: Rebuild native modules
+        run: npx electron-rebuild -f -w better-sqlite3
+
+      - name: Build renderer + main
+        run: npm run build
+
+      - name: Package (macOS)
+        if: matrix.platform == 'mac'
+        run: npm run dist:mac
+        # No signing: unsigned DMG, users bypass Gatekeeper with xattr
+
+      - name: Package (Windows)
+        if: matrix.platform == 'win'
+        run: npm run dist:win
+        # No signing: SmartScreen will warn on first launch
+
+      - name: Upload artifacts (macOS)
+        if: matrix.platform == 'mac'
+        uses: actions/upload-artifact@v4
+        with:
+          name: LaborsterBridge-mac
+          path: desktop/dist-release/*.dmg
+          retention-days: 14
+
+      - name: Upload artifacts (Windows)
+        if: matrix.platform == 'win'
+        uses: actions/upload-artifact@v4
+        with:
+          name: LaborsterBridge-win
+          path: desktop/dist-release/*.exe
+          retention-days: 14
+
+  # Download artifacts and create a draft GitHub Release (manual step)
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: desktop-v${{ github.run_number }}
+          name: "Laborster Bridge desktop-v${{ github.run_number }}"
+          draft: true
+          files: |
+            artifacts/**/*.dmg
+            artifacts/**/*.exe

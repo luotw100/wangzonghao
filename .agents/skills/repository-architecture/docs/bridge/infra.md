@@ -1,63 +1,93 @@
-# Bridge Infrastructure / Bridge 基础设施
+# Bridge Desktop Infrastructure / Bridge 桌面基础设施
 
-## Compose
+## 构建工具链
 
-`services/bridge/compose.yaml` 当前只有一个 service：
+| 工具 | 版本约束 | 职责 |
+| --- | --- | --- |
+| electron | ^33.0.0 | 宿主运行时 |
+| electron-vite | ^2.3.0 | 开发服务器 + 三进程构建（main/preload/renderer） |
+| electron-builder | ^25.0.0 | 跨平台打包：macOS .dmg、Windows NSIS .exe |
+| electron-rebuild | ^3.2.9 | 为当前 Electron Node ABI 重编译原生模块 |
+| better-sqlite3 | ^11.0.0 | 原生 SQLite 模块（postinstall 自动 rebuild） |
+| React 19 + Tailwind v4 | — | renderer UI |
+
+## 目录约定
 
 ```text
-bridge
-  build: .
-  environment:
-    LOG_LEVEL: ${LOG_LEVEL:-INFO}
-  restart: "no"
+desktop/
+  dist-electron/    # electron-vite 构建产物（git-ignored）
+  dist-release/     # electron-builder 打包产物（git-ignored）
+  resources/
+    tray-icon.png   # 托盘图标（16×16 推荐 macOS template image）
 ```
 
-当前使用方式是 `docker compose run --rm bridge ...args`，凭据通过 CLI 传入。
+## 本地开发
 
-## Dockerfile
+```bash
+cd desktop
+npm install            # postinstall 自动运行 electron-rebuild
+npm run dev            # electron-vite dev：renderer HMR + main 进程自动重启
+```
 
-`services/bridge/Dockerfile` 当前行为：
+开发模式 renderer 加载 `http://localhost:5173`，main 进程直接读取 `src/main/` TS 源码（electron-vite 实时编译）。配置指向本地 Studio 只需在 Login 屏修改 Studio URL 为 `http://localhost:23457`，不需要任何环境变量。
 
-- base image：`python:3.12-slim`。
-- 安装 `uv`。
-- copy `pyproject.toml` 和 `uv.lock`。
-- 执行 `uv sync --frozen --no-dev --no-install-project`。
-- copy `bridge/` package。
-- entrypoint：`uv run python -m bridge.main`。
+## 打包
 
-## 配置面
+```bash
+npm run build        # tsc 类型检查 + electron-vite build
+npm run dist:mac     # electron-builder --mac → dist-release/*.dmg
+npm run dist:win     # electron-builder --win → dist-release/*.exe（需 Windows 环境）
+```
 
-CLI args：
+**macOS 无签名说明**：不签名 / 不公证时，Gatekeeper 会拒绝打开 DMG。内部分发绕过方式：
 
-- Studio username/password。
-- Studio URL。
-- Hostname override。
-- 一个或多个 Chat inbox specs。
+```bash
+xattr -rd com.apple.quarantine /Applications/Laborster\ Bridge.app
+```
 
-Environment：
+**Windows 无签名说明**：SmartScreen 在首次运行时弹出警告，点「更多信息 → 仍要运行」可跳过。
 
-- `LOG_LEVEL`，Compose 默认 `INFO`。
+## electron-builder 配置（electron-builder.yml 摘要）
 
-Bridge 是无状态 daemon：无持久文件、无 volume、无 DB、无 token file。
+```yaml
+appId: com.laborster.bridge
+asar: true
+asarUnpack:
+  - "**/*.node"         # better-sqlite3 原生模块必须解包，不能 asar 包内运行
+mac:
+  target: [dmg x64, dmg arm64]
+win:
+  target: [nsis x64]
+```
 
-## 本地网络
+## GitHub Actions 发布流程
 
-Bridge 容器访问本机 Compose 服务时当前命令使用：
+`.github/workflows/desktop.yml`，手动触发（`workflow_dispatch`）：
 
-- Studio：`http://host.docker.internal:23457`
-- Chat：`http://host.docker.internal:23456`
+1. macOS runner（`macos-14` arm64）和 Windows runner（`windows-latest`）并行构建
+2. 各自 `npm ci` → `electron-rebuild` → `npm run build` → `electron-builder`
+3. 产物上传为 GitHub Actions artifact（保留 14 天）
+4. 手动触发：GitHub UI → Actions → Desktop Build → Run workflow
 
-## 当前失败行为
+## 用户数据目录
 
-- 某个 adapter 登录失败：记录 error，关闭该 adapter，继续处理其他 claim。
-- Studio handshake 失败：关闭已登录 adapters，runtime 返回。
-- inbound push 失败：记录 error；失败消息不落盘到 offline queue。
-- heartbeat 失败：记录 warning，下个 interval 重试。
-- outbound long-poll 失败：记录 warning，sleep 2s。
-- outbound 发送失败：ack outbound 为 failed。
+运行时数据存储在 `app.getPath('userData')`，**升级和重装不会清除**：
 
-## 当前运行限制
+| 平台 | 路径 |
+| --- | --- |
+| macOS | `~/Library/Application Support/Laborster Bridge/` |
+| Windows | `%APPDATA%\Laborster Bridge\` |
 
-- Bridge 通过 `--state-dir` 目录下的 `state.json` 持久化 `machine_id` 和 session token。
-- `machine_id` 由 Studio 生成，跨重启不变；token 重启时优先复用（成功则跳过 handshake）。
-- heartbeat response 能停 adapter，但不能启动 CLI 中不存在的新 adapter。
+目录内容：
+
+```text
+bridge-state.json   # Studio URL、username、machineId、bridgeId、inbox 列表
+bridge-token.enc    # safeStorage 加密的 session token
+data/
+  messages.db       # SQLite 本地去重消息表（WAL 模式）
+  media/            # 媒体 binary 缓存
+```
+
+## 原生模块注意点
+
+`better-sqlite3` 是原生 `.node` 模块，必须为目标 Electron 的 Node ABI 单独编译。`postinstall` 脚本会自动执行 `electron-rebuild`。在 CI 中 `npm ci` 之后 `postinstall` 会再次触发，确保 GitHub runner 上的二进制与 Electron 版本匹配。`asar: true` + `asarUnpack: ["**/*.node"]` 确保原生模块在 asar 包外可被正常加载。

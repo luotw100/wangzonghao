@@ -1,0 +1,879 @@
+<!doctype html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <title>Laborster Bridge · Prototype</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&family=Newsreader:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  <!-- Tailwind v4 browser build · no PostCSS needed in the prototype -->
+  <script src="https://unpkg.com/@tailwindcss/browser@4"></script>
+
+  <!--
+    @theme + all helper utility classes — copy-pasted from
+    services/studio/web/src/index.css. No new tokens introduced.
+    For the production Electron renderer, replace this with `@import "tailwindcss"` +
+    your own index.css that includes this same @theme block.
+  -->
+  <style type="text/tailwindcss">
+    @theme {
+      --color-bg-primary: var(--bg-deep);
+      --color-bg-secondary: var(--bg-base);
+      --color-bg-tertiary: var(--bg-raised);
+      --color-text-primary: var(--ink-1);
+      --color-text-secondary: var(--ink-2);
+      --color-text-tertiary: var(--ink-4);
+      --color-border: var(--line-subtle);
+      --color-border-glow: var(--line);
+      --color-accent: var(--brass);
+      --color-accent-hover: oklch(0.82 0.090 78);
+      --color-danger: var(--danger);
+      --color-warning: var(--warn);
+      --color-success: var(--ok);
+      --font-brand: var(--f-serif);
+      --font-mono: var(--f-mono);
+    }
+  </style>
+
+  <style>
+    :root {
+      --bg-deep:        oklch(0.16 0.010 60);
+      --bg-base:        oklch(0.19 0.012 62);
+      --bg-raised:      oklch(0.22 0.013 65);
+      --bg-sunken:      oklch(0.14 0.010 60);
+      --bg-hover:       oklch(0.25 0.014 65);
+      --line-subtle:    oklch(0.28 0.010 60 / 0.55);
+      --line:           oklch(0.34 0.012 65 / 0.7);
+      --line-strong:    oklch(0.45 0.015 65 / 0.85);
+      --ink-1:          oklch(0.94 0.012 80);
+      --ink-2:          oklch(0.78 0.012 75);
+      --ink-3:          oklch(0.62 0.012 70);
+      --ink-4:          oklch(0.48 0.010 65);
+      --brass:          oklch(0.78 0.090 78);
+      --brass-soft:     oklch(0.78 0.090 78 / 0.18);
+      --brass-line:     oklch(0.78 0.090 78 / 0.35);
+      --live:           oklch(0.66 0.130 30);
+      --live-soft:      oklch(0.66 0.130 30 / 0.16);
+      --ok:             oklch(0.72 0.080 145);
+      --warn:           oklch(0.78 0.110 70);
+      --danger:         oklch(0.62 0.150 22);
+      --f-ui:    "Inter Tight", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --f-serif: "Newsreader", "IBM Plex Serif", Georgia, serif;
+      --f-mono:  "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+      --r-sm: 4px; --r: 8px; --r-lg: 14px;
+    }
+    *,*::before,*::after{box-sizing:border-box}
+    html,body{margin:0;background:oklch(0.10 0.005 60);color:var(--ink-1);font-family:var(--f-ui);font-size:13px;line-height:1.5;letter-spacing:-0.005em;-webkit-font-smoothing:antialiased}
+    ::-webkit-scrollbar{width:5px;height:5px}
+    ::-webkit-scrollbar-thumb{background:var(--line);border-radius:3px}
+    ::-webkit-scrollbar-thumb:hover{background:var(--line-strong)}
+    @keyframes lampPulse{0%,100%{opacity:1;box-shadow:0 0 0 0 var(--live-soft)}50%{opacity:.55;box-shadow:0 0 0 6px transparent}}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+    .fade-up{animation:fadeUp .2s ease both}
+
+    .serif{font-family:var(--f-serif);font-weight:400;letter-spacing:-0.01em}
+    .mono{font-family:var(--f-mono)}
+    .eyebrow{font-family:var(--f-mono);font-size:10px;letter-spacing:0.18em;text-transform:uppercase;color:var(--ink-3)}
+
+    .lab-mark{position:relative;display:inline-block;width:22px;height:22px;font-family:var(--f-serif);font-weight:500;font-size:22px;line-height:22px;color:var(--ink-1)}
+    .lab-mark::before{content:'L';position:absolute;inset:-2px 0 0 1px}
+    .lab-mark::after{content:'';position:absolute;left:-2px;right:-2px;top:56%;height:2px;background:var(--brass);transform:rotate(-18deg);border-radius:2px}
+
+    .dot{width:6px;height:6px;border-radius:999px;display:inline-block}
+    .dot-live{background:var(--live);box-shadow:0 0 0 2px var(--live-soft);animation:lampPulse 2.4s ease-in-out infinite}
+    .dot-on{background:var(--brass)}
+    .dot-off{background:var(--ink-4)}
+    .dot-ok{background:var(--ok);box-shadow:0 0 0 2px oklch(0.72 0.08 145/0.20)}
+    .dot-warn{background:var(--warn)}
+    .dot-danger{background:var(--danger)}
+
+    .chip{display:inline-flex;align-items:center;gap:5px;padding:2px 7px;border-radius:4px;font:500 10.5px/1 var(--f-mono);letter-spacing:0.06em;text-transform:uppercase;border:1px solid var(--line);color:var(--ink-2);background:var(--bg-sunken);white-space:nowrap}
+    .chip.brass{color:var(--brass);border-color:var(--brass-line);background:var(--brass-soft)}
+    .chip.live{color:var(--live);border-color:oklch(0.66 0.130 30/0.4);background:var(--live-soft)}
+    .chip.ok{color:var(--ok);border-color:oklch(0.72 0.08 145/0.4);background:oklch(0.72 0.08 145/0.10)}
+    .chip.warn{color:var(--warn);border-color:oklch(0.78 0.11 70/0.4);background:oklch(0.78 0.11 70/0.10)}
+    .chip.danger{color:var(--danger);border-color:oklch(0.62 0.15 22/0.45);background:oklch(0.62 0.15 22/0.12)}
+    .chip.muted{color:var(--ink-3)}
+
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:30px;padding:0 12px;border-radius:var(--r);border:1px solid var(--line);background:var(--bg-raised);color:var(--ink-1);font:500 13px/1 var(--f-ui);cursor:pointer;transition:background .15s,border-color .15s,color .15s,opacity .15s}
+    .btn:hover:not(:disabled){background:var(--bg-hover);border-color:var(--line-strong)}
+    .btn:disabled{cursor:not-allowed;opacity:.4}
+    .btn-primary{background:var(--brass);border-color:var(--brass);color:oklch(0.18 0.012 60)}
+    .btn-primary:hover:not(:disabled){background:oklch(0.82 0.090 78);border-color:oklch(0.82 0.090 78)}
+    .btn-ghost{background:transparent;border-color:transparent;color:var(--ink-2)}
+    .btn-ghost:hover:not(:disabled){background:var(--bg-raised);color:var(--ink-1)}
+    .btn-sm{min-height:26px;padding:0 10px;font-size:12px}
+    .btn-danger{color:var(--danger);border-color:oklch(0.62 0.15 22/0.45);background:oklch(0.62 0.15 22/0.10)}
+
+    .input,.select{width:100%;background:var(--bg-sunken);border:1px solid var(--line);border-radius:var(--r);color:var(--ink-1);font:400 13px/1.45 var(--f-ui);padding:8px 10px;outline:none;transition:border-color .15s,background .15s}
+    .input{height:36px;padding:0 12px}
+    .input:focus,.select:focus{border-color:var(--brass-line);background:var(--bg-base)}
+
+    .card{background:var(--bg-base);border:1px solid var(--line-subtle);border-radius:var(--r-lg)}
+
+    .win-chrome{height:28px;flex:0 0 28px;background:var(--bg-base);border-bottom:1px solid var(--line-subtle);display:flex;align-items:center;padding:0 12px;position:relative;-webkit-app-region:drag;user-select:none}
+    .tl{width:11px;height:11px;border-radius:999px;display:inline-block;margin-right:7px}
+    .tl.close{background:#ed6a5e}.tl.min{background:#f4bf4f}.tl.zoom{background:#61c554}
+    .win-title{position:absolute;left:50%;transform:translateX(-50%);font:500 11px/1 var(--f-ui);color:var(--ink-3);white-space:nowrap}
+
+    .log{background:var(--bg-sunken);border:1px solid var(--line-subtle);border-radius:8px;font:11px/1.55 var(--f-mono);color:var(--ink-2);padding:10px 12px;overflow:auto}
+    .log .ts{color:var(--ink-4)}.log .info{color:var(--ink-2)}.log .ok{color:var(--ok)}.log .warn{color:var(--warn)}.log .err{color:var(--danger)}.log .src{color:var(--brass)}
+
+    .stat{background:var(--bg-base);border:1px solid var(--line-subtle);border-radius:var(--r-lg);padding:14px 16px;display:flex;flex-direction:column;gap:6px;min-height:88px}
+    .stat .label{font:500 10px/1 var(--f-mono);letter-spacing:0.16em;text-transform:uppercase;color:var(--ink-3)}
+    .stat .num{font-family:var(--f-serif);font-size:28px;line-height:1;font-weight:400;letter-spacing:-0.02em}
+    .stat .sub{font:11px/1.4 var(--f-mono);color:var(--ink-4)}
+
+    .tabs{display:flex;gap:2px;border-bottom:1px solid var(--line-subtle);padding:0 2px}
+    .tabs button{padding:8px 12px;font:500 12px/1 var(--f-ui);color:var(--ink-3);background:transparent;border:none;border-bottom:2px solid transparent;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+    .tabs button.active{color:var(--ink-1);border-bottom-color:var(--brass)}
+    .tabs button:hover:not(.active){color:var(--ink-2)}
+
+    .section-head{display:flex;align-items:baseline;justify-content:space-between;padding:0 0 8px;border-bottom:1px solid var(--line-subtle)}
+
+    .stage{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:32px;background:radial-gradient(ellipse at center,oklch(0.13 0.008 60) 0%,oklch(0.08 0.005 60) 70%)}
+    .win{width:960px;height:640px;background:var(--bg-deep);border-radius:12px;overflow:hidden;border:1px solid var(--line);box-shadow:0 24px 60px -28px oklch(0.04 0.005 60/0.9);position:relative;display:flex;flex-direction:column}
+    .tray-row{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:12px;color:var(--ink-1);cursor:pointer}
+    .tray-row:hover{background:var(--bg-hover)}
+    .tray-rule{height:1px;background:var(--line-subtle);margin:4px 0}
+  </style>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    /* ─────────────── Token: tweakable defaults ─────────────── */
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "screen": "panel",
+      "status": "online",
+      "inbox_alice_wx_status": "online",
+      "show_error_toast": false
+    }/*EDITMODE-END*/;
+
+    /* ─────────────── Shared bits ─────────────── */
+    const StatusChip = ({ status }) => {
+      const map = {
+        online:     { cls: 'live',   text: '在线', dot: 'dot-live' },
+        connecting: { cls: 'brass',  text: '握手中', dot: 'dot-on' },
+        degraded:   { cls: 'warn',   text: '降级', dot: 'dot-warn' },
+        offline:    { cls: 'muted',  text: '离线', dot: 'dot-off' },
+        paused:     { cls: 'muted',  text: '已暂停', dot: 'dot-off' },
+        error401:   { cls: 'danger', text: '401 失效', dot: 'dot-danger' },
+      };
+      const c = map[status] || map.offline;
+      return <span className={`chip ${c.cls}`}><span className={`dot ${c.dot}`} />{c.text}</span>;
+    };
+
+    const Field = ({ label, hint, children }) => (
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <span className="mono" style={{ color: 'var(--ink-3)', fontSize: 10.5, letterSpacing: '0.14em', textTransform: 'uppercase' }}>{label}</span>
+        {children}
+        {hint && <span style={{ color: 'var(--ink-4)', fontSize: 11 }}>{hint}</span>}
+      </label>
+    );
+
+    const KPIStat = ({ label, num, sub, tone = 'default' }) => {
+      const color = { live: 'var(--live)', ok: 'var(--ok)', warn: 'var(--warn)', danger: 'var(--danger)' }[tone] || 'var(--ink-1)';
+      return (
+        <div className="stat fade-up">
+          <span className="label">{label}</span>
+          <span className="num" style={{ color, fontVariantNumeric: 'tabular-nums' }}>{num}</span>
+          <span className="sub">{sub}</span>
+        </div>
+      );
+    };
+
+    const WinChrome = ({ title }) => (
+      <div className="win-chrome">
+        <span className="tl close" /><span className="tl min" /><span className="tl zoom" />
+        <span className="win-title">{title}</span>
+      </div>
+    );
+
+    /* ─────────────── 64px rail ─────────────── */
+    const Rail = ({ active, onChange, status }) => {
+      const items = [
+        { id: 'panel',    glyph: '◎', label: 'Status' },
+        { id: 'inbox',    glyph: '◇', label: 'Inboxes' },
+        { id: 'logs',     glyph: '☰', label: 'Logs' },
+        { id: 'settings', glyph: '⚙', label: 'Settings' },
+      ];
+      return (
+        <aside style={{ width: 64, flex: '0 0 64px', background: 'var(--bg-base)', borderRight: '1px solid var(--line-subtle)', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '14px 0' }}>
+          <span className="lab-mark" style={{ marginBottom: 18 }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {items.map(it => {
+              const on = it.id === active;
+              return (
+                <button key={it.id} title={it.label} onClick={() => onChange(it.id)} style={{
+                  width: 44, height: 44, borderRadius: 10, border: 'none',
+                  background: on ? 'var(--brass-soft)' : 'transparent',
+                  color: on ? 'var(--brass)' : 'var(--ink-3)',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer', fontFamily: 'var(--f-serif)', position: 'relative',
+                }}>
+                  <span style={{ fontSize: 16 }}>{it.glyph}</span>
+                  <span className="mono" style={{ marginTop: 2, fontSize: 9, opacity: 0.85 }}>{it.label}</span>
+                  {on && <span style={{ position: 'absolute', left: 0, top: 8, bottom: 8, width: 2, background: 'var(--brass)', borderRadius: 2 }} />}
+                </button>
+              );
+            })}
+          </div>
+          <div style={{ marginTop: 'auto', position: 'relative' }}>
+            <div style={{ width: 32, height: 32, borderRadius: 99, background: 'var(--bg-raised)', border: '1px solid var(--line)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--f-serif)', fontSize: 13, color: 'var(--brass)' }}>A</div>
+            {/* tiny status dot on avatar */}
+            <span style={{ position: 'absolute', right: -2, bottom: -2, width: 10, height: 10, borderRadius: 99, border: '2px solid var(--bg-base)',
+              background: status === 'online' ? 'var(--live)' : status === 'degraded' ? 'var(--warn)' : status === 'error401' ? 'var(--danger)' : 'var(--ink-4)' }} />
+          </div>
+        </aside>
+      );
+    };
+
+    /* ─────────────── 01 Login ─────────────── */
+    const Login = ({ status, onSubmit }) => {
+      const [username, setUsername] = useState('alice');
+      const [password, setPassword] = useState('');
+      const [studioUrl, setStudioUrl] = useState('https://studio.laborster.com');
+      const submitting = status === 'connecting';
+      const showErr401 = status === 'error401';
+
+      return (
+        <div className="win">
+          <WinChrome title="Laborster Bridge · 首启" />
+          <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+            <div style={{ width: 420, flex: '0 0 420px', padding: '32px 36px', borderRight: '1px solid var(--line-subtle)', background: 'linear-gradient(135deg,var(--bg-deep) 0%,var(--bg-base) 100%)', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span className="lab-mark" />
+                <span className="serif" style={{ fontSize: 16, fontWeight: 500 }}>Laborster</span>
+                <span className="chip mono">Bridge</span>
+                <span className="mono" style={{ marginLeft: 'auto', color: 'var(--ink-4)', fontSize: 10.5 }}>v0.4</span>
+              </div>
+              <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <span className="eyebrow">{showErr401 ? '会话失效 · RE-AUTH' : 'FIRST RUN · 本机首次启动'}</span>
+                <h1 className="serif" style={{ fontSize: 32, lineHeight: 1.1, margin: 0, letterSpacing: '-0.025em', fontWeight: 400 }}>
+                  守住主播 PC，<br />一台机器一个 <span style={{ color: 'var(--brass)' }}>daemon</span>。
+                </h1>
+                <p style={{ color: 'var(--ink-3)', fontSize: 12.5, lineHeight: 1.7, margin: 0, maxWidth: 320 }}>
+                  Bridge 没有长期凭据。每次启动都用 Studio 账号 + hostname 重新换 session token，按 (account, hostname) 自动注册。
+                </p>
+              </div>
+            </div>
+            <div style={{ flex: 1, padding: '36px 40px', display: 'flex', flexDirection: 'column' }}>
+              <span className="eyebrow">{submitting ? 'STEP 2 · 握手中' : showErr401 ? 'RE-AUTH · 重新握手' : 'STEP 1 · 登录 STUDIO'}</span>
+              <h2 className="serif" style={{ fontSize: 22, margin: '6px 0 20px', fontWeight: 400, letterSpacing: '-0.02em' }}>
+                {submitting ? 'POST /api/bridge/handshake' : showErr401 ? 'session 已失效，请重新登录' : '用 Studio 账号唤醒本机 daemon'}
+              </h2>
+
+              {showErr401 && (
+                <div style={{ padding: '10px 12px', background: 'oklch(0.62 0.15 22/0.10)', border: '1px solid oklch(0.62 0.15 22/0.35)', borderRadius: 8, marginBottom: 14, display: 'flex', gap: 10, fontSize: 12 }}>
+                  <span style={{ color: 'var(--danger)' }}>✕</span>
+                  <div style={{ flex: 1, color: 'var(--ink-2)' }}>
+                    <div style={{ fontWeight: 600, color: 'var(--danger)', marginBottom: 2 }}>401 · session token revoked</div>
+                    <div className="mono" style={{ fontSize: 11, lineHeight: 1.5 }}>这台机器的 Bridge 行被 admin 在 Studio「设备」页撤销，或被同名 hostname 顶掉。</div>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <Field label="STUDIO URL" hint="本地联调用 http://localhost:23457">
+                  <input className="input" value={studioUrl} onChange={e => setStudioUrl(e.target.value)} disabled={submitting} />
+                </Field>
+                <Field label="USERNAME">
+                  <input className="input" value={username} onChange={e => setUsername(e.target.value)} disabled={submitting} autoFocus />
+                </Field>
+                <Field label="PASSWORD">
+                  <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} disabled={submitting} placeholder="········"
+                    onKeyDown={e => { if (e.key === 'Enter') onSubmit(); }} />
+                </Field>
+              </div>
+
+              {submitting && (
+                <div className="mono" style={{ marginTop: 14, fontSize: 11, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="dot dot-live" /> 正在 upsert Bridge 行 (alice, mac-alice-studio)…
+                </div>
+              )}
+
+              <div style={{ marginTop: 'auto', paddingTop: 24, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-4)' }}>ENTER 提交 · ESC 退出</span>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-ghost btn-sm">退出</button>
+                  <button className="btn btn-primary" onClick={onSubmit} disabled={submitting || !username || !password}>
+                    {submitting ? '握手中…' : '握手并启动 →'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    /* ─────────────── 02 Inbox config ─────────────── */
+    const InboxConfig = ({ inboxes, onLaunch, onAdd }) => (
+      <div className="win">
+        <WinChrome title="Laborster Bridge · 初始化" />
+        <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+          <aside style={{ width: 64, flex: '0 0 64px', background: 'var(--bg-base)', borderRight: '1px solid var(--line-subtle)', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '14px 0' }}>
+            <span className="lab-mark" style={{ marginBottom: 18 }} />
+            <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--brass-soft)', color: 'var(--brass)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--f-serif)', fontSize: 16 }}>◇</div>
+          </aside>
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+            <header style={{ height: 48, flex: '0 0 48px', borderBottom: '1px solid var(--line-subtle)', display: 'flex', alignItems: 'center', padding: '0 22px', gap: 18 }}>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                <span style={{ fontSize: 14, fontWeight: 600 }}>Inbox 配置</span>
+                <span className="mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>inboxes · 这台机器要登的聊天平台账号</span>
+              </div>
+              <span className="chip mono"><span className="dot dot-live" /> 已握手 alice</span>
+            </header>
+            <main style={{ flex: 1, overflow: 'auto', padding: '22px 28px' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <span className="eyebrow">{inboxes.length}/8 · 一个 Bridge 最多 8 个 inbox</span>
+                  <h1 className="serif" style={{ fontSize: 26, margin: '4px 0 0', fontWeight: 400, letterSpacing: '-0.02em' }}>挂上聊天账号</h1>
+                </div>
+                <button className="btn btn-sm" onClick={onAdd}>+ 加 inbox</button>
+              </div>
+              <div style={{ marginTop: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {inboxes.map((ib, i) => (
+                  <div key={i} className="card" style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span className="chip brass">{ib.platform}</span>
+                      <span style={{ flex: 1, fontWeight: 500 }}>{ib.handle}</span>
+                      <StatusChip status={ib.status} />
+                    </div>
+                    <div className="mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+                      base_url=<span style={{ color: 'var(--ink-2)' }}>{ib.host}</span> · username=<span style={{ color: 'var(--ink-2)' }}>{ib.user}</span> · password=<span style={{ color: 'var(--ink-2)' }}>••••</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </main>
+            <footer style={{ height: 56, flex: '0 0 56px', borderTop: '1px solid var(--line-subtle)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 22px' }}>
+              <span className="mono" style={{ fontSize: 11, color: 'var(--ink-3)' }}>{inboxes.length} 个 inbox 准备启动</span>
+              <button className="btn btn-primary" onClick={onLaunch} disabled={inboxes.length === 0}>启动 daemon →</button>
+            </footer>
+          </div>
+        </div>
+      </div>
+    );
+
+    /* ─────────────── 03 Panel ─────────────── */
+    const InboxRow = ({ ib }) => (
+      <div className="card" style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span className="serif" style={{ fontSize: 16, color: 'var(--ink-2)' }}>{ib.platform === 'wechat' ? '◑' : '◐'}</span>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontWeight: 500, fontSize: 13 }}>{ib.handle}</span>
+            <span className="chip muted">{ib.platform}</span>
+          </div>
+          <div className="mono" style={{ fontSize: 10.5, color: 'var(--ink-4)', marginTop: 3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {ib.host}{ib.detail ? ' · ' + ib.detail : ''}
+          </div>
+        </div>
+        <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-3)' }}>{ib.rate}</span>
+        <StatusChip status={ib.status} />
+      </div>
+    );
+
+    const LogViewer = ({ lines }) => (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0 }}>
+        <div className="section-head">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <span className="eyebrow">LOG · LIVE</span>
+            <span style={{ font: '500 12px/1 var(--f-ui)' }}>守护进程日志</span>
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <span className="chip muted">tail -f</span>
+            <button className="btn btn-sm btn-ghost">复制</button>
+          </div>
+        </div>
+        <div className="log" style={{ flex: 1, minHeight: 0 }}>
+          {lines.map((l, i) => (
+            <div key={i}><span className="ts">{l.t}</span> <span className="src">[{l.src}]</span> <span className={l.level}>{l.msg}</span></div>
+          ))}
+        </div>
+      </div>
+    );
+
+    function useLogStream(status) {
+      const [lines, setLines] = useState([]);
+      useEffect(() => {
+        // seed
+        if (status === 'connecting') {
+          setLines([
+            { t: ts(), src: 'core',    level: 'info', msg: 'pid=14823 starting · hostname=mac-alice-studio' },
+            { t: ts(), src: 'studio',  level: 'info', msg: 'POST /api/bridge/handshake' },
+            { t: ts(), src: 'studio',  level: 'ok',   msg: '  ← 200 OK · upsert bridge_id=brg_4dT0…1Qa' },
+            { t: ts(), src: 'session', level: 'ok',   msg: 'session token acquired · exp +30m' },
+          ]);
+        } else if (status === 'online') {
+          setLines([
+            { t: ts(), src: 'heart', level: 'info', msg: '♥ heartbeat ok · 3/3 online · token age 8s' },
+          ]);
+        } else if (status === 'degraded') {
+          setLines([
+            { t: ts(), src: 'inbox/2', level: 'warn', msg: '[wechat] hook IPC broken · helper vanished' },
+            { t: ts(), src: 'heart',   level: 'info', msg: '♥ reporting 2/3 online' },
+            { t: ts(), src: 'inbox/2', level: 'err',  msg: '[wechat] retry #1 failed: ENOENT helper.app' },
+          ]);
+        } else if (status === 'error401') {
+          setLines([
+            { t: ts(), src: 'heart', level: 'err',  msg: '← 401 · {"detail":"bridge revoked or unknown"}' },
+            { t: ts(), src: 'core',  level: 'err',  msg: 'session invalid — entering RE-AUTH state' },
+            { t: ts(), src: 'cache', level: 'info', msg: 'flushed 4 messages to ~/.laborster/queue/2026-05-15.jsonl' },
+          ]);
+        } else {
+          setLines([]);
+        }
+      }, [status]);
+
+      // live log streaming for online + degraded
+      useEffect(() => {
+        if (status !== 'online' && status !== 'degraded') return;
+        const id = setInterval(() => {
+          setLines(prev => {
+            const next = [...prev, makeRandomLine(status)].slice(-200);
+            return next;
+          });
+        }, status === 'online' ? 1400 : 2600);
+        return () => clearInterval(id);
+      }, [status]);
+
+      return lines;
+    }
+    const ts = () => new Date().toTimeString().slice(0, 8);
+    const ONLINE_SAMPLES = [
+      { src: 'inbox/0', level: 'info', msg: '← incoming msg from peer_id=u_91d3 "在吗 alice 姐"' },
+      { src: 'studio',  level: 'info', msg: 'POST /bridge/incoming · 1 message · 21ms' },
+      { src: 'studio',  level: 'ok',   msg: '  ← 200 · queued for reply scan' },
+      { src: 'outbox',  level: 'info', msg: 'long-poll /bridge/outbound · pending=2' },
+      { src: 'outbox',  level: 'ok',   msg: '  ← 200 · 2 chunk · persona=阿言' },
+      { src: 'inbox/0', level: 'info', msg: 'humanize: typing 4.2s before chunk #1' },
+      { src: 'inbox/0', level: 'ok',   msg: '→ sent chunk #1 to u_91d3 · ack ok' },
+      { src: 'heart',   level: 'info', msg: '♥ heartbeat ok · 3/3 online' },
+    ];
+    const DEGRADED_SAMPLES = [
+      { src: 'inbox/2', level: 'warn', msg: '[wechat] retry #N backoff 30s' },
+      { src: 'inbox/0', level: 'info', msg: '← incoming msg from u_91d3 (chat ok)' },
+      { src: 'outbox',  level: 'warn', msg: 'chunk for u_7f2 deferred — target inbox offline' },
+      { src: 'heart',   level: 'info', msg: '♥ heartbeat ok · 2/3 online' },
+    ];
+    const makeRandomLine = (status) => {
+      const arr = status === 'online' ? ONLINE_SAMPLES : DEGRADED_SAMPLES;
+      const pick = arr[Math.floor(Math.random() * arr.length)];
+      return { t: ts(), ...pick };
+    };
+
+    const Panel = ({ status, onOpenSettings, onChangeTab, tab, inboxes, showToast, onDismissToast, onReauth }) => {
+      const lines = useLogStream(status);
+
+      const kpis = useMemo(() => {
+        if (status === 'connecting') return [
+          { label: 'Studio', num: '握手中', sub: 'POST /handshake · 0.8s' },
+          { label: 'Inboxes', num: '0/' + inboxes.length, sub: '等待 token' },
+          { label: 'IN · 5m', num: '—', sub: '尚未在线' },
+          { label: 'Outbox', num: '—', sub: '等待 long-poll' },
+        ];
+        if (status === 'online') return [
+          { label: 'Studio', num: '在线', tone: 'ok', sub: 'RTT 38ms · token exp 14:32' },
+          { label: 'Inboxes', num: inboxes.length + '/' + inboxes.length, tone: 'ok', sub: '全部上报最近 5s' },
+          { label: 'IN · 5m', num: '128', sub: '12 / min · ✶ peak 24' },
+          { label: 'Outbox', num: '2', sub: 'queued · 平均 chunk 间隔 9s' },
+        ];
+        if (status === 'degraded') return [
+          { label: 'Studio', num: '在线', tone: 'ok', sub: 'RTT 41ms' },
+          { label: 'Inboxes', num: '2/3', tone: 'warn', sub: '1 个降级 · 96s 前掉线' },
+          { label: 'IN · 5m', num: '74', sub: '6 / min · ↓ -42%' },
+          { label: 'Outbox', num: '4', tone: 'warn', sub: '1 chunk 因 inbox 掉线 等待中' },
+        ];
+        if (status === 'error401') return [
+          { label: 'Studio', num: '401', tone: 'danger', sub: '上次 heartbeat 41s 前' },
+          { label: 'Inboxes', num: '0/' + inboxes.length, tone: 'danger', sub: '暂停 · 等新 token' },
+          { label: 'IN · 5m', num: '0', sub: '本地缓存 17 条' },
+          { label: 'Outbox', num: '6', tone: 'warn', sub: 'queued · long-poll 已断' },
+        ];
+        if (status === 'paused') return [
+          { label: 'Studio', num: '在线', tone: 'ok', sub: 'RTT 38ms' },
+          { label: 'Inboxes', num: '0/' + inboxes.length, sub: '手动暂停 · 仍在收' },
+          { label: 'IN · 5m', num: '94', sub: '继续接收 · 不回复' },
+          { label: 'Outbox', num: '12', sub: '暂停期间累计' },
+        ];
+        return [];
+      }, [status, inboxes]);
+
+      const banner = (
+        status === 'degraded' ? (
+          <div style={{ marginBottom: 12, padding: '10px 12px', background: 'oklch(0.78 0.11 70/0.10)', border: '1px solid oklch(0.78 0.11 70/0.40)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ color: 'var(--warn)' }}>⚠</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--warn)' }}>降级运行 · 1 个 inbox 掉线</div>
+              <div className="mono" style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 2 }}>alice_wx 失联 96s · 其余 inbox 仍正常收发</div>
+            </div>
+            <button className="btn btn-sm">重连 alice_wx</button>
+          </div>
+        ) : status === 'error401' ? (
+          <div style={{ marginBottom: 12, padding: '10px 12px', background: 'oklch(0.62 0.15 22/0.10)', border: '1px solid oklch(0.62 0.15 22/0.45)', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ color: 'var(--danger)' }}>✕</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 12.5, color: 'var(--danger)' }}>需要重新登录 · session 已失效</div>
+              <div className="mono" style={{ fontSize: 11, color: 'var(--ink-2)', marginTop: 2 }}>heartbeat 返回 401 · 所有 inbox 暂停，incoming 已落盘等待</div>
+            </div>
+            <button className="btn btn-primary btn-sm" onClick={onReauth}>重新登录 →</button>
+          </div>
+        ) : null
+      );
+
+      const TABS = [
+        { id: 'status', label: '状态' },
+        { id: 'inboxes', label: 'Inbox', badge: '' + inboxes.length },
+        { id: 'logs', label: '日志' },
+        { id: 'outbox', label: 'Outbox', badge: status === 'error401' ? '6' : status === 'degraded' ? '4' : '2' },
+      ];
+
+      return (
+        <div className="win">
+          <WinChrome title="Laborster Bridge" />
+          <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+            <Rail active="panel" onChange={(id) => id === 'settings' ? onOpenSettings() : onChangeTab(id === 'panel' ? 'status' : id === 'inbox' ? 'inboxes' : id)} status={status} />
+            <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column' }}>
+              <header style={{ height: 48, flex: '0 0 48px', borderBottom: '1px solid var(--line-subtle)', display: 'flex', alignItems: 'center', padding: '0 22px', gap: 12 }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: 14, fontWeight: 600 }}>主状态</span>
+                  <span className="mono" style={{ fontSize: 11, color: 'var(--ink-4)' }}>daemon · mac-alice-studio</span>
+                </div>
+                <StatusChip status={status} />
+                <button className="btn btn-sm btn-ghost">↓ 托盘</button>
+              </header>
+              <main style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', padding: '14px 18px 0' }}>
+                {banner}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                  {kpis.map((k, i) => <KPIStat key={i} {...k} />)}
+                </div>
+                <div style={{ height: 10 }} />
+                <div className="tabs">
+                  {TABS.map(t => (
+                    <button key={t.id} className={tab === t.id ? 'active' : ''} onClick={() => onChangeTab(t.id)}>
+                      {t.label}{t.badge && <span className="chip muted" style={{ marginLeft: 4 }}>{t.badge}</span>}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ flex: 1, minHeight: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, padding: '14px 0' }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minHeight: 0 }}>
+                    <div className="section-head">
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <span className="eyebrow">INBOXES · LIVE</span>
+                        <span style={{ font: '500 12px/1 var(--f-ui)' }}>Bridge 挂着的聊天账号</span>
+                      </div>
+                      <button className="btn btn-sm btn-ghost">+ 加 inbox</button>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6, overflow: 'auto', minHeight: 0 }}>
+                      {inboxes.map((ib, i) => <InboxRow key={i} ib={ib} />)}
+                    </div>
+                  </div>
+                  <LogViewer lines={lines} />
+                </div>
+              </main>
+              <footer style={{ height: 28, flex: '0 0 28px', borderTop: '1px solid var(--line-subtle)', display: 'flex', alignItems: 'center', padding: '0 18px' }}>
+                <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-4)' }}>studio.laborster.com · POST /heartbeat 2s</span>
+                <span className="mono" style={{ fontSize: 10.5, color: 'var(--ink-4)', marginLeft: 'auto' }}>⌘O 显示 · ⌘L 日志 · ⌘, 设置 · ⌘Q 退出</span>
+              </footer>
+
+              {showToast && (
+                <div style={{ position: 'absolute', right: 28, bottom: 50, width: 360, background: 'var(--bg-base)', border: '1px solid oklch(0.62 0.15 22/0.45)', borderLeft: '3px solid var(--danger)', borderRadius: 10, padding: '12px 14px', boxShadow: '0 18px 50px -16px oklch(0.04 0.005 60/0.7)', display: 'flex', gap: 10 }} className="fade-up">
+                  <span style={{ color: 'var(--danger)', fontSize: 14 }}>!</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 600 }}>chunk 发送失败</div>
+                    <div className="mono" style={{ fontSize: 10.5, color: 'var(--ink-2)', marginTop: 4, lineHeight: 1.6 }}>contact=u_91d3 · inbox=alice@chat<br />chat returned 503 · 60s 后自动重试</div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                      <button className="btn btn-sm btn-ghost">查看日志</button>
+                      <button className="btn btn-sm">立即重试</button>
+                    </div>
+                  </div>
+                  <button className="btn btn-sm btn-ghost" style={{ alignSelf: 'flex-start', color: 'var(--ink-4)' }} onClick={onDismissToast}>×</button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    /* ─────────────── 04 Tray popover ─────────────── */
+    const Tray = ({ status, inboxes, onOpen, onPause, onResume, onQuit, paused }) => {
+      const headerMap = {
+        online:   { dot: 'dot-live',   color: 'var(--live)',   text: '在线 · 一切正常' },
+        degraded: { dot: 'dot-warn',   color: 'var(--warn)',   text: '降级运行 · 1 个 inbox 掉线' },
+        offline:  { dot: 'dot-danger', color: 'var(--danger)', text: '离线 · session 401' },
+        error401: { dot: 'dot-danger', color: 'var(--danger)', text: '离线 · session 401' },
+        paused:   { dot: 'dot-off',    color: 'var(--ink-3)',  text: '手动暂停' },
+        connecting: { dot: 'dot-on',   color: 'var(--brass)',  text: '握手中…' },
+      };
+      const h = headerMap[paused ? 'paused' : status];
+      return (
+        <div style={{ width: 320, background: 'var(--bg-base)', border: '1px solid var(--line)', borderRadius: 10, boxShadow: '0 18px 50px -16px oklch(0.04 0.005 60/0.7)', overflow: 'hidden' }}>
+          <div style={{ padding: '12px 14px 10px', borderBottom: '1px solid var(--line-subtle)', background: 'var(--bg-sunken)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="lab-mark" style={{ width: 18, height: 18, fontSize: 18 }} />
+              <span className="serif" style={{ fontSize: 14, fontWeight: 500 }}>Laborster Bridge</span>
+              <span className="chip mono" style={{ marginLeft: 'auto' }}>v0.4</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10 }}>
+              <span className={`dot ${h.dot}`} />
+              <span style={{ fontSize: 13, color: h.color, fontWeight: 500 }}>{h.text}</span>
+            </div>
+            <div className="mono" style={{ fontSize: 10.5, color: 'var(--ink-3)', marginTop: 4 }}>alice@studio · {inboxes.filter(i => i.status === 'online').length}/{inboxes.length} inbox</div>
+          </div>
+          <div style={{ padding: '6px 0' }}>
+            {inboxes.map((ib, i) => (
+              <div key={i} className="tray-row">
+                <span className={`dot ${ib.status === 'online' ? 'dot-live' : ib.status === 'degraded' ? 'dot-warn' : ib.status === 'offline' || ib.status === 'error401' ? 'dot-danger' : 'dot-off'}`} />
+                <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+                  <span style={{ fontSize: 12 }}>{ib.handle}</span>
+                  <span className="mono" style={{ fontSize: 10, color: 'var(--ink-4)' }}>{ib.platform} · {ib.rate}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="tray-rule" />
+          <div style={{ padding: '4px 0' }}>
+            <div className="tray-row" onClick={onOpen}>↗ 打开 Bridge 窗口<span style={{ marginLeft: 'auto', font: '11px/1 var(--f-mono)', color: 'var(--ink-4)' }}>⌘O</span></div>
+            {paused
+              ? <div className="tray-row" style={{ color: 'var(--brass)' }} onClick={onResume}>▶ 恢复所有 inbox</div>
+              : <div className="tray-row" onClick={onPause}>⏸ 暂停所有 inbox</div>}
+          </div>
+          <div className="tray-rule" />
+          <div style={{ padding: '4px 0' }}>
+            <div className="tray-row" style={{ color: 'var(--danger)' }} onClick={onQuit}>退出 Bridge<span style={{ marginLeft: 'auto', font: '11px/1 var(--f-mono)' }}>⌘Q</span></div>
+          </div>
+        </div>
+      );
+    };
+
+    /* ─────────────── 05 Settings ─────────────── */
+    const Toggle = ({ on, onChange }) => (
+      <button onClick={() => onChange(!on)} style={{ width: 32, height: 18, borderRadius: 999, background: on ? 'var(--brass)' : 'var(--bg-sunken)', border: '1px solid ' + (on ? 'var(--brass)' : 'var(--line)'), position: 'relative', cursor: 'pointer', padding: 0 }}>
+        <span style={{ position: 'absolute', top: 0, left: on ? 14 : 0, width: 14, height: 14, borderRadius: 999, background: on ? 'oklch(0.18 0.012 60)' : 'var(--ink-2)', transition: 'left 0.15s' }} />
+      </button>
+    );
+
+    const Settings = ({ status, onBack }) => {
+      const [autoLaunch, setAutoLaunch] = useState(true);
+      const [autoTray, setAutoTray] = useState(true);
+      const [closeQuits, setCloseQuits] = useState(false);
+      const [section, setSection] = useState('general');
+
+      const sidebar = [
+        { kicker: '主进程', items: [
+          { id: 'general', label: '通用', glyph: '◎' },
+          { id: 'network', label: '网络与连接', glyph: '⇄' },
+          { id: 'logs',    label: '日志与缓存', glyph: '☰' },
+        ]},
+        { kicker: '账户', items: [
+          { id: 'studio', label: 'Studio 账号', glyph: '○' },
+          { id: 'inbox',  label: 'Inbox 凭据', glyph: '◇' },
+        ]},
+        { kicker: '关于', items: [
+          { id: 'about',  label: '版本与许可', glyph: '✶' },
+        ]},
+      ];
+
+      return (
+        <div className="win">
+          <WinChrome title="Laborster Bridge · 设置" />
+          <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
+            <Rail active="settings" onChange={(id) => id === 'panel' ? onBack() : null} status={status} />
+            <nav style={{ width: 220, flex: '0 0 220px', borderRight: '1px solid var(--line-subtle)', padding: '14px 12px', overflow: 'auto' }}>
+              {sidebar.map((g, gi) => (
+                <div key={gi} style={{ marginTop: gi === 0 ? 0 : 14 }}>
+                  <span className="eyebrow" style={{ padding: '0 10px' }}>{g.kicker}</span>
+                  <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                    {g.items.map(it => {
+                      const on = it.id === section;
+                      return (
+                        <div key={it.id} onClick={() => setSection(it.id)} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', borderRadius: 7, background: on ? 'var(--brass-soft)' : 'transparent', color: on ? 'var(--brass)' : 'var(--ink-2)', cursor: 'pointer', fontSize: 12.5 }}>
+                          <span style={{ fontFamily: 'var(--f-serif)', fontSize: 13, width: 14, textAlign: 'center' }}>{it.glyph}</span>
+                          <span style={{ fontWeight: on ? 500 : 400 }}>{it.label}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </nav>
+            <main style={{ flex: 1, minWidth: 0, padding: '20px 24px', overflow: 'auto' }}>
+              <span className="eyebrow">{section.toUpperCase()}</span>
+              <h1 className="serif" style={{ fontSize: 24, margin: '4px 0 18px', fontWeight: 400, letterSpacing: '-0.02em' }}>
+                {{general:'通用',network:'网络与连接',logs:'日志与缓存',studio:'Studio 账号',inbox:'Inbox 凭据',about:'版本与许可'}[section]}
+              </h1>
+
+              {section === 'general' && (
+                <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                  <Row title="开机自启" sub="Login Item · macOS launchd · Windows Run 注册表" right={<Toggle on={autoLaunch} onChange={setAutoLaunch} />} />
+                  <Row title="启动时直接进入托盘" sub="不打开主窗口" right={<Toggle on={autoTray} onChange={setAutoTray} />} />
+                  <Row title="关闭窗口时退出" sub="默认关闭只是隐藏到托盘" right={<Toggle on={closeQuits} onChange={setCloseQuits} />} last />
+                </div>
+              )}
+
+              {section === 'network' && (
+                <div className="card" style={{ padding: 16, display: 'grid', gap: 14 }}>
+                  <Field label="STUDIO URL" hint="留空使用默认 https://studio.laborster.com">
+                    <input className="input" defaultValue="https://studio.laborster.com" />
+                  </Field>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <Field label="HEARTBEAT 间隔"><select className="select" defaultValue="2s"><option>1s</option><option>2s</option><option>5s</option></select></Field>
+                    <Field label="LONG-POLL 超时"><select className="select"><option>20s</option><option>30s</option><option>60s</option></select></Field>
+                  </div>
+                  <Field label="HTTP 代理 · 选填"><input className="input" placeholder="socks5://127.0.0.1:7890" /></Field>
+                </div>
+              )}
+
+              {section === 'logs' && (
+                <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                  <Row title="日志路径" sub="~/.laborster/bridge.log" right={<div style={{ display: 'flex', gap: 6 }}><button className="btn btn-sm btn-ghost">复制</button><button className="btn btn-sm">打开</button></div>} />
+                  <Row title="日志级别" sub="生产用 info · 排查问题用 debug" right={<select className="select" style={{ width: 140, height: 30 }}><option>info</option><option>debug</option><option>trace</option></select>} />
+                  <Row title="离线缓存" sub={status === 'error401' ? '17 条 incoming · 18 KB · 等待重连后推送' : '0 条 · 0 KB'} right={<button className="btn btn-sm" disabled={status !== 'error401'}>flush now</button>} />
+                  <Row title="清空缓存" sub="此操作不可撤销" right={<button className="btn btn-sm btn-danger">清空</button>} last />
+                </div>
+              )}
+
+              {(section === 'studio' || section === 'inbox' || section === 'about') && (
+                <div className="card" style={{ padding: 24, color: 'var(--ink-3)', fontSize: 12.5 }}>
+                  这一页保留位 · 实际实现时会接到 Studio 的 GET /api/account 或主进程的 keychain 模块。
+                </div>
+              )}
+            </main>
+          </div>
+        </div>
+      );
+    };
+
+    const Row = ({ title, sub, right, last }) => (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 14px', borderBottom: last ? 'none' : '1px solid var(--line-subtle)', gap: 16 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 500 }}>{title}</div>
+          {sub && <div className="mono" style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 3 }}>{sub}</div>}
+        </div>
+        <div>{right}</div>
+      </div>
+    );
+
+    /* ─────────────── App / state machine ─────────────── */
+    const SEED_INBOXES = [
+      { handle: 'alice@chat', platform: 'chat',   host: 'http://host.docker.internal:23456', user: 'alice', status: 'online', rate: '92 / 5m', detail: '34 takeover' },
+      { handle: 'bob@chat',   platform: 'chat',   host: 'https://chat.laborster.com',         user: 'bob',   status: 'online', rate: '21 / 5m', detail: '8 takeover' },
+      { handle: 'alice_wx',   platform: 'wechat', host: 'wechat hook · attached',              user: 'alice_wx', status: 'online', rate: '15 / 5m', detail: '4 takeover' },
+    ];
+
+    function App() {
+      const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+      const screen = t.screen;        // login | inbox | panel | settings | tray
+      const status = t.status;        // online | connecting | degraded | offline | error401 | paused
+
+      const [tab, setTab] = useState('status');
+      const [showToast, setShowToast] = useState(t.show_error_toast);
+      useEffect(() => { setShowToast(t.show_error_toast); }, [t.show_error_toast]);
+
+      // derive inbox statuses from overall status
+      const inboxes = useMemo(() => {
+        if (status === 'connecting') return SEED_INBOXES.map((ib, i) => ({ ...ib, status: i === 0 ? 'connecting' : 'offline', rate: '— / 5m' }));
+        if (status === 'online')     return SEED_INBOXES.map((ib, i) => ({ ...ib, status: i === 2 ? t.inbox_alice_wx_status : 'online' }));
+        if (status === 'degraded')   return SEED_INBOXES.map((ib, i) => i === 2 ? { ...ib, status: 'degraded', host: 'wechat hook · detached', rate: '— / 5m', detail: 'helper 进程消失 96s 前' } : ib);
+        if (status === 'error401')   return SEED_INBOXES.map(ib => ({ ...ib, status: 'paused', rate: '0 / 5m' }));
+        if (status === 'paused')     return SEED_INBOXES.map(ib => ({ ...ib, status: 'paused' }));
+        return SEED_INBOXES;
+      }, [status, t.inbox_alice_wx_status]);
+
+      // login auto-promote
+      const triggerLogin = () => {
+        setTweak('status', 'connecting');
+        setTimeout(() => { setTweak('status', 'online'); setTweak('screen', 'panel'); }, 1400);
+      };
+
+      // keyboard shortcuts
+      useEffect(() => {
+        const onKey = (e) => {
+          if (!(e.metaKey || e.ctrlKey)) return;
+          const map = { '1': 'login', '2': 'inbox', '3': 'panel', '4': 'tray', '5': 'settings' };
+          if (map[e.key]) { e.preventDefault(); setTweak('screen', map[e.key]); }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+      }, [setTweak]);
+
+      return (
+        <div className="stage">
+          {screen === 'login' && <Login status={status} onSubmit={triggerLogin} />}
+          {screen === 'inbox' && <InboxConfig inboxes={inboxes} onLaunch={() => setTweak('screen', 'panel')} onAdd={() => {}} />}
+          {screen === 'panel' && <Panel status={status} inboxes={inboxes} tab={tab} onChangeTab={setTab} onOpenSettings={() => setTweak('screen', 'settings')} onReauth={() => setTweak('screen', 'login')} showToast={showToast} onDismissToast={() => setShowToast(false)} />}
+          {screen === 'settings' && <Settings status={status} onBack={() => setTweak('screen', 'panel')} />}
+          {screen === 'tray' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-end' }}>
+              <div style={{ width: 320, display: 'flex', alignItems: 'center', justifyContent: 'flex-end', height: 22, padding: '0 8px', borderRadius: 6, background: 'oklch(0.10 0.005 60/0.55)', fontSize: 11, color: 'var(--ink-3)', gap: 10 }}>
+                <span className="mono">Wed 14:48</span>
+                <span className="lab-mark" style={{ width: 13, height: 13, fontSize: 14 }} />
+              </div>
+              <Tray status={status} inboxes={inboxes} paused={status === 'paused'}
+                onOpen={() => setTweak('screen', 'panel')}
+                onPause={() => setTweak('status', 'paused')}
+                onResume={() => setTweak('status', 'online')}
+                onQuit={() => {}} />
+            </div>
+          )}
+
+          <TweaksPanel title="Bridge prototype · 状态">
+            <TweakSection label="屏幕" />
+            <TweakSelect label="当前屏" value={screen}
+              options={[
+                { label: '01 · Login', value: 'login' },
+                { label: '02 · Inbox 配置', value: 'inbox' },
+                { label: '03 · 主面板', value: 'panel' },
+                { label: '04 · 托盘菜单', value: 'tray' },
+                { label: '05 · 设置', value: 'settings' },
+              ]}
+              onChange={(v) => setTweak('screen', v)} />
+
+            <TweakSection label="daemon 状态" />
+            <TweakSelect label="status" value={status}
+              options={[
+                { label: 'connecting · 握手中', value: 'connecting' },
+                { label: 'online · 在线', value: 'online' },
+                { label: 'degraded · 1 个掉线', value: 'degraded' },
+                { label: 'error401 · 401 需重登', value: 'error401' },
+                { label: 'paused · 手动暂停', value: 'paused' },
+              ]}
+              onChange={(v) => setTweak('status', v)} />
+
+            {status === 'online' && (
+              <TweakSelect label="alice_wx" value={t.inbox_alice_wx_status}
+                options={[
+                  { label: 'online', value: 'online' },
+                  { label: 'offline', value: 'offline' },
+                ]}
+                onChange={(v) => setTweak('inbox_alice_wx_status', v)} />
+            )}
+
+            <TweakToggle label="显示错误 toast" value={t.show_error_toast} onChange={(v) => setTweak('show_error_toast', v)} />
+
+            <TweakSection label="快捷键" />
+            <div style={{ font: '11px/1.6 var(--f-mono)', color: 'rgba(60,50,40,.7)', padding: '0 4px' }}>
+              ⌘1 login · ⌘2 inbox · ⌘3 panel<br />
+              ⌘4 tray · ⌘5 settings
+            </div>
+          </TweaksPanel>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>

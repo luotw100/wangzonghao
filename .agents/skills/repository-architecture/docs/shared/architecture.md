@@ -28,19 +28,21 @@ Studio cloud control plane
 
 Studio 与 Chat 之间没有代码 import 和直接 API 调用；仅 Bridge 的 `ChatAdapter` 通过 HTTP 调用 Chat。
 
-### Bridge daemon
+### Bridge desktop app
 
-`services/bridge` 是 Python asyncio daemon。它从 CLI 接收 Studio 登录信息和平台登录 claim，先登录平台拿到 `platform_self_id`，再向 Studio handshake 获取 Bridge session token 和 Inbox 映射。
+`desktop/` 是 Electron 桌面应用，内嵌 TypeScript daemon（运行在 Electron 主进程中）。用户通过 GUI 配置 Studio 账号和 chat inbox 凭据，daemon 在后台持续运行并通过系统托盘常驻。
 
 Bridge 当前负责：
 
-- adapter 登录；
-- initial catch-up；
-- live inbound streaming（含 media 下载 + 上传到 Studio S3）；
-- 批量推送 `/api/bridge/incoming`；
-- heartbeat；
-- outbound long polling（含 media 从 Studio S3 下载 + 推到平台）；
-- 平台发送和 ack。
+- ChatAdapter 登录（HTTP POST `/api/auth/login`）；
+- StudioClient handshake 获取 session token 和 Inbox 映射；
+- live inbound 扫描（per-inbox async generator 轮询 chat API）；
+- SQLite 本地去重（`local_messages` 表，`UNIQUE(inbox_id, local_hash)`）；
+- consumer 按 activePeers 过滤后批量推 `/api/bridge/incoming`；
+- heartbeat（15s）；
+- announce peers（60s）；
+- active-peers 拉取（10s）；
+- outbound long-poll（30s）+ text 发送 + ack。
 
 Bridge 当前不负责：
 
@@ -49,7 +51,7 @@ Bridge 当前不负责：
 - autoreply gating；
 - distill；
 - 回复内容策略；
-- media 缓存。
+- 媒体 S3 搬运（outbound media 返回 failed，chat sandbox 实践上只发 text）。
 
 ### Studio
 
@@ -133,4 +135,4 @@ Studio S3 是媒体 binary 的唯一 source of truth。Inbound 时 Bridge 从平
 - Studio 需要 `DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET` 环境变量，缺失时报错。`S3_PUBLIC_URL` 用于生成 Bridge 媒体端点的 presigned URL。
 - Chat 和 Studio models 当前不使用 SQLAlchemy column default。
 - Studio 和 Chat 使用 PostgreSQL，由 Alembic 管理 schema 迁移。
-- Bridge 当前 CLI 有 `--studio-url` 默认值，这是当前代码事实；本地联调命令仍应显式传入。
+- Bridge desktop app 的 Studio URL 默认值是 `https://studio.laborster.com`，本地联调在 Login 屏手动改为 `http://localhost:23457`。

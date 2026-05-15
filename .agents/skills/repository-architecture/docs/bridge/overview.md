@@ -1,75 +1,120 @@
-# Bridge Overview / Bridge 总览
+# Bridge Desktop App / Bridge 桌面应用总览
 
-## 当前角色
+## 当前形态
 
-`services/bridge` 是运行在主播/运营本机的 daemon。它持有平台登录态，并在 Channel adapters 和 Studio 之间桥接消息。对于媒体消息（image/audio/video/file），Bridge 作为管道在平台 S3 和 Studio S3 之间搬运二进制数据。
-
-Bridge 是无状态 daemon：不保存 DB、不保存长期 token；全部运行状态来自 CLI args、内存 token 和 adapter 内存状态。
+`desktop/` 是运行在主播/运营本机的 **Electron 桌面应用**。它内嵌一个 TypeScript daemon，持有平台登录态，并在 Chat adapter 和 Studio 之间桥接消息。对 text 消息，Bridge 是透明管道；媒体消息当前仅文本路径已实现，媒体 S3 搬运为 stub（chat sandbox 实践中只发 text）。
 
 ## 目录结构
 
 ```text
-services/bridge/
-  compose.yaml
-  Dockerfile
-  pyproject.toml
-  bridge/
-    main.py
-    runtime.py
-    studio_client.py
-    adapters/
-      base.py
-      chat.py
+desktop/
+  package.json
+  electron-vite.config.ts
+  electron-builder.yml
+  tsconfig.json / tsconfig.node.json / tsconfig.web.json
+  src/
+    main/
+      index.ts              # Electron 主进程：窗口、托盘、IPC handlers、daemon 生命周期
+      state.ts              # CredentialStore（safeStorage 加密 token，不持久化密码）
+      daemon/
+        types.ts            # 共享类型：DaemonState、LogLine、InboxClaim 等
+        studio-client.ts    # Studio /api/bridge/* 全部 HTTP 端点
+        local-store.ts      # SQLite 去重表（better-sqlite3，WAL 模式）
+        adapters/
+          chat.ts           # Chat sandbox HTTP 轮询适配器
+        runtime.ts          # BridgeRuntime：5 个并发循环
+    preload/
+      index.ts              # contextBridge：暴露给 renderer 的全部 IPC 接口
+    renderer/
+      index.html
+      src/
+        main.tsx            # React 入口
+        App.tsx             # 4 屏状态机（login→inbox→panel/settings）
+        index.css           # 与 Studio 同源的 @theme design token
+        components/
+          shared.tsx        # 共享 UI：Rail、StatusChip、KPIStat、Btn、Toggle…
+        screens/
+          Login.tsx         # 首启/Re-auth 屏
+          InboxConfig.tsx   # Inbox 列表配置屏
+          Panel.tsx         # 主状态面板（KPI、inbox 列表、日志）
+          Settings.tsx      # 通用/网络/账号设置
 ```
 
-## 依赖
+## 技术栈
 
-`pyproject.toml` 当前只有运行时依赖 `httpx`。其余使用 Python stdlib：`asyncio`、`logging`、`dataclasses` 等。
+- **Electron 33+**，`electron-vite` 构建，`electron-builder` 打包
+- **主进程**（Node）：daemon 核心逻辑，HTTP 网络 IO，`better-sqlite3` 本地存储，`safeStorage` 凭据加密
+- **Preload**：`contextBridge` 类型安全 IPC
+- **Renderer**：React 19 + Tailwind v4，与 Studio 使用同一套 oklch design token，无第三方 UI 库
 
-## CLI
+## IPC schema（preload 暴露给 renderer）
 
-`bridge/main.py` 当前参数：
+```typescript
+window.bridge.getState()        // 获取当前 DaemonState 快照
+window.bridge.getCreds()        // 获取凭据信息（无敏感字段）
+window.bridge.handshake(opts)   // 登录并握手 Studio
+window.bridge.logout()          // 清除 token，停止 daemon
+window.bridge.getInboxes()      // 获取已保存 inbox 列表（无密码）
+window.bridge.saveInboxes(claims)// 保存 inbox 配置
+window.bridge.start()           // 启动 daemon
+window.bridge.stop()            // 停止 daemon
+window.bridge.openStudio()      // shell.openExternal 打开 Studio URL
+window.bridge.onStateChange(cb) // 订阅 DaemonState push（返回 unsubscribe）
+window.bridge.onLog(cb)         // 订阅 LogLine push（返回 unsubscribe）
+```
 
-- `--studio-username`：必填。
-- `--studio-password`：必填。
-- `--studio-url`：可选，默认 `https://studio.laborster.com`。
-- `--state-dir`：必填，bridge 持久化目录（machine_id + token 存为 `state.json`）。
-- `--chat-inbox`：可重复，格式 `base_url=...,username=...,password=...`。
+## 凭据管理
 
-一条 `--chat-inbox` 会变成 `InboxClaim(platform='chat', raw={...})`。
+`CredentialStore`（`src/main/state.ts`）使用 Electron 内置 `safeStorage`（OS keychain 加密）持久化 token。密码只在握手时在内存中使用，握手后丢弃。
+
+持久化文件位于 `app.getPath('userData')` 下：
+
+- `bridge-state.json`：studioUrl、username、machineId、bridgeId、inbox 列表（密码 safeStorage 加密）
+- `bridge-token.enc`：safeStorage 加密的 session token
+- `data/messages.db`：SQLite 去重消息表
+- `data/media/`：媒体 binary 缓存
+
+## 4 屏状态机
+
+```text
+首启 / 401
+  → Login（输入 Studio URL + 账号密码 → handshake）
+        ↓ 成功
+  → InboxConfig（配置 chat inbox 列表，密码 safeStorage 加密存储）
+        ↓ 保存并启动
+  → Panel（主面板：KPI 网格 + inbox 状态 + 日志 tail + Studio 引导）
+        ↓ 导航
+  → Settings（通用 / 网络 / 账号）
+```
+
+Panel 有「打开 Studio ↗」按钮，引导用户前往 `studio.laborster.com` 配置接管策略——Bridge 本身不管策略，只做 IO。
 
 ## 启动生命周期
 
 ```text
-main()
-  → parse args
-  → 从 --state-dir 加载 BridgeState(state.json)
-  → 创建 InboxClaim list
-  → 创建 StudioClient
-  → 创建 BridgeRuntime
-  → 注册 SIGINT/SIGTERM handler
-  → await runtime.run()
+app.whenReady()
+  → CredentialStore.load()
+  → createWindow()
+  → registerIpc()
+  → Tray()
+  → hasToken && hasInboxes → startDaemon()
+        ↓
+BridgeRuntime.run()
+  → ChatAdapter.login() × N
+  → StudioClient.handshake()
+  → startProducer() × N   # per-inbox 无限扫描循环
+  → startConsumer()        # 1s 间隔推 Studio
+  → startHeartbeat()       # 15s
+  → startAnnounce()        # 60s
+  → startActivePeers()     # 10s
+  → startOutbound()        # long-poll 30s，收到 text 即发
 ```
-
-`bridge.adapters.chat` 在 `main.py` 中以 side-effect import 方式加载；模块加载时调用 `register_adapter('chat', _build_chat_adapter)`。
-
-## BridgeRuntime 当前职责
-
-1. 每个 claim build 一个 adapter。
-2. 登录每个 platform adapter。
-3. 用 `(platform, platform_self_id)` 列表连接 Studio（优先尝试 token 复用，失败则 handshake）。
-4. 用 Studio 返回的 `inbox_id` 绑定本地 adapter。
-5. 执行 initial catch-up。
-6. 启动 heartbeat loop。
-7. 启动 inbound batching pump（包含 media 上传到 Studio S3）。
-8. 启动 outbound long-poll loop（包含 media 从 Studio S3 下载后推到平台）。
-9. 平台发送和 ack。
 
 ## Bridge 当前不做的事
 
-- 不调 LLM。
-- 不存 Persona / Contact Card。
-- 不判断 autoreply 是否应该开启。
-- 不选择 ProviderConfig。
-- 不做 media 缓存。
-- 不直接操作 Studio S3（通过 Studio API 的 media 端点间接操作）。
+- 不调 LLM
+- 不存 Persona / Contact Card
+- 不判断 autoreply 是否开启
+- 不选择 ProviderConfig
+- 不实现媒体 S3 搬运（chat adapter 实践上只发 text）
+- 不持久化密码

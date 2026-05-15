@@ -3,13 +3,13 @@
 ## 仓库布局
 
 ```text
+desktop/     # Bridge 桌面 app（Electron + TypeScript）
 services/
   chat/      # Chat sandbox Channel
-  bridge/    # 本地 daemon
   studio/    # 控制台和 AI brain
 ```
 
-三个服务当前是独立项目。不要跨服务直接 import 源码。
+三个项目互相独立。`desktop/` 是 npm 工作区，`services/` 是 Python/Docker 工作区，不要跨项目直接 import 源码。
 
 ## 启动 Chat sandbox
 
@@ -53,17 +53,20 @@ docker compose exec -T studio-api uv run python -m studio.cli create-account \
 
 > 一键 dev seed：`python3 scripts/seed_dev.py`，全部配置走 `scripts/.env`（参考 `scripts/.env.example`，所有键必填、无代码默认值）。它创建一个 Studio admin、`CHAT_SEED_USERS` / `STUDIO_SEED_USERS` 两份独立清单里的用户（格式严格为 `username:password:display`，Studio role=user），以及一个共享 Provider。仅建账号 + provider，不播种 persona/contact/消息（清空 volume 后可重复执行，已存在的账号会告警跳过）。
 
-## 启动 Bridge 连接本地 Chat 和 Studio
+## 启动 Bridge（桌面 app 开发模式）
 
 ```bash
-cd services/bridge
-docker compose run --rm bridge \
-  --studio-username=demo --studio-password=demo123 \
-  --studio-url=http://host.docker.internal:23457 \
-  --chat-inbox 'base_url=http://host.docker.internal:23456,username=alice,password=Alice123'
+cd desktop
+npm install          # 首次：postinstall 自动运行 electron-rebuild
+npm run dev          # electron-vite dev：renderer HMR + main 进程热重启
 ```
 
-同一个 Bridge 要挂多个 Chat 账号时，重复传 `--chat-inbox`。
+Dev 模式启动后显示 Login 屏：
+1. Studio URL 填 `http://localhost:23457`，输入 Studio 账号密码点「握手并启动」
+2. 进入 InboxConfig，填入 Chat sandbox 账号（Base URL: `http://localhost:23456`）
+3. 点「保存并启动 daemon」进入 Panel
+
+多个 Chat inbox 在 InboxConfig 屏点「+ 加 inbox」逐条添加。
 
 ## Storage 事实
 
@@ -107,6 +110,7 @@ docker compose exec -T studio-api uv run python -m studio.cli reset-password --u
 
 ## 构建命令
 
+- Bridge desktop：在 `desktop/` 下执行 `npm run build`（tsc 类型检查 + electron-vite build）；`npm run dist:mac` / `npm run dist:win` 生成安装包。
 - Chat web：在 `services/chat/web` 下执行 `npm run build`。
 - Studio web：在 `services/studio/web` 下执行 `npm run build`；需要 lint 时执行 `npm run lint`。
 - Python 服务在 Dockerfile / Compose 中使用 `uv`。
@@ -139,8 +143,8 @@ distill 改动：
 
 ## 跨服务改动检查表
 
-- 改 Bridge protocol：同步更新 Studio schema/endpoint、Bridge client/runtime、文档。
+- 改 Bridge protocol：同步更新 Studio schema/endpoint、`desktop/src/main/daemon/studio-client.ts`、文档。
 - 改 Contact 语义：检查 Studio data model、Takeover UI、reply gates、distill card。
-- 增加平台适配：当前边界是在 Bridge 新增 adapter，Studio 不直连平台。
-- 增加配置项：优先显式 env/CLI，缺失时报错。
-- 改 outbound status：同步检查 Studio model、Bridge ack、前端展示和文档。
+- 增加平台适配：当前边界是在 `desktop/src/main/daemon/adapters/` 新增 adapter 并在 `runtime.ts` 中注册，Studio 不直连平台。
+- 增加配置项（desktop）：在 `CredentialStore` 或 Settings 屏扩展，不引入 env var（桌面 app 无 env）。
+- 改 outbound status：同步检查 Studio model、`runtime.ts` dispatchOutbound、frontend 展示和文档。

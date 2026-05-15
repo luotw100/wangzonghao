@@ -55,7 +55,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: LaborsterBridge-mac
-          path: desktop/dist-release/*.dmg
+          path: desktop/dist-release/*.zip
           retention-days: 14
 
       - name: Upload artifacts (Windows)
@@ -83,5 +83,5 @@ jobs:
           name: "Laborster Bridge desktop-v${{ github.run_number }}"
           draft: true
           files: |
-            artifacts/**/*.dmg
+            artifacts/**/*.zip
             artifacts/**/*.exe

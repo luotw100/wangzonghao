@@ -16,10 +16,11 @@ asarUnpack:
 
 mac:
   target:
-    - target: dmg
+    # zip, not dmg: hdiutil DMG creation is flaky on CI runners, and the
+    # app is unsigned anyway (user runs xattr/codesign manually).
+    - target: zip
       arch: [x64, arm64]
   category: public.app-category.productivity
-  # notarize: true  # enable when Apple credentials are configured
 
 win:
   target:
@@ -28,6 +29,3 @@ win:
 
 portable:
   artifactName: LaborsterBridge-${version}-portable.exe
-
-dmg:
-  title: Laborster Bridge ${version}

@@ -1,0 +1,4115 @@
+{
+  "chatlab": {
+    "version": "0.0.2",
+    "exportedAt": 1778832475,
+    "generator": "deepseek-gen",
+    "description": "女娱乐主播美美与餐饮老板赵总的聊天记录"
+  },
+  "meta": {
+    "name": "美美来了",
+    "platform": "wechat",
+    "type": "private",
+    "ownerId": "wechat_meimei_001"
+  },
+  "members": [
+    {
+      "platformId": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "groupNickname": "美美",
+      "aliases": [
+        "美美"
+      ]
+    },
+    {
+      "platformId": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "groupNickname": "赵总",
+      "aliases": [
+        "赵总"
+      ]
+    }
+  ],
+  "messages": [
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710505800,
+      "type": 0,
+      "content": "赵总来了哇，终于加上微信了，直播里总说加微信也没见你加，今天终于通过啦！"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710505860,
+      "type": 0,
+      "content": "以后有啥想聊的随时说哈，别客气。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710506100,
+      "type": 0,
+      "content": "哈哈，美美你好，终于加上你了。看了你直播好久了，特别喜欢你的段子。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710506160,
+      "type": 0,
+      "content": "刚才刷了几个嘉年华，你看到了吧？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710506280,
+      "type": 0,
+      "content": "看到了看到了！谢谢赵总！你太破费了，我都怕把你刷穷了哦。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710506400,
+      "type": 0,
+      "content": "这点钱不算啥，给你刷值得，你开心我就开心。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710506700,
+      "type": 0,
+      "content": "你太会说话了，不过还是别一直刷，理性消费哈。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710508200,
+      "type": 0,
+      "content": "美美，你是重庆哪里的？我经常去重庆出差，有机会一起吃个饭啊。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710508320,
+      "type": 0,
+      "content": "哎呀赵总，我江北的。吃饭就算了嘛，我直播时间不稳定，下次再说哈。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710570600,
+      "type": 0,
+      "content": "今天直播几点开始？我下午有空，去给你捧场。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710570900,
+      "type": 0,
+      "content": "今晚上九点才上，下午要排练新段子。你不用特意来，忙你的。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710584400,
+      "type": 0,
+      "content": "刚开完会，心情不太好。就想看看你直播缓解一下。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710584520,
+      "type": 0,
+      "content": "咋子了？生意上的事？别太焦虑，放宽心。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710584700,
+      "type": 0,
+      "content": "嗯，连锁店扩张遇到点麻烦，合伙人有分歧。一个人扛着累。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710585000,
+      "type": 0,
+      "content": "哎，男人嘛，压力大正常。晚上来看我直播，我讲个笑话给你听。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710589500,
+      "type": 0,
+      "content": "好，等你开播。对了，你吃饭没？我给你点个外卖吧？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710589680,
+      "type": 0,
+      "content": "不用不用，我自己点了，谢谢赵总关心。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710641700,
+      "type": 0,
+      "content": "美美，昨天直播完睡得好吗？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710642000,
+      "type": 0,
+      "content": "还不错，就是嗓子有点哑，播太久了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710642120,
+      "type": 0,
+      "content": "多喝点热水，别吃辣的。我让店里给你熬点梨汤送过去？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710642300,
+      "type": 0,
+      "content": "哈哈哈不用了赵总，太麻烦你了，我自己会照顾自己。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710680700,
+      "type": 0,
+      "content": "今晚直播遇见个神经病，一直在评论区骂我，气死我了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710680880,
+      "type": 0,
+      "content": "谁骂你？截图给我，我找人处理。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710681120,
+      "type": 0,
+      "content": "算了，黑粉嘛，习惯了。就是烦得很，影响心情。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710681300,
+      "type": 0,
+      "content": "别跟这种人计较，来，我给你刷个浪漫马车，开心一下。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710681480,
+      "type": 0,
+      "content": "别别别！你刚刷了好多，别破费了！我真没事。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710681600,
+      "type": 0,
+      "content": "已经刷了，你看后台。开心点，晚上请你吃宵夜？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710681900,
+      "type": 0,
+      "content": "哎呀你……算了，谢谢赵总。宵夜真不用，我下播就睡了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710691800,
+      "type": 0,
+      "content": "美美，睡了吗？我今晚又失眠了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710692100,
+      "type": 0,
+      "content": "还没睡，刚卸完妆。咋又失眠？想多了吧。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710692280,
+      "type": 0,
+      "content": "离婚之后一个人在家，孤零零的。看着你直播还能热闹点。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710692520,
+      "type": 0,
+      "content": "赵总，你条件这么好，肯定会遇到合适的人的。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710692700,
+      "type": 0,
+      "content": "我就觉得你挺好的，又漂亮又有趣。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710692880,
+      "type": 0,
+      "content": "哈哈，别夸了，我要飘了。快睡吧，明天还上班呢。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710693120,
+      "type": 0,
+      "content": "好，你也早点睡。晚安，美美。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710813000,
+      "type": 0,
+      "content": "早安赵总，今天起好早。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710813900,
+      "type": 0,
+      "content": "刚开完晨会，看到你消息心情就好。你下午干嘛？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710814200,
+      "type": 0,
+      "content": "下午去健身房，然后回来化妆准备直播。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710814500,
+      "type": 0,
+      "content": "哪个健身房？我办个卡去偶遇你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710814680,
+      "type": 0,
+      "content": "哈哈别闹，我那个健身房很偏的，不适合你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710855000,
+      "type": 0,
+      "content": "今晚人气好低，才几百人，郁闷。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710855300,
+      "type": 0,
+      "content": "我都给你刷了十几个火箭了，怎么没人？平台算法问题吧。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710855480,
+      "type": 0,
+      "content": "别提了，可能最近没出新段子，观众看腻了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710855720,
+      "type": 0,
+      "content": "你随便唱首歌都比别人强。对了，你唱歌真好听，再唱一首呗。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710856800,
+      "type": 0,
+      "content": "下播了，嗓子累了。明天再唱。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710909000,
+      "type": 0,
+      "content": "美美，今天中午有应酬，喝多了。想你了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710909300,
+      "type": 0,
+      "content": "少喝点酒，对身体不好。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710909480,
+      "type": 0,
+      "content": "身不由己啊。你要是能陪我吃饭多好。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1710909720,
+      "type": 0,
+      "content": "赵总，咱们线上聊就挺好的，见面反而尴尬。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1710909900,
+      "type": 0,
+      "content": "我懂，就是忍不住说说。你别介意啊。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711005600,
+      "type": 0,
+      "content": "刚看见你抖音点赞我跳舞的视频了，哈哈。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711005720,
+      "type": 0,
+      "content": "跳得真好看，我看了好几遍。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711005900,
+      "type": 0,
+      "content": "就是随便跳跳，你别到处发啊。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711018800,
+      "type": 0,
+      "content": "晚上直播我请了几个朋友去给你捧场，都是老板。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711019100,
+      "type": 0,
+      "content": "别别别，我压力大，别让朋友看笑话。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711019400,
+      "type": 0,
+      "content": "没关系，他们也是你粉丝。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711076400,
+      "type": 0,
+      "content": "美美，昨天直播那几个兄弟都说你漂亮，想加你微信。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711076700,
+      "type": 0,
+      "content": "不要不要，我微信不加陌生人了，上次加了几个天天骚扰我。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711076880,
+      "type": 0,
+      "content": "那我面子大，你加了我，我算不算特殊？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711077120,
+      "type": 0,
+      "content": "你是老粉丝嘛，当然特殊。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711123500,
+      "type": 0,
+      "content": "赵总，睡了没？我有个事想跟你说。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711123620,
+      "type": 0,
+      "content": "没睡，你说。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711123800,
+      "type": 0,
+      "content": "我下周要去成都参加一个主播线下活动，可能一周不播。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711123980,
+      "type": 0,
+      "content": "成都？我正好在成都有店，你去哪个区？我请你吃饭。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711124100,
+      "type": 0,
+      "content": "别别别，活动安排很满，而且公司不让私下见粉丝。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711124280,
+      "type": 0,
+      "content": "我不是粉丝，我是朋友。规则是死的，人是活的。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711124400,
+      "type": 0,
+      "content": "真不行，到时候再说吧。我先睡了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711241100,
+      "type": 0,
+      "content": "美美，早上好。昨天你睡了后我又刷了很久手机，想了很多。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711241400,
+      "type": 0,
+      "content": "想啥呢？别总想不开心的事。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711241520,
+      "type": 0,
+      "content": "想我前妻，想孩子，想生意。有时候真觉得没意思。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711241700,
+      "type": 0,
+      "content": "赵总，你是个好人，肯定会越来越好的。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711242000,
+      "type": 0,
+      "content": "你真好，能听我说这些。我也就跟你说说。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711368000,
+      "type": 0,
+      "content": "今天直播好开心，来了个大主播连麦，涨了一千粉！"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711368300,
+      "type": 0,
+      "content": "恭喜恭喜！我就说你迟早要火。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711368480,
+      "type": 0,
+      "content": "还得谢谢你们这些大哥支持。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711368720,
+      "type": 0,
+      "content": "别跟我客气。对了，我下周去重庆出差，你哪天有空？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711368900,
+      "type": 0,
+      "content": "我下周都在成都啊，不是说了嘛。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711369080,
+      "type": 0,
+      "content": "哦对，忘了。那等你回来。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711463400,
+      "type": 0,
+      "content": "美美，今天看你直播，你好像不太高兴？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711463700,
+      "type": 0,
+      "content": "有点感冒，嗓子不舒服，播得状态不好。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711463880,
+      "type": 0,
+      "content": "那早点下播休息，别硬撑。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711464000,
+      "type": 0,
+      "content": "嗯，刚下播了。吃了药准备睡。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711505700,
+      "type": 0,
+      "content": "给你闪送了感冒药和水果，地址还是上次那个？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711505880,
+      "type": 0,
+      "content": "你咋知道我地址？我没告诉过你啊。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711506000,
+      "type": 0,
+      "content": "上次你直播抽奖填过地址，我记下来了。别生气，就是关心你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711506300,
+      "type": 0,
+      "content": "赵总，这样不太好。我谢谢你关心，但地址别留了。药我收下了，以后别这样。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711506480,
+      "type": 0,
+      "content": "好，我错了。以后不问了。你好好休息。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711607400,
+      "type": 0,
+      "content": "感冒好了，今天活过来了！"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711607700,
+      "type": 0,
+      "content": "太好了！那晚上能直播吧？我订了个嘉年华等你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711607880,
+      "type": 0,
+      "content": "别刷了！你再刷我拉黑你哦！"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711608000,
+      "type": 0,
+      "content": "你敢拉黑我？哈哈哈，我刷我的，你播你的。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711674600,
+      "type": 0,
+      "content": "美美，今天天气不错，出去走走？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711674900,
+      "type": 0,
+      "content": "要准备直播内容，没空出去。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711675200,
+      "type": 0,
+      "content": "你天天在屋里，对身体不好。要不我陪你去江边走走？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711675320,
+      "type": 0,
+      "content": "赵总，你咋这么执着呢？我真的不想线下见面。你就当我是个主播朋友行不？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711675500,
+      "type": 0,
+      "content": "行行行，不逼你。就是觉得可惜，你人这么好。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711800000,
+      "type": 0,
+      "content": "今晚直播来了个特别逗的观众，给我刷了礼物还非要连麦，结果是个小学生。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711800300,
+      "type": 0,
+      "content": "哈哈，小学生能有几个钱？可能拿他爸妈手机刷的。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711800480,
+      "type": 0,
+      "content": "对啊，我赶紧让他别刷了，还教育了一顿。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711800720,
+      "type": 0,
+      "content": "你真是个好主播。不像有些人，只管收钱。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711861200,
+      "type": 0,
+      "content": "美美，今天没事，去你直播间看了一下回放，你唱《成都》唱得真好。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711861500,
+      "type": 0,
+      "content": "谢谢！那首歌练了好久。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711861800,
+      "type": 0,
+      "content": "你会唱《今天你要嫁给我》吗？想听你唱。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711861920,
+      "type": 0,
+      "content": "会啊，不过那歌是合唱的，我一个人唱没意思。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711862100,
+      "type": 0,
+      "content": "我陪你唱！我五音不全，但可以尝试。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711862280,
+      "type": 0,
+      "content": "哈哈哈，你别吓我。下次直播连麦可以试试。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711903500,
+      "type": 0,
+      "content": "赵总，今晚失眠了，翻来覆去睡不着。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711903800,
+      "type": 0,
+      "content": "我也是，刚应酬完回来。你在想什么？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711903920,
+      "type": 0,
+      "content": "在想明天直播要不要换个风格，怕老粉不喜欢。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711904100,
+      "type": 0,
+      "content": "你做你自己就好，不管什么风格我都喜欢。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711904280,
+      "type": 0,
+      "content": "你嘴真甜。不过感情不能当饭吃啊，我得奔事业。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1711904520,
+      "type": 0,
+      "content": "我帮你奔事业，你只要给我个机会就行。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1711904700,
+      "type": 0,
+      "content": "你喝多了吧？赶紧睡。晚安。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712050200,
+      "type": 0,
+      "content": "美美，周末有没有空？我新店开业，想请你去剪彩。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712050500,
+      "type": 0,
+      "content": "这个……不太合适吧，我就一主播，又不是明星。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712050680,
+      "type": 0,
+      "content": "你比我请的那些网红火多了，而且你是我朋友。给个面子？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712050800,
+      "type": 0,
+      "content": "我真不能去，公司不让私自接商业活动。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712051100,
+      "type": 0,
+      "content": "那好吧。我其实就想见见你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712113200,
+      "type": 0,
+      "content": "赵总，新店开业顺利吗？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712113500,
+      "type": 0,
+      "content": "挺顺利的，就是缺个女主人剪彩。哈哈，开玩笑。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712113800,
+      "type": 0,
+      "content": "以后会有的。你生意这么好，肯定好多姑娘抢着当。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712113920,
+      "type": 0,
+      "content": "我谁都不想要，就想要你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712114100,
+      "type": 0,
+      "content": "你又来了……我去吃饭了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712239200,
+      "type": 0,
+      "content": "美美，我刚在直播间听到你说想学吉他？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712239500,
+      "type": 0,
+      "content": "对啊，想学，一直没时间。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712239680,
+      "type": 0,
+      "content": "我认识一个老师，可以介绍给你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712239920,
+      "type": 0,
+      "content": "行啊，你把微信推给我，我加他。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712240100,
+      "type": 0,
+      "content": "好，你等等。不过你学了吉他要先弹给我听。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712240280,
+      "type": 0,
+      "content": "那当然，你介绍的肯定第一个弹给你听。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712298000,
+      "type": 0,
+      "content": "赵总，那个老师加我了，他说是你朋友，免费教我？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712298300,
+      "type": 0,
+      "content": "嗯，我跟他打过招呼了，算是我送的礼物。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712298480,
+      "type": 0,
+      "content": "这怎么行，学费我自己出。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712298600,
+      "type": 0,
+      "content": "别跟我客气，你开心我就开心。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712403900,
+      "type": 0,
+      "content": "美美，我今天出差路上看到一片花海，特好看，拍给你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712404080,
+      "type": 0,
+      "content": "哇，好美！这是哪里？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712404200,
+      "type": 0,
+      "content": "云南一个小地方。下次带你来。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712404320,
+      "type": 0,
+      "content": "你又在画饼了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712404500,
+      "type": 0,
+      "content": "不是画饼，我是认真的。等我稳定下来，一定要带你去旅行。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712451600,
+      "type": 0,
+      "content": "赵总，早。我昨晚想了一下，我觉得咱们的关系还是要说清楚。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712451900,
+      "type": 0,
+      "content": "你说，我听着。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712452080,
+      "type": 0,
+      "content": "我很感谢你支持我，但咱们真的只能是朋友+粉丝的关系。我不想让你误会。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712452200,
+      "type": 0,
+      "content": "我明白。可是我对你是真心的。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712452320,
+      "type": 0,
+      "content": "你对我了解多少？就是直播里的我。真实的我毛病很多，没你想得那么好。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712452500,
+      "type": 0,
+      "content": "我愿意了解真实的你。你总得给我个机会吧？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712452680,
+      "type": 0,
+      "content": "赵总，咱们就保持现在这样，不好吗？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712452920,
+      "type": 0,
+      "content": "……好，听你的。不逼你。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712550600,
+      "type": 0,
+      "content": "美美，中午好。我刚看到你发的朋友圈，笑了半天。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712550900,
+      "type": 0,
+      "content": "哈哈哈，那个猫太搞了。你生意忙完了？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712551080,
+      "type": 0,
+      "content": "刚开完会，准备去吃饭。你吃了没？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712551200,
+      "type": 0,
+      "content": "正在吃，点的外卖冒菜。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712551320,
+      "type": 0,
+      "content": "少吃点辣，对嗓子不好。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712551500,
+      "type": 0,
+      "content": "要得，听你的。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712667600,
+      "type": 0,
+      "content": "美美，明天我要去青岛出差，可能几天不能看你直播了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712667900,
+      "type": 0,
+      "content": "出差顺利！回来给你看我学吉他的进度。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712668080,
+      "type": 0,
+      "content": "好！期待。我会想你的。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712668200,
+      "type": 0,
+      "content": "哈哈，别想太多，专心工作。回来聊。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712668500,
+      "type": 0,
+      "content": "嗯，回来给你带青岛特产。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712668680,
+      "type": 0,
+      "content": "要得要得，晚安。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712668690,
+      "type": 0,
+      "content": "赵总，到青岛了没？今天直播人好少，嗓子还有点哑，烦得很。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712670480,
+      "type": 0,
+      "content": "刚下飞机，才看到。你嗓子哑了别硬吼，喝点蜂蜜水。直播间人少正常，别往心里去。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712670600,
+      "type": 0,
+      "content": "蜂蜜水已经喝了两杯了，就是今天状态不对，好几个大哥都不在。你啥时候回来？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712670720,
+      "type": 0,
+      "content": "后天下午回。回来我请你吃个饭，解放碑那边新开了家重庆火锅，你肯定喜欢。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712670900,
+      "type": 0,
+      "content": "哈哈，你请客我肯定不得客气。但是说好哈，就吃火锅，别整其他幺蛾子。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712714520,
+      "type": 0,
+      "content": "美美，早上好。青岛这边海鲜真不错，不过还是想念重庆的辣。你今天好些没？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712715780,
+      "type": 0,
+      "content": "妈呀，你起好早。我还在被窝里，嗓子还是不舒服，今天想请个假不播了，但又怕掉粉……"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712716500,
+      "type": 0,
+      "content": "该休息就休息，粉丝跑不掉的。你硬撑的话效果也不好，更影响心态。我支持你请假。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712716800,
+      "type": 0,
+      "content": "那行吧，听你的。正好今天把吉他练一练，省得你回来看我出丑。你那边忙啥子？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712717880,
+      "type": 0,
+      "content": "上午开了两个会，下午去看新店的选址。餐饮这一行，选地方太重要了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712718120,
+      "type": 0,
+      "content": "你们老板就是操心多。那你晚上早点休息，别喝太多酒哈。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712751120,
+      "type": 0,
+      "content": "刚应酬完，头疼。给我发一张你的照片吧，我今天就想看看你笑的的样子。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712796420,
+      "type": 0,
+      "content": "对不起赵总，昨晚睡太早没看到。照片不发哈，怕你乱想。今天嗓子好了很多，晚上准备开播。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712796600,
+      "type": 0,
+      "content": "好吧，不勉强。我下午的飞机回重庆，大概五点到。晚上你直播我肯定去。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712835000,
+      "type": 0,
+      "content": "刚开播，看到你来了，嘿嘿。不过今晚人还是不多，就二十来个人。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712835900,
+      "type": 0,
+      "content": "人少清净，咱们互动更多。我刚到家，把给你带的鱿鱼丝放门口了，物业不让快递进来。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712836200,
+      "type": 0,
+      "content": "啊？你放门口了？我还在直播呢，咋个下去拿嘛。等会儿下播再去。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712844600,
+      "type": 0,
+      "content": "下播了，鱿鱼丝拿到了，谢谢赵总！不过下次别放门口，万一被人拿了多可惜。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712845320,
+      "type": 0,
+      "content": "放心，我放得很隐蔽。明天中午有空吗？就吃上次说的那家火锅。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712893500,
+      "type": 0,
+      "content": "中午有空倒是，不过我就吃个便饭，你别点太多，我最近在控制体重。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712893800,
+      "type": 0,
+      "content": "好好好，随便吃点。那十二点我来接你？你家楼下。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712899800,
+      "type": 0,
+      "content": "吃完了，火锅确实巴适。不过你抢着买单的样子真的有点霸道，下次必须我请。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712900520,
+      "type": 0,
+      "content": "哪能让女士掏钱。跟你吃饭心情好多了，最近生意上的烦心事都不想提。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712901000,
+      "type": 0,
+      "content": "那你多跟我聊聊高兴的事撒。我先回去了，下午约了美甲。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712912880,
+      "type": 0,
+      "content": "美甲做了吗？啥颜色？我女儿上次也去做，结果颜色太深很快就不喜欢了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712915700,
+      "type": 0,
+      "content": "刚做完，豆沙粉，挺温柔的。你女儿多大了？还在读书吧？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712916180,
+      "type": 0,
+      "content": "初中了，跟她妈住。我平时忙，也管得少。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712971320,
+      "type": 0,
+      "content": "赵总，早上好！昨天忘了说，周末我有个户外演出，在观音桥，你要不要来看？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712972700,
+      "type": 0,
+      "content": "几点？我周末没事，一定到。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1712973000,
+      "type": 0,
+      "content": "周六下午三点，就唱几首歌然后互动。别送花篮哈，太招摇了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1712973720,
+      "type": 0,
+      "content": "行，我就站台下看看。你好好准备。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713077700,
+      "type": 0,
+      "content": "美美，我到观音桥了，在星巴克门口等你演出开始。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713079200,
+      "type": 0,
+      "content": "刚化好妆，紧张得很。你站前面点，给我壮胆。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713082200,
+      "type": 0,
+      "content": "你唱得太好了，现场比直播间还稳。好多人录视频，你等着火吧。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713083400,
+      "type": 0,
+      "content": "谢谢赵总捧场！不过今天累惨了，晚上我得好好休息。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713095100,
+      "type": 0,
+      "content": "今天你肯定有不少新粉，晚上直播吗？我刚看到一个视频号已经有人发你唱歌了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713150000,
+      "type": 0,
+      "content": "昨晚播到一点，今天直接睡到十点半。赵总你那店里生意咋样？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713150720,
+      "type": 0,
+      "content": "还行，就是有点累。有时候真羡慕你，能做自己喜欢的事。我当年也是想搞音乐，后来被家里逼着做生意了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713151500,
+      "type": 0,
+      "content": "各有各的苦。你至少现在有钱了嘛，我还在打拼。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713151800,
+      "type": 0,
+      "content": "钱买不来快乐。晚上我又一个人在家，连个说话的人都没有。美美，你什么时候也能主动找我聊聊？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713153900,
+      "type": 0,
+      "content": "我天天都在跟你聊呀，哈哈。今晚直播，你要来哦，给你唱首《勇气》。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713197700,
+      "type": 0,
+      "content": "刚喝完酒到家，看到你下播了。美美，我有点喝多了，就想跟你说，你真的很好看。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713227400,
+      "type": 0,
+      "content": "赵总，以后喝完酒少发信息哦。醒了没有？喝点蜂蜜水解酒。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713242400,
+      "type": 0,
+      "content": "醒了，不好意思昨晚失态了。年纪大了酒量不行了。晚上有个朋友约我吃饭，可能来不了直播。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713242700,
+      "type": 0,
+      "content": "没关系，忙你的正经事。我明天要去成都拍个推广视频，可能要停播两天。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713243000,
+      "type": 0,
+      "content": "成都好啊，我跟那边的餐饮朋友熟，你如果住得不好跟我说，我给你安排。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713280200,
+      "type": 0,
+      "content": "谢谢好意，公司都安排好了。明天一早出发，先睡了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713349800,
+      "type": 0,
+      "content": "美美，到成都了吗？今天怎么没动静，担心你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713356100,
+      "type": 0,
+      "content": "刚到酒店，一整天都在拍，累得手机都不想看。这推广商要求太高了，一个动作拍十几遍。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713356880,
+      "type": 0,
+      "content": "别累着自己，不行就休息一下。明天还拍吗？我正好明天要去重庆谈事，后天路过成都，要不请你吃个饭？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713357300,
+      "type": 0,
+      "content": "明天还在拍，后天看情况吧。不过赵总，你这样老是想见面，我有点压力。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713358200,
+      "type": 0,
+      "content": "好吧，那就等你回来。我就是关心你，没别的意思。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713405900,
+      "type": 0,
+      "content": "赵总，早上好。今天拍完了，下午可以逛逛春熙路。你到重庆了吗？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713406920,
+      "type": 0,
+      "content": "还在车上，堵得不行。你逛的时候注意安全，别买太多东西，拿不动。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713509280,
+      "type": 0,
+      "content": "回重庆了，累瘫了。晚上播不播？有点纠结。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713511800,
+      "type": 0,
+      "content": "你要是累了就别播，我正好今晚也约了朋友谈事，改天看你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713512100,
+      "type": 0,
+      "content": "那不行，我一天不播就心慌。晚上八点开播吧，挂个才艺直播算了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713531600,
+      "type": 0,
+      "content": "刚谈完，打开直播看到你在唱《后来》，唱得我差点眼泪出来。美美，你唱歌真的能打动人心。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713532200,
+      "type": 0,
+      "content": "哈哈哈，那你给我刷个宇宙飞船撒！开玩笑的，别破费。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713577440,
+      "type": 0,
+      "content": "昨天谈的事成了，心情好，今天给你刷个大礼物。你懂的。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713578700,
+      "type": 0,
+      "content": "别别别，你生意上花钱的地方多。你要真想支持，多来跟我聊聊天就行了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713608400,
+      "type": 0,
+      "content": "刚在店里开会，看到你直播预告了，今晚好像有PK？需要我帮忙拉票不？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713609000,
+      "type": 0,
+      "content": "是有个小PK，不过对面是个萌新主播，随便玩玩就行。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713624300,
+      "type": 0,
+      "content": "PK赢了，不过你最后刷的那发火箭太夸张了，对面主播都哭了……我明天要被公会说了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713624900,
+      "type": 0,
+      "content": "怕什么，又不是刷不起。我就是看不得你输。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713667800,
+      "type": 0,
+      "content": "赵总，昨天的事我思考了一下，你以后别这么冲动了。你刷这么多，我压力真的很大，也不好欠你的人情。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713669000,
+      "type": 0,
+      "content": "你非要跟我分这么清楚吗？我就是想支持你。我离了婚也没别的牵挂，花点钱让自己开心。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713669900,
+      "type": 0,
+      "content": "那你也可以把钱花在自己身上，去旅游、健身啥的。我只是一个主播，你别把太多心思放我这儿。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713670800,
+      "type": 0,
+      "content": "美美，你这么说话可真伤人。行，我先冷静下。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713745200,
+      "type": 0,
+      "content": "赵总，昨天的话我说重了，对不起。但我真的不想让你越陷越深。我们还是像以前那样聊天好不好？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713859500,
+      "type": 0,
+      "content": "美美，我昨天没回你是想了一天。你说得对，我确实有点上头了。但我们还能像以前那样聊天吗？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713859920,
+      "type": 0,
+      "content": "当然可以。你永远是我的好大哥，我的榜一。今天怎么样？生意忙不忙？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713860880,
+      "type": 0,
+      "content": "还行，新店装修遇到点问题，不过能解决。周末我要去趟广州，又是一周见不到你直播了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713861300,
+      "type": 0,
+      "content": "广州啊，那边好吃的好多，你帮我多尝尝。等你回来给你看我新学的吉他曲子！"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1713961800,
+      "type": 0,
+      "content": "在广州，刚吃完饭回酒店。看到你今晚直播间加了新灯，效果不错。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1713962700,
+      "type": 0,
+      "content": "你看得真仔细！就加了两条灯带，显得脸白。哈哈。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714057800,
+      "type": 0,
+      "content": "美美，我刚应酬完，喝了点酒，但又不敢给你发太多，怕你又骂我。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714096920,
+      "type": 0,
+      "content": "哈哈哈，你记性可真好。我哪敢骂你哦，大老板。你回重庆了吗？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714098000,
+      "type": 0,
+      "content": "明天回。今天去考察了一个新食材供应商，价格谈下来了，心情不错。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714133100,
+      "type": 0,
+      "content": "那恭喜赵总！等你回来我请你吃路边摊，不贵但是好吃。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714133520,
+      "type": 0,
+      "content": "路边摊也行，只要能跟你一起吃。哈哈，这句不会被骂吧？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714213800,
+      "type": 0,
+      "content": "不骂你。今晚直播有个大姐出车祸了，直播间好多人在刷同情礼物，我其实不太想要这种礼物。你觉得呢？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714215000,
+      "type": 0,
+      "content": "看你自己，不想收就婉拒，说希望大姐早日康复。别让粉丝觉得你冷漠就行。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714215720,
+      "type": 0,
+      "content": "你懂我。我就是这么说的，然后唱了一首《明天会更好》。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714284900,
+      "type": 0,
+      "content": "今天有空吗？我回来了，带了些广州的点心，给你送点过去？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714285800,
+      "type": 0,
+      "content": "又送东西！这次放门卫那里吧，我等会去拿。晚上我想吃辣的，你吃辣不？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714286520,
+      "type": 0,
+      "content": "当然吃，我是重庆女婿（开玩笑的）。那晚上我干脆在外面等你，一起撸串？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714313400,
+      "type": 0,
+      "content": "今晚的串串太巴适了！不过你又抢着买单，我下次真的不好意思跟你出来了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714314480,
+      "type": 0,
+      "content": "下次你买，让你买。今天开心就好。我好久没这么笑过了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714361400,
+      "type": 0,
+      "content": "赵总，明天我要回老家一趟，我妈生日，可能要停播两三天。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714362300,
+      "type": 0,
+      "content": "给阿姨带好。你老家是哪里的来着？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714362480,
+      "type": 0,
+      "content": "合川的，离重庆不远。我给她买了个按摩椅，希望她喜欢。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714362720,
+      "type": 0,
+      "content": "孝顺的女儿。路上注意安全，到了说一声。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714473000,
+      "type": 0,
+      "content": "到合川了，我妈看到按摩椅嘴都笑歪了。不过她一直问我有没有男朋友，烦得很。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714474800,
+      "type": 0,
+      "content": "那你怎么说的？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714475700,
+      "type": 0,
+      "content": "我说有啊，一个做餐饮的大老板，又帅又有钱。她信了，哈哈。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714476300,
+      "type": 0,
+      "content": "真的假的？你拿我当挡箭牌啊？那我要不要配合演一下？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714476600,
+      "type": 0,
+      "content": "别当真，开玩笑的。我要是真带你回去，我妈还不得吓晕过去。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714543200,
+      "type": 0,
+      "content": "美美，今天直播没看到你，突然觉得少了点什么。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714544520,
+      "type": 0,
+      "content": "我在老家陪我妈呢，明天下午回重庆。你想我啦？嘿嘿。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714545300,
+      "type": 0,
+      "content": "想啊，但是不敢太想，怕你生气。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714545600,
+      "type": 0,
+      "content": "你好好说话，我就好好听。回重庆请你吃饭，这次我请，定了解放碑那家酸菜鱼。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714615500,
+      "type": 0,
+      "content": "昨天做了一晚上梦，梦到你在台上唱歌，下面好多人喊你名字。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714720800,
+      "type": 0,
+      "content": "赵总，我回重庆了，但是路上车追尾了，人没事，就是吓得不行。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714721400,
+      "type": 0,
+      "content": "啊！你没事吧？在哪？我马上过去。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714721880,
+      "type": 0,
+      "content": "在江北这边，已经处理完了，保险公司来了。你别来，我头晕想回家躺会儿。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714722600,
+      "type": 0,
+      "content": "行，那你到家一定告诉我。要不要我帮你叫车？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714723800,
+      "type": 0,
+      "content": "已经叫了，谢谢赵总关心。明天再跟你细说。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714785120,
+      "type": 0,
+      "content": "美美，早上好。好点没？昨天吓得我昨晚都没睡好。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714785900,
+      "type": 0,
+      "content": "好多了，就是脖子有点酸。今天休息一天，明天再直播。你如果有空，来我家楼下坐会儿？不想出门但想见个人说说话。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714786320,
+      "type": 0,
+      "content": "我马上到，楼下等你。你慢慢下来。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714786362,
+      "type": 0,
+      "content": "美美，早上好。好点没？昨天吓得我昨晚都没睡好。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714786394,
+      "type": 0,
+      "content": "好多了，就是脖子有点酸。今天休息一天，明天再直播。你如果有空，来我家楼下坐会儿？不想出门但想见个人说说话。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714786401,
+      "type": 0,
+      "content": "我马上到，楼下等你。你慢慢下来。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714793400,
+      "type": 0,
+      "content": "美美，你昨天说脖子酸，我给你带了按摩仪，放你楼下保安那了。你下来拿一下。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714800000,
+      "type": 0,
+      "content": "赵总你太客气了，我睡了一觉好多了。按摩仪我拿了，谢谢哥。不过下次别破费了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714800120,
+      "type": 0,
+      "content": "小意思，你好好休息。晚上想吃什么？我让人送过来。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714801200,
+      "type": 0,
+      "content": "不用不用，我点外卖就行。你今天店里不忙吗？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714803000,
+      "type": 0,
+      "content": "中午忙过那阵了，现在打烊休息。你一个人在家闷不闷？要不我去陪你说说话？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714804860,
+      "type": 0,
+      "content": "哈哈，赵总你店不开了？我这儿真不用，你忙你的。我下午追剧睡觉。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714816500,
+      "type": 0,
+      "content": "行，那你晚上直播吗？我进去看你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714818000,
+      "type": 0,
+      "content": "今天休息不播，明天晚上8点正常播。你到时候来捧个场就行。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714833000,
+      "type": 0,
+      "content": "刚应酬完，喝多了点。美美，你睡了吗？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714835400,
+      "type": 0,
+      "content": "还没睡，脖子还有点不舒服。赵总你少喝点酒，伤身体。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714835520,
+      "type": 0,
+      "content": "听你的，今天最后一杯。你早点休息，明天晚上我来看你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714872600,
+      "type": 0,
+      "content": "赵总早上好，今天脖子好多了，准备化个妆下午出去走走。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714874520,
+      "type": 0,
+      "content": "那敢情好，出去透透气。要不要我开车带你兜风？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714876500,
+      "type": 0,
+      "content": "不用啦，我就楼下转转。你忙你的，晚上直播见。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714909800,
+      "type": 0,
+      "content": "美美，准备好了吗？我已经在直播间了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714910700,
+      "type": 0,
+      "content": "刚开播！今天状态不错，你刷个火箭我就给你唱个《爱情买卖》。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714918500,
+      "type": 0,
+      "content": "刚给你刷了个嘉年华，看到没？唱首歌听听。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714920300,
+      "type": 0,
+      "content": "看到了看到了！谢谢赵总大气！等我下播给你发语音唱。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714925400,
+      "type": 0,
+      "content": "赵总，我下播了。答应了给你录歌的，手机录得不好你别嫌弃。 [语音消息]"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714927500,
+      "type": 0,
+      "content": "唱得好听，比原唱都好。美美，你嗓子是不是有点哑？别太累了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714954800,
+      "type": 0,
+      "content": "昨晚有点熬夜，今天睡到自然醒就好。赵总你起这么早？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714954920,
+      "type": 0,
+      "content": "习惯了，店里要备货。你今天什么安排？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714961100,
+      "type": 0,
+      "content": "下午去健身房，晚上有个品牌活动要参加，不直播了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714961400,
+      "type": 0,
+      "content": "什么品牌活动？要不要我去给你撑场子？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714962900,
+      "type": 0,
+      "content": "就一个火锅店开业，我去唱两首歌赚个外快。你忙你的。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714989600,
+      "type": 0,
+      "content": "那我晚上去那个火锅店吃饭，顺便看你演出。哪家店？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1714992300,
+      "type": 0,
+      "content": "别别别，赵总你来了我紧张。就在观音桥那家“巴倒烫”。你来了别找我，低调低调。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1714998600,
+      "type": 0,
+      "content": "你唱歌的时候我远远录了段视频，发给你看看。 [视频]"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715000700,
+      "type": 0,
+      "content": "啊！你还是来了。我看到你坐角落了，穿个黑T恤是不是你？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715000880,
+      "type": 0,
+      "content": "被你发现了。唱得真好，台下好多男的看你。美美，我吃醋了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715002800,
+      "type": 0,
+      "content": "哈哈哈，我就是个卖唱的，你别酸。早点回去休息吧。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715047200,
+      "type": 0,
+      "content": "昨晚到家都快12点了，今天又睡懒觉。赵总你店开张了没？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715049000,
+      "type": 0,
+      "content": "早开张了。你今天有空吗？我新进了批海鲜，想请你来尝尝。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715050800,
+      "type": 0,
+      "content": "今天不行，约了姐妹逛街。改天吧，谢谢赵总好意。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715051100,
+      "type": 0,
+      "content": "那明天中午？我亲自下厨，只做给你一个人吃。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715052000,
+      "type": 0,
+      "content": "赵总你这样我真不好意思。你是哥，我是妹，别搞这么正式。我直播还得靠你刷礼物呢。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715052300,
+      "type": 0,
+      "content": "我不图你回报，就是想对你好。美美，你心里清楚。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715053800,
+      "type": 0,
+      "content": "清楚归清楚，但咱俩就这样处着挺好。我去逛街了，回头聊。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715127300,
+      "type": 0,
+      "content": "美美，昨晚我喝了点酒，说了些醉话你别往心里去。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715131800,
+      "type": 0,
+      "content": "没往心里去，都是好话。今天准备播什么内容？想听段子还是听歌？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715132100,
+      "type": 0,
+      "content": "听你说话就行。晚上几点播？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715148000,
+      "type": 0,
+      "content": "晚上9点播，下午要去拍个短视频。赵总你最近生意咋样？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715149800,
+      "type": 0,
+      "content": "还行吧，就是累，一个人扛着。离了婚后啥都得自己来，回家连个说话的人都没有。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715152200,
+      "type": 0,
+      "content": "唉，都不容易。但你条件好，肯定能再找着好的。我这种做主播的，也就混口饭吃。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715152500,
+      "type": 0,
+      "content": "你不一样，你比很多女的都真实。我就是喜欢你这种性格。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715154000,
+      "type": 0,
+      "content": "别喜欢，我可是带刺的玫瑰。晚上直播间见吧。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715185200,
+      "type": 0,
+      "content": "下播了？今天看你心情不太好，是不是遇到啥事了？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715185320,
+      "type": 0,
+      "content": "被一个黑粉气到了，说我唱歌难听。我唱了十年，难听你倒是别听啊。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715185500,
+      "type": 0,
+      "content": "别理那些人，你唱得最好听。明天我给你刷十个嘉年华，气死他们。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715186700,
+      "type": 0,
+      "content": "别别别，钱多也不是这么花的。我消化消化就好了，睡觉睡觉。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715227200,
+      "type": 0,
+      "content": "赵总，中午好。今天心情平复了，谢谢昨天听我吐槽。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715229000,
+      "type": 0,
+      "content": "跟我客气啥。今天下午我要去趟成都谈加盟，两天不在重庆。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715230800,
+      "type": 0,
+      "content": "那你去吧，一路平安。回来再聊。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715342400,
+      "type": 0,
+      "content": "美美，到成都了，累死了。刚吃了碗担担面，还是不如重庆小面。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715342700,
+      "type": 0,
+      "content": "哈哈，重庆小面天下第一。你谈得顺利不？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715347800,
+      "type": 0,
+      "content": "还在谈，对方有点压价。心烦。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715350200,
+      "type": 0,
+      "content": "你那么精明，肯定能搞定。别想太多，晚上早点休息。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715357700,
+      "type": 0,
+      "content": "美美，你睡了吗？我失眠了，脑子里乱得很。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715386800,
+      "type": 0,
+      "content": "刚看到，昨晚睡着了。你咋失眠了？压力大？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715388300,
+      "type": 0,
+      "content": "嗯，想到前妻和儿子，心里堵。美美，你说我是不是很失败？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715389800,
+      "type": 0,
+      "content": "别这样想，你事业成功，人又大气。感情的事慢慢来，总会遇到合适的。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715391000,
+      "type": 0,
+      "content": "你觉得那个合适的人是你不？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715392800,
+      "type": 0,
+      "content": "赵总你又来了。我是你妹，一辈子都是。你今天签约吗？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715393100,
+      "type": 0,
+      "content": "约是签了，但条件一般。算了，先做着。明天回重庆，给你带点成都兔头。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715394600,
+      "type": 0,
+      "content": "好呀好呀，我超爱吃兔头。那你路上注意安全。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715508000,
+      "type": 0,
+      "content": "美美，我回来了。兔头放保安那了，你记得拿。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715513400,
+      "type": 0,
+      "content": "拿到了！谢谢赵总！今晚直播请你吃兔头当吃播。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715518800,
+      "type": 0,
+      "content": "好啊，我就在直播间看着你啃兔头。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715565600,
+      "type": 0,
+      "content": "昨天直播啃兔头被粉丝说我吃相难看，笑死我了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715567400,
+      "type": 0,
+      "content": "你吃相可爱得很。今天周末，有什么安排？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715569200,
+      "type": 0,
+      "content": "下午去练舞，晚上直播。周末流量好，得抓住机会。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715569500,
+      "type": 0,
+      "content": "练舞？你还会跳舞？上次就看你唱了，没跳过。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715570400,
+      "type": 0,
+      "content": "我可是全能主播，藏着大招呢。晚上跳给你看。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715607000,
+      "type": 0,
+      "content": "刚才那段舞太好看了，我给你刷了条龙，看到没？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715609400,
+      "type": 0,
+      "content": "看到了！谢谢赵总！不过你下次别刷那么猛，我跳得一般般。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715611500,
+      "type": 0,
+      "content": "你跳得真好，比我见过的专业舞者都好。美美，我真的越来越喜欢你了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715612400,
+      "type": 0,
+      "content": "赵总，你今天喝了吗？怎么又开始了。早点睡吧，明天我要去广州参加个商演，一周才回来。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715612700,
+      "type": 0,
+      "content": "去广州？那我跟你一起去，正好散散心。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715614200,
+      "type": 0,
+      "content": "别闹，我是去工作的。你店里离不开人。我到了给你发定位。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715641200,
+      "type": 0,
+      "content": "出发去机场啦！广州好热，比重庆还闷。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715643000,
+      "type": 0,
+      "content": "到了记得报平安。我这边下午要开例会，忙完找你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715655600,
+      "type": 0,
+      "content": "落地了！热得我衣服湿透。主办方派车来接了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715661000,
+      "type": 0,
+      "content": "那你好好演出，别太累。晚上直播不？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715662800,
+      "type": 0,
+      "content": "晚上可能没空，主办方安排了饭局。估计要应酬到很晚。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715697900,
+      "type": 0,
+      "content": "刚回到酒店，喝得有点多。赵总你睡了吗？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715699400,
+      "type": 0,
+      "content": "没睡，等你消息呢。少喝点酒，伤身体。要不要我给你叫个醒酒汤？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715699700,
+      "type": 0,
+      "content": "不用，我喝点水就睡。你也早点休息。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715736600,
+      "type": 0,
+      "content": "今天嗓子有点哑，怕是昨晚喝了冰啤酒。晚上演出要唱四首歌，有点担心。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715738400,
+      "type": 0,
+      "content": "赶紧去买点金嗓子喉宝，别勉强。要不我跟主办方说说换人？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715739000,
+      "type": 0,
+      "content": "你别插手，收了钱的。我歇会儿就好。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715774400,
+      "type": 0,
+      "content": "演出结束了，效果还不错，嗓子撑住了。 [视频片段]"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715776200,
+      "type": 0,
+      "content": "你穿那身旗袍真好看。美美，你什么时候回来？我想你了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715777100,
+      "type": 0,
+      "content": "后天回。赵总，你这句话我当没听到啊。我回酒店卸妆了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715828400,
+      "type": 0,
+      "content": "今天在广州逛了逛，买了几件衣服。给你也带了条领带，别嫌弃。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715830200,
+      "type": 0,
+      "content": "真的？给我带礼物？我开心得都不知道说什么好了。等你回来我请你吃饭。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715832000,
+      "type": 0,
+      "content": "别又整大餐，吃碗面就行。明天下午到重庆，晚上正常直播。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715902200,
+      "type": 0,
+      "content": "上飞机了，拜拜广州。重庆见！"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715911200,
+      "type": 0,
+      "content": "落地了，到江北机场了。赵总，你来接我吧，我懒得打车。 [定位]"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715911800,
+      "type": 0,
+      "content": "我马上到！你等着，别乱跑。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715914800,
+      "type": 0,
+      "content": "看到你的车了，黑奔驰。你咋知道我今天回来？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715914920,
+      "type": 0,
+      "content": "你昨天说了今天下午到，我算着时间呢。上车吧，先带你去吃饭。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715920200,
+      "type": 0,
+      "content": "这顿饭吃得好饱。领带给你，别嫌便宜。 [图片]"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715920500,
+      "type": 0,
+      "content": "漂亮！我明天开会就戴。美美，今晚还直播吗？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715922000,
+      "type": 0,
+      "content": "不播了，累。我要回家大睡一觉。明天再播。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715997600,
+      "type": 0,
+      "content": "美美，起床没？我给你带了早餐，放保安那了。小面加煎蛋。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1715999400,
+      "type": 0,
+      "content": "啊！太贴心了！我刚醒，这就下去拿。赵总你今天不忙？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1715999700,
+      "type": 0,
+      "content": "今天店里有店长看着，我给自己放天假。下午想去看电影，一起？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716001200,
+      "type": 0,
+      "content": "看电影……行吧，不过说好，AA制，别又你付钱。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716001500,
+      "type": 0,
+      "content": "好，听你的。我买票，你请我喝奶茶，行了吧？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716012000,
+      "type": 0,
+      "content": "看了《孤注一掷》，还挺好看的。赵总你觉得呢？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716013800,
+      "type": 0,
+      "content": "好看，不过光顾着看你了。美美，你今天穿那条白裙子真好看。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716014700,
+      "type": 0,
+      "content": "打住打住。我该回去了，晚上还得准备明天的直播内容。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716019200,
+      "type": 0,
+      "content": "送你到家了。今天真的开心，谢谢你陪我。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716020400,
+      "type": 0,
+      "content": "我也挺开心的，很久没去电影院了。改天我请回你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716080400,
+      "type": 0,
+      "content": "赵总，我昨晚想了一下，咱俩走太近了，我怕直播间里的人说闲话。你以后还是少来找我。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716082200,
+      "type": 0,
+      "content": "美美，我懂。但我是真心对你好，不是图你什么。你说的话我记住了，以后保持距离。但我还会默默支持你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716084000,
+      "type": 0,
+      "content": "你这么说我反而不好意思了。我不是那个意思，就是怕影响你生意。你条件这么好，找什么样的找不到。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716084900,
+      "type": 0,
+      "content": "我就找你这样的。但你这么说，我不逼你。咱们还像以前那样，你是我最好的朋友，行不？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716086400,
+      "type": 0,
+      "content": "行，最好的朋友。那今天晚上我直播，你来捧个场，但别刷太狠。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716123600,
+      "type": 0,
+      "content": "美美，我在直播间，给你刷了朵玫瑰，就一朵。听你的。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716125400,
+      "type": 0,
+      "content": "收到！谢谢老板！今天状态好，给你唱首新学的歌《如愿》。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716130800,
+      "type": 0,
+      "content": "下播了？今天唱得太好了，没忍住又刷了条龙。对不起，下次不了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716131400,
+      "type": 0,
+      "content": "……算了刷都刷了。下次再这样我不理你了。晚安。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716165000,
+      "type": 0,
+      "content": "早。今天去拍个广告，晚上不直播。你别又偷偷刷礼物。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716166800,
+      "type": 0,
+      "content": "知道了知道了。拍广告？什么广告？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716168600,
+      "type": 0,
+      "content": "一个洗发水广告，就一上午的事。你店今天忙吗？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716170400,
+      "type": 0,
+      "content": "忙，中午高峰期。你拍完告诉我，我去接你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716179400,
+      "type": 0,
+      "content": "拍完了，头发喷了好多定型胶，难受死了。你别来接，我自己打车回。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716181200,
+      "type": 0,
+      "content": "我已经在路上了，十分钟到。你等着。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716183000,
+      "type": 0,
+      "content": "唉，你真是……好吧。我在路口星巴克等你。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716221100,
+      "type": 0,
+      "content": "美美，今天你跟我说要保持距离，我回家想了很久。我是不是太自私了，光顾着自己开心，没考虑你的处境。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716253200,
+      "type": 0,
+      "content": "刚看到你凌晨的消息。赵总，你是个好人，但我现在的重心是事业，不想谈恋爱。你理解一下。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716255000,
+      "type": 0,
+      "content": "理解。那我以后就是你的铁粉大哥，别的什么都不想。你好好发展，我支持你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716256800,
+      "type": 0,
+      "content": "一言为定。今天阳光好，我出去走走，拍点素材。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716285600,
+      "type": 0,
+      "content": "赵总，我刚在抖音上刷到你店里的视频，那个毛血旺看起来好好吃。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716287400,
+      "type": 0,
+      "content": "想吃了？明天来店里，我给你免单。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716289200,
+      "type": 0,
+      "content": "好呀，明天中午去。带个姐妹一起，你介意不？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716289500,
+      "type": 0,
+      "content": "不介意，带多少人都行。我给你们留个包厢。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716348600,
+      "type": 0,
+      "content": "赵总，我到了。你店门口排了好长的队。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716348900,
+      "type": 0,
+      "content": "我出来接你，从后门进。 [图片：后门实拍]"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716350400,
+      "type": 0,
+      "content": "毛血旺真好吃，姐妹说下次还要来。谢谢赵总招待。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716354000,
+      "type": 0,
+      "content": "客气啥，以后想吃随时来。你们下午干嘛去？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716355800,
+      "type": 0,
+      "content": "去逛街买衣服。你忙吧，回头聊。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716426000,
+      "type": 0,
+      "content": "赵总，我今天要去成都拍一个美食节目，可能要待两天。你之前说想去成都开分店，要不要一起去考察？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716427800,
+      "type": 0,
+      "content": "真的？我正好想去看看春熙路的铺位。那一起吧，我开车带你去。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716429600,
+      "type": 0,
+      "content": "好啊，那下午两点出发？你开车我补觉。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716431400,
+      "type": 0,
+      "content": "没问题，我一点半到你家楼下接你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716445800,
+      "type": 0,
+      "content": "出发了，全程四个小时。你困了告诉我，换我开。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716461100,
+      "type": 0,
+      "content": "到了，先找酒店。我订了两间房，你想住哪家？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716462000,
+      "type": 0,
+      "content": "随便，干净就行。明早我八点去录节目，你九点再去看铺子。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716507000,
+      "type": 0,
+      "content": "早，我去录节目了。你自己吃早饭。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716523200,
+      "type": 0,
+      "content": "录完了，这个节目组好坑，让我吃了三大碗面，撑死了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716525000,
+      "type": 0,
+      "content": "哈哈哈，那正好别吃午饭了。我这边看了三个铺位，都不太理想，价格太高。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716526800,
+      "type": 0,
+      "content": "别急，慢慢找。下午有没有想去的地方？我陪你逛逛。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716528600,
+      "type": 0,
+      "content": "去宽窄巷子走走吧，听说那边有个文创园不错。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716541200,
+      "type": 0,
+      "content": "逛累了，在茶馆喝茶呢。成都生活真安逸。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716543000,
+      "type": 0,
+      "content": "要是能跟你一直这样就好了。美美，你别嫌我烦，我就是感叹一下。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716543900,
+      "type": 0,
+      "content": "不嫌烦。但我们是朋友，这样最好。晚上请你吃火锅，我知道一家特好吃的。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716555600,
+      "type": 0,
+      "content": "火锅吃完了，回去休息吧。明天返程，我上午还有事。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716602400,
+      "type": 0,
+      "content": "回重庆了。赵总，这次成都行谢谢你开车，辛苦了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716604200,
+      "type": 0,
+      "content": "跟你在一起不辛苦。明天我去银行谈贷款的事，要是成了，就准备在成都开分店。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716606000,
+      "type": 0,
+      "content": "祝你顺利！开了分店我免费帮你宣传。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716681600,
+      "type": 0,
+      "content": "美美，贷款批了！今天心情特别好，晚上我请你吃大餐庆祝。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716687000,
+      "type": 0,
+      "content": "恭喜赵总！我就说你能行。晚上几点？我订个位置。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716688800,
+      "type": 0,
+      "content": "七点，解放碑那家私房菜，我去订。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716723000,
+      "type": 0,
+      "content": "赵总，菜点多了吧？这怎么吃得完。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716723900,
+      "type": 0,
+      "content": "高兴嘛，多吃点。美美，谢谢你一直陪我聊天，帮我度过最难的日子。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716724800,
+      "type": 0,
+      "content": "你也帮了我很多啊，我直播没你撑场子哪有人气。咱俩互相成就。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716728400,
+      "type": 0,
+      "content": "干杯！为了我们的友谊。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716733800,
+      "type": 0,
+      "content": "到家了，今晚喝得有点多。赵总你也早点休息。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716775200,
+      "type": 0,
+      "content": "头疼，昨晚喝多了。赵总你咋样？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716777000,
+      "type": 0,
+      "content": "我也头疼，但心情好。今天休息一天，啥也不干。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716793200,
+      "type": 0,
+      "content": "刚看私信，有星探挖我去外地直播，说保底月薪五万。好纠结。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716795000,
+      "type": 0,
+      "content": "别去！重庆多好，你走了我咋办。而且外地不一定靠谱，骗子多。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716796800,
+      "type": 0,
+      "content": "我也觉得不太靠谱，但条件确实诱人。我再想想。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716798600,
+      "type": 0,
+      "content": "你要是缺钱，我可以借你。别为了钱冒险。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716800400,
+      "type": 0,
+      "content": "不是钱的问题，是想有更大的发展。算了，先不想了，晚上直播。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716861600,
+      "type": 0,
+      "content": "我想好了，不去外地。就在重庆好好干，离家人朋友近。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716863400,
+      "type": 0,
+      "content": "太好了！我支持你。今晚我请全店员工去你直播间刷礼物，给你冲人气。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716865200,
+      "type": 0,
+      "content": "别别别，你员工工资还得开。你有这个心我就很感动了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716897600,
+      "type": 0,
+      "content": "美美，今天直播间人好多，你唱得也嗨。我就默默看着你，挺好。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716906600,
+      "type": 0,
+      "content": "谢谢赵总捧场。今天是我直播以来最开心的一天，因为做对了决定。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716944400,
+      "type": 0,
+      "content": "美美，今天有空吗？我想跟你商量个事，关于成都分店的名字，想听听你的意见。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716946200,
+      "type": 0,
+      "content": "有啊，我下午去你店里找你。你请我吃个冰淇淋就行。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716955200,
+      "type": 0,
+      "content": "那我等你。对了，昨天你直播穿那件红衣服真好看，我截图做壁纸了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716957000,
+      "type": 0,
+      "content": "哈哈，你真是……行吧，下午见。我给你带了成都买的熊猫钥匙扣。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716962400,
+      "type": 0,
+      "content": "我刚进店，你在哪？ [图片：店里全景]"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716964200,
+      "type": 0,
+      "content": "我在门口了，看到你的车了。进来聊。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716964206,
+      "type": 0,
+      "content": "赵总，你这店里空调好凉快，外面热死了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716964216,
+      "type": 0,
+      "content": "特意给你调的，知道你怕热。来，冰淇淋先拿着。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716964234,
+      "type": 0,
+      "content": "哇，抹茶味的！你咋知道我最近迷这个？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716964253,
+      "type": 0,
+      "content": "你上次直播随口说了句想吃抹茶冰淇淋，我就记住了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716964290,
+      "type": 0,
+      "content": "赵总你这记性不去当间谍可惜了哈哈。分店名字你想了几个？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716964320,
+      "type": 0,
+      "content": "我列了三个，「渝味蜀香」「巴蜀烟火」「赵家巷子」，你觉得哪个好？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716964680,
+      "type": 0,
+      "content": "「巴蜀烟火」好听，有江湖气，而且老顾客一看就知道是重庆味儿。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716965100,
+      "type": 0,
+      "content": "那就定了。对了，这个给你——"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716965280,
+      "type": 0,
+      "content": "这是……手链？太贵了吧赵总，我可不敢收。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716965520,
+      "type": 0,
+      "content": "就是个小玩意儿，黄金的，保值。你要是不收，我等会儿就扔垃圾桶。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716965700,
+      "type": 0,
+      "content": "你扔吧，我反正不要。上次那个包我还退给你了。规矩你懂的，别让我难做。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1716966600,
+      "type": 0,
+      "content": "好，听你的。那咱们说说正事——昨天直播那个榜一「龙哥」是不是又刷了十万？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1716966720,
+      "type": 0,
+      "content": "别提了，那大哥酒精上头了，半夜找我私聊说要见我，我装死没回。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717032600,
+      "type": 0,
+      "content": "美美，起床没？昨晚睡得咋样？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717033500,
+      "type": 0,
+      "content": "刚醒，昨晚直播到两点，嗓子都哑了。今天想鸽一场。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717033620,
+      "type": 0,
+      "content": "那就鸽，身体要紧。要不要我给你带碗粥过去？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717035300,
+      "type": 0,
+      "content": "不用啦，我自己煮了泡面。赵总你今天不忙？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717035600,
+      "type": 0,
+      "content": "上午巡完店了，下午约了供应商谈辣椒价格。心烦。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717079400,
+      "type": 0,
+      "content": "赵总，今晚直播状态不好，被黑粉骂了，有点难受。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717080300,
+      "type": 0,
+      "content": "我刚看了一部分，那几个喷子别理他们。你唱《后来》那段把我听哭了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717081200,
+      "type": 0,
+      "content": "真的假的？你还会哭？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717081500,
+      "type": 0,
+      "content": "人老心软。美美，你说我要是离婚后早点认识你就好了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717085700,
+      "type": 0,
+      "content": "赵总，你喝多了？早点睡吧，明天还要谈生意。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717122000,
+      "type": 0,
+      "content": "没喝多，昨晚是心里话。算了，不说了，今天辣椒价格谈崩了，涨了15%。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717122900,
+      "type": 0,
+      "content": "啊？那你们店怎么办？涨价还是换供应商？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717124100,
+      "type": 0,
+      "content": "我让采购去湖南那边看看。美美，你晚上要不要来我店里吃新研发的菜？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717124400,
+      "type": 0,
+      "content": "今晚不行，答应粉丝要播四个小时。改天吧。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717241400,
+      "type": 0,
+      "content": "美美，今天直播间人气不错啊，我看在线两万多了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717242300,
+      "type": 0,
+      "content": "你又在刷礼物！赵总你悠着点，别刷了，我喊停你听不见是吧？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717242600,
+      "type": 0,
+      "content": "我乐意。你刚才那个变装视频绝了，谁拍的？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717243800,
+      "type": 0,
+      "content": "我助理小张拍的，她今天请假了，我临时找的摄像。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717245000,
+      "type": 0,
+      "content": "以后我帮你拍？我学过摄影，比你那个助理强。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717246800,
+      "type": 0,
+      "content": "得了吧，赵总你这咖位当我摄影师？我怕折寿。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717300800,
+      "type": 0,
+      "content": "刚吃完午饭，想起你上次说想吃重庆小面，我让厨师做了，给你留了一份。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717303200,
+      "type": 0,
+      "content": "太香了！我已经开吃了，牛肉很大块。赵总你在哪家店？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717305000,
+      "type": 0,
+      "content": "江北新店，要不要过来坐坐？我办公室有按摩椅。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717305300,
+      "type": 0,
+      "content": "下午要拍视频，改天吧。小面我拿回工作室吃了，碗回头还你。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717375500,
+      "type": 0,
+      "content": "早，美美。昨晚看你直播到最后，你好像哭了？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717377600,
+      "type": 0,
+      "content": "嗯，有个粉丝留言说她妈妈也喜欢我唱歌，她妈妈上个月走了。我没忍住。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717378200,
+      "type": 0,
+      "content": "你太感性了。做主播累吧？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717379400,
+      "type": 0,
+      "content": "累，但是也开心。赵总，你离婚后一个人是不是也很难？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717380300,
+      "type": 0,
+      "content": "习惯了一个人，就是回家没人说话。儿子跟前妻住，周末才见一面。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717381500,
+      "type": 0,
+      "content": "那你可以养只猫啊，我们重庆话叫咪咪。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717381800,
+      "type": 0,
+      "content": "我对动物毛过敏。美美，你什么时候能多陪我说说话？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717514100,
+      "type": 0,
+      "content": "赵总，睡了没？我刚下播，今天被平台抽成气到了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717514400,
+      "type": 0,
+      "content": "没睡，怎么了？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717515300,
+      "type": 0,
+      "content": "说我违规诱导消费，扣了我五千块。我明明只是说“喜欢我的可以点点赞”，这也叫诱导？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717515600,
+      "type": 0,
+      "content": "平台傻逼。我认识他们一个运营主管，要不要帮你问问？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717516500,
+      "type": 0,
+      "content": "别别别，回头传出去说我走后门，更麻烦。我自认倒霉。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717570800,
+      "type": 0,
+      "content": "美美，成都分店下个月开业，你来当剪彩嘉宾行不行？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717572000,
+      "type": 0,
+      "content": "真的假的？我这咖位能去剪彩？你别逗我。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717572600,
+      "type": 0,
+      "content": "真的，出场费按大主播算。你只要往台上一站，我店就火了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717574400,
+      "type": 0,
+      "content": "那我考虑考虑，主要是档期——26号我好像有活动。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717575000,
+      "type": 0,
+      "content": "那就27号，我等你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717605000,
+      "type": 0,
+      "content": "赵总，我刚到家。今天直播又有人刷法拉利了，但我总觉得怪怪的。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717605300,
+      "type": 0,
+      "content": "哪个大哥？我认识吗？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717605900,
+      "type": 0,
+      "content": "新来的，叫「成都李哥」，私信我发了一堆油腻话，我没回。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717606200,
+      "type": 0,
+      "content": "拉黑。这种货色别搭理。要保护自己。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717606800,
+      "type": 0,
+      "content": "知道啦。你也是，别老刷礼物了，你店还要周转。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717607100,
+      "type": 0,
+      "content": "那点钱不影响。对了，钥匙扣我挂车上了，每天看着。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717757100,
+      "type": 0,
+      "content": "美美，今晚播吗？我在你直播间挂了个横幅。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717758000,
+      "type": 0,
+      "content": "挂横幅？你搞啥名堂？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717758900,
+      "type": 0,
+      "content": "「赵家巷子全体员工为您打Call」——怎么样？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717759800,
+      "type": 0,
+      "content": "哈哈太土了，不过我喜欢。晚上八点播，欢迎围观。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717804200,
+      "type": 0,
+      "content": "赵总，我昨晚播太晚，今早睡过头了，助理打电话才醒。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717806000,
+      "type": 0,
+      "content": "我也是刚醒。昨晚你下播后我给你发消息你没回，睡着了？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717806900,
+      "type": 0,
+      "content": "啊？我看看——哦，你三点多发的那条，我早睡了。你说啥了？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717807200,
+      "type": 0,
+      "content": "没事，就是想说晚安。今天有空来店里不？新到了一批澳洲牛肉。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717809000,
+      "type": 0,
+      "content": "今天下午要拍外景，来不了。下次吧，我给你带解放碑的小酥肉。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717939800,
+      "type": 0,
+      "content": "美美，我刚从应酬桌下来，喝了六两白酒，头疼。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717940700,
+      "type": 0,
+      "content": "那赶紧喝点蜂蜜水。赵总你少喝点，身体是自己的。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717941600,
+      "type": 0,
+      "content": "没办法，跟街道办的人喝。美美，我真羡慕你们年轻人自由。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717942500,
+      "type": 0,
+      "content": "自由个屁，我老板天天催我换新花样，我都快江郎才尽了。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717943400,
+      "type": 0,
+      "content": "那明天休息一天，我带你钓鱼去？我新买的渔具。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717944600,
+      "type": 0,
+      "content": "钓鱼？我坐不住。不过你那个水库风景好看的话，我可以去拍照。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717981200,
+      "type": 0,
+      "content": "美美，今天阴天，水库那边不晒，真的不来？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1717982400,
+      "type": 0,
+      "content": "刚看到消息。我现在在去公司的路上，突然被通知开会。气死。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1717982700,
+      "type": 0,
+      "content": "那就改天。你开会别迟到了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718087400,
+      "type": 0,
+      "content": "赵总，重庆降温了，你店里空调别开太低。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718089200,
+      "type": 0,
+      "content": "刚调高了。你现在在哪？外面下雨了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718089800,
+      "type": 0,
+      "content": "在工作室剪辑视频。窗外雨好大，我点了个外卖奶茶。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718091000,
+      "type": 0,
+      "content": "少喝奶茶，长胖。我给你送点姜茶？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718092800,
+      "type": 0,
+      "content": "不用，我助理带了。赵总你最近怎么老想给我送东西？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718093400,
+      "type": 0,
+      "content": "习惯成自然。美美，你知道吗，我现在一天不跟你说话就不得劲。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718094300,
+      "type": 0,
+      "content": "行了行了，我晓得。你忙你的吧，晚上直播见。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718194500,
+      "type": 0,
+      "content": "美美，今天直播间有人闹事，我帮你骂回去了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718195400,
+      "type": 0,
+      "content": "我看到了，赵总你那个号被封了十分钟吧？哈哈笑死。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718196300,
+      "type": 0,
+      "content": "值得。那个人说你是托，我忍不了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718197200,
+      "type": 0,
+      "content": "谢谢大哥护驾。不过别因为我跟人吵架，影响你生意。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718198100,
+      "type": 0,
+      "content": "不吵。你是我的宝，谁都不能欺负。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718199000,
+      "type": 0,
+      "content": "……赵总，你这话我接不住。我去唱首歌给你听吧。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718247900,
+      "type": 0,
+      "content": "美美，昨天那首《重庆》我循环了一晚上。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718249400,
+      "type": 0,
+      "content": "那是我自己改的歌词，专门为重庆写的。你喜欢就好。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718251200,
+      "type": 0,
+      "content": "我有个想法——把你这首歌做成我们店的背景音乐，行不行？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718252100,
+      "type": 0,
+      "content": "版权在我手里，你得付费哦。一首歌两万，赵总买不买？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718252400,
+      "type": 0,
+      "content": "买。我下午就让财务打钱。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718253000,
+      "type": 0,
+      "content": "我开玩笑的！你当真了？算了，送你了，就当我给分店开业的贺礼。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718253600,
+      "type": 0,
+      "content": "那不行，一码归一码。你帮了我大忙，钱必须给。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718297100,
+      "type": 0,
+      "content": "赵总，睡了没？我刚跟运营吵了一架。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718297400,
+      "type": 0,
+      "content": "没睡。怎么回事？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718298300,
+      "type": 0,
+      "content": "他们非要我穿短裙跳热舞，说这样涨粉快。我说我不干，我是脱口秀主播，又不是舞蹈区。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718298600,
+      "type": 0,
+      "content": "支持你。你要不想跳就不跳，大不了不干了，我店给你安排个工作。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718299200,
+      "type": 0,
+      "content": "哈？去你店里收银？我不干。我还是好好搞直播吧。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718299500,
+      "type": 0,
+      "content": "不是收银，给我当合伙人。你出镜，我出钱，开个网红店。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718300100,
+      "type": 0,
+      "content": "赵总，你喝多了？赶紧睡，明天再说。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718445600,
+      "type": 0,
+      "content": "美美，晚上吃火锅不？我订了洪崖洞那家老灶。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718446800,
+      "type": 0,
+      "content": "今晚真不行，我要彩排一个活动，下周要去成都商演。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718447100,
+      "type": 0,
+      "content": "成都？我也要去，正好谈分店的事。一起？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718448000,
+      "type": 0,
+      "content": "你开车还是坐高铁？我坐高铁，商务座。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718448600,
+      "type": 0,
+      "content": "我开车，高铁票不好买。要不你坐我车？我接你。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718449800,
+      "type": 0,
+      "content": "那行吧，但说好，出发时间由我定，路上你别抽烟。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718517600,
+      "type": 0,
+      "content": "美美，车洗干净了，油加满了，就等你发话。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718519400,
+      "type": 0,
+      "content": "下周二早上八点，我家楼下。别迟到。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718519700,
+      "type": 0,
+      "content": "遵命。晚上直播别太晚，养好精神。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718634600,
+      "type": 0,
+      "content": "赵总，我今天被一个大哥气到了。他刷了二十万，要求我私下见面。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718635500,
+      "type": 0,
+      "content": "答应了？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718635800,
+      "type": 0,
+      "content": "我拒绝了，他就在评论区骂我装。一堆人跟着起哄。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718636400,
+      "type": 0,
+      "content": "你做得对。这种人越搭理越来劲。要不要我帮你查查他底细？"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718637300,
+      "type": 0,
+      "content": "别，查了更麻烦。我让房管把他拉黑了。谢谢你。"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718670600,
+      "type": 0,
+      "content": "美美，出发了。我在你楼下了。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718671500,
+      "type": 0,
+      "content": "来了来了，刚化好妆。你带了早餐没？"
+    },
+    {
+      "sender": "wechat_zhaozong_002",
+      "accountName": "老赵做生意",
+      "timestamp": 1718672100,
+      "type": 0,
+      "content": "带了，豆浆油条茶叶蛋，还有你最爱的红糖糍粑。"
+    },
+    {
+      "sender": "wechat_meimei_001",
+      "accountName": "美美来了",
+      "timestamp": 1718672400,
+      "type": 0,
+      "content": "赵总你太懂我了！上车聊。"
+    }
+  ]
+}

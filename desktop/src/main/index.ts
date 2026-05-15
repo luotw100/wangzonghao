@@ -12,6 +12,7 @@ let tray: Tray | null = null
 let creds: CredentialStore
 let runtime: BridgeRuntime | null = null
 let currentState: DaemonState | null = null
+let isQuitting = false
 
 // ── Renderer communication ──────────────────────────────────────────────────
 
@@ -81,7 +82,7 @@ function createWindow(): void {
 
   // Close → hide to tray instead of quit
   win.on('close', (e) => {
-    if (!app.isQuitting) {
+    if (!isQuitting) {
       e.preventDefault()
       win?.hide()
     }
@@ -174,7 +175,7 @@ function registerIpc(): void {
             body: JSON.stringify({ username: claim.username, password: claim.password }),
           })
           if (res.ok) {
-            const data: { account_id: string } = await res.json()
+            const data = await res.json() as { account_id: string }
             tempAdapters.push({ platform: 'chat', platformSelfId: data.account_id })
           }
         } catch {}
@@ -270,7 +271,7 @@ app.whenReady().then(() => {
 })
 
 app.on('before-quit', () => {
-  ;(app as any).isQuitting = true
+  isQuitting = true
   stopDaemon()
 })
 

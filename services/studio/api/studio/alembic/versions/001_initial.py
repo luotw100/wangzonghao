@@ -154,7 +154,9 @@ def upgrade() -> None:
         sa.Column("role", sa.String(16), nullable=False),
         sa.Column("msg_type", sa.String(16), nullable=False, server_default="text"),
         sa.Column("sender_name", sa.String(256), nullable=True),
+        sa.Column("sender_id", sa.String(256), nullable=True),
         sa.Column("content", sa.Text, nullable=False),
+        sa.Column("msg_hash", sa.String(64), nullable=True),
         sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint("contact_id", "external_id", name="uq_message_contact_external"),
@@ -164,6 +166,23 @@ def upgrade() -> None:
     op.create_index("ix_messages_contact_id", "messages", ["contact_id"])
     op.create_index("ix_messages_timestamp", "messages", ["timestamp"])
     op.create_index("idx_msg_contact_ts", "messages", ["contact_id", "timestamp"])
+    op.create_index(
+        "idx_message_msg_hash",
+        "messages",
+        ["contact_id", "msg_hash"],
+        unique=True,
+        postgresql_where=sa.text("msg_hash IS NOT NULL"),
+    )
+
+    op.create_table(
+        "media_hashes",
+        sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
+        sa.Column("account_id", sa.String(48), nullable=False),
+        sa.Column("content_hash", sa.String(71), nullable=False),
+        sa.Column("storage_key", sa.String(256), nullable=False),
+        sa.UniqueConstraint("account_id", "content_hash", name="uq_media_hash_account"),
+    )
+    op.create_index("idx_media_hash_account", "media_hashes", ["account_id"])
 
     op.create_table(
         "distill_jobs",
@@ -226,6 +245,7 @@ def downgrade() -> None:
     op.drop_table("llm_logs")
     op.drop_table("outbound_messages")
     op.drop_table("distill_jobs")
+    op.drop_table("media_hashes")
     op.drop_table("messages")
     op.drop_table("contacts")
     op.drop_table("inboxes")

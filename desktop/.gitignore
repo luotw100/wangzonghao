@@ -3,3 +3,4 @@ out/
 dist-electron/
 dist-release/
 *.tsbuildinfo
+scripts/.debug-daemon.cjs

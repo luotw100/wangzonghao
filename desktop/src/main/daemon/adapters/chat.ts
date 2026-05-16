@@ -26,16 +26,26 @@ export class ChatAdapter {
   ) {}
 
   private async req<T>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
-      },
-      body: body != null ? JSON.stringify(body) : undefined,
-    })
-    if (!res.ok) throw new Error(`Chat API ${res.status} ${path}`)
-    return res.json() as Promise<T>
+    const ctrl = new AbortController()
+    const timer = setTimeout(() => ctrl.abort(), 15_000)
+    try {
+      const res = await fetch(`${this.baseUrl}${path}`, {
+        method,
+        signal: ctrl.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(this.token ? { Authorization: `Bearer ${this.token}` } : {}),
+        },
+        body: body != null ? JSON.stringify(body) : undefined,
+      })
+      if (!res.ok) throw new Error(`Chat API ${res.status} ${path}`)
+      return res.json() as Promise<T>
+    } catch (err: any) {
+      if (err?.name === 'AbortError') throw new Error(`Chat API 超时 ${path}（检查 Chat Base URL 是否可达）`)
+      throw err
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   async login(): Promise<string> {

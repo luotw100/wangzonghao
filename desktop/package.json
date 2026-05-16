@@ -11,7 +11,8 @@
     "pack": "electron-builder --dir",
     "dist:mac": "electron-builder --mac",
     "dist:win": "electron-builder --win",
-    "postinstall": "electron-rebuild -f -w better-sqlite3"
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "debug:daemon": "esbuild scripts/debug-daemon.ts --bundle --platform=node --format=cjs --external:better-sqlite3 --outfile=scripts/.debug-daemon.cjs && ELECTRON_RUN_AS_NODE=1 electron scripts/.debug-daemon.cjs"
   },
   "dependencies": {
     "better-sqlite3": "^11.0.0"

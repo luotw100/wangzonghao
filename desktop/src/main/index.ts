@@ -82,12 +82,14 @@ function createWindow(): void {
 
 // ── Daemon lifecycle ──────────────────────────────────────────────────────────
 
-async function startDaemon(): Promise<void> {
+// Fire-and-forget: never block an IPC reply on daemon startup (it does
+// network IO). Status/errors stream to the renderer via emitDaemon.
+function startDaemon(): void {
   if (runtime) return
   if (!store.hasToken() || !store.hasChannels()) return
 
   const studio = new StudioClient(store.studioUrl, () => store.token)
-  runtime = new BridgeRuntime(
+  const rt = new BridgeRuntime(
     studio,
     store.getChannels(),
     join(app.getPath('userData'), 'data'),
@@ -99,11 +101,15 @@ async function startDaemon(): Promise<void> {
       bridgeId: store.bridgeId,
     }),
   )
-  await runtime.run({
+  runtime = rt
+  rt.run({
     onAuthError: () => {
       store.clearToken()
       emitDaemon('status', idleState('error401'))
     },
+  }).catch((err) => {
+    emitDaemon('log', { t: new Date().toTimeString().slice(0, 8), src: 'core', level: 'err', msg: `daemon run failed: ${err}` })
+    if (runtime === rt) { runtime = null; emitDaemon('status', idleState('offline')) }
   })
 }
 
@@ -113,9 +119,9 @@ function stopDaemon(): void {
   emitDaemon('status', idleState('idle'))
 }
 
-async function restartDaemon(): Promise<void> {
+function restartDaemon(): void {
   if (runtime) { runtime.stop(); runtime = null }
-  await startDaemon()
+  startDaemon()
 }
 
 // ── IPC ───────────────────────────────────────────────────────────────────────
@@ -144,7 +150,7 @@ function registerIpc(): void {
         machineId: hs.machineId,
         bridgeId: hs.bridgeId,
       })
-      if (store.hasChannels()) await startDaemon()
+      if (store.hasChannels()) startDaemon()
       return { ok: true }
     } catch (err: any) {
       const msg = String(err).includes('401') ? '账号或密码错误' : String(err?.message ?? err)
@@ -160,9 +166,9 @@ function registerIpc(): void {
 
   ipcMain.handle('bridge:get-channels', () => store.getChannelViews())
 
-  ipcMain.handle('bridge:save-channels', async (_e, channels: Channel[]) => {
+  ipcMain.handle('bridge:save-channels', (_e, channels: Channel[]) => {
     store.saveChannels(channels)
-    await restartDaemon()
+    restartDaemon()
     return { ok: true }
   })
 
@@ -178,16 +184,20 @@ app.whenReady().then(async () => {
   createWindow()
   registerIpc()
 
-  try {
-    tray = new Tray(nativeImage.createFromPath(join(__dirname, '../../resources/tray-icon.png')))
-  } catch {
-    tray = new Tray(nativeImage.createEmpty())
-  }
+  // Dev: out/main → ../../resources. Packaged: extraResources copies to resourcesPath.
+  const iconPath = isDev
+    ? join(__dirname, '../../resources/tray-icon.png')
+    : join(process.resourcesPath, 'tray-icon.png')
+  const trayImg = nativeImage.createFromPath(iconPath)
+  // macOS menu bar: template image → OS auto-recolors (white on dark, black on
+  // light). Without this a black PNG is invisible on a dark menu bar.
+  if (process.platform === 'darwin') trayImg.setTemplateImage(true)
+  tray = new Tray(trayImg.isEmpty() ? nativeImage.createEmpty() : trayImg)
   updateTray()
   tray.on('double-click', () => { win?.show(); win?.focus() })
 
   // Token is reused across restarts — cold start needs no password.
-  if (store.hasToken() && store.hasChannels()) await startDaemon()
+  if (store.hasToken() && store.hasChannels()) startDaemon()
 })
 
 app.on('before-quit', () => { isQuitting = true; stopDaemon() })

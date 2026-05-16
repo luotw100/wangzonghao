@@ -1,14 +1,22 @@
 import type { IncomingMessage, MsgType } from '../types'
 
 interface Thread {
-  peerId: string
+  convId: string
+  peerId: string          // chat contact id — used as peer_platform_id toward Studio
   peerDisplayName: string
 }
 
+/**
+ * Chat sandbox HTTP adapter.
+ *
+ * Peer identity = the conversation's contact. `peerId` is the chat
+ * contact id (reported to Studio as peer_platform_id); messages are
+ * fetched/sent via the conversation id, so we keep contactId → convId.
+ */
 export class ChatAdapter {
   private token: string | null = null
   private selfId: string | null = null
-  private threads: Map<string, Thread> = new Map()
+  private threads = new Map<string, Thread>()   // keyed by peerId (contact id)
   private stopped = false
 
   constructor(
@@ -31,21 +39,22 @@ export class ChatAdapter {
   }
 
   async login(): Promise<string> {
-    const res: { token: string; account_id: string } = await this.req('POST', '/api/auth/login', {
-      username: this.username,
-      password: this.password,
-    })
+    const res: { token: string; account: { id: string } } =
+      await this.req('POST', '/api/auth/login', { username: this.username, password: this.password })
     this.token = res.token
-    this.selfId = res.account_id
-    return res.account_id
+    this.selfId = res.account.id
+    return this.selfId
   }
 
   private async refreshThreads(): Promise<void> {
-    const convs: Array<{ id: string; peer?: { id: string; username: string } }> =
+    const convs: Array<{ id: string; contact: { id: string; nickname: string; username: string } }> =
       await this.req('GET', '/api/conversations')
     for (const c of convs) {
-      if (!c.peer) continue
-      this.threads.set(c.id, { peerId: c.peer.id, peerDisplayName: c.peer.username })
+      this.threads.set(c.contact.id, {
+        convId: c.id,
+        peerId: c.contact.id,
+        peerDisplayName: c.contact.nickname || c.contact.username,
+      })
     }
   }
 
@@ -57,41 +66,37 @@ export class ChatAdapter {
     }))
   }
 
-  async *scan(
-    cursors: Record<string, string | null>,
-  ): AsyncGenerator<IncomingMessage> {
+  async *scan(cursors: Record<string, string | null>): AsyncGenerator<IncomingMessage> {
     while (!this.stopped) {
       try {
         await this.refreshThreads()
-      } catch (err) {
+      } catch {
         await sleep(2000)
         continue
       }
 
       let yieldedAny = false
-      for (const [, thread] of this.threads) {
-        const since = cursors[thread.peerId] ?? '0'
-        let msgs: Array<{
-          id: string
-          sender_id: string
-          content: string
-          msg_type: string
-          created_at: string
-        }>
+      for (const thread of this.threads.values()) {
+        if (this.stopped) break
+        const since = Number(cursors[thread.peerId] ?? '0') || 0
+        let payload: { messages: Array<{ id: number; sender_type: string; sender_contact_id: string | null; msg_type: string; content: string; created_at: string }> }
         try {
-          msgs = await this.req('GET', `/api/conversations/${thread.peerId}/messages?since_id=${since}`)
+          payload = await this.req(
+            'GET',
+            `/api/conversations/${thread.convId}/messages?last_id=${since}&limit=200`,
+          )
         } catch {
           continue
         }
 
-        for (const m of msgs) {
-          cursors[thread.peerId] = m.id
+        for (const m of payload.messages) {
+          cursors[thread.peerId] = String(m.id)
           yieldedAny = true
           yield {
             peerId: thread.peerId,
             peerDisplayName: thread.peerDisplayName,
-            platformMsgId: m.id,
-            senderId: m.sender_id,
+            platformMsgId: String(m.id),
+            senderId: m.sender_type === 'self' ? this.platformSelfId : thread.peerId,
             msgType: (m.msg_type as MsgType) || 'text',
             content: m.content,
             sentAt: new Date(m.created_at),
@@ -104,11 +109,14 @@ export class ChatAdapter {
   }
 
   async send(peerId: string, content: string): Promise<string> {
-    const res: { id: string } = await this.req('POST', `/api/conversations/${peerId}/messages`, {
-      content,
-      msg_type: 'text',
-    })
-    return res.id
+    const thread = this.threads.get(peerId)
+    if (!thread) throw new Error(`unknown peer ${peerId}`)
+    const res: { id: number | null } = await this.req(
+      'POST',
+      `/api/conversations/${thread.convId}/messages`,
+      { sender_type: 'self', msg_type: 'text', content },
+    )
+    return res.id != null ? String(res.id) : ''
   }
 
   stop(): void {

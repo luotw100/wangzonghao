@@ -7,7 +7,7 @@ description: Laborster 仓库架构全景 Skill。用于理解当前代码、服
 
 这是当前仓库的 1:1 架构说明入口。文档只描述当前代码中已经存在的设计材料。
 
-**写作规则：所有文档必须只描述当前状态，严禁包含迁移过程、变更历史、"不再"、"已移除"、"改为"、"之前是"等描述变更的措辞。** 如果某个功能不存在，直接描述当前是什么，不要提及它曾经存在。例如：不要写"POST /api/inboxes 已移除"，而要写"Inbox 仅由 Bridge handshake 创建，没有独立的创建 API"。
+**写作规则：所有文档必须只描述当前状态，严禁包含迁移过程、变更历史、"不再"、"已移除"、"改为"、"之前是"等描述变更的措辞。** 如果某个功能不存在，直接描述当前是什么，不要提及它曾经存在。例如：不要写"POST /api/inboxes 已移除"，而要写"Inbox 由 Bridge 的 token 鉴权 `POST /api/bridge/inboxes` 注册，没有面向用户的创建 API"。
 
 ## 什么时候使用
 
@@ -29,7 +29,7 @@ Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Cha
 | 项目 | 路径 | 当前职责 | 边界规则 |
 | --- | --- | --- | --- |
 | Chat sandbox | `services/chat/` | dogfood Channel / 可控聊天平台 | 只模拟平台；Studio 不直接调用它。 |
-| Bridge desktop | `desktop/` | Electron 桌面 app，内嵌 TS daemon，登录本地平台账号并桥接到 Studio | 不调 LLM、不存人设、不持久化密码。 |
+| Bridge desktop | `desktop/` | Electron 桌面 app，内嵌 TS daemon，登录本地平台账号并桥接到 Studio | 不调 LLM、不存人设、不持久化 Studio 密码。 |
 | Studio | `services/studio/` | 控制台、source of truth、reply/distill brain | 不直连任何 Channel，只接受 Bridge protocol。 |
 
 `desktop/` 使用独立 npm 工作区，含 Electron 主进程（daemon 核心）、preload、React renderer。Chat/Studio 保持 Python/Docker 工作流不变。
@@ -43,6 +43,8 @@ Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Cha
 5. **Contact 是接管单元。** Contact 持有 `persona_id`、可选 Provider override、`takeover`（bool，Bridge 是否上报消息）、`reply_policy`（`disabled | autoreply`，Studio 是否自动回复）、`card_md`、`pending_reply`。
 6. **Inbox 是平台身份。** Inbox 表示一个平台账号/身份，并给新 Contact 提供默认 Persona 和可选 Provider override。
 7. **Bridge 是本地 daemon 实例。** Bridge 行由 `(account_id, machine_id)` 标识，`machine_id` 由 Studio 在首次握手时生成并返回给 Bridge 本地持久化；可服务多个 Inbox。
+
+13. **Bridge 认证是 token 长期复用。** handshake 只用 Studio 密码换 session token（密码用完即弃，绝不落盘）。token safeStorage 加密持久化，重启直接复用；channel 注册、收发消息全部走 token 鉴权。只有 token 被撤销/失效（401）才需要重新输密码，与浏览器 session 一致。Chat 平台密码必须落盘（daemon 要登录平台），safeStorage 加密。
 8. **Outbound 队列是数据库表。** `outbound_messages` 是 Studio → Bridge 的工作队列，每条携带 `msg_type`；Bridge long-poll 并维护 cursor。
 9. **Chat/Studio 数据库和 S3 环境变量必须显式提供。** 缺失 `DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY` 或 `S3_BUCKET` 会直接报错。
 10. **Chat/Studio models 不用 SQLAlchemy column default。** 当前设计要求插入时显式写入字段值。迁移中使用 `server_default` 仅为兼容已有数据。

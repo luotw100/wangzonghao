@@ -31,26 +31,24 @@
 ## 2. Bridge 启动并把 Chat 绑定到 Studio
 
 ```text
-bridge main 解析 CLI
-  → --studio-username / --studio-password / --studio-url / --state-dir
-  → N x --chat-inbox base_url=...,username=...,password=...
+Electron app 启动 → Store 加载本地 state
+  → 无 token → Login 屏：用户输 Studio URL + 账号密码
+      → POST Studio /api/bridge/handshake（唯一用密码的调用）
+      → Studio 校验账号密码，按 (account_id, machine_id) 找/建 Bridge
+      → 删除旧 BridgeSession，创建新 token
+      → 返回 token、bridge_id、machine_id、account_id
+      → safeStorage 加密保存 token；Studio 密码用完即弃，绝不落盘
+  → 有 token → 直接复用，不需密码、不重新 handshake
 
-每个 InboxClaim
-  → build_adapter('chat', raw_config)
+每个 Channel（chat 平台账号，密码 safeStorage 加密落盘）
   → ChatAdapter.login()
-  → POST Chat /api/auth/login
-  → platform_self_id = Chat account id
+  → POST Chat /api/auth/login → platform_self_id = Chat account.id
 
-BridgeRuntime 加载本地 state
-  → 如果存了 token，优先尝试心跳复用
-  → 如果 token 过期或有新 inbox 声明，走 handshake
-  → POST Studio /api/bridge/handshake
-  → Studio 校验账号密码
-  → 如果带 machine_id 则按 (account_id, machine_id) 找已有 Bridge，否则生成新的
-  → 删除旧 BridgeSession，创建新 token
-  → 按 (account_id, platform, platform_self_id) upsert Inbox
-  → 返回 token、bridge_id、machine_id、account_id、inbox list、cursor
-  → Bridge 保存 machine_id + token 到 state.json
+BridgeRuntime.run({ onAuthError })（token 鉴权，无密码）
+  → POST Studio /api/bridge/inboxes（Bearer token）
+  → Studio 按 (account_id, platform, platform_self_id) upsert/绑定 Inbox
+  → 返回 inbox list + cursor
+  → 任意调用 401 → 清 token，renderer 回 Login 屏
 
 BridgeRuntime 绑定 adapters
   → 用 (platform, platform_self_id) 找到 inbox_id

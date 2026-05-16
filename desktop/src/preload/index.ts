@@ -1,62 +1,48 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import type { DaemonState, LogLine, InboxClaim } from '../main/daemon/types'
+import type { DaemonState, LogLine, Channel } from '../main/daemon/types'
 
 export type BridgeAPI = typeof api
 
 const api = {
-  // Host platform (renderer has no `process` under contextIsolation)
   platform: process.platform,
 
-  // Snapshot
-  getState: (): Promise<DaemonState> => ipcRenderer.invoke('bridge:get-state'),
-  getCreds: (): Promise<{
+  bootstrap: (): Promise<{
     studioUrl: string
     username: string
-    machineId?: string
-    bridgeId?: string
     hasToken: boolean
-    hasInboxes: boolean
-    needsLogin: boolean
-  }> => ipcRenderer.invoke('bridge:get-creds'),
+    channels: Array<{ baseUrl: string; username: string }>
+    state: DaemonState
+  }> => ipcRenderer.invoke('bridge:bootstrap'),
 
-  // Auth
-  handshake: (opts: {
-    studioUrl: string
-    username: string
-    password: string
-  }): Promise<{ ok: true; machineId: string; bridgeId: string } | { ok: false; error: string }> =>
-    ipcRenderer.invoke('bridge:handshake', opts),
+  login: (opts: { studioUrl: string; username: string; password: string }):
+    Promise<{ ok: true } | { ok: false; error: string }> =>
+    ipcRenderer.invoke('bridge:login', opts),
+
   logout: (): Promise<void> => ipcRenderer.invoke('bridge:logout'),
 
-  // Inbox config
-  getInboxes: (): Promise<Array<{ baseUrl: string; username: string }>> =>
-    ipcRenderer.invoke('bridge:get-inboxes'),
-  saveInboxes: (claims: InboxClaim[]): Promise<{ ok: boolean }> =>
-    ipcRenderer.invoke('bridge:save-inboxes', claims),
+  getChannels: (): Promise<Array<{ baseUrl: string; username: string }>> =>
+    ipcRenderer.invoke('bridge:get-channels'),
 
-  // Daemon control
-  start: (): Promise<void> => ipcRenderer.invoke('bridge:start'),
+  saveChannels: (channels: Channel[]): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke('bridge:save-channels', channels),
+
   stop: (): Promise<void> => ipcRenderer.invoke('bridge:stop'),
-
-  // Actions
   openStudio: (): Promise<void> => ipcRenderer.invoke('bridge:open-studio'),
 
-  // Event listeners (main → renderer push)
-  onStateChange: (cb: (state: DaemonState) => void) => {
-    const handler = (_: Electron.IpcRendererEvent, s: DaemonState) => cb(s)
-    ipcRenderer.on('bridge:state-change', handler)
-    return () => ipcRenderer.off('bridge:state-change', handler)
+  onState: (cb: (s: DaemonState) => void) => {
+    const h = (_: Electron.IpcRendererEvent, s: DaemonState) => cb(s)
+    ipcRenderer.on('bridge:state', h)
+    return () => ipcRenderer.off('bridge:state', h)
   },
-  onLog: (cb: (line: LogLine) => void) => {
-    const handler = (_: Electron.IpcRendererEvent, l: LogLine) => cb(l)
-    ipcRenderer.on('bridge:log', handler)
-    return () => ipcRenderer.off('bridge:log', handler)
+  onLog: (cb: (l: LogLine) => void) => {
+    const h = (_: Electron.IpcRendererEvent, l: LogLine) => cb(l)
+    ipcRenderer.on('bridge:log', h)
+    return () => ipcRenderer.off('bridge:log', h)
   },
 }
 
 contextBridge.exposeInMainWorld('bridge', api)
 
-// Type declaration merged into the renderer window global
 declare global {
   interface Window {
     bridge: BridgeAPI

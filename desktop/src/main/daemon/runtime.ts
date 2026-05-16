@@ -1,7 +1,6 @@
-import { createHash } from 'crypto'
 import { join } from 'path'
 import { mkdirSync } from 'fs'
-import type { InboxClaim, StudioInbox, DaemonState, InboxStatus, LogLine } from './types'
+import type { Channel, StudioInbox, DaemonState, ChannelStatus, LogLine } from './types'
 import { ChatAdapter } from './adapters/chat'
 import { LocalStore } from './local-store'
 import { StudioClient } from './studio-client'
@@ -22,11 +21,10 @@ function ts(): string {
 }
 
 interface AdapterEntry {
-  claim: InboxClaim
+  channel: Channel
   adapter: ChatAdapter
   inbox: StudioInbox
   cursors: Record<string, string | null>
-  scanAbort: AbortController
 }
 
 export class BridgeRuntime {
@@ -40,10 +38,10 @@ export class BridgeRuntime {
 
   constructor(
     private studio: StudioClient,
-    private claims: InboxClaim[],
+    private channels: Channel[],
     private stateDir: string,
     private emit: (event: 'status' | 'log', payload: DaemonState | LogLine) => void,
-    private getState: () => Omit<DaemonState, 'inboxes' | 'inCount5m' | 'outboundPending'>,
+    private getBase: () => Pick<DaemonState, 'studioUrl' | 'username' | 'machineId' | 'bridgeId'>,
   ) {
     mkdirSync(stateDir, { recursive: true })
     this.store = new LocalStore(join(stateDir, 'messages.db'))
@@ -54,48 +52,41 @@ export class BridgeRuntime {
   }
 
   private pushState(status: DaemonState['status']): void {
-    const base = this.getState()
-    const inboxes: InboxStatus[] = [...this.adapters.values()].map(e => ({
+    const channels: ChannelStatus[] = [...this.adapters.values()].map(e => ({
       inboxId: e.inbox.id,
-      handle: e.claim.username,
-      baseUrl: e.claim.baseUrl,
-      platform: 'chat' as const,
+      handle: e.channel.username,
+      baseUrl: e.channel.baseUrl,
       platformSelfId: e.adapter.platformSelfId,
-      status: 'online',
+      online: true,
       peersCount: Object.keys(e.cursors).length,
     }))
     this.emit('status', {
-      ...base,
+      ...this.getBase(),
       status,
-      inboxes,
+      channels,
       inCount5m: this.store.countRecentIncoming(5 * 60 * 1000),
       outboundPending: this.store.countUnsent(),
       lastError: this.lastError,
     })
   }
 
-  async run(opts: {
-    handshakeToken: string | null
-    machineId: string | undefined
-    studioPassword: string | null
-    onAuthError: () => void
-    onCursorInit: (cursor: number) => void
-  }): Promise<void> {
+  /** Token-only run. The studio client is already bound to a saved token. */
+  async run(opts: { onAuthError: () => void }): Promise<void> {
     this.lastError = undefined
     this.pushState('connecting')
-    this.log('core', 'info', `starting · claims=${this.claims.length}`)
+    this.log('core', 'info', `starting · channels=${this.channels.length}`)
 
-    // 1. Login all adapters
-    const loggedIn: Array<{ claim: InboxClaim; adapter: ChatAdapter; selfId: string }> = []
+    // 1. Login all chat adapters
+    const loggedIn: Array<{ channel: Channel; adapter: ChatAdapter; selfId: string }> = []
     const loginErrors: string[] = []
-    for (const claim of this.claims) {
-      const adapter = new ChatAdapter(claim.baseUrl, claim.username, claim.password)
+    for (const channel of this.channels) {
+      const adapter = new ChatAdapter(channel.baseUrl, channel.username, channel.password)
       try {
         const selfId = await adapter.login()
-        this.log('adapter', 'ok', `login ok · ${claim.username}@${claim.baseUrl} selfId=${selfId}`)
-        loggedIn.push({ claim, adapter, selfId })
+        this.log('adapter', 'ok', `login ok · ${channel.username}@${channel.baseUrl}`)
+        loggedIn.push({ channel, adapter, selfId })
       } catch (err) {
-        const m = `${claim.username}@${claim.baseUrl}: ${err instanceof Error ? err.message : err}`
+        const m = `${channel.username}@${channel.baseUrl}: ${err instanceof Error ? err.message : err}`
         this.log('adapter', 'err', `login failed · ${m}`)
         loginErrors.push(m)
       }
@@ -103,39 +94,29 @@ export class BridgeRuntime {
 
     if (loggedIn.length === 0) {
       this.lastError = `无法登录聊天平台(检查 Chat Base URL 是否可达):${loginErrors.join(' / ')}`
-      this.log('core', 'err', 'no adapters logged in — stopping')
+      this.log('core', 'err', 'no channels logged in — stopping')
       this.pushState('offline')
       return
     }
 
-    // 2. Handshake with Studio
-    let token = opts.handshakeToken
-    let machineId = opts.machineId
+    // 2. Register channels with Studio (token-authenticated, no password)
     let inboxes: StudioInbox[]
-    let cursor: number
-
     try {
-      const hs = await this.studio.handshake({
-        username: this.getState().username!,
-        password: opts.studioPassword ?? '',
-        machineId,
-        inboxes: loggedIn.map(l => ({ platform: 'chat', platformSelfId: l.selfId })),
-      })
-      token = hs.token
-      machineId = hs.machineId
-      inboxes = hs.inboxes
-      cursor = hs.cursor
-      this.outboundCursor = cursor
-      opts.onCursorInit(cursor)
-      this.log('studio', 'ok', `handshake ok · bridge_id=${hs.bridgeId} machine_id=${machineId}`)
+      const r = await this.studio.registerInboxes(
+        loggedIn.map(l => ({ platform: 'chat', platformSelfId: l.selfId })),
+      )
+      inboxes = r.inboxes
+      this.outboundCursor = r.cursor
+      this.log('studio', 'ok', `inboxes registered · ${inboxes.length} inbox · cursor=${r.cursor}`)
+      if (r.noPersona) this.log('studio', 'warn', 'Studio 账号还没有 Persona,自动回复不会触发')
     } catch (err: any) {
       if (String(err).includes('401')) {
-        this.lastError = 'Studio 鉴权失败,请重新登录'
+        this.lastError = 'Studio session 失效,请重新登录'
         opts.onAuthError()
         this.pushState('error401')
       } else {
-        this.lastError = `Studio handshake 失败: ${err instanceof Error ? err.message : err}`
-        this.log('studio', 'err', `handshake failed: ${err}`)
+        this.lastError = `Studio 注册 channel 失败: ${err instanceof Error ? err.message : err}`
+        this.log('studio', 'err', `register inboxes failed: ${err}`)
         this.pushState('offline')
       }
       return
@@ -145,20 +126,17 @@ export class BridgeRuntime {
     for (const li of loggedIn) {
       const inbox = inboxes.find(ib => ib.platformSelfId === li.selfId)
       if (!inbox) {
-        this.log('adapter', 'warn', `no inbox for selfId=${li.selfId}`)
+        this.log('adapter', 'warn', `no inbox for ${li.channel.username}`)
         continue
       }
       const cursors = this.store.getCursors(inbox.id)
-      const scanAbort = new AbortController()
-      this.adapters.set(inbox.id, { claim: li.claim, adapter: li.adapter, inbox, cursors, scanAbort })
+      this.adapters.set(inbox.id, { channel: li.channel, adapter: li.adapter, inbox, cursors })
     }
 
     this.pushState('online')
 
     // 4. Start all loops
-    for (const [inboxId, entry] of this.adapters) {
-      this.startProducer(inboxId, entry)
-    }
+    for (const [inboxId, entry] of this.adapters) this.startProducer(inboxId, entry)
     this.startConsumer()
     this.startHeartbeat(opts.onAuthError)
     this.startAnnounce()
@@ -172,9 +150,8 @@ export class BridgeRuntime {
         for await (const msg of entry.adapter.scan(entry.cursors)) {
           if (this.stopped) break
           const sentAt = msg.sentAt.toISOString()
-          const content = msg.content
           const localHash = LocalStore.localHash(
-            inboxId, msg.peerId, msg.senderId, sentAt, msg.msgType, content,
+            inboxId, msg.peerId, msg.senderId, sentAt, msg.msgType, msg.content,
           )
           this.store.insertMessage({
             inboxId,
@@ -184,7 +161,7 @@ export class BridgeRuntime {
             senderId: msg.senderId,
             sentAt,
             msgType: msg.msgType,
-            content,
+            content: msg.content,
             mimeType: null,
             localHash,
           })
@@ -203,28 +180,25 @@ export class BridgeRuntime {
       for (const row of rows) {
         const entry = this.adapters.get(row.inboxId)
         if (!entry) { this.store.markSent(row.id); continue }
-        const role = row.senderId === entry.adapter.platformSelfId ? 'self' : 'counterpart'
         try {
           await this.studio.pushIncoming([{
             inboxId: row.inboxId,
             peerPlatformId: row.peerId,
             peerDisplayName: row.peerDisplayName,
             platformMsgId: row.platformMsgId,
-            role,
+            senderId: row.senderId,
             msgType: row.msgType,
             content: row.content,
             sentAt: row.sentAt,
           }])
           this.store.markSent(row.id)
         } catch (err: any) {
-          if (String(err).includes('401')) return // heartbeat will handle 401
+          if (String(err).includes('401')) return // heartbeat handles 401
           this.log('consumer', 'warn', `push failed: ${err}`)
         }
       }
     }
-
-    const id = setInterval(() => { tick() }, CONSUMER_MS)
-    this.timers.push(id)
+    this.timers.push(setInterval(() => { tick() }, CONSUMER_MS))
   }
 
   private startHeartbeat(onAuthError: () => void): void {
@@ -240,11 +214,10 @@ export class BridgeRuntime {
             this.adapters.delete(id)
           }
         }
-        this.log('heart', 'info', `♥ ok · ${this.adapters.size} inbox online`)
         this.pushState('online')
       } catch (err: any) {
         if (String(err).includes('401')) {
-          this.log('heart', 'err', `401 · session revoked`)
+          this.log('heart', 'err', '401 · session revoked')
           onAuthError()
           this.pushState('error401')
           this.stop()
@@ -253,8 +226,7 @@ export class BridgeRuntime {
         }
       }
     }
-    const id = setInterval(() => { beat() }, HEARTBEAT_MS)
-    this.timers.push(id)
+    this.timers.push(setInterval(() => { beat() }, HEARTBEAT_MS))
     beat()
   }
 
@@ -268,22 +240,20 @@ export class BridgeRuntime {
         } catch {}
       }
     }
-    const id = setInterval(() => { announce() }, ANNOUNCE_MS)
-    this.timers.push(id)
+    this.timers.push(setInterval(() => { announce() }, ANNOUNCE_MS))
     announce()
   }
 
   private startActivePeers(): void {
-    const fetch = async () => {
+    const fetchActive = async () => {
       if (this.stopped) return
       try {
         const peers = await this.studio.getActivePeers()
         this.activePeers = new Set(peers.map(p => `${p.inboxId}|${p.peerPlatformId}`))
       } catch {}
     }
-    const id = setInterval(() => { fetch() }, ACTIVE_PEERS_MS)
-    this.timers.push(id)
-    fetch()
+    this.timers.push(setInterval(() => { fetchActive() }, ACTIVE_PEERS_MS))
+    fetchActive()
   }
 
   private startOutbound(onAuthError: () => void): void {
@@ -315,8 +285,7 @@ export class BridgeRuntime {
         await this.studio.ackOutbound(item.id, 'sent', platformMsgId)
         this.log('outbound', 'ok', `sent text to ${item.peerPlatformId}`)
       } else {
-        // Media: download from Studio S3, send via adapter (not implemented for chat sandbox)
-        this.log('outbound', 'warn', `media outbound not supported for chat adapter`)
+        this.log('outbound', 'warn', 'media outbound not supported for chat adapter')
         await this.studio.ackOutbound(item.id, 'failed', 'media not supported')
       }
     } catch (err) {

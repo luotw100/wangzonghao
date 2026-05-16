@@ -1,134 +1,78 @@
 import { useEffect, useState } from 'react'
 import type { DaemonState } from '../../main/daemon/types'
 import { Login } from './screens/Login'
-import { InboxConfig } from './screens/InboxConfig'
-import { Panel } from './screens/Panel'
-import { Settings } from './screens/Settings'
+import { Channels } from './screens/Channels'
 
-type Screen = 'login' | 'inbox' | 'panel' | 'settings'
-
-const IDLE_STATE: DaemonState = {
+const IDLE: DaemonState = {
   status: 'idle',
   studioUrl: 'https://studio.laborster.com',
   username: '',
-  inboxes: [],
+  channels: [],
   inCount5m: 0,
   outboundPending: 0,
 }
 
 export function App() {
-  const [screen, setScreen] = useState<Screen>('login')
-  const [daemonState, setDaemonState] = useState<DaemonState>(IDLE_STATE)
-  const [savedInboxes, setSavedInboxes] = useState<Array<{ baseUrl: string; username: string }>>([])
-  const [loading, setLoading] = useState(true)
+  const [booted, setBooted] = useState(false)
+  const [hasToken, setHasToken] = useState(false)
+  const [state, setState] = useState<DaemonState>(IDLE)
+  const [channels, setChannels] = useState<Array<{ baseUrl: string; username: string }>>([])
 
-  // Boot: load persisted state and decide starting screen
   useEffect(() => {
-    const boot = async () => {
-      const [creds, inboxes, state] = await Promise.all([
-        window.bridge.getCreds(),
-        window.bridge.getInboxes(),
-        window.bridge.getState(),
-      ])
-      setSavedInboxes(inboxes)
-      setDaemonState(s => ({
-        ...s,
-        studioUrl: creds.studioUrl,
-        username: creds.username,
-        machineId: creds.machineId,
-        bridgeId: creds.bridgeId,
-      }))
-
-      if (creds.needsLogin) {
-        // Cold start: Studio password is memory-only and gone → re-login.
-        setScreen('login')
-      } else if (!creds.hasInboxes) {
-        setScreen('inbox')
-      } else {
-        setScreen('panel')
-        if (state.status !== 'idle') setDaemonState(state)
-      }
-      setLoading(false)
-    }
-    boot()
-  }, [])
-
-  // Live state updates from main process
-  useEffect(() => {
-    const off = window.bridge.onStateChange(s => {
-      setDaemonState(s)
-      if (s.status === 'error401') setScreen('login')
+    window.bridge.bootstrap().then(b => {
+      setHasToken(b.hasToken)
+      setChannels(b.channels)
+      setState(s => ({ ...s, studioUrl: b.studioUrl, username: b.username, ...b.state }))
+      setBooted(true)
     })
-    return off
   }, [])
 
-  const handleLoginSuccess = async () => {
-    const inboxes = await window.bridge.getInboxes()
-    setSavedInboxes(inboxes)
-    if (inboxes.length === 0) {
-      setScreen('inbox')
-    } else {
-      setScreen('panel')
-      await window.bridge.start()
-    }
+  useEffect(() => {
+    return window.bridge.onState(s => {
+      setState(s)
+      if (s.status === 'error401') setHasToken(false)
+    })
+  }, [])
+
+  const onLoggedIn = async () => {
+    const c = await window.bridge.getChannels()
+    setChannels(c)
+    setHasToken(true)
   }
 
-  const handleLaunch = async () => {
-    setScreen('panel')
-    await window.bridge.start()
-  }
-
-  const handleLogout = async () => {
+  const onLogout = async () => {
     await window.bridge.logout()
-    setDaemonState(IDLE_STATE)
-    setScreen('login')
+    setState(IDLE)
+    setHasToken(false)
   }
 
-  if (loading) {
+  if (!booted) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--ink-4)', fontFamily: 'var(--f-mono)', fontSize: 11 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--ink-4)', font: '11px var(--f-mono)' }}>
         loading…
       </div>
     )
   }
 
-  const is401 = daemonState.status === 'error401'
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100vh', overflow: 'hidden', background: 'var(--bg-deep)' }}>
-      {/* macOS traffic-light spacer when titleBarStyle=hiddenInset */}
       {window.bridge.platform === 'darwin' && (
         <div style={{ height: 28, flexShrink: 0, WebkitAppRegion: 'drag' } as React.CSSProperties} />
       )}
-
       <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
-        {screen === 'login' && (
+        {!hasToken ? (
           <Login
-            initialUrl={daemonState.studioUrl}
-            initialUsername={daemonState.username ?? ''}
-            is401={is401}
-            onSuccess={handleLoginSuccess}
+            initialUrl={state.studioUrl}
+            initialUsername={state.username ?? ''}
+            sessionExpired={state.status === 'error401'}
+            onSuccess={onLoggedIn}
           />
-        )}
-        {screen === 'inbox' && (
-          <InboxConfig
-            initial={savedInboxes}
-            onLaunch={handleLaunch}
-          />
-        )}
-        {screen === 'panel' && (
-          <Panel
-            state={daemonState}
-            onNav={s => setScreen(s as Screen)}
-          />
-        )}
-        {screen === 'settings' && (
-          <Settings
-            status={daemonState.status}
-            studioUrl={daemonState.studioUrl}
-            username={daemonState.username ?? ''}
-            onNav={s => setScreen(s as Screen)}
-            onLogout={handleLogout}
+        ) : (
+          <Channels
+            state={state}
+            savedChannels={channels}
+            onSaved={setChannels}
+            onLogout={onLogout}
           />
         )}
       </div>

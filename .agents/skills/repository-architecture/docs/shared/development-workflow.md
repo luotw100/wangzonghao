@@ -47,7 +47,7 @@ docker compose exec -T studio-api uv run python -m studio.cli create-account \
 3. 在 Settings 中创建普通用户账号和全局默认 ProviderConfig（普通用户看不到 Provider tab）。
 4. 用对应普通用户登录后创建至少一个 Persona。
 5. 启动 Bridge（在 Studio 的 设备 tab 顶部有「快速生成命令」面板可一键复制）。
-6. 等 Bridge handshake 自动创建 Bridge/Inbox。
+6. 等 Bridge handshake 创建 Bridge、`POST /api/bridge/inboxes` 注册 Inbox。
 7. 在 Takeover tab 中给 Contact 配置 Persona、autoreply 和 card；Provider override 只对 admin 可见，普通用户使用全局默认 Provider。
 8. 在 Takeover tab 中给 Contact 配置 Persona、autoreply 和 card，可创建 distill job 蒸馏 Persona 和 Card。
 
@@ -122,7 +122,7 @@ docker compose exec -T studio-api uv run python -m studio.cli reset-password --u
 1. 重建相关 Compose stack。
 2. 在 Docker DB 中创建或重置账号（Studio 优先通过 Web Settings，Chat 用 CLI）。
 3. 同时运行 Chat、Studio、Bridge。
-4. 验证 Bridge handshake 创建 Bridge/Inbox。
+4. 验证 Bridge handshake 创建 Bridge、`/api/bridge/inboxes` 注册 Inbox。
 5. 在 Chat 中以 contact 视角发送消息。
 6. 确认 Studio 收到 live message。
 7. 开启 autoreply，确认 worker 写入 outbound。

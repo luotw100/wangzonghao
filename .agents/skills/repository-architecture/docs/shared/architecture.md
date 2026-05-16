@@ -35,7 +35,7 @@ Studio 与 Chat 之间没有代码 import 和直接 API 调用；仅 Bridge 的 
 Bridge 当前负责：
 
 - ChatAdapter 登录（HTTP POST `/api/auth/login`）；
-- StudioClient handshake 获取 session token 和 Inbox 映射；
+- StudioClient handshake 用密码换 session token；token 鉴权 `POST /api/bridge/inboxes` 注册 channel 拿 Inbox 映射；
 - live inbound 扫描（per-inbox async generator 轮询 chat API）；
 - SQLite 本地去重（`local_messages` 表，`UNIQUE(inbox_id, local_hash)`）；
 - consumer 按 activePeers 过滤后批量推 `/api/bridge/incoming`；

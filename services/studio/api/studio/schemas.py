@@ -131,16 +131,27 @@ class BridgeHandshakeInbox(StrictModel):
 
 
 class BridgeHandshake(StrictModel):
-    """Initial handshake — also serves as login.
+    """Login — password in, token out. Nothing else.
 
     The bridge presents Studio account credentials + optional machine_id;
     if machine_id is not provided (first launch), Studio generates one.
     Studio upserts a Bridge row keyed by (account, machine_id) and mints
-    a fresh session token used for subsequent /api/bridge/* calls.
+    a fresh session token used for all subsequent token-authenticated
+    /api/bridge/* calls (including inbox registration).
     """
     username: str
     password: str
     machine_id: str | None = None
+
+
+class BridgeRegisterInboxes(StrictModel):
+    """Token-authenticated channel registration.
+
+    Reports the platform identities this bridge is logged into. Studio
+    upserts/binds an Inbox per identity and returns the authoritative
+    inbox list + outbound cursor. No password — the bridge session token
+    proves the account, exactly like a browser session.
+    """
     inboxes: list[BridgeHandshakeInbox]
 
 

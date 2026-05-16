@@ -10,7 +10,8 @@ export interface IncomingMessage {
   sentAt: Date
 }
 
-export interface InboxClaim {
+/** A channel = one chat-platform account this machine logs into. */
+export interface Channel {
   baseUrl: string
   username: string
   password: string
@@ -35,25 +36,24 @@ export interface OutboundItem {
 }
 
 // Status emitted to the renderer via IPC
-export type DaemonStatus = 'idle' | 'connecting' | 'online' | 'degraded' | 'offline' | 'error401'
+export type DaemonStatus = 'idle' | 'connecting' | 'online' | 'offline' | 'error401'
 
-export interface InboxStatus {
+export interface ChannelStatus {
   inboxId: string | null
   handle: string
   baseUrl: string
-  platform: 'chat'
   platformSelfId?: string
-  status: 'connecting' | 'online' | 'offline'
+  online: boolean
   peersCount: number
 }
 
 export interface DaemonState {
   status: DaemonStatus
-  machineId?: string
-  bridgeId?: string
   studioUrl: string
   username?: string
-  inboxes: InboxStatus[]
+  machineId?: string
+  bridgeId?: string
+  channels: ChannelStatus[]
   inCount5m: number
   outboundPending: number
   lastError?: string

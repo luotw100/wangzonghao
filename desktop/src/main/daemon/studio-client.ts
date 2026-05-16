@@ -1,4 +1,4 @@
-import type { InboxClaim, StudioInbox, OutboundItem, MsgType } from './types'
+import type { StudioInbox, OutboundItem, MsgType } from './types'
 
 export class StudioClient {
   constructor(
@@ -36,22 +36,53 @@ export class StudioClient {
     }
   }
 
+  /** Login: password in, token out. The only password call. */
   async handshake(opts: {
     username: string
     password: string
     machineId?: string
-    inboxes: Array<{ platform: string; platformSelfId: string }>
-  }): Promise<{ token: string; machineId: string; bridgeId: string; inboxes: StudioInbox[]; cursor: number }> {
-    return this.request('POST', '/api/bridge/handshake', {
+  }): Promise<{ token: string; bridgeId: string; machineId: string; accountId: string }> {
+    const r: any = await this.request('POST', '/api/bridge/handshake', {
       username: opts.username,
       password: opts.password,
       machine_id: opts.machineId,
-      inboxes: opts.inboxes.map(i => ({ platform: i.platform, platform_self_id: i.platformSelfId })),
     })
+    return { token: r.token, bridgeId: r.bridge_id, machineId: r.machine_id, accountId: r.account_id }
+  }
+
+  /** Token-authenticated channel registration. Called on every daemon start. */
+  async registerInboxes(
+    selfIds: Array<{ platform: string; platformSelfId: string }>,
+  ): Promise<{ inboxes: StudioInbox[]; cursor: number; noPersona: boolean }> {
+    const r: any = await this.request('POST', '/api/bridge/inboxes', {
+      inboxes: selfIds.map(s => ({ platform: s.platform, platform_self_id: s.platformSelfId })),
+    })
+    return {
+      inboxes: (r.inboxes as any[]).map(i => ({
+        id: i.id,
+        platform: i.platform,
+        platformSelfId: i.platform_self_id,
+        displayName: i.display_name,
+        enabled: i.enabled,
+        defaultPersonaId: i.default_persona_id,
+      })),
+      cursor: r.cursor,
+      noPersona: r.no_persona,
+    }
   }
 
   async heartbeat(): Promise<{ inboxes: StudioInbox[] }> {
-    return this.request('POST', '/api/bridge/heartbeat')
+    const r: any = await this.request('POST', '/api/bridge/heartbeat')
+    return {
+      inboxes: (r.inboxes as any[]).map(i => ({
+        id: i.id,
+        platform: i.platform,
+        platformSelfId: i.platform_self_id,
+        displayName: i.display_name,
+        enabled: i.enabled,
+        defaultPersonaId: i.default_persona_id,
+      })),
+    }
   }
 
   async pushIncoming(messages: Array<{
@@ -59,7 +90,7 @@ export class StudioClient {
     peerPlatformId: string
     peerDisplayName: string
     platformMsgId: string | null
-    role: 'self' | 'counterpart'
+    senderId: string
     msgType: MsgType
     content: string
     sentAt: string
@@ -70,7 +101,7 @@ export class StudioClient {
         peer_platform_id: m.peerPlatformId,
         peer_display_name: m.peerDisplayName,
         platform_msg_id: m.platformMsgId,
-        role: m.role,
+        sender_id: m.senderId,
         msg_type: m.msgType,
         content: m.content,
         sent_at: m.sentAt,
@@ -95,11 +126,7 @@ export class StudioClient {
     }))
   }
 
-  async ackOutbound(
-    id: number,
-    result: 'sent',
-    platformMsgId: string,
-  ): Promise<void>
+  async ackOutbound(id: number, result: 'sent', platformMsgId: string): Promise<void>
   async ackOutbound(id: number, result: 'failed', reason: string): Promise<void>
   async ackOutbound(id: number, result: string, extra: string): Promise<void> {
     await this.request('POST', `/api/bridge/outbound/${id}/ack`, {
@@ -121,30 +148,5 @@ export class StudioClient {
       inboxId: p.inbox_id,
       peerPlatformId: p.peer_platform_id,
     }))
-  }
-
-  async checkOrPresign(contentHash: string, filename: string, mimeType: string): Promise<
-    | { status: 'exists'; storageKey: string }
-    | { status: 'new'; storageKey: string; uploadUrl: string }
-  > {
-    const res: any = await this.request('POST', '/api/bridge/media/check-or-presign', {
-      content_hash: contentHash,
-      filename,
-      mime_type: mimeType,
-    })
-    return res.status === 'exists'
-      ? { status: 'exists', storageKey: res.storage_key }
-      : { status: 'new', storageKey: res.storage_key, uploadUrl: res.upload_url }
-  }
-
-  async getMediaUrl(storageKey: string): Promise<string> {
-    // Studio returns 302 redirect; we need the final URL to download
-    const token = this.getToken()
-    const res = await fetch(`${this.baseUrl}/api/bridge/media/${storageKey}`, {
-      redirect: 'follow',
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-    if (!res.ok) throw new Error(`media fetch failed: ${res.status}`)
-    return res.url
   }
 }

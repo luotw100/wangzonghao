@@ -15,17 +15,24 @@ interface IncomingMessage {
   sentAt: Date
 }
 
-type DaemonStatus = 'idle' | 'connecting' | 'online' | 'degraded' | 'offline' | 'error401'
+interface Channel {           // 一个 chat 平台账号
+  baseUrl: string
+  username: string
+  password: string
+}
+
+type DaemonStatus = 'idle' | 'connecting' | 'online' | 'offline' | 'error401'
 
 interface DaemonState {
   status: DaemonStatus
-  machineId?: string
-  bridgeId?: string
   studioUrl: string
   username?: string
-  inboxes: InboxStatus[]
+  machineId?: string
+  bridgeId?: string
+  channels: ChannelStatus[]   // { inboxId, handle, baseUrl, platformSelfId?, online, peersCount }
   inCount5m: number
   outboundPending: number
+  lastError?: string
 }
 
 interface LogLine {
@@ -40,23 +47,23 @@ interface LogLine {
 
 Chat sandbox HTTP 轮询适配器。
 
-**内部状态**：`token`、`selfId`（`account_id`）、`threads: Map<convId, {peerId, peerDisplayName}>`、`stopped: boolean`。
+**内部状态**：`token`、`selfId`（chat `account.id`，形如 `acct_…`）、`threads: Map<peerId, {convId, peerId, peerDisplayName}>`（peerId = chat contact id）、`stopped: boolean`。
 
 ### login()
 
-`POST {baseUrl}/api/auth/login` → 保存 token 和 account_id，返回 account_id 作为 `platformSelfId`。
+`POST {baseUrl}/api/auth/login` → 响应 `{token, account:{id}}`；保存 token，`selfId = account.id`，返回 `selfId` 作为 `platformSelfId`。
 
 ### listPeers()
 
-调 `_refreshThreads()` → GET `/api/conversations` → 返回 `[{peerPlatformId, displayName}]`。
+`refreshThreads()` → GET `/api/conversations`（`ConversationRead[]`，含 `contact`）→ 每个会话以 `contact.id` 为 peerId、`contact.nickname` 为 display name → 返回 `[{peerPlatformId, displayName}]`。
 
 ### scan(cursors)
 
-异步生成器，无限循环：`_refreshThreads()` → 对每个 thread 按 `since_id=cursors[peerId]` 拉消息 → yield `IncomingMessage` → 更新 cursors。无新消息时 sleep 2s。
+异步生成器，无限循环：`refreshThreads()` → 对每个 thread `GET /api/conversations/{convId}/messages?last_id={cursors[peerId]}&limit=200`（响应 `{conversation, messages}`）→ 对每条 yield `IncomingMessage`（`senderId` = `sender_type==='self' ? platformSelfId : peerId`，`platformMsgId = String(m.id)`）→ 更新 cursors。无新消息 sleep 2s。
 
 ### send(peerId, content)
 
-`POST {baseUrl}/api/conversations/{peerId}/messages`，msg_type 固定 `text`，返回 platform msg id。
+按 peerId 查 thread 拿 convId → `POST /api/conversations/{convId}/messages` body `{sender_type:'self', msg_type:'text', content}` → 返回 `String(StatusResponse.id)`。
 
 ## LocalStore（local-store.ts）
 
@@ -100,14 +107,18 @@ OUTBOUND_TIMEOUT_SECS = 30
 - `timers: ReturnType<typeof setInterval>[]`：所有定时器，stop 时全部清除
 - `store: LocalStore`
 
-### 启动序列（run()）
+### 启动序列（run({ onAuthError })）
+
+`run()` 不接受密码；StudioClient 已绑定持久化 token。
 
 1. emit `connecting` 状态
-2. 对每个 InboxClaim：创建 ChatAdapter → login() → 收集 selfId
-3. StudioClient.handshake()，传入所有 `{platform: 'chat', platformSelfId}`
-4. 按 selfId 匹配 Studio 返回的 Inbox，绑定 adapter
+2. 对每个 Channel：创建 ChatAdapter → login() → 收集 selfId（全失败则 `offline` 返回）
+3. `StudioClient.registerInboxes([{platform:'chat', platformSelfId}])`（token 鉴权）→ 拿 inboxes + cursor；401 时 `onAuthError()` + emit `error401`
+4. 按 selfId 匹配返回的 Inbox，绑定 adapter
 5. emit `online`
 6. 并行启动所有循环
+
+任意循环遇 401 → `onAuthError()`（主进程清 token，renderer 回登录页）。
 
 ### Inbound 流程（producer-consumer）
 
@@ -154,4 +165,4 @@ while (!stopped):
 
 ## 与 Electron 主进程的集成
 
-`BridgeRuntime` 的 `emit` 回调连接到 `ipcMain`，通过 `win.webContents.send()` 将 DaemonState 和 LogLine 推送给 renderer。Renderer 通过 `window.bridge.onStateChange(cb)` 和 `window.bridge.onLog(cb)` 订阅（preload contextBridge 包装的 ipcRenderer.on）。
+`BridgeRuntime` 的 `emit` 回调连接到 `ipcMain`，通过 `win.webContents.send()` 将 DaemonState 和 LogLine 推送给 renderer。Renderer 通过 `window.bridge.onState(cb)` 和 `window.bridge.onLog(cb)` 订阅（preload contextBridge 包装的 ipcRenderer.on）。

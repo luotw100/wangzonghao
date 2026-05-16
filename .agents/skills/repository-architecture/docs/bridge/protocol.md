@@ -4,18 +4,18 @@
 
 ## 认证模型
 
-Bridge 认证通过 handshake 动态获取 token，不需要预创建。认证流程是：
+handshake 只做一件事：用 Studio 账号密码换 session token，等价于浏览器登录。`handshake` 是唯一接受密码的端点，其余 `/api/bridge/*` 全部 Bearer token 鉴权（含 channel 注册）。
 
-1. Bridge 启动时持有 Studio username/password 和可选的本地持久化 `machine_id`。
+1. Bridge 登录时用户输入 Studio username/password；可带本地持久化 `machine_id`。
 2. Bridge 调 handshake。
-3. Studio 校验账号密码。
-4. 如果请求带 `machine_id`，Studio 按 `(account_id, machine_id)` 查找已有 Bridge；如果没有（首次启动），Studio 生成 `machine_id` 并创建新 Bridge。
-5. Studio 删除该 Bridge 的旧 BridgeSession。
-6. Studio 创建并返回新 session token。
-7. Bridge 后续请求带 `Authorization: Bearer {token}`。
-8. token 保存到 `state.json`，重启时优先尝试复用（成功则跳过 handshake）。
+3. Studio 校验账号密码与 active 状态。
+4. 带 `machine_id` 则按 `(account_id, machine_id)` 查已有 Bridge；没带（首次）则生成 `machine_id` 并创建新 Bridge。
+5. Studio 删除该 Bridge 旧 BridgeSession，创建并返回新 token + `bridge_id` + `machine_id` + `account_id`。handshake 不注册任何 Inbox。
+6. Bridge safeStorage 加密持久化 token；Studio 密码用完即弃，绝不落盘。
+7. 后续所有请求带 `Authorization: Bearer {token}`，包括 `POST /api/bridge/inboxes` 注册 channel 集合。
+8. 重启直接复用持久化的 token，无需密码、无需重新 handshake。仅当 token 被撤销/失效（401）才回到登录页重新输密码。
 
-撤销 Bridge 时，Studio 删除 BridgeSession 并把 Bridge 状态置为 `revoked`；Bridge 下次调用会收到 401。
+撤销 Bridge 时，Studio 删除 BridgeSession 并把 Bridge 状态置为 `revoked`；Bridge 下次调用收到 401。
 
 ## 消息类型
 
@@ -28,33 +28,27 @@ Bridge 协议支持多种消息类型。`msg_type` 字段值：`text | image | a
 
 ## `POST /api/bridge/handshake`
 
+登录端点：密码进，token 出。不注册任何 Inbox。
+
 ### Request
 
 ```json
 {
   "username": "demo",
   "password": "demo123",
-  "machine_id": "m_xxxxxxxxxxxx",
-  "inboxes": [
-    { "platform": "chat", "platform_self_id": "acct_alice" }
-  ]
+  "machine_id": "m_xxxxxxxxxxxx"
 }
 ```
+
+`machine_id` 可选；首次启动不带。
 
 ### Studio 当前行为
 
 1. 校验 Studio account username/password，且 account status 必须是 active。
-2. 如果请求带了 `machine_id`，按 `(account_id, machine_id)` 查找已有 Bridge；如果没带（首次启动），生成新 `machine_id`（`m_` + uuid hex 前 12 字符）并创建新 Bridge。
+2. 带 `machine_id` 则按 `(account_id, machine_id)` 查已有 Bridge；没带（首次）生成新 `machine_id`（`m_` + uuid hex 前 12 字符）并创建新 Bridge。
 3. 标记 Bridge online，更新 `last_seen_at`。
 4. 删除这个 Bridge 的旧 `BridgeSession`。
-5. 生成 token，插入新 `BridgeSession`。
-6. 选择当前账号下第一个 active Persona 作为新 Inbox 默认 Persona。
-7. 对每个上报的平台身份：
-   - 按 `(account_id, platform, platform_self_id)` 查 Inbox；
-   - 存在则绑定当前 `bridge_id`；
-   - 不存在则创建 Inbox，display name 为 `{platform_self_id}@{platform}`，enabled=true，provider=null，default persona 为上一步选到的 Persona 或 null。
-8. 对 served inboxes 计算 outbound cursor：取最新非 pending outbound id。
-9. commit 并返回 token 和 served inboxes。
+5. 生成 token，插入新 `BridgeSession`，commit。
 
 ### Response
 
@@ -63,7 +57,39 @@ Bridge 协议支持多种消息类型。`msg_type` 字段值：`text | image | a
   "token": "opaque-session-token",
   "bridge_id": "br_xxxxxxxx",
   "machine_id": "m_xxxxxxxxxxxx",
-  "account_id": "acc_xxxxxxxx",
+  "account_id": "acc_xxxxxxxx"
+}
+```
+
+## `POST /api/bridge/inboxes`
+
+Token 鉴权（Bearer Bridge session token）。注册/刷新本 Bridge 服务的 channel 集合。Daemon 每次启动都调一次，用户加/删 channel 时也调。无密码——token 即证明账号。
+
+### Request
+
+```json
+{
+  "inboxes": [
+    { "platform": "chat", "platform_self_id": "acct_alice" }
+  ]
+}
+```
+
+### Studio 当前行为
+
+1. 从 token 解出 `bridge`，取 `bridge.account_id`。
+2. 选当前账号下第一个 active Persona 作为新 Inbox 默认 Persona。
+3. 对每个上报的平台身份：
+   - 按 `(account_id, platform, platform_self_id)` 查 Inbox；
+   - 存在则绑定当前 `bridge_id`；
+   - 不存在则创建 Inbox，display name `{platform_self_id}@{platform}`，enabled=true，provider=null，default persona 为上一步选到的或 null。
+4. 对 served inboxes 计算 outbound cursor：最新非 pending outbound id。
+5. commit 并返回 served inboxes + cursor。
+
+### Response
+
+```json
+{
   "inboxes": [
     {
       "id": "ib_xxxxxxxx",
@@ -125,7 +151,7 @@ Bridge 会停止本地存在但不在 response 中的 adapter。
       "peer_platform_id": "peer-id",
       "peer_display_name": "粉丝名",
       "platform_msg_id": "123",
-      "role": "counterpart",
+      "sender_id": "ct_xxxxxxxx",
       "msg_type": "audio",
       "content": "media/br_xxx/abc123.mp3",
       "sent_at": "2026-05-09T12:00:00"

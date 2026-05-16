@@ -46,7 +46,7 @@ Studio worker 中 `BridgeOfflineScanner` 每 30s 扫描 `last_seen_at` 超过 45
 
 ## Bridge token
 
-Bridge session token 保存在本地 `state.json`（`--state-dir` 目录）中。Bridge 重启时优先尝试复用已保存的 token 调用 heartbeat；成功则跳过 handshake。如果 token 过期（401）或有新的 `--chat-inbox` 声明，则走完整 handshake。旧 BridgeSession 在 handshake 时被清除。
+Bridge session token 由 Electron `safeStorage` 加密保存在 `app.getPath('userData')/bridge-token.enc`。重启直接复用，无需密码、无需重新 handshake；channel 集合通过 token 鉴权的 `POST /api/bridge/inboxes` 注册（加/删 channel 也走它）。只有 token 401 时才回 Login 屏用密码重新 handshake。旧 BridgeSession 在 handshake 时被清除。
 
 ## Provider UI
 

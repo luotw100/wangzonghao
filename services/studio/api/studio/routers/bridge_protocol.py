@@ -39,6 +39,7 @@ from studio.models import (
 from studio.s3 import s3_presigned_get_url, s3_presigned_put_url
 from studio.schemas import (
     BridgeHandshake,
+    BridgeRegisterInboxes,
     BridgeIncomingBatch,
     BridgeMediaCheckOrPresignRequest,
     BridgeMediaPresignRequest,
@@ -52,14 +53,17 @@ router = APIRouter()
 
 @router.post("/api/bridge/handshake")
 def bridge_handshake(payload: BridgeHandshake, db: Annotated[Session, Depends(get_db)]):
-    """Login + register + report served inboxes, in one call.
+    """Login — password in, session token out. Nothing else.
 
     1. Verify Studio account credentials.
     2. Upsert Bridge by (account_id, machine_id). If no machine_id given
        (first launch), Studio generates one with id_new("m").
     3. Wipe prior BridgeSession rows for this bridge; mint a fresh token.
-    4. Upsert an Inbox per (platform, platform_self_id) the bridge logged into.
-    5. Return the token + authoritative inbox list + outbound cursor + machine_id.
+
+    Channel registration is a separate token-authenticated call
+    (POST /api/bridge/inboxes). The bridge persists the token and reuses
+    it across restarts — the password is never stored and only re-entered
+    when the token is revoked/expired, exactly like a browser session.
     """
     account = (
         db.query(Account).filter(Account.username == payload.username).first()
@@ -108,10 +112,33 @@ def bridge_handshake(payload: BridgeHandshake, db: Annotated[Session, Depends(ge
         created_at=now,
         last_seen_at=now,
     ))
+    db.commit()
 
+    return {
+        "token": raw_token,
+        "bridge_id": bridge.id,
+        "machine_id": machine_id,
+        "account_id": account.id,
+    }
+
+
+@router.post("/api/bridge/inboxes")
+def bridge_register_inboxes(
+    payload: BridgeRegisterInboxes,
+    db: Annotated[Session, Depends(get_db)],
+    bridge: BridgeDep,
+):
+    """Register/refresh the channel set this bridge serves. Token-authed.
+
+    Called by the daemon on every start and whenever the user adds or
+    removes a channel. Upserts/binds an Inbox per (platform,
+    platform_self_id), returns the authoritative inbox list + the
+    outbound cursor (latest non-pending outbound id for served inboxes).
+    """
+    now = utc_now()
     default_persona = (
         db.query(Persona)
-        .filter(Persona.account_id == account.id, Persona.status == PersonaStatus.ACTIVE)
+        .filter(Persona.account_id == bridge.account_id, Persona.status == PersonaStatus.ACTIVE)
         .order_by(Persona.created_at.asc())
         .first()
     )
@@ -121,7 +148,7 @@ def bridge_handshake(payload: BridgeHandshake, db: Annotated[Session, Depends(ge
         inbox = (
             db.query(Inbox)
             .filter(
-                Inbox.account_id == account.id,
+                Inbox.account_id == bridge.account_id,
                 Inbox.platform == claim.platform,
                 Inbox.platform_self_id == claim.platform_self_id,
             )
@@ -135,7 +162,7 @@ def bridge_handshake(payload: BridgeHandshake, db: Annotated[Session, Depends(ge
 
         inbox = Inbox(
             id=new_id("ib"),
-            account_id=account.id,
+            account_id=bridge.account_id,
             bridge_id=bridge.id,
             platform=claim.platform,
             display_name=f"{claim.platform_self_id}@{claim.platform}",
@@ -166,10 +193,6 @@ def bridge_handshake(payload: BridgeHandshake, db: Annotated[Session, Depends(ge
     db.commit()
 
     return {
-        "token": raw_token,
-        "bridge_id": bridge.id,
-        "machine_id": machine_id,
-        "account_id": account.id,
         "inboxes": [s_bridge_inbox_view(i) for i in served],
         "cursor": cursor,
         "no_persona": not default_persona,

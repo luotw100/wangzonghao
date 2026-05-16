@@ -21,7 +21,6 @@ const chipMap: Record<DaemonStatus, { cls: string; dot: keyof typeof dotStyle; l
   idle:       { cls: 'muted',   dot: 'off',    label: '未启动' },
   connecting: { cls: 'brass',   dot: 'on',     label: '连接中' },
   online:     { cls: 'live',    dot: 'live',   label: '在线' },
-  degraded:   { cls: 'warn',    dot: 'warn',   label: '降级' },
   offline:    { cls: 'muted',   dot: 'off',    label: '离线' },
   error401:   { cls: 'danger',  dot: 'danger', label: '401 失效' },
 }

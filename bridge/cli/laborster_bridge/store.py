@@ -52,6 +52,7 @@ class LocalMessage:
 class LocalStore:
     def __init__(self, db_path: str) -> None:
         self._lock = threading.Lock()
+        self._closed = False
         self._db = sqlite3.connect(db_path, check_same_thread=False)
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode = WAL")
@@ -72,6 +73,8 @@ class LocalStore:
 
     def get_cursors(self, inbox_id: str) -> dict[str, str | None]:
         with self._lock:
+            if self._closed:
+                return {}
             rows = self._db.execute(
                 """SELECT peer_id, MAX(platform_msg_id) AS last_id
                    FROM local_messages
@@ -83,6 +86,8 @@ class LocalStore:
 
     def insert_message(self, m: dict) -> bool:
         with self._lock:
+            if self._closed:
+                return False
             cur = self._db.execute(
                 """INSERT OR IGNORE INTO local_messages
                    (inbox_id, peer_id, peer_display_name, platform_msg_id, sender_id,
@@ -108,6 +113,8 @@ class LocalStore:
         if active_peers is not None and len(active_peers) == 0:
             return []
         with self._lock:
+            if self._closed:
+                return []
             if active_peers is None:
                 rows = self._db.execute(
                     "SELECT * FROM local_messages WHERE sent = 0 ORDER BY id LIMIT ?",
@@ -131,17 +138,23 @@ class LocalStore:
 
     def mark_sent(self, row_id: int) -> None:
         with self._lock:
+            if self._closed:
+                return
             self._db.execute("UPDATE local_messages SET sent = 1 WHERE id = ?", (row_id,))
             self._db.commit()
 
     def count_unsent(self) -> int:
         with self._lock:
+            if self._closed:
+                return 0
             return self._db.execute(
                 "SELECT COUNT(*) AS n FROM local_messages WHERE sent = 0"
             ).fetchone()["n"]
 
     def count_recent_incoming(self, since_iso: str) -> int:
         with self._lock:
+            if self._closed:
+                return 0
             return self._db.execute(
                 "SELECT COUNT(*) AS n FROM local_messages WHERE sent_at >= ? AND sent = 1",
                 (since_iso,),
@@ -149,4 +162,7 @@ class LocalStore:
 
     def close(self) -> None:
         with self._lock:
+            if self._closed:
+                return
+            self._closed = True
             self._db.close()

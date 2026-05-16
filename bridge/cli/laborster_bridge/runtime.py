@@ -60,6 +60,14 @@ class BridgeRuntime:
         t.start()
         self._threads.append(t)
 
+    def _auth_error(self) -> None:
+        # A runtime that has been stopped (e.g. superseded by _ensure)
+        # must not run its 401 handler — it could clear a token a newer
+        # runtime / fresh /login already replaced.
+        if self._stop.is_set():
+            return
+        self._on_auth_error()
+
     def stop(self) -> None:
         if self._stop.is_set():
             return
@@ -151,7 +159,7 @@ class BridgeRuntime:
             )
         except Unauthorized:
             self._last_error = "Studio session 失效，请重新登录"
-            self._on_auth_error()
+            self._auth_error()
             self._push_state("error401")
             return
         except Exception as exc:
@@ -276,7 +284,7 @@ class BridgeRuntime:
         except Unauthorized:
             self._log("heart", "err", "401 · session revoked")
             self._last_error = "Studio session 失效，请重新登录"
-            self._on_auth_error()
+            self._auth_error()
             self._push_state("error401")
             self.stop()
         except Exception as exc:
@@ -318,7 +326,7 @@ class BridgeRuntime:
                     self._dispatch_outbound(item)
             except Unauthorized:
                 self._last_error = "Studio session 失效，请重新登录"
-                self._on_auth_error()
+                self._auth_error()
                 self._push_state("error401")
                 self.stop()
                 return

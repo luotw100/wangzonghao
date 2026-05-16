@@ -56,8 +56,15 @@ def _make_runtime(ctx: Context) -> BridgeRuntime:
             "bridge_id": d.get("bridge_id"),
         }
 
+    # Token this runtime was built with. on_auth_error must only clear it
+    # if it is still the stored token — a dying old runtime (started with
+    # a stale token) must not wipe a token a fresh /login just wrote.
+    token_at_start = data.get("studio_token")
+
     def on_auth_error() -> None:
         d = state.load()
+        if d.get("studio_token") != token_at_start:
+            return
         d.pop("studio_token", None)
         state.save(d)
         ctx.events.log("core", "err", "Studio token 已失效并清除，请重新 /login")

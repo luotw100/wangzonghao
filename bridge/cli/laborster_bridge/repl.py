@@ -16,17 +16,47 @@ from .events import Events
 
 BANNER = "Laborster Bridge · 输入 /help 查看命令，/quit 退出"
 
-_COMPLETIONS = {
-    "/help": None,
-    "/state": None,
-    "/login": None,
-    "/logout": None,
-    "/status": None,
-    "/channel": {"add": None, "rm": None, "list": None},
-    "/log": {"-f": None},
-    "/studio": None,
-    "/quit": None,
-}
+_TOP = [
+    "help", "state", "login", "logout", "status",
+    "channel", "log", "studio", "quit",
+]
+_SUB = {"channel": ["add", "rm", "list"], "log": ["-f"]}
+
+
+def _make_completer():
+    """Slash-tolerant command completer.
+
+    prompt_toolkit's word regex excludes '/', so NestedCompleter keyed
+    "/channel" can't match the word "c" typed after "/", and an empty
+    word ("/") yields nothing. This handles the optional leading '/'
+    explicitly: bare "/" lists every command, "/c" -> channel, and
+    "channel " (or "/channel ") completes the subcommands. Completions
+    replace only the typed word, so the leading '/' is preserved.
+    """
+    from prompt_toolkit.completion import Completer, Completion
+
+    class _CmdCompleter(Completer):
+        def get_completions(self, document, complete_event):
+            text = document.text_before_cursor
+            lead = text.lstrip()
+            body = lead[1:] if lead.startswith("/") else lead
+            ends_space = body.endswith(" ")
+            parts = body.split()
+
+            if not parts or (len(parts) == 1 and not ends_space):
+                word = parts[0] if parts else ""
+                for name in _TOP:
+                    if name.startswith(word):
+                        yield Completion(name, start_position=-len(word))
+                return
+
+            subs = _SUB.get(parts[0], [])
+            cur = "" if ends_space else parts[-1]
+            for s in subs:
+                if s.startswith(cur):
+                    yield Completion(s, start_position=-len(cur))
+
+    return _CmdCompleter()
 
 
 # ---------- styled rendering (tty) ----------
@@ -82,13 +112,13 @@ def _fmt_log(ln: dict):
 
 def _run_interactive(events: Events) -> int:
     from prompt_toolkit import PromptSession, print_formatted_text
-    from prompt_toolkit.completion import NestedCompleter
+    from prompt_toolkit import prompt as ptk_prompt
     from prompt_toolkit.formatted_text import FormattedText
     from prompt_toolkit.history import FileHistory, InMemoryHistory
     from prompt_toolkit.patch_stdout import patch_stdout
 
     style = _build_style()
-    completer = NestedCompleter.from_nested_dict(_COMPLETIONS)
+    completer = _make_completer()
 
     def pr(fragments) -> None:
         print_formatted_text(FormattedText(fragments), style=style)
@@ -109,15 +139,18 @@ def _run_interactive(events: Events) -> int:
                 history=FileHistory(want), completer=completer
             )
 
+    # Sub-prompts (username/password) use a standalone prompt, NOT the
+    # main session: reusing the session leaks is_password masking into
+    # later prompts and would push credentials into command history.
     def ask_line(prompt: str) -> str:
         try:
-            return session.prompt(prompt)
+            return ptk_prompt(prompt)
         except (EOFError, KeyboardInterrupt):
             return ""
 
     def ask_secret(prompt: str) -> str:
         try:
-            return session.prompt(prompt, is_password=True)
+            return ptk_prompt(prompt, is_password=True)
         except (EOFError, KeyboardInterrupt):
             return ""
 

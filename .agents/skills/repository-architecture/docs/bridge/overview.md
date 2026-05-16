@@ -1,110 +1,86 @@
-# Bridge Desktop App / Bridge 桌面应用总览
+# Bridge CLI / Bridge 命令行总览
 
 ## 当前形态
 
-`desktop/` 是运行在主播/运营本机的 **Electron 桌面应用**。它内嵌一个 TypeScript daemon，持有平台登录态，并在 Chat adapter 和 Studio 之间桥接消息。对 text 消息，Bridge 是透明管道；媒体消息当前仅文本路径已实现，媒体 S3 搬运为 stub（chat sandbox 实践中只发 text）。
+`bridge/cli/` 是跑在主播/运营本机的 **Python 命令行 daemon**。它是一个纯标准库实现的交互式 REPL：双击可执行文件或在终端启动后进入黑框框，输入 slash 命令管理登录与 channel。**进程本身就是 daemon**——登录、注册 channel、6 个后台循环都跑在这个进程里，关掉进程即断线。没有图形界面、没有 IPC、没有后台服务托管。
+
+对 text 消息，Bridge 是透明管道；媒体消息当前 ack 为 `failed`（chat sandbox 实践上只发 text）。
 
 ## 目录结构
 
 ```text
-desktop/
-  package.json
-  electron-vite.config.ts
-  electron-builder.yml
-  tsconfig.json / tsconfig.node.json / tsconfig.web.json
-  src/
-    main/
-      index.ts              # Electron 主进程：窗口、托盘、IPC handlers、daemon 生命周期
-      state.ts              # Store（safeStorage 加密 token + chat 密码，不存 Studio 密码）
-      daemon/
-        types.ts            # 共享类型：DaemonState、LogLine、Channel 等
-        studio-client.ts    # Studio /api/bridge/* 全部 HTTP 端点
-        local-store.ts      # SQLite 去重表（better-sqlite3，WAL 模式）
-        adapters/
-          chat.ts           # Chat sandbox HTTP 轮询适配器
-        runtime.ts          # BridgeRuntime：5 个并发循环
-    preload/
-      index.ts              # contextBridge：暴露给 renderer 的全部 IPC 接口
-    renderer/
-      index.html
-      src/
-        main.tsx            # React 入口
-        App.tsx             # 2 屏（hasToken ? Channels : Login）
-        index.css           # 与 Studio 同源的 @theme design token
-        components/
-          shared.tsx        # 共享 UI：StatusChip、Field、Btn…
-        screens/
-          Login.tsx         # 登录屏（Studio URL + 账号密码）
-          Channels.tsx      # 唯一主页：channel 增删 + 状态 + 日志 + 登出
+bridge/
+  cli/
+    pyproject.toml                 # 包元数据；entry points: laborster-bridge, lbr
+    laborster_bridge/
+      __init__.py
+      __main__.py                  # 入口：解析可选 --state，起 REPL
+      repl.py                      # 主线程：读输入 → 解析 slash → dispatch → 渲染
+      commands.py                  # 每个命令一个 handler，返回 dict；运行时装配；HELP 文本
+      config.py                    # 硬编码 CHAT/STUDIO base url；状态目录解析（无默认/无 env）
+      state.py                     # laborster.json 原子读写（0600）
+      store.py                     # sqlite local_messages 去重表（单连接 + Lock，WAL）
+      http.py                      # urllib JSON helper；Unauthorized/HttpError；自定义 UA
+      studio_client.py             # Studio /api/bridge/* 全部端点
+      chat_adapter.py              # Chat sandbox HTTP 轮询适配器（token 登录/scan/send）
+      runtime.py                   # BridgeRuntime：6 个循环线程 + 状态聚合
+      events.py                    # 线程安全：日志环形缓冲 + DaemonState 快照
 ```
 
 ## 技术栈
 
-- **Electron 33+**，`electron-vite` 构建，`electron-builder` 打包
-- **主进程**（Node）：daemon 核心逻辑，HTTP 网络 IO，`better-sqlite3` 本地存储，`safeStorage` 凭据加密
-- **Preload**：`contextBridge` 类型安全 IPC
-- **Renderer**：React 19 + Tailwind v4，与 Studio 使用同一套 oklch design token，无第三方 UI 库
+- **Python 3.12+**，纯标准库，无第三方依赖（`urllib` / `sqlite3` / `hashlib` / `threading` / `json` / `getpass` / `argparse`）。
+- 打包定位：`pyproject.toml` 用 hatchling，`project.scripts` 暴露 `laborster-bridge` 和 `lbr`，二者都指向 `laborster_bridge.__main__:main`。
 
-## IPC schema（preload 暴露给 renderer）
+## 命令集（slash）
 
-```typescript
-window.bridge.bootstrap()        // { studioUrl, username, hasToken, channels, state }
-window.bridge.login(opts)        // 用 Studio 账号密码 handshake，存 token，自动起 daemon
-window.bridge.logout()           // 停 daemon，清除 token
-window.bridge.getChannels()      // 已保存 channel 列表（无密码）
-window.bridge.saveChannels(c)    // 保存 channel 并重启 daemon（重新注册）
-window.bridge.stop()             // 停止 daemon
-window.bridge.openStudio()       // shell.openExternal 打开 Studio URL
-window.bridge.onState(cb)        // 订阅 DaemonState push（返回 unsubscribe）
-window.bridge.onLog(cb)          // 订阅 LogLine push（返回 unsubscribe）
-```
+| 命令 | 作用 |
+| --- | --- |
+| `/help` | 显示命令指南 |
+| `/state <path>` | 设置本会话状态目录（无默认，每次启动都要指定） |
+| `/login` | 提示输入 Studio 账号密码 → handshake 换 token 落盘；有 channel 则自动起 daemon |
+| `/logout` | 停 daemon，清除 Studio token |
+| `/status` | daemon 与各 channel 状态快照 |
+| `/channel add` | 提示输入 Chat 账号密码 → 换 Chat token 存入；运行中则重启重新注册 |
+| `/channel rm <n>` | 删除第 n 个 channel |
+| `/channel list` | 列出已保存 channel（不含任何凭据） |
+| `/start` `/stop` | 手动起停 daemon |
+| `/log [-f]` | 看日志；`-f` 跟随（仅交互终端） |
+| `/studio` | 打印 Studio 地址 |
+| `/quit` | 停 daemon 并退出 |
 
-## 凭据管理
+每个 handler 返回一个 dict（`{"lines": [...]}` / `{"error": str}` / `{"quit": True}` / `{"follow": True}`），由 `repl._render` 渲染。返回 dict 的结构便于将来加非交互/JSON 模式。
 
-`Store`（`src/main/state.ts`）用 Electron `safeStorage`（OS keychain 加密）持久化 Studio session token 和 chat 平台密码。Studio 密码只在 `bridge:login` 调用期间于内存使用，绝不落盘；token 重启复用，仅 401 时回登录页重新输密码。
+接管与回复策略不在 Bridge 配置，`/studio` 引导用户去 Studio 设置。
 
-持久化文件位于 `app.getPath('userData')` 下：
+## 凭据与状态文件
 
-- `bridge-state.json`：studioUrl、username、machineId、bridgeId、channels（chat baseUrl/username + safeStorage 加密密码）
-- `bridge-token.enc`：safeStorage 加密的 Studio session token
-- `data/messages.db`：SQLite 去重消息表
+状态目录来源**只有两条，无默认值、无环境变量**：启动参数 `--state <path>`，或 REPL 内 `/state <path>`（当次会话生效，不持久化）。都没有时进入「无状态模式」，只有 `/help` `/state` `/quit` 可用。
 
-## 2 屏
+状态目录下：
 
-```text
-App 启动 → bridge.bootstrap()
-  hasToken=false（首启 / 401）
-    → Login（Studio URL + 账号密码 → bridge.login → 存 token）
-  hasToken=true
-    → Channels（唯一主页）
-        - channel 增删（chat baseUrl/username/password）
-        - 行内状态：daemon StatusChip、每 channel 在线/会话数、收发计数
-        - daemon 日志 tail、打开 Studio↗、退出登录
-        - 保存 → bridge.saveChannels → daemon 重启并重新注册
-```
+- `laborster.json`（0600，原子写：临时文件 + `os.replace`）：`username`、`machine_id`、`bridge_id`、`studio_token`、`channels:[{username, chat_token}]`。**磁盘上一个密码都不存**——Studio 与 Chat 两侧都只存 session token。`studio_token` 在 401 或 `/logout` 时清除。
+- `messages.db`：SQLite 去重消息表。
 
-接管与回复策略不在 Bridge 配置，「打开 Studio↗」引导用户去 Studio 设置。
+Chat/Studio 地址在 `config.py` 硬编码为 `https://chat.laborster.com` / `https://studio.laborster.com`，没有任何 base-URL 输入。
 
 ## 启动生命周期
 
 ```text
-app.whenReady()
-  → new Store() → createWindow() → registerIpc() → Tray()
-  → hasToken && hasChannels → startDaemon()   # 复用持久化 token，无需密码
-        ↓
-BridgeRuntime.run({ onAuthError })            # 不接受密码
-  → ChatAdapter.login() × N                   # 收集 selfId
-  → StudioClient.registerInboxes(selfIds)     # token 鉴权注册 channel
-  → 绑定 adapter ↔ inbox
-  → startProducer() × N   # per-inbox 无限扫描循环
-  → startConsumer()        # 1s 间隔推 Studio
-  → startHeartbeat()       # 15s
-  → startAnnounce()        # 60s
-  → startActivePeers()     # 10s
-  → startOutbound()        # long-poll 30s，收到 text 即发
+laborster-bridge [--state DIR]
+  → __main__.main()：--state 有值则 config.set_state_dir()
+  → repl.run()
+       打印 banner；无状态目录则提示
+       循环：读一行 → 去掉前导 '/' → 按 DISPATCH 分发
+       无状态模式下非 NO_STATE_OK 命令被拒
+  /login    → StudioClient.handshake(pwd) → 写 token/machine_id/bridge_id
+            → 若已有 channel：_start()
+  /channel add → ChatAdapter.obtain_token(pwd) → 存 chat_token；运行中则重启
+  /start    → 构造 StudioClient(token getter=读 laborster.json)
+            → LocalStore(messages.db) → BridgeRuntime.start()（后台 bootstrap 线程）
 ```
 
-`bridge:login` 成功后若已有 channel 立即 startDaemon；`bridge:save-channels` 会 stop 再 start 以重新注册。
+`BridgeRuntime.start()` 不阻塞 REPL：bootstrap 在后台线程对每个 channel 用持久化 chat_token 调 `/api/auth/me` 恢复 selfId，token 鉴权注册 inbox，然后并行启动 6 个循环线程。401 时回调 `on_auth_error` 清 Studio token 并提示重新 `/login`。
 
 ## Bridge 当前不做的事
 
@@ -112,5 +88,6 @@ BridgeRuntime.run({ onAuthError })            # 不接受密码
 - 不存 Persona / Contact Card
 - 不判断 autoreply 是否开启
 - 不选择 ProviderConfig
-- 不实现媒体 S3 搬运（chat adapter 实践上只发 text）
-- 不持久化 Studio 密码
+- 不实现媒体 S3 搬运（媒体 outbound ack failed）
+- 磁盘不存任何密码（Studio/Chat 均 token-only）
+- 不提供图形界面、不后台 daemon 化、不读环境变量、不用默认状态目录

@@ -31,24 +31,27 @@
 ## 2. Bridge 启动并把 Chat 绑定到 Studio
 
 ```text
-Electron app 启动 → Store 加载本地 state
-  → 无 token → Login 屏：用户输 Studio URL + 账号密码
-      → POST Studio /api/bridge/handshake（唯一用密码的调用）
+REPL 启动（--state / /state 指定状态目录）→ 读 laborster.json
+  → 无 studio_token → /login：用户输 Studio 账号密码
+      → POST Studio /api/bridge/handshake（唯一用 Studio 密码的调用）
       → Studio 校验账号密码，按 (account_id, machine_id) 找/建 Bridge
       → 删除旧 BridgeSession，创建新 token
       → 返回 token、bridge_id、machine_id、account_id
-      → safeStorage 加密保存 token；Studio 密码用完即弃，绝不落盘
-  → 有 token → 直接复用，不需密码、不重新 handshake
+      → 写入 laborster.json（0600）；Studio 密码用完即弃，绝不落盘
+  → 有 studio_token → 直接复用，不需密码、不重新 handshake
 
-每个 Channel（chat 平台账号，密码 safeStorage 加密落盘）
-  → ChatAdapter.login()
-  → POST Chat /api/auth/login → platform_self_id = Chat account.id
+每个 Channel（chat 平台账号）：/channel add 时
+  → ChatAdapter.obtain_token() → POST Chat /api/auth/login
+  → 只存 chat_token（密码用完即弃，绝不落盘）
+daemon 启动时
+  → ChatAdapter.resolve_self() → GET Chat /api/auth/me（token 鉴权）
+  → platform_self_id = Chat account.id
 
-BridgeRuntime.run({ onAuthError })（token 鉴权，无密码）
+BridgeRuntime bootstrap（token 鉴权，无密码）
   → POST Studio /api/bridge/inboxes（Bearer token）
   → Studio 按 (account_id, platform, platform_self_id) upsert/绑定 Inbox
   → 返回 inbox list + cursor
-  → 任意调用 401 → 清 token，renderer 回 Login 屏
+  → 任意调用 401 → 清 studio_token，提示重新 /login
 
 BridgeRuntime 绑定 adapters
   → 用 (platform, platform_self_id) 找到 inbox_id

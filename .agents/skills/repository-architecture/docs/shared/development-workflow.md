@@ -3,13 +3,14 @@
 ## 仓库布局
 
 ```text
-desktop/     # Bridge 桌面 app（Electron + TypeScript）
+bridge/
+  cli/       # Bridge 命令行 daemon（Python 纯 stdlib REPL）
 services/
   chat/      # Chat sandbox Channel
   studio/    # 控制台和 AI brain
 ```
 
-三个项目互相独立。`desktop/` 是 npm 工作区，`services/` 是 Python/Docker 工作区，不要跨项目直接 import 源码。
+三个项目互相独立。`bridge/cli/` 是零依赖 Python 包，`services/` 是 Python/Docker 工作区，不要跨项目直接 import 源码。
 
 ## 启动 Chat sandbox
 
@@ -53,20 +54,19 @@ docker compose exec -T studio-api uv run python -m studio.cli create-account \
 
 > 一键 dev seed：`python3 scripts/seed_dev.py`，全部配置走 `scripts/.env`（参考 `scripts/.env.example`，所有键必填、无代码默认值）。它创建一个 Studio admin、`CHAT_SEED_USERS` / `STUDIO_SEED_USERS` 两份独立清单里的用户（格式严格为 `username:password:display`，Studio role=user），以及一个共享 Provider。仅建账号 + provider，不播种 persona/contact/消息（清空 volume 后可重复执行，已存在的账号会告警跳过）。
 
-## 启动 Bridge（桌面 app 开发模式）
+## 启动 Bridge（命令行 daemon）
 
 ```bash
-cd desktop
-npm install          # 首次：postinstall 自动运行 electron-rebuild
-npm run dev          # electron-vite dev：renderer HMR + main 进程热重启
+cd bridge/cli
+python3 -m laborster_bridge --state /path/to/state
 ```
 
-Dev 模式启动后显示 Login 屏：
-1. Studio URL 填 `http://localhost:23457`，输入 Studio 账号密码点「握手并启动」
-2. 进入 InboxConfig，填入 Chat sandbox 账号（Base URL: `http://localhost:23456`）
-3. 点「保存并启动 daemon」进入 Panel
+REPL 内：
+1. `/login` → 输入 Studio 账号密码（换 token 落盘）
+2. `/channel add` → 输入 Chat sandbox 账号密码（换 chat token 落盘）
+3. `/start`（首次 `/login` 时若已有 channel 会自动起）→ `/status` 看在线状态
 
-多个 Chat inbox 在 InboxConfig 屏点「+ 加 inbox」逐条添加。
+Chat/Studio 地址硬编码在 `config.py`（`chat.laborster.com` / `studio.laborster.com`），无 base-URL 输入；状态目录无默认值，必须 `--state` 或 REPL `/state <path>` 指定。多个 Chat channel 重复 `/channel add` 即可。
 
 ## Storage 事实
 
@@ -110,7 +110,7 @@ docker compose exec -T studio-api uv run python -m studio.cli reset-password --u
 
 ## 构建命令
 
-- Bridge desktop：在 `desktop/` 下执行 `npm run build`（tsc 类型检查 + electron-vite build）；`npm run dist:mac` / `npm run dist:win` 生成安装包。
+- Bridge CLI：纯 stdlib，无构建步骤；`cd bridge/cli && python3 -m compileall -q laborster_bridge` 做语法自检，`python3 -m laborster_bridge` 直接运行。单文件可执行打包属发布层。
 - Chat web：在 `services/chat/web` 下执行 `npm run build`。
 - Studio web：在 `services/studio/web` 下执行 `npm run build`；需要 lint 时执行 `npm run lint`。
 - Python 服务在 Dockerfile / Compose 中使用 `uv`。
@@ -143,8 +143,8 @@ distill 改动：
 
 ## 跨服务改动检查表
 
-- 改 Bridge protocol：同步更新 Studio schema/endpoint、`desktop/src/main/daemon/studio-client.ts`、文档。
+- 改 Bridge protocol：同步更新 Studio schema/endpoint、`bridge/cli/laborster_bridge/studio_client.py`、文档。
 - 改 Contact 语义：检查 Studio data model、Takeover UI、reply gates、distill card。
-- 增加平台适配：当前边界是在 `desktop/src/main/daemon/adapters/` 新增 adapter 并在 `runtime.ts` 中注册，Studio 不直连平台。
-- 增加配置项（desktop）：在 `CredentialStore` 或 Settings 屏扩展，不引入 env var（桌面 app 无 env）。
-- 改 outbound status：同步检查 Studio model、`runtime.ts` dispatchOutbound、frontend 展示和文档。
+- 增加平台适配：当前边界是在 `bridge/cli/laborster_bridge/` 新增 adapter 模块并在 `runtime.py` 中接入，Studio 不直连平台。
+- 增加配置项（Bridge）：扩展 `laborster.json` 字段或 slash 命令，不引入 env var、不加默认状态目录。
+- 改 outbound status：同步检查 Studio model、`runtime.py` `_dispatch_outbound`、frontend 展示和文档。

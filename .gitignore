@@ -1,18 +1,23 @@
+# Python
 .venv/
-
 __pycache__/
 *.py[cod]
+*.egg-info/
+build/
 
-.vscode/
-.idea/
-
-storage/
-.tmp/
-
-.env
-scripts/.env
-
-# Frontend
+# Node / Frontend (services/*/web)
 **/node_modules/
 **/dist/
 *.tsbuildinfo
+
+# Editors
+.vscode/
+.idea/
+
+# Secrets / env
+.env
+scripts/.env
+
+# Runtime artifacts
+storage/
+.tmp/

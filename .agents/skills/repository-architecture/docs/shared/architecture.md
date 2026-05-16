@@ -28,9 +28,9 @@ Studio cloud control plane
 
 Studio 与 Chat 之间没有代码 import 和直接 API 调用；仅 Bridge 的 `ChatAdapter` 通过 HTTP 调用 Chat。
 
-### Bridge desktop app
+### Bridge CLI
 
-`desktop/` 是 Electron 桌面应用，内嵌 TypeScript daemon（运行在 Electron 主进程中）。用户通过 GUI 配置 Studio 账号和 chat inbox 凭据，daemon 在后台持续运行并通过系统托盘常驻。
+`bridge/cli/` 是 Python 纯标准库命令行 daemon（交互式 REPL，进程本身即 daemon）。用户在黑框框里用 slash 命令配置 Studio 账号和 chat channel 凭据，6 个后台循环线程在同进程运行，关掉进程即断线。
 
 Bridge 当前负责：
 
@@ -135,4 +135,4 @@ Studio S3 是媒体 binary 的唯一 source of truth。Inbound 时 Bridge 从平
 - Studio 需要 `DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET` 环境变量，缺失时报错。`S3_PUBLIC_URL` 用于生成 Bridge 媒体端点的 presigned URL。
 - Chat 和 Studio models 当前不使用 SQLAlchemy column default。
 - Studio 和 Chat 使用 PostgreSQL，由 Alembic 管理 schema 迁移。
-- Bridge desktop app 的 Studio URL 默认值是 `https://studio.laborster.com`，本地联调在 Login 屏手动改为 `http://localhost:23457`。
+- Bridge CLI 的 Chat/Studio 地址在 `bridge/cli/laborster_bridge/config.py` 硬编码为 `https://chat.laborster.com` / `https://studio.laborster.com`，无 base-URL 输入、无环境变量、无默认覆盖。

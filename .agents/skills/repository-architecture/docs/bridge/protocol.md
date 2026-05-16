@@ -11,9 +11,9 @@ handshake 只做一件事：用 Studio 账号密码换 session token，等价于
 3. Studio 校验账号密码与 active 状态。
 4. 带 `machine_id` 则按 `(account_id, machine_id)` 查已有 Bridge；没带（首次）则生成 `machine_id` 并创建新 Bridge。
 5. Studio 删除该 Bridge 旧 BridgeSession，创建并返回新 token + `bridge_id` + `machine_id` + `account_id`。handshake 不注册任何 Inbox。
-6. Bridge safeStorage 加密持久化 token；Studio 密码用完即弃，绝不落盘。
+6. Bridge 把 token 持久化到本地 0600 文件；Studio 密码用完即弃，绝不落盘。
 7. 后续所有请求带 `Authorization: Bearer {token}`，包括 `POST /api/bridge/inboxes` 注册 channel 集合。
-8. 重启直接复用持久化的 token，无需密码、无需重新 handshake。仅当 token 被撤销/失效（401）才回到登录页重新输密码。
+8. 重启直接复用持久化的 token，无需密码、无需重新 handshake。仅当 token 被撤销/失效（401）才重新 `/login` 输密码。
 
 撤销 Bridge 时，Studio 删除 BridgeSession 并把 Bridge 状态置为 `revoked`；Bridge 下次调用收到 401。
 

@@ -13,26 +13,26 @@ description: Laborster 仓库架构全景 Skill。用于理解当前代码、服
 
 在处理以下任务前，先读这个 Skill：
 
-- 需要改动 `desktop/`、`services/chat`、`services/studio` 中任意两个以上服务。
+- 需要改动 `bridge/`、`services/chat`、`services/studio` 中任意两个以上服务。
 - 需要理解 Studio API、worker、reply brain、distill pipeline、数据库 schema 或 Bridge protocol。
 - 需要理解 Chat sandbox 的联系人、会话、消息、导入、long polling 或 connector 行为。
-- 需要理解 Bridge daemon 的 adapter 生命周期、inbound/outbound、heartbeat 或 Electron IPC。
+- 需要理解 Bridge daemon 的 adapter 生命周期、inbound/outbound、heartbeat 或 REPL 命令。
 - 需要排查从 Chat → Bridge → Studio → LLM → Bridge → Chat 的端到端消息链路。
-- 需要改 Docker Compose、Dockerfile、Nginx、Electron 打包或本地开发配置。
+- 需要改 Docker Compose、Dockerfile、Nginx 或本地开发配置。
 
 ## 一句话总览
 
-Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Channel ↔ Bridge ↔ Studio`。其中 Chat sandbox 是可控 Channel，Bridge 是 Electron 桌面 daemon app，Studio 是云端控制台、消息源、LLM 回复脑和蒸馏脑。
+Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Channel ↔ Bridge ↔ Studio`。其中 Chat sandbox 是可控 Channel，Bridge 是跑在主播本机的 Python 命令行 daemon（REPL，进程本身即 daemon），Studio 是云端控制台、消息源、LLM 回复脑和蒸馏脑。
 
 ## 三个独立项目
 
 | 项目 | 路径 | 当前职责 | 边界规则 |
 | --- | --- | --- | --- |
 | Chat sandbox | `services/chat/` | dogfood Channel / 可控聊天平台 | 只模拟平台；Studio 不直接调用它。 |
-| Bridge desktop | `desktop/` | Electron 桌面 app，内嵌 TS daemon，登录本地平台账号并桥接到 Studio | 不调 LLM、不存人设、不持久化 Studio 密码。 |
+| Bridge CLI | `bridge/cli/` | Python 纯 stdlib REPL daemon，登录本地平台账号并桥接到 Studio | 不调 LLM、不存人设、磁盘永不存密码（只存 token）。 |
 | Studio | `services/studio/` | 控制台、source of truth、reply/distill brain | 不直连任何 Channel，只接受 Bridge protocol。 |
 
-`desktop/` 使用独立 npm 工作区，含 Electron 主进程（daemon 核心）、preload、React renderer。Chat/Studio 保持 Python/Docker 工作流不变。
+`bridge/cli/` 是独立 Python 包（`laborster_bridge`，纯标准库，无第三方依赖），可执行名 `laborster-bridge` / `lbr`。将来若加图形界面，在 `bridge/` 下另建目录。Chat/Studio 保持 Python/Docker 工作流不变。
 
 ## 当前核心不变量
 
@@ -44,7 +44,7 @@ Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Cha
 6. **Inbox 是平台身份。** Inbox 表示一个平台账号/身份，并给新 Contact 提供默认 Persona 和可选 Provider override。
 7. **Bridge 是本地 daemon 实例。** Bridge 行由 `(account_id, machine_id)` 标识，`machine_id` 由 Studio 在首次握手时生成并返回给 Bridge 本地持久化；可服务多个 Inbox。
 
-13. **Bridge 认证是 token 长期复用。** handshake 只用 Studio 密码换 session token（密码用完即弃，绝不落盘）。token safeStorage 加密持久化，重启直接复用；channel 注册、收发消息全部走 token 鉴权。只有 token 被撤销/失效（401）才需要重新输密码，与浏览器 session 一致。Chat 平台密码必须落盘（daemon 要登录平台），safeStorage 加密。
+13. **Bridge 认证是双向 token，磁盘永不存密码。** Studio 侧 handshake 用账号密码换 session token；Chat 侧 `/channel add` 时用账号密码调 Chat `/api/auth/login` 换 session token。两侧密码都用完即弃，只把 token 写进唯一的 `laborster.json`（0600）。daemon 启动用持久化的 Studio token + Chat token 直接复用（Chat 侧靠 token 调 `/api/auth/me` 恢复 selfId）。任一侧 401 才重新输那一侧密码，与浏览器 session 一致。Bridge 状态目录无默认值、无环境变量，只能由 `--state` 启动参数或 REPL `/state <path>` 指定；Chat/Studio 地址在 `bridge/cli/laborster_bridge/config.py` 硬编码（`chat.laborster.com` / `studio.laborster.com`），无 base-URL 输入。HTTP 请求带自定义 `User-Agent`（Cloudflare 屏蔽默认 `Python-urllib`）。
 8. **Outbound 队列是数据库表。** `outbound_messages` 是 Studio → Bridge 的工作队列，每条携带 `msg_type`；Bridge long-poll 并维护 cursor。
 9. **Chat/Studio 数据库和 S3 环境变量必须显式提供。** 缺失 `DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY` 或 `S3_BUCKET` 会直接报错。
 10. **Chat/Studio models 不用 SQLAlchemy column default。** 当前设计要求插入时显式写入字段值。迁移中使用 `server_default` 仅为兼容已有数据。
@@ -67,12 +67,12 @@ Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Cha
 - `docs/chat/frontend.md` — React 状态、hooks、components、API client、导入 UI。
 - `docs/chat/infra.md` — Compose、Nginx、Dockerfile、端口、storage、本地 dev。
 
-### Bridge desktop app
+### Bridge CLI
 
-- `docs/bridge/overview.md` — Electron 桌面 app 结构、进程划分、IPC schema、启动生命周期。
-- `docs/bridge/runtime-adapters.md` — TS adapter contract、ChatAdapter、daemon 循环（producer/consumer/heartbeat/outbound/announce）。
+- `docs/bridge/overview.md` — Python REPL daemon 结构、模块划分、状态文件、命令集、启动生命周期。
+- `docs/bridge/runtime-adapters.md` — store / studio_client / chat_adapter、BridgeRuntime 线程循环（producer/consumer/heartbeat/announce/active-peers/outbound）。
 - `docs/bridge/protocol.md` — 当前 Studio `/api/bridge/*` protocol（协议本身与语言无关）。
-- `docs/bridge/infra.md` — npm 依赖、electron-vite 构建、electron-builder 打包、GitHub Actions 发布。
+- `docs/bridge/infra.md` — Python 包结构、纯 stdlib 依赖、可执行入口、打包定位。
 
 ### Studio
 

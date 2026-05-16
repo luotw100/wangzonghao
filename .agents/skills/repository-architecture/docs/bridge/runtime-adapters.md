@@ -1,168 +1,87 @@
 # Bridge Runtime & Adapters / Bridge 运行时与适配器
 
-## 类型系统（types.ts）
+## HTTP helper（http.py）
 
-```typescript
-type MsgType = 'text' | 'image' | 'audio' | 'video' | 'file'
+`request_json(method, url, *, token, body, timeout)` 基于 `urllib.request`。固定加 `User-Agent: laborster-bridge/0.1`（Cloudflare 屏蔽默认 `Python-urllib`，返回 403 code 1010）。401 抛 `Unauthorized`，其余非 2xx 抛 `HttpError(status, body)`，网络错误抛 `HttpError(0, reason)`。
 
-interface IncomingMessage {
-  peerId: string
-  peerDisplayName: string
-  platformMsgId: string | null
-  senderId: string
-  msgType: MsgType
-  content: string
-  sentAt: Date
-}
+## 去重存储（store.py）
 
-interface Channel {           // 一个 chat 平台账号
-  baseUrl: string
-  username: string
-  password: string
-}
-
-type DaemonStatus = 'idle' | 'connecting' | 'online' | 'offline' | 'error401'
-
-interface DaemonState {
-  status: DaemonStatus
-  studioUrl: string
-  username?: string
-  machineId?: string
-  bridgeId?: string
-  channels: ChannelStatus[]   // { inboxId, handle, baseUrl, platformSelfId?, online, peersCount }
-  inCount5m: number
-  outboundPending: number
-  lastError?: string
-}
-
-interface LogLine {
-  t: string        // HH:MM:SS
-  src: string      // 'core' | 'adapter' | 'studio' | 'heart' | 'consumer' | 'outbound'
-  level: 'info' | 'ok' | 'warn' | 'err'
-  msg: string
-}
-```
-
-## ChatAdapter（adapters/chat.ts）
-
-Chat sandbox HTTP 轮询适配器。
-
-**内部状态**：`token`、`selfId`（chat `account.id`，形如 `acct_…`）、`threads: Map<peerId, {convId, peerId, peerDisplayName}>`（peerId = chat contact id）、`stopped: boolean`。
-
-### login()
-
-`POST {baseUrl}/api/auth/login` → 响应 `{token, account:{id}}`；保存 token，`selfId = account.id`，返回 `selfId` 作为 `platformSelfId`。
-
-### listPeers()
-
-`refreshThreads()` → GET `/api/conversations`（`ConversationRead[]`，含 `contact`）→ 每个会话以 `contact.id` 为 peerId、`contact.nickname` 为 display name → 返回 `[{peerPlatformId, displayName}]`。
-
-### scan(cursors)
-
-异步生成器，无限循环：`refreshThreads()` → 对每个 thread `GET /api/conversations/{convId}/messages?last_id={cursors[peerId]}&limit=200`（响应 `{conversation, messages}`）→ 对每条 yield `IncomingMessage`（`senderId` = `sender_type==='self' ? platformSelfId : peerId`，`platformMsgId = String(m.id)`）→ 更新 cursors。无新消息 sleep 2s。
-
-### send(peerId, content)
-
-按 peerId 查 thread 拿 convId → `POST /api/conversations/{convId}/messages` body `{sender_type:'self', msg_type:'text', content}` → 返回 `String(StatusResponse.id)`。
-
-## LocalStore（local-store.ts）
-
-`better-sqlite3` SQLite，WAL 模式，单例，同步 API。
+`LocalStore` 用 `sqlite3` 单连接（`check_same_thread=False`）+ `threading.Lock` 串行化，WAL 模式，等价于原同步单实例语义。
 
 ### 表：local_messages
 
-字段：`id`（autoincrement）、`inbox_id`、`peer_id`、`peer_display_name`、`platform_msg_id`（nullable）、`sender_id`、`sent_at`（UTC ISO8601）、`msg_type`、`content`、`mime_type`（nullable）、`local_hash`、`sent`（0/1）。
-
-索引：`UNIQUE(inbox_id, local_hash)`（去重键）、`(sent, id)`（consumer 查询）、`(inbox_id, peer_id, id)`（cursor 推导）。
+字段：`id`(autoincrement)、`inbox_id`、`peer_id`、`peer_display_name`、`platform_msg_id`(nullable)、`sender_id`、`sent_at`、`msg_type`、`content`、`mime_type`(nullable)、`local_hash`、`sent`(0/1)。索引：`UNIQUE(inbox_id, local_hash)`、`(sent, id)`、`(inbox_id, peer_id, id)`。
 
 ### 关键方法
 
-- `static localHash(inboxId, peerId, senderId, sentAt, msgType, content) → sha256 hex`
-- `getCursors(inboxId) → {peerId: lastPlatformMsgId | null}`：从已插入行推导各 peer 扫描位置
-- `insertMessage(msg) → boolean`：`INSERT OR IGNORE`，返回是否实际插入
-- `getUnsent(limit, activePeers: Set<"inboxId|peerId"> | null) → LocalMessage[]`：`activePeers` 为 null 时不过滤，为空 Set 时直接返回 `[]`
-- `markSent(id)`
-- `countUnsent() → number`
-- `countRecentIncoming(sinceMs) → number`
+- `local_hash(inbox_id, peer_id, sender_id, sent_at, msg_type, content)` → `sha256` hex，字段以 `\x00` join。
+- `get_cursors(inbox_id)` → `{peer_id: max(platform_msg_id) | None}`。
+- `insert_message(dict)` → bool（`INSERT OR IGNORE`，返回是否实际插入）。
+- `get_unsent(limit, active_peers)`：`active_peers` 为 None 不过滤；为空 set 返回 `[]`；否则按 `(inbox_id, peer_id) IN (...)` 过滤。
+- `mark_sent(id)` / `count_unsent()` / `count_recent_incoming(since_iso)` / `close()`。
 
-## BridgeRuntime（runtime.ts）
+## StudioClient（studio_client.py）
+
+构造接受 `get_token` callable（懒读 token，401 清除后无需重建）。base url = `config.STUDIO_BASE_URL`。方法与 `/api/bridge/*` 协议一一对应：`handshake`（唯一带密码，不带 token）、`register_inboxes`、`heartbeat`、`push_incoming`、`get_outbound`、`ack_outbound`、`announce_peers`、`get_active_peers`。请求/响应字段做 snake_case 映射。
+
+## ChatAdapter（chat_adapter.py）
+
+Chat sandbox HTTP 轮询适配器。base url = `config.CHAT_BASE_URL`。
+
+- `obtain_token(username, password)`（staticmethod）→ `POST /api/auth/login`，返回 `(token, account.id)`。**仅 `/channel add` 调用一次**，密码用完即弃。
+- `resolve_self()` → `GET /api/auth/me`，用持久化 token 恢复 `self_id`（`acct_…`）。daemon 启动时调用，无需密码。
+- `_refresh_threads()` → `GET /api/conversations`，以 `contact.id` 为 peerId、`contact.nickname || username` 为 display name 建立 `peer_id → {conv_id, peer_id, display_name}`。
+- `list_peers()` → 刷新后返回 `[{peer_platform_id, display_name}]`。
+- `scan(cursors)` → 无限生成器：刷新 threads → 对每个 thread `GET /api/conversations/{conv}/messages?last_id=&limit=200` → 逐条 yield（`sender_id` = self 时 `platform_self_id` 否则 peerId；`sent_at` 经 `_iso_z` 规范化为毫秒 UTC `...Z`）→ 更新 cursors。无新消息 `sleep(2)`。
+- `send(peer_id, content)` → 按 peer 查 conv → `POST /api/conversations/{conv}/messages`（`sender_type=self, msg_type=text`）→ 返回 `str(id)`。
+- `stop()` → 置停止标志，中断 scan。
+
+## events.py
+
+`Events`：`threading.Condition` 保护的日志环形缓冲（`deque(maxlen=1000)`，每行带递增 `_seq`）+ 当前 DaemonState 快照。`log()`/`set_state()` 由 daemon 线程写；`snapshot()`/`tail(n)`/`follow(stop)` 由 REPL 主线程读。`follow` 阻塞 yield 新行直到 `stop` Event 置位（仅交互终端用）。
+
+## BridgeRuntime（runtime.py）
 
 ### 常量
 
-```typescript
-HEARTBEAT_MS        = 15_000
-ANNOUNCE_MS         = 60_000
-ACTIVE_PEERS_MS     = 10_000
-CONSUMER_MS         = 1_000
-CONSUMER_BATCH      = 50
-OUTBOUND_TIMEOUT_SECS = 30
+```text
+HEARTBEAT_S = 15   ANNOUNCE_S = 60   ACTIVE_PEERS_S = 10
+CONSUMER_S = 1     CONSUMER_BATCH = 50   OUTBOUND_TIMEOUT_S = 30
 ```
 
 ### 关键字段
 
-- `adapters: Map<inboxId, AdapterEntry>`：每个 inbox 一个 ChatAdapter + 其 cursors
-- `activePeers: Set<"inboxId|peerId">`：`takeover=true` 的 peer 集合，由 `startActivePeers` 维护
-- `outboundCursor: number`：Studio outbound 队列消费游标
-- `stopped: boolean`
-- `timers: ReturnType<typeof setInterval>[]`：所有定时器，stop 时全部清除
-- `store: LocalStore`
+- `_adapters: {inbox_id: {adapter, inbox, cursors, label}}`
+- `_active_peers: set["inboxId|peerId"]`（takeover 集合，`_loop_active_peers` 维护）
+- `_outbound_cursor: int`、`_last_error`、`_stop: threading.Event`、`_threads: list`
+- `_store: LocalStore`
 
-### 启动序列（run({ onAuthError })）
+注：实例属性 `_active_peers`（set）与循环方法 `_loop_active_peers` 名字不可同名，否则 set 会遮蔽方法。
 
-`run()` 不接受密码；StudioClient 已绑定持久化 token。
+### start() / bootstrap
 
-1. emit `connecting` 状态
-2. 对每个 Channel：创建 ChatAdapter → login() → 收集 selfId（全失败则 `offline` 返回）
-3. `StudioClient.registerInboxes([{platform:'chat', platformSelfId}])`（token 鉴权）→ 拿 inboxes + cursor；401 时 `onAuthError()` + emit `error401`
-4. 按 selfId 匹配返回的 Inbox，绑定 adapter
-5. emit `online`
-6. 并行启动所有循环
+`start()` 起一个 `bootstrap` 守护线程后立即返回（不阻塞 REPL）。bootstrap：
 
-任意循环遇 401 → `onAuthError()`（主进程清 token，renderer 回登录页）。
+1. `_push_state('connecting')`
+2. 对每个 channel：`ChatAdapter(chat_token).resolve_self()` 收集 selfId（全失败 → `offline` 返回）
+3. `studio.register_inboxes([('chat', selfId)…])`（token 鉴权）；401 → `on_auth_error` + `error401`
+4. 按 selfId 匹配 inbox，绑定 adapter，`get_cursors` 初始化游标
+5. `_push_state('online')`
+6. 并行启动循环线程
 
-### Inbound 流程（producer-consumer）
+### 循环（每个一个守护线程，用 `_stop.wait(timeout)` 可中断）
 
-```text
-adapter.scan(cursors)                     # per-inbox async generator
-  → _startProducer()                      # for await，每条消息：
-      → LocalStore.localHash()
-      → store.insertMessage()             # UNIQUE(inbox_id, local_hash) 去重
-
-setInterval(1s)
-  → _startConsumer()
-      → store.getUnsent(50, activePeers)  # activePeers 过滤：未接管 peer 的消息留在本地
-      → studio.pushIncoming()             # POST /api/bridge/incoming
-      → store.markSent()
-```
-
-`activePeers` 为空时 consumer 不推任何消息。接管后 consumer 自动补发历史未推消息。
-
-### Heartbeat loop（15s）
-
-`POST /api/bridge/heartbeat` → 对比返回的 inbox 列表，停掉不在列表中的 adapter。收到 401 → clearToken + emit error401 + stop()。
-
-### Announce loop（60s）
-
-对每个 adapter 调 `listPeers()` → `POST /api/bridge/peers` 上报 peer 目录，供 Studio 前端展示全量会话列表。
-
-### Active peers loop（10s）
-
-`GET /api/bridge/active-peers` → 更新 `activePeers` Set。
-
-### Outbound loop（long-poll）
-
-```text
-while (!stopped):
-  GET /api/bridge/outbound?cursor=N&timeout=30
-  → 对每个 item:
-       text:  adapter.send(peerId, content) → ack sent
-       media: ack failed（不支持，chat sandbox 实践上只发 text）
-```
+- **producer × N**：`for msg in adapter.scan(cursors)` → `local_hash` → `store.insert_message`（UNIQUE 去重）。
+- **consumer 1s**：`get_unsent(50, active_peers or None)` → `studio.push_incoming` → `mark_sent`；adapter 不存在的行直接 `mark_sent`；401 直接 return（heartbeat 处理）。`active_peers` 为空时 consumer 不推任何消息。
+- **heartbeat 15s**（先立即跑一次）：`studio.heartbeat`，停掉不在返回列表中的 adapter；401 → `on_auth_error` + `error401` + `stop()`。
+- **announce 60s**：每 adapter `list_peers()` → `studio.announce_peers`，异常吞掉。
+- **active-peers 10s**：`studio.get_active_peers` → 重建 `_active_peers` set。
+- **outbound long-poll**：`while not stopped`：`studio.get_outbound(cursor, 30)` → 逐条推进 cursor 并 `_dispatch_outbound`：text → `adapter.send` + `ack sent`；非 text → `ack failed`。401 → `on_auth_error` + stop。
 
 ### stop()
 
-清除所有 setInterval，对每个 adapter 调 `.stop()`（中断 scan），关闭 SQLite，emit log `core info "daemon stopped"`。
+置 `_stop`，停所有 adapter，join 线程（2s 超时，跳过当前线程），清空 `_adapters`，`_push_state('idle')`，关闭 store，日志 `core info "daemon stopped"`。
 
-## 与 Electron 主进程的集成
+### 与 REPL 的集成
 
-`BridgeRuntime` 的 `emit` 回调连接到 `ipcMain`，通过 `win.webContents.send()` 将 DaemonState 和 LogLine 推送给 renderer。Renderer 通过 `window.bridge.onState(cb)` 和 `window.bridge.onLog(cb)` 订阅（preload contextBridge 包装的 ipcRenderer.on）。
+`emit` 不再是 IPC，而是写 `Events`。REPL 主线程通过 `events.snapshot()`（`/status`）和 `events.tail()` / `events.follow()`（`/log`）读取，线程安全。

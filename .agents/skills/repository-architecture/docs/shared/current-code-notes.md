@@ -46,7 +46,7 @@ Studio worker 中 `BridgeOfflineScanner` 每 30s 扫描 `last_seen_at` 超过 45
 
 ## Bridge token
 
-Bridge session token 由 Electron `safeStorage` 加密保存在 `app.getPath('userData')/bridge-token.enc`。重启直接复用，无需密码、无需重新 handshake；channel 集合通过 token 鉴权的 `POST /api/bridge/inboxes` 注册（加/删 channel 也走它）。只有 token 401 时才回 Login 屏用密码重新 handshake。旧 BridgeSession 在 handshake 时被清除。
+Bridge session token 保存在状态目录下唯一的 `laborster.json`（0600，原子写）的 `studio_token` 字段；同文件 `channels[].chat_token` 存各 Chat 账号 token。磁盘上不存任何密码。重启直接复用 token，无需密码、无需重新 handshake；channel 集合通过 token 鉴权的 `POST /api/bridge/inboxes` 注册（加/删 channel 也走它）。只有 token 401 时才清 `studio_token` 并提示用密码重新 `/login`。旧 BridgeSession 在 handshake 时被清除。
 
 ## Provider UI
 

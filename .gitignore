@@ -1,23 +1,11 @@
 # Python
-.venv/
 __pycache__/
-*.py[cod]
-*.egg-info/
-build/
-
-# Node / Frontend (services/*/web)
-**/node_modules/
-**/dist/
-*.tsbuildinfo
 
 # Editors
 .vscode/
-.idea/
 
 # Secrets / env
 .env
-scripts/.env
 
-# Runtime artifacts
-storage/
-.tmp/
+# Bridge cli .venv
+bridge/cli/.venv/

@@ -1,12 +1,22 @@
 import argparse
 
+from prettytable import PrettyTable, SINGLE_BORDER
+
 from studio.auth_utils import hash_password
-from studio.cli_render import danger, ok, render_table, warn
 from studio.db import get_db, utc_now
 from studio.deps import new_id
 from studio.enums import AccountRole, AccountStatus
 from studio.migrate import run_migrations
 from studio.models import Account
+
+
+def _table(headers: list[str], rows: list[list]) -> str:
+    t = PrettyTable(field_names=headers)
+    t.set_style(SINGLE_BORDER)
+    t.align = "l"
+    for row in rows:
+        t.add_row(["" if cell is None else str(cell) for cell in row])
+    return t.get_string()
 
 
 def create_account(args: argparse.Namespace) -> None:
@@ -31,8 +41,8 @@ def create_account(args: argparse.Namespace) -> None:
         )
         db.add(account)
         db.commit()
-        print(ok(f"created studio account {account.username}"))
-        print(render_table(
+        print(f"created studio account {account.username}")
+        print(_table(
             ["id", "username", "display_name", "role", "status"],
             [[account.id, account.username, account.display_name, account.role, account.status]],
         ))
@@ -46,10 +56,8 @@ def list_accounts(_: argparse.Namespace) -> None:
     try:
         rows = []
         for account in db.query(Account).order_by(Account.created_at.asc()).all():
-            role = warn(account.role) if account.role == AccountRole.ADMIN else account.role
-            status = ok(account.status) if account.status == AccountStatus.ACTIVE else danger(account.status)
-            rows.append([account.id, account.username, account.display_name or "", role, status])
-        print(render_table(["id", "username", "display_name", "role", "status"], rows))
+            rows.append([account.id, account.username, account.display_name or "", account.role, account.status])
+        print(_table(["id", "username", "display_name", "role", "status"], rows))
     finally:
         db.close()
 
@@ -64,7 +72,7 @@ def reset_password(args: argparse.Namespace) -> None:
         account.password_hash = hash_password(args.password)
         account.updated_at = utc_now()
         db.commit()
-        print(ok(f"updated password for {account.username}"))
+        print(f"updated password for {account.username}")
     finally:
         db.close()
 
@@ -79,7 +87,7 @@ def set_role(args: argparse.Namespace) -> None:
         account.role = args.role
         account.updated_at = utc_now()
         db.commit()
-        print(ok(f"updated role for {account.username} -> {account.role}"))
+        print(f"updated role for {account.username} -> {account.role}")
     finally:
         db.close()
 

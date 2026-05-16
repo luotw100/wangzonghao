@@ -1,8 +1,9 @@
 import argparse
 import uuid
 
+from prettytable import PrettyTable, SINGLE_BORDER
+
 from chat.auth_utils import hash_password
-from chat.cli_render import danger, ok, render_table
 from chat.db import get_db, utc_now
 from chat.enums import AccountStatus
 from chat.migrate import run_migrations
@@ -11,6 +12,15 @@ from chat.models import Account
 
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex}"
+
+
+def _table(headers: list[str], rows: list[list]) -> str:
+    t = PrettyTable(field_names=headers)
+    t.set_style(SINGLE_BORDER)
+    t.align = "l"
+    for row in rows:
+        t.add_row(["" if cell is None else str(cell) for cell in row])
+    return t.get_string()
 
 
 def create_account(args: argparse.Namespace) -> None:
@@ -37,8 +47,8 @@ def create_account(args: argparse.Namespace) -> None:
         )
         db.add(account)
         db.commit()
-        print(ok(f"created chat account {account.username}"))
-        print(render_table(
+        print(f"created chat account {account.username}")
+        print(_table(
             ["id", "username", "nickname", "status"],
             [[account.id, account.username, account.nickname, account.status]],
         ))
@@ -52,9 +62,9 @@ def list_accounts(_: argparse.Namespace) -> None:
     try:
         rows = []
         for account in db.query(Account).order_by(Account.created_at.asc()).all():
-            status = danger(f"{account.status} deleted") if account.is_deleted else ok(account.status)
+            status = f"{account.status} deleted" if account.is_deleted else account.status
             rows.append([account.id, account.username, account.nickname, status])
-        print(render_table(["id", "username", "nickname", "status"], rows))
+        print(_table(["id", "username", "nickname", "status"], rows))
     finally:
         db.close()
 
@@ -69,7 +79,7 @@ def reset_password(args: argparse.Namespace) -> None:
         account.password_hash = hash_password(args.password)
         account.updated_at = utc_now()
         db.commit()
-        print(ok(f"updated password for {account.username}"))
+        print(f"updated password for {account.username}")
     finally:
         db.close()
 

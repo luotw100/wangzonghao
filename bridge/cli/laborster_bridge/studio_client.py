@@ -18,7 +18,7 @@ class StudioClient:
         self._get_token = get_token
         self._base = config.STUDIO_BASE_URL
 
-    def _req(self, method: str, path: str, body=None, timeout: float = 10.0):
+    def _req(self, method: str, path: str, body=None, timeout: float = 20.0):
         return request_json(
             method,
             f"{self._base}{path}",

@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import json
+import time
 import urllib.error
 import urllib.request
 from typing import Any
+
+# Transient statuses worth retrying. 0 = network / TLS drop (the cloudflared
+# tunnel in front of the services is slow and occasionally tears down the
+# connection mid-TLS: "UNEXPECTED_EOF_WHILE_READING").
+_RETRY_STATUSES = {0, 502, 503, 504}
+_RETRY_BACKOFF = (1.0, 2.0, 4.0)
 
 
 class Unauthorized(RuntimeError):
@@ -19,14 +26,7 @@ class HttpError(RuntimeError):
         self.body = body
 
 
-def request_json(
-    method: str,
-    url: str,
-    *,
-    token: str | None = None,
-    body: Any | None = None,
-    timeout: float = 10.0,
-) -> Any:
+def _attempt(method: str, url: str, token: str | None, body: Any, timeout: float) -> Any:
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     # Cloudflare in front of the services blocks the default Python-urllib
@@ -45,5 +45,33 @@ def request_json(
             raise Unauthorized() from None
         detail = exc.read().decode("utf-8", "replace")
         raise HttpError(exc.code, detail) from None
-    except urllib.error.URLError as exc:
-        raise HttpError(0, str(exc.reason)) from None
+    except (urllib.error.URLError, OSError) as exc:
+        reason = getattr(exc, "reason", exc)
+        raise HttpError(0, str(reason)) from None
+
+
+def request_json(
+    method: str,
+    url: str,
+    *,
+    token: str | None = None,
+    body: Any | None = None,
+    timeout: float = 20.0,
+) -> Any:
+    """JSON request with bounded retry on transient failures.
+
+    All protocol writes are replay-safe (handshake rebuilds the session;
+    /incoming dedups by msg_hash; /inboxes upserts; ack is idempotent),
+    so retrying a dropped connection cannot duplicate state.
+    """
+    last: HttpError | None = None
+    for attempt in range(len(_RETRY_BACKOFF) + 1):
+        try:
+            return _attempt(method, url, token, body, timeout)
+        except HttpError as exc:
+            if exc.status not in _RETRY_STATUSES or attempt == len(_RETRY_BACKOFF):
+                raise
+            last = exc
+            time.sleep(_RETRY_BACKOFF[attempt])
+    assert last is not None
+    raise last

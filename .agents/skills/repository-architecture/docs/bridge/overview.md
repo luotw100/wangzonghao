@@ -38,18 +38,19 @@ bridge/
 | --- | --- |
 | `/help` | 显示命令指南 |
 | `/state <path>` | 设置本会话状态目录（无默认，每次启动都要指定） |
-| `/login` | 提示输入 Studio 账号密码 → handshake 换 token 落盘；有 channel 则自动起 daemon |
-| `/logout` | 停 daemon，清除 Studio token |
+| `/login` | 提示输入 Studio 账号密码 → handshake 换 token 落盘（之后自动连接） |
+| `/logout` | 清除 Studio token（自动断开 daemon） |
 | `/status` | daemon 与各 channel 状态快照 |
-| `/channel add` | 提示输入 Chat 账号密码 → 换 Chat token 存入；运行中则重启重新注册 |
-| `/channel rm <n>` | 删除第 n 个 channel |
+| `/channel add` | 提示输入 Chat 账号密码 → 换 Chat token 存入（自动重连注册） |
+| `/channel rm <n>` | 删除第 n 个 channel（自动重连） |
 | `/channel list` | 列出已保存 channel（不含任何凭据） |
-| `/start` `/stop` | 手动起停 daemon |
 | `/log [-f]` | 看日志；`-f` 跟随（仅交互终端） |
 | `/studio` | 打印 Studio 地址 |
 | `/quit` | 停 daemon 并退出 |
 
-每个 handler 返回一个 dict（`{"lines": [...]}` / `{"error": str}` / `{"quit": True}` / `{"follow": True}`），由 `repl._render` 渲染。返回 dict 的结构便于将来加非交互/JSON 模式。
+每个 handler 返回一个 dict（`{"lines": [...]}` / `{"error": str}` / `{"logs": [...]}` / `{"quit": True}` / `{"follow": True}`），由 `repl` 渲染。返回 dict 的结构便于将来加非交互/JSON 模式。
+
+**daemon 不是用户可感知概念，没有 `/start` `/stop`。** `commands._ensure(ctx)` 做调和：只要状态目录已设、有 `studio_token` 且至少一个 channel，daemon 就运行；否则停。它在 REPL 启动（`commands.autostart`）、`/state`、`/login`、`/channel add|rm` 后调用；ready 时总是 (重)启动以便变更后的 channel 集合重新注册。`/logout` `/quit` 内部调 `_stop_daemon`。
 
 接管与回复策略不在 Bridge 配置，`/studio` 引导用户去 Studio 设置。
 
@@ -70,13 +71,12 @@ Chat/Studio 地址在 `config.py` 硬编码为 `https://chat.laborster.com` / `h
 laborster-bridge [--state DIR]
   → __main__.main()：--state 有值则 config.set_state_dir()
   → repl.run()
-       打印 banner；无状态目录则提示
+       打印 banner；有状态目录则 commands.autostart()（自动连接）
        循环：读一行 → 去掉前导 '/' → 按 DISPATCH 分发
        无状态模式下非 NO_STATE_OK 命令被拒
-  /login    → StudioClient.handshake(pwd) → 写 token/machine_id/bridge_id
-            → 若已有 channel：_start()
-  /channel add → ChatAdapter.obtain_token(pwd) → 存 chat_token；运行中则重启
-  /start    → 构造 StudioClient(token getter=读 laborster.json)
+  /login    → StudioClient.handshake(pwd) → 写 token/machine_id/bridge_id → _ensure()
+  /channel add → ChatAdapter.obtain_token(pwd) → 存 chat_token → _ensure()
+  _ensure() ready 时 → 构造 StudioClient(token getter=读 laborster.json)
             → LocalStore(messages.db) → BridgeRuntime.start()（后台 bootstrap 线程）
 ```
 

@@ -19,14 +19,12 @@ Laborster Bridge — 命令
 
   /help               显示本指南
   /state <path>       设置本会话的状态目录（无默认；每次启动都要指定）
-  /login              输入 Studio 账号密码 → 换 token 落盘；有 channel 则自动起 daemon
-  /logout             停 daemon，清除 Studio token
+  /login              输入 Studio 账号密码 → 换 token 落盘（之后自动连接）
+  /logout             清除 Studio token（自动断开）
   /status             daemon 与各 channel 状态快照
-  /channel add        输入 Chat 账号密码 → 换 token 存入；重启 daemon 重新注册
+  /channel add        输入 Chat 账号密码 → 换 token 存入（自动重连注册）
   /channel rm <n>     删除第 n 个 channel（见 /channel list）
   /channel list       列出已保存的 channel（不含任何凭据）
-  /start              手动启动 daemon
-  /stop               停止 daemon
   /log [-f]           查看日志；-f 跟随（Ctrl-C 或 EOF 退出）
   /studio             打印 Studio 地址
   /quit               停 daemon 并退出
@@ -74,33 +72,35 @@ def _make_runtime(ctx: Context) -> BridgeRuntime:
     )
 
 
-def _start(ctx: Context) -> dict:
-    data = state.load()
-    if not data.get("studio_token"):
-        return {"error": "未登录 — 先执行 /login"}
-    if not data.get("channels"):
-        return {"error": "没有 channel — 先执行 /channel add"}
-    if ctx.runtime and ctx.runtime.is_running():
-        return {"error": "daemon 已在运行"}
-    ctx.runtime = _make_runtime(ctx)
-    ctx.runtime.start()
-    return {"lines": ["daemon 启动中… 用 /status 查看"]}
-
-
-def _stop(ctx: Context) -> dict:
-    if not (ctx.runtime and ctx.runtime.is_running()):
-        return {"error": "daemon 未运行"}
-    ctx.runtime.stop()
-    ctx.runtime = None
-    return {"lines": ["daemon 已停止"]}
-
-
-def _restart_if_running(ctx: Context) -> None:
+def _stop_daemon(ctx: Context) -> None:
     if ctx.runtime and ctx.runtime.is_running():
         ctx.runtime.stop()
-        ctx.runtime = None
-        ctx.runtime = _make_runtime(ctx)
-        ctx.runtime.start()
+    ctx.runtime = None
+
+
+def _ensure(ctx: Context) -> str | None:
+    """Reconcile the daemon with persisted state.
+
+    The daemon is not a user-visible concept: whenever a state dir is set
+    and there is a Studio token + at least one channel, the daemon runs.
+    Called on launch and after any state-mutating command (it always
+    (re)starts when ready so a changed channel set re-registers).
+    """
+    if not config.has_state_dir():
+        return None
+    data = state.load()
+    ready = bool(data.get("studio_token") and data.get("channels"))
+    _stop_daemon(ctx)
+    if not ready:
+        return None
+    ctx.runtime = _make_runtime(ctx)
+    ctx.runtime.start()
+    return "daemon 已自动连接（/status 查看）"
+
+
+def autostart(ctx: Context) -> str | None:
+    """Best-effort auto-start at REPL launch (state dir already set)."""
+    return _ensure(ctx)
 
 
 # --- commands ---
@@ -118,7 +118,11 @@ def cmd_state(ctx: Context, args: list[str]) -> dict:
         d = config.set_state_dir(args[0])
     except Exception as exc:
         return {"error": str(exc)}
-    return {"lines": [f"state dir: {d}"]}
+    lines = [f"state dir: {d}"]
+    msg = _ensure(ctx)
+    if msg:
+        lines.append(msg)
+    return {"lines": lines}
 
 
 def cmd_login(ctx: Context, args: list[str]) -> dict:
@@ -149,18 +153,16 @@ def cmd_login(ctx: Context, args: list[str]) -> dict:
         f"  bridge_id  : {r['bridge_id']}",
         f"  machine_id : {r['machine_id']}",
     ]
-    if data.get("channels"):
-        res = _start(ctx)
-        lines += res.get("lines", []) or [res.get("error", "")]
-    else:
+    msg = _ensure(ctx)
+    if msg:
+        lines.append(msg)
+    elif not data.get("channels"):
         lines.append("还没有 channel — 执行 /channel add")
     return {"lines": lines}
 
 
 def cmd_logout(ctx: Context, args: list[str]) -> dict:
-    if ctx.runtime and ctx.runtime.is_running():
-        ctx.runtime.stop()
-        ctx.runtime = None
+    _stop_daemon(ctx)
     data = state.load()
     data.pop("studio_token", None)
     state.save(data)
@@ -196,8 +198,13 @@ def cmd_channel(ctx: Context, args: list[str]) -> dict:
         channels.append({"username": username, "chat_token": token})
         data["channels"] = channels
         state.save(data)
-        _restart_if_running(ctx)
-        return {"lines": [f"已添加 channel: {username} ({self_id})"]}
+        lines = [f"已添加 channel: {username} ({self_id})"]
+        msg = _ensure(ctx)
+        if msg:
+            lines.append(msg)
+        elif not data.get("studio_token"):
+            lines.append("尚未登录 — 执行 /login 后自动连接")
+        return {"lines": lines}
 
     if sub == "rm":
         if len(args) < 2 or not args[1].isdigit():
@@ -208,18 +215,10 @@ def cmd_channel(ctx: Context, args: list[str]) -> dict:
         removed = channels.pop(idx)
         data["channels"] = channels
         state.save(data)
-        _restart_if_running(ctx)
+        _ensure(ctx)
         return {"lines": [f"已删除 channel: {removed['username']}"]}
 
     return {"error": "用法: /channel add | rm <n> | list"}
-
-
-def cmd_start(ctx: Context, args: list[str]) -> dict:
-    return _start(ctx)
-
-
-def cmd_stop(ctx: Context, args: list[str]) -> dict:
-    return _stop(ctx)
 
 
 def cmd_status(ctx: Context, args: list[str]) -> dict:
@@ -257,8 +256,7 @@ def cmd_studio(ctx: Context, args: list[str]) -> dict:
 
 
 def cmd_quit(ctx: Context, args: list[str]) -> dict:
-    if ctx.runtime and ctx.runtime.is_running():
-        ctx.runtime.stop()
+    _stop_daemon(ctx)
     return {"quit": True}
 
 
@@ -269,8 +267,6 @@ DISPATCH = {
     "logout": cmd_logout,
     "status": cmd_status,
     "channel": cmd_channel,
-    "start": cmd_start,
-    "stop": cmd_stop,
     "log": cmd_log,
     "studio": cmd_studio,
     "quit": cmd_quit,

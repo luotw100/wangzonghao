@@ -64,7 +64,7 @@ uv run laborster-bridge --state /path/to/state
 REPL 内：
 1. `/login` → 输入 Studio 账号密码（换 token 落盘）
 2. `/channel add` → 输入 Chat sandbox 账号密码（换 chat token 落盘）
-3. `/start`（首次 `/login` 时若已有 channel 会自动起）→ `/status` 看在线状态
+3. daemon 自动连接（无 `/start`）→ `/status` 看在线状态；下次带 `--state` 启动即自动续连
 
 Chat/Studio 地址硬编码在 `config.py`（`chat.laborster.com` / `studio.laborster.com`），无 base-URL 输入；状态目录无默认值，必须 `--state` 或 REPL `/state <path>` 指定。多个 Chat channel 重复 `/channel add` 即可。
 

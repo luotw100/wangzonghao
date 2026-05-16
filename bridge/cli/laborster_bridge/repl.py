@@ -23,8 +23,6 @@ _COMPLETIONS = {
     "/logout": None,
     "/status": None,
     "/channel": {"add": None, "rm": None, "list": None},
-    "/start": None,
-    "/stop": None,
     "/log": {"-f": None},
     "/studio": None,
     "/quit": None,
@@ -127,6 +125,8 @@ def _run_interactive(events: Events) -> int:
     pr([("class:head", BANNER + "\n")])
     if not config.has_state_dir():
         pr([("class:warn", "  无状态目录 — 用 /state <path> 设置（或重启带 --state）\n")])
+    elif commands.autostart(ctx):
+        pr([("class:ok", "  daemon 已自动连接（/status 查看）\n")])
 
     with patch_stdout():
         while True:
@@ -188,6 +188,8 @@ def _run_plain(events: Events) -> int:
     print(BANNER)
     if not config.has_state_dir():
         print("  ! 无状态目录 — 用 /state <path> 设置（或重启时带 --state）")
+    elif commands.autostart(ctx):
+        print("  daemon 已自动连接（/status 查看）")
 
     while True:
         raw = sys.stdin.readline()

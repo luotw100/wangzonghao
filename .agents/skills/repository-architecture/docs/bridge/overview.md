@@ -2,7 +2,7 @@
 
 ## 当前形态
 
-`bridge/cli/` 是跑在主播/运营本机的 **Python 命令行 daemon**。它是一个纯标准库实现的交互式 REPL：双击可执行文件或在终端启动后进入黑框框，输入 slash 命令管理登录与 channel。**进程本身就是 daemon**——登录、注册 channel、6 个后台循环都跑在这个进程里，关掉进程即断线。没有图形界面、没有 IPC、没有后台服务托管。
+`bridge/cli/` 是跑在主播/运营本机的 **Python 命令行 daemon**。它是一个交互式 REPL：双击可执行文件或在终端启动后进入黑框框，输入 slash 命令管理登录与 channel。tty 模式用 prompt_toolkit 提供命令历史（↑/↓，持久化到 `<state>/.history`）、Tab 补全、样式化输出；非 tty（管道）自动 fallback 到纯 stdin 循环，保持可脚本化与可测试。**进程本身就是 daemon**——登录、注册 channel、6 个后台循环都跑在这个进程里，关掉进程即断线。没有图形界面、没有 IPC、没有后台服务托管。
 
 对 text 消息，Bridge 是透明管道；媒体消息当前 ack 为 `failed`（chat sandbox 实践上只发 text）。
 
@@ -29,7 +29,7 @@ bridge/
 
 ## 技术栈
 
-- **Python 3.12+**，纯标准库，无第三方依赖（`urllib` / `sqlite3` / `hashlib` / `threading` / `json` / `getpass` / `argparse`）。
+- **Python 3.12+**。网络/存储/并发全用 stdlib（`urllib` / `sqlite3` / `hashlib` / `threading` / `json` / `argparse`）。唯一第三方依赖 `prompt_toolkit`，仅交互式 REPL（历史/补全/样式）使用，在 `repl._run_interactive` 内懒导入；非 tty fallback 不依赖它。
 - 打包定位：`pyproject.toml` 用 hatchling，`project.scripts` 暴露 `laborster-bridge` 和 `lbr`，二者都指向 `laborster_bridge.__main__:main`。
 
 ## 命令集（slash）

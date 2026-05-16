@@ -30,7 +30,7 @@ Studio 与 Chat 之间没有代码 import 和直接 API 调用；仅 Bridge 的 
 
 ### Bridge CLI
 
-`bridge/cli/` 是 Python 纯标准库命令行 daemon（交互式 REPL，进程本身即 daemon）。用户在黑框框里用 slash 命令配置 Studio 账号和 chat channel 凭据，6 个后台循环线程在同进程运行，关掉进程即断线。
+`bridge/cli/` 是 Python 命令行 daemon（交互式 REPL，进程本身即 daemon；唯一三方依赖 prompt_toolkit 仅交互模式用，其余 stdlib）。用户在黑框框里用 slash 命令配置 Studio 账号和 chat channel 凭据，6 个后台循环线程在同进程运行，关掉进程即断线。
 
 Bridge 当前负责：
 

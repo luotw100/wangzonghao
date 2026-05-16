@@ -4,13 +4,13 @@
 
 ```text
 bridge/
-  cli/       # Bridge 命令行 daemon（Python 纯 stdlib REPL）
+  cli/       # Bridge 命令行 daemon（Python REPL，prompt_toolkit + stdlib）
 services/
   chat/      # Chat sandbox Channel
   studio/    # 控制台和 AI brain
 ```
 
-三个项目互相独立。`bridge/cli/` 是零依赖 Python 包，`services/` 是 Python/Docker 工作区，不要跨项目直接 import 源码。
+三个项目互相独立。`bridge/cli/` 是 Python 包（依赖 prompt_toolkit，其余 stdlib），`services/` 是 Python/Docker 工作区，不要跨项目直接 import 源码。
 
 ## 启动 Chat sandbox
 
@@ -58,7 +58,7 @@ docker compose exec -T studio-api uv run python -m studio.cli create-account \
 
 ```bash
 cd bridge/cli
-python3 -m laborster_bridge --state /path/to/state
+uv run laborster-bridge --state /path/to/state
 ```
 
 REPL 内：
@@ -110,7 +110,7 @@ docker compose exec -T studio-api uv run python -m studio.cli reset-password --u
 
 ## 构建命令
 
-- Bridge CLI：纯 stdlib，无构建步骤；`cd bridge/cli && python3 -m compileall -q laborster_bridge` 做语法自检，`python3 -m laborster_bridge` 直接运行。单文件可执行打包属发布层。
+- Bridge CLI：无构建步骤；`cd bridge/cli && python3 -m compileall -q laborster_bridge` 做语法自检，`uv run laborster-bridge` 运行（uv 解析 prompt_toolkit）。单文件可执行打包属发布层。
 - Chat web：在 `services/chat/web` 下执行 `npm run build`。
 - Studio web：在 `services/studio/web` 下执行 `npm run build`；需要 lint 时执行 `npm run lint`。
 - Python 服务在 Dockerfile / Compose 中使用 `uv`。

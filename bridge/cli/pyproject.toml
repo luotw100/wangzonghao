@@ -3,7 +3,7 @@ name = "laborster-bridge"
 version = "0.1.0"
 description = "Laborster local relay CLI — logs into chat platforms and bridges private chats to Studio."
 requires-python = ">=3.12"
-dependencies = []
+dependencies = ["prompt_toolkit>=3.0"]
 
 [project.scripts]
 laborster-bridge = "laborster_bridge.__main__:main"

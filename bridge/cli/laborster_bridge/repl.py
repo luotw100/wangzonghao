@@ -1,8 +1,13 @@
-"""Interactive REPL — the only user surface. The process is the daemon."""
+"""Interactive REPL — the only user surface. The process is the daemon.
+
+Interactive (tty) mode uses prompt_toolkit: command history (↑/↓,
+persisted to <state>/.history), Tab completion, and styled output.
+Non-tty (piped) mode falls back to a plain stdin loop so the CLI stays
+scriptable and testable.
+"""
 
 from __future__ import annotations
 
-import getpass
 import sys
 import threading
 
@@ -11,65 +16,185 @@ from .events import Events
 
 BANNER = "Laborster Bridge · 输入 /help 查看命令，/quit 退出"
 
-
-def _ask_line(prompt: str) -> str:
-    if sys.stdin.isatty():
-        try:
-            return input(prompt)
-        except EOFError:
-            return ""
-    line = sys.stdin.readline()
-    return line.rstrip("\n")
-
-
-def _ask_secret(prompt: str) -> str:
-    if sys.stdin.isatty():
-        try:
-            return getpass.getpass(prompt)
-        except EOFError:
-            return ""
-    line = sys.stdin.readline()
-    return line.rstrip("\n")
+_COMPLETIONS = {
+    "/help": None,
+    "/state": None,
+    "/login": None,
+    "/logout": None,
+    "/status": None,
+    "/channel": {"add": None, "rm": None, "list": None},
+    "/start": None,
+    "/stop": None,
+    "/log": {"-f": None},
+    "/studio": None,
+    "/quit": None,
+}
 
 
-def _render(result: dict) -> None:
+# ---------- styled rendering (tty) ----------
+
+def _build_style():
+    from prompt_toolkit.styles import Style
+
+    return Style.from_dict(
+        {
+            "err": "fg:#ff5f5f bold",
+            "ok": "fg:#5fd75f",
+            "warn": "fg:#ffd75f",
+            "key": "fg:#5fafff",
+            "dim": "fg:#8a8a8a",
+            "head": "bold",
+        }
+    )
+
+
+def _fmt_result(result: dict):
+    """Yield (style_class, text) tuples for one command result."""
     if result.get("error"):
-        print(f"  ! {result['error']}")
+        yield ("class:err", f"  ✗ {result['error']}\n")
     for line in result.get("lines", []):
-        print(line)
+        s = line.strip()
+        if any(k in line for k in ("成功", "已添加", "已删除", "已停止", "已登出", "online", " ok")):
+            yield ("class:ok", line + "\n")
+        elif any(k in line for k in ("失效", "失败", "错误", "offline", "无法", "超时")):
+            yield ("class:err", line + "\n")
+        elif "启动中" in line or "connecting" in line or "warn" in line:
+            yield ("class:warn", line + "\n")
+        elif " : " in line and not s.startswith("/"):
+            k, _, v = line.partition(" : ")
+            yield ("class:key", k + " : ")
+            yield ("", v + "\n")
+        elif s.startswith("/") or line.startswith("Laborster"):
+            yield ("class:head", line + "\n")
+        else:
+            yield ("", line + "\n")
 
 
-def _follow(events: Events) -> None:
-    if not sys.stdin.isatty():
-        print("  (-f 跟随仅在交互终端可用；以上为最近日志)")
-        return
-    stop = threading.Event()
-    try:
-        for ln in events.follow(stop):
-            commands._print_log(ln)
-    except KeyboardInterrupt:
-        stop.set()
-        print()
+def _fmt_log(ln: dict):
+    lvl = {"err": "class:err", "warn": "class:warn", "ok": "class:ok"}.get(ln["level"], "")
+    return [
+        ("class:dim", f"  {ln['t']} "),
+        ("class:key", f"[{ln['src']}/"),
+        (lvl, f"{ln['level']}] "),
+        (lvl, ln["msg"] + "\n"),
+    ]
 
 
-def run() -> int:
-    events = Events()
-    ctx = commands.Context(events, _ask_line, _ask_secret)
+# ---------- interactive (prompt_toolkit) ----------
+
+def _run_interactive(events: Events) -> int:
+    from prompt_toolkit import PromptSession, print_formatted_text
+    from prompt_toolkit.completion import NestedCompleter
+    from prompt_toolkit.formatted_text import FormattedText
+    from prompt_toolkit.history import FileHistory, InMemoryHistory
+    from prompt_toolkit.patch_stdout import patch_stdout
+
+    style = _build_style()
+    completer = NestedCompleter.from_nested_dict(_COMPLETIONS)
+
+    def pr(fragments) -> None:
+        print_formatted_text(FormattedText(fragments), style=style)
+
+    history_path: str | None = None
+    session: PromptSession = PromptSession(
+        history=InMemoryHistory(), completer=completer
+    )
+
+    def sync_history() -> None:
+        nonlocal history_path, session
+        if not config.has_state_dir():
+            return
+        want = str(config.state_dir() / ".history")
+        if want != history_path:
+            history_path = want
+            session = PromptSession(
+                history=FileHistory(want), completer=completer
+            )
+
+    def ask_line(prompt: str) -> str:
+        try:
+            return session.prompt(prompt)
+        except (EOFError, KeyboardInterrupt):
+            return ""
+
+    def ask_secret(prompt: str) -> str:
+        try:
+            return session.prompt(prompt, is_password=True)
+        except (EOFError, KeyboardInterrupt):
+            return ""
+
+    ctx = commands.Context(events, ask_line, ask_secret)
+    pr([("class:head", BANNER + "\n")])
+    if not config.has_state_dir():
+        pr([("class:warn", "  无状态目录 — 用 /state <path> 设置（或重启带 --state）\n")])
+
+    with patch_stdout():
+        while True:
+            sync_history()
+            try:
+                raw = session.prompt("laborster> ")
+            except (EOFError, KeyboardInterrupt):
+                raw = "/quit"
+            line = raw.strip()
+            if not line:
+                continue
+            if line.startswith("/"):
+                line = line[1:]
+            parts = line.split()
+            name, cmd_args = parts[0], parts[1:]
+
+            handler = commands.DISPATCH.get(name)
+            if not handler:
+                pr([("class:err", f"  ✗ 未知命令: {name}（/help 查看）\n")])
+                continue
+            if not config.has_state_dir() and name not in commands.NO_STATE_OK:
+                pr([("class:err", "  ✗ 需要先设置状态目录: /state <path>\n")])
+                continue
+
+            try:
+                result = handler(ctx, cmd_args)
+            except config.NoStateError as exc:
+                pr([("class:err", f"  ✗ {exc}\n")])
+                continue
+            except Exception as exc:
+                pr([("class:err", f"  ✗ 命令出错: {exc}\n")])
+                continue
+
+            if result.get("quit"):
+                pr([("class:dim", "bye\n")])
+                if ctx.runtime and ctx.runtime.is_running():
+                    ctx.runtime.stop()
+                return 0
+            for ln in result.get("logs", []):
+                pr(_fmt_log(ln))
+            if result.get("follow"):
+                stop = threading.Event()
+                try:
+                    for ln in events.follow(stop):
+                        pr(_fmt_log(ln))
+                except KeyboardInterrupt:
+                    stop.set()
+                continue
+            pr(list(_fmt_result(result)))
+
+
+# ---------- non-interactive fallback ----------
+
+def _run_plain(events: Events) -> int:
+    def ask_line(prompt: str) -> str:
+        return sys.stdin.readline().rstrip("\n")
+
+    ctx = commands.Context(events, ask_line, ask_line)
     print(BANNER)
     if not config.has_state_dir():
         print("  ! 无状态目录 — 用 /state <path> 设置（或重启时带 --state）")
 
     while True:
-        try:
-            raw = input("laborster> ") if sys.stdin.isatty() else sys.stdin.readline()
-        except EOFError:
-            raw = ""
-        if not sys.stdin.isatty() and raw == "":
-            break  # EOF on piped input
+        raw = sys.stdin.readline()
+        if raw == "":
+            break
         line = raw.strip()
         if not line:
-            if sys.stdin.isatty():
-                continue
             break
         if line.startswith("/"):
             line = line[1:]
@@ -83,7 +208,6 @@ def run() -> int:
         if not config.has_state_dir() and name not in commands.NO_STATE_OK:
             print("  ! 需要先设置状态目录: /state <path>")
             continue
-
         try:
             result = handler(ctx, cmd_args)
         except config.NoStateError as exc:
@@ -95,12 +219,22 @@ def run() -> int:
 
         if result.get("quit"):
             print("bye")
+            if ctx.runtime and ctx.runtime.is_running():
+                ctx.runtime.stop()
             return 0
-        if result.get("follow"):
-            _follow(events)
-            continue
-        _render(result)
+        for ln in result.get("logs", []):
+            print(f"  {ln['t']} [{ln['src']}/{ln['level']}] {ln['msg']}")
+        if result.get("error"):
+            print(f"  ! {result['error']}")
+        for line in result.get("lines", []):
+            print(line)
 
     if ctx.runtime and ctx.runtime.is_running():
         ctx.runtime.stop()
     return 0
+
+
+def run() -> int:
+    if sys.stdin.isatty():
+        return _run_interactive(Events())
+    return _run_plain(Events())

@@ -249,12 +249,7 @@ def cmd_status(ctx: Context, args: list[str]) -> dict:
 
 
 def cmd_log(ctx: Context, args: list[str]) -> dict:
-    follow = "-f" in args
-    for ln in ctx.events.tail(50):
-        _print_log(ln)
-    if follow:
-        return {"follow": True}
-    return {"lines": []}
+    return {"logs": ctx.events.tail(50), "follow": "-f" in args}
 
 
 def cmd_studio(ctx: Context, args: list[str]) -> dict:
@@ -265,10 +260,6 @@ def cmd_quit(ctx: Context, args: list[str]) -> dict:
     if ctx.runtime and ctx.runtime.is_running():
         ctx.runtime.stop()
     return {"quit": True}
-
-
-def _print_log(ln: dict) -> None:
-    print(f"  {ln['t']} [{ln['src']}/{ln['level']}] {ln['msg']}")
 
 
 DISPATCH = {

@@ -29,10 +29,10 @@ Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Cha
 | 项目 | 路径 | 当前职责 | 边界规则 |
 | --- | --- | --- | --- |
 | Chat sandbox | `services/chat/` | dogfood Channel / 可控聊天平台 | 只模拟平台；Studio 不直接调用它。 |
-| Bridge CLI | `bridge/cli/` | Python 纯 stdlib REPL daemon，登录本地平台账号并桥接到 Studio | 不调 LLM、不存人设、磁盘永不存密码（只存 token）。 |
+| Bridge CLI | `bridge/cli/` | Python REPL daemon，登录本地平台账号并桥接到 Studio | 不调 LLM、不存人设、磁盘永不存密码（只存 token）。 |
 | Studio | `services/studio/` | 控制台、source of truth、reply/distill brain | 不直连任何 Channel，只接受 Bridge protocol。 |
 
-`bridge/cli/` 是独立 Python 包（`laborster_bridge`，纯标准库，无第三方依赖），可执行名 `laborster-bridge` / `lbr`。将来若加图形界面，在 `bridge/` 下另建目录。Chat/Studio 保持 Python/Docker 工作流不变。
+`bridge/cli/` 是独立 Python 包（`laborster_bridge`）。唯一第三方依赖是 `prompt_toolkit`（交互式 REPL 的历史/补全/样式渲染）；其余全部 stdlib，非 tty fallback 路径不导入 prompt_toolkit。可执行名 `laborster-bridge` / `lbr`。将来若加图形界面，在 `bridge/` 下另建目录。Chat/Studio 保持 Python/Docker 工作流不变。
 
 ## 当前核心不变量
 
@@ -72,7 +72,7 @@ Laborster 是私聊接管系统。当前仓库由三个独立项目组成：`Cha
 - `docs/bridge/overview.md` — Python REPL daemon 结构、模块划分、状态文件、命令集、启动生命周期。
 - `docs/bridge/runtime-adapters.md` — store / studio_client / chat_adapter、BridgeRuntime 线程循环（producer/consumer/heartbeat/announce/active-peers/outbound）。
 - `docs/bridge/protocol.md` — 当前 Studio `/api/bridge/*` protocol（协议本身与语言无关）。
-- `docs/bridge/infra.md` — Python 包结构、纯 stdlib 依赖、可执行入口、打包定位。
+- `docs/bridge/infra.md` — Python 包结构、依赖（prompt_toolkit）、可执行入口、打包定位。
 
 ### Studio
 

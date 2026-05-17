@@ -57,7 +57,7 @@ export default function Composer({
       await uploadPresignedFile(presign.upload_url, file);
       const msgType = inferMediaType(file.type || 'application/octet-stream');
       await sendMessage(conversation.id, {
-        sender_type: perspective,
+        sender_id: perspective === 'self' ? null : conversation.contact_id,
         msg_type: msgType,
         content: presign.storage_key,
       });

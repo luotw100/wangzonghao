@@ -5,13 +5,9 @@ export interface Account {
   id: string;
   username: string;
   nickname: string;
-  avatar_url: string | null;
   status: string;
-  is_deleted: boolean;
-  deleted_at: string | null;
   created_at: string;
   updated_at: string;
-  last_login_at: string | null;
 }
 
 export interface Contact {
@@ -20,9 +16,6 @@ export interface Contact {
   username: string;
   nickname: string;
   remark_name: string | null;
-  avatar_url: string | null;
-  is_deleted: boolean;
-  deleted_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -32,8 +25,6 @@ export interface Conversation {
   account_id: string;
   contact_id: string;
   title: string;
-  is_deleted: boolean;
-  deleted_at: string | null;
   created_at: string;
   updated_at: string;
   contact: Contact;
@@ -45,11 +36,9 @@ export interface Message {
   id: number;
   account_id: string;
   conversation_id: string;
-  sender_type: 'self' | 'contact';
-  sender_contact_id: string | null;
+  sender_id: string | null;
   msg_type: MessageType;
   content: string;
-  source: string;
   created_at: string;
 }
 
@@ -145,19 +134,12 @@ export function createContact(payload: {
   });
 }
 
-export function updateContact(
-  contactId: string,
-  payload: { remark_name?: string }
-): Promise<Contact> {
+export function updateContact(contactId: string, payload: { remark_name?: string }): Promise<Contact> {
   return request<Contact>(`/contacts/${contactId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-}
-
-export function deleteContact(contactId: string): Promise<Contact> {
-  return request<Contact>(`/contacts/${contactId}`, { method: 'DELETE' });
 }
 
 export function listConversations(): Promise<Conversation[]> {
@@ -166,7 +148,7 @@ export function listConversations(): Promise<Conversation[]> {
 
 export function sendMessage(
   conversationId: string,
-  payload: { sender_type: 'self' | 'contact'; msg_type: MessageType; content: string; created_at?: string }
+  payload: { sender_id: string | null; msg_type: MessageType; content: string; created_at?: string }
 ) {
   return request<{ status: string; id: number }>(`/conversations/${conversationId}/messages`, {
     method: 'POST',
@@ -177,7 +159,7 @@ export function sendMessage(
 
 export function bulkSendMessages(
   conversationId: string,
-  messages: Array<{ sender_type: 'self' | 'contact'; msg_type: MessageType; content: string; created_at: string }>
+  messages: Array<{ sender_id: string | null; msg_type: MessageType; content: string; created_at: string }>
 ) {
   return request<{ status: string; count: number }>(
     `/conversations/${conversationId}/messages/bulk`,

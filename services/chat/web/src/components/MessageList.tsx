@@ -180,31 +180,22 @@ export default function MessageList({
             );
           }
           const message = row.message!;
-          const isOnRight = message.sender_type === perspective;
-          const senderName =
-            message.sender_type === 'self' ? account.nickname : contactDisplayName(conversation.contact);
-          const seed = message.sender_type === 'self' ? account.id : conversation.contact.id;
-          const sourceLabel = message.source === 'import' ? '导入' : '实时';
+          const isSelf = message.sender_id === null;
+          const isOnRight = isSelf === (perspective === 'self');
+          const senderName = isSelf ? account.nickname : contactDisplayName(conversation.contact);
+          const seed = isSelf ? account.id : conversation.contact.id;
           return (
             <article key={row.key} className={isOnRight ? 'bubble-row right' : 'bubble-row left'}>
               <Avatar name={senderName} seed={seed} size={36} />
               <div className="bubble-stack">
-                <div
-                  className={
-                    message.sender_type === 'self'
-                      ? 'bubble bubble-self'
-                      : 'bubble bubble-contact'
-                  }
-                >
+                <div className={isSelf ? 'bubble bubble-self' : 'bubble bubble-contact'}>
                   {message.msg_type === 'text' ? (
                     message.content
                   ) : (
                     <MediaContent message={message} />
                   )}
                 </div>
-                <span className="bubble-time-tip">
-                  {formatFullTime(message.created_at)} · {sourceLabel}
-                </span>
+                <span className="bubble-time-tip">{formatFullTime(message.created_at)}</span>
               </div>
             </article>
           );

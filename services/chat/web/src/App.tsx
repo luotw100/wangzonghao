@@ -77,16 +77,6 @@ export default function App() {
     }
   }
 
-  async function handleDeleteContact(contactId: string) {
-    setGlobalError('');
-    try {
-      await api.deleteContact(contactId);
-      await workspace.reload();
-    } catch (err) {
-      setGlobalError(err instanceof Error ? err.message : String(err));
-    }
-  }
-
   async function handleImportDone(conversationId: string) {
     setShowImport(false);
     await workspace.reload();
@@ -113,7 +103,6 @@ export default function App() {
         onSelectConversation={handleSelectConversation}
         onCreateContact={handleCreateContact}
         onUpdateContactRemark={handleUpdateContactRemark}
-        onDeleteContact={handleDeleteContact}
         onLogout={auth.logout}
         onUpdateNickname={auth.updateNickname}
         onOpenImport={() => setShowImport(true)}

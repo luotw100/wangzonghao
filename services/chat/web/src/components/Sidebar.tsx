@@ -12,7 +12,6 @@ interface SidebarProps {
   onSelectConversation: (id: string) => void;
   onCreateContact: (nickname: string, remarkName: string) => Promise<void>;
   onUpdateContactRemark: (contactId: string, remarkName: string) => Promise<void>;
-  onDeleteContact: (contactId: string) => Promise<void>;
   onLogout: () => void;
   onUpdateNickname: (nickname: string) => Promise<void>;
   onOpenImport: () => void;
@@ -26,7 +25,6 @@ export default function Sidebar({
   onSelectConversation,
   onCreateContact,
   onUpdateContactRemark,
-  onDeleteContact,
   onLogout,
   onUpdateNickname,
   onOpenImport,
@@ -267,19 +265,6 @@ export default function Sidebar({
                 const remark = window.prompt('修改备注名', current);
                 if (remark === null) return;
                 await onUpdateContactRemark(target.contact.id, remark.trim());
-              },
-            },
-            {
-              label: '删除联系人',
-              danger: true,
-              onClick: async () => {
-                const target = menu.conversation;
-                setMenu(null);
-                const ok = window.confirm(
-                  `删除联系人「${contactDisplayName(target.contact)}」？该联系人下的会话也会被一起标记为删除。`
-                );
-                if (!ok) return;
-                await onDeleteContact(target.contact.id);
               },
             },
           ]}

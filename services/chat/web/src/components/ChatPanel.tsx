@@ -38,7 +38,8 @@ export default function ChatPanel({
   }
 
   async function handleSend(content: string, sender: 'self' | 'contact') {
-    await api.sendMessage(conversation.id, { sender_type: sender, msg_type: 'text', content });
+    const sender_id = sender === 'self' ? null : conversation.contact_id;
+    await api.sendMessage(conversation.id, { sender_id, msg_type: 'text', content });
     // The long-poll will pick up the new message; no need to manually reload.
   }
 

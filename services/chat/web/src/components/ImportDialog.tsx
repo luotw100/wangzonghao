@@ -120,7 +120,7 @@ export default function ImportDialog({ onDone, onCancel }: Props) {
       await api.bulkSendMessages(
         conv.id,
         textMsgs.map((msg) => ({
-          sender_type: msg.sender === myId ? 'self' : 'contact',
+          sender_id: msg.sender === myId ? null : contact.id,
           msg_type: 'text' as const,
           content: msg.content!,
           created_at: new Date(msg.timestamp * 1000).toISOString(),

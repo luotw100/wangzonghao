@@ -201,65 +201,6 @@ def get_or_create_direct_conversation(
     return conversation
 
 
-def add_message(
-    db: Session,
-    conversation: Conversation,
-    sender_id: str | None,
-    msg_type: str,
-    content: str,
-    created_at: datetime | None = None,
-) -> Message:
-    message = Message(
-        account_id=conversation.account_id,
-        conversation_id=conversation.id,
-        sender_id=sender_id,
-        msg_type=msg_type,
-        content=content,
-        created_at=created_at or utc_now(),
-    )
-    db.add(message)
-    conversation.updated_at = utc_now()
-    return message
-
-
-def get_messages_after_id(
-    db: Session, account_id: str, conversation_id: str, last_id: int, limit: int = 0
-) -> list[Message]:
-    q = db.query(Message).filter(
-        Message.account_id == account_id,
-        Message.conversation_id == conversation_id,
-        Message.id > last_id,
-    )
-    if limit > 0 and last_id == 0:
-        rows = q.order_by(Message.id.desc()).limit(limit).all()
-        return list(reversed(rows))
-    return q.order_by(Message.id.asc()).all()
-
-
-def get_messages_before_id(
-    db: Session, account_id: str, conversation_id: str, before_id: int, limit: int
-) -> list[Message]:
-    rows = (
-        db.query(Message)
-        .filter(
-            Message.account_id == account_id,
-            Message.conversation_id == conversation_id,
-            Message.id < before_id,
-        )
-        .order_by(Message.id.desc())
-        .limit(limit)
-        .all()
-    )
-    return list(reversed(rows))
-
-
-def build_messages_payload(
-    db: Session, account_id: str, conversation_id: str, last_id: int, limit: int = 0
-) -> dict[str, object]:
-    conversation = get_conversation_or_404(db, account_id, conversation_id)
-    messages = get_messages_after_id(db, account_id, conversation_id, last_id, limit)
-    return {"conversation": conversation, "messages": messages}
-
 
 @app.get("/api/health")
 def health() -> dict[str, str]:
@@ -387,20 +328,6 @@ def send_messages(
                 detail=f"媒体消息的 content 必须是以 {expected_prefix} 开头的 storage key",
             )
 
-    if len(payload.messages) == 1:
-        msg = payload.messages[0]
-        message = add_message(
-            db,
-            conversation,
-            msg.sender_id,
-            msg.msg_type,
-            msg.content,
-            created_at=normalize_timestamp(msg.created_at) if msg.created_at else None,
-        )
-        db.commit()
-        db.refresh(message)
-        return StatusResponse(status=CommandStatus.SUCCESS, id=message.id)
-
     to_insert = [
         Message(
             account_id=account.id,
@@ -419,49 +346,56 @@ def send_messages(
 
 
 @app.get(
-    "/api/conversations/{conversation_id}/messages", response_model=ConversationMessages
+    "/api/conversations/{conversation_id}/messages/before",
+    response_model=ConversationMessages,
 )
-async def get_conversation_messages(
+def get_messages_before(
+    conversation_id: str,
+    account: CurrentAccountDep,
+    db: DbDep,
+    before_id: Annotated[int | None, Query(ge=1)] = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> dict[str, object]:
+    conversation = get_conversation_or_404(db, account.id, conversation_id)
+    q = db.query(Message).filter(
+        Message.account_id == account.id,
+        Message.conversation_id == conversation_id,
+    )
+    if before_id is not None:
+        q = q.filter(Message.id < before_id)
+    rows = q.order_by(Message.id.desc()).limit(limit).all()
+    return {"conversation": conversation, "messages": list(reversed(rows))}
+
+
+@app.get(
+    "/api/conversations/{conversation_id}/messages/after",
+    response_model=ConversationMessages,
+)
+async def get_messages_after(
     conversation_id: str,
     account: CurrentAccountDep,
     last_id: Annotated[int, Query(ge=0)] = 0,
-    timeout: Annotated[int, Query(ge=0)] = 0,
-    before_id: Annotated[int | None, Query(ge=1)] = None,
     limit: Annotated[int, Query(ge=0, le=500)] = 0,
+    timeout: Annotated[int, Query(ge=0)] = 0,
 ) -> dict[str, object]:
-    # Paginated fetch (before_id) or initial bounded load: always immediate, no polling.
-    if before_id is not None or (limit > 0 and last_id == 0 and timeout == 0):
-        db = SessionLocal()
-        try:
-            conversation = get_conversation_or_404(db, account.id, conversation_id)
-            if before_id is not None:
-                messages = get_messages_before_id(
-                    db, account.id, conversation_id, before_id, limit or 100
-                )
-            else:
-                messages = get_messages_after_id(
-                    db, account.id, conversation_id, 0, limit
-                )
-            return {"conversation": conversation, "messages": messages}
-        finally:
-            db.close()
-
     start_time = time.time()
-
     while True:
         db = SessionLocal()
         try:
-            payload = build_messages_payload(db, account.id, conversation_id, last_id)
+            conversation = get_conversation_or_404(db, account.id, conversation_id)
+            q = db.query(Message).filter(
+                Message.account_id == account.id,
+                Message.conversation_id == conversation_id,
+                Message.id > last_id,
+            ).order_by(Message.id.asc())
+            if limit > 0:
+                q = q.limit(limit)
+            messages = q.all()
         finally:
             db.close()
-
-        if payload["messages"]:
-            return payload
-
+        if messages or (time.time() - start_time) >= timeout:
+            return {"conversation": conversation, "messages": messages}
         elapsed = time.time() - start_time
-        if elapsed >= timeout:
-            return payload
-
         await asyncio.sleep(min(0.2, timeout - elapsed))
 
 

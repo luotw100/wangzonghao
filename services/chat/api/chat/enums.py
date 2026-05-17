@@ -6,22 +6,12 @@ class AccountStatus(StrEnum):
     DISABLED = "disabled"
 
 
-class SenderType(StrEnum):
-    SELF = "self"
-    CONTACT = "contact"
-
-
 class MessageType(StrEnum):
     TEXT = "text"
     IMAGE = "image"
     AUDIO = "audio"
     VIDEO = "video"
     FILE = "file"
-
-
-class MessageSource(StrEnum):
-    LIVE = "live"
-    IMPORT = "import"
 
 
 class CommandStatus(StrEnum):

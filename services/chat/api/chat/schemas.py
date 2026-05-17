@@ -2,7 +2,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict
 
-from chat.enums import AccountStatus, CommandStatus, MessageSource, MessageType, SenderType
+from chat.enums import AccountStatus, CommandStatus, MessageType
 
 
 class StrictModel(BaseModel):
@@ -13,13 +13,9 @@ class AccountRead(StrictModel):
     id: str
     username: str
     nickname: str
-    avatar_url: str | None
     status: AccountStatus
-    is_deleted: bool
-    deleted_at: datetime | None
     created_at: datetime
     updated_at: datetime
-    last_login_at: datetime | None
 
 
 class AccountUpdate(StrictModel):
@@ -40,12 +36,10 @@ class ContactCreate(StrictModel):
     nickname: str
     username: str | None = None
     remark_name: str | None = None
-    avatar_url: str | None = None
 
 
 class ContactUpdate(StrictModel):
     remark_name: str | None = None
-    avatar_url: str | None = None
 
 
 class ContactRead(StrictModel):
@@ -54,9 +48,6 @@ class ContactRead(StrictModel):
     username: str
     nickname: str
     remark_name: str | None
-    avatar_url: str | None
-    is_deleted: bool
-    deleted_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -66,15 +57,13 @@ class ConversationRead(StrictModel):
     account_id: str
     contact_id: str
     title: str
-    is_deleted: bool
-    deleted_at: datetime | None
     created_at: datetime
     updated_at: datetime
     contact: ContactRead
 
 
 class MessageCreate(StrictModel):
-    sender_type: SenderType
+    sender_id: str | None = None
     msg_type: MessageType = MessageType.TEXT
     content: str
     created_at: datetime | None = None
@@ -84,11 +73,9 @@ class MessageRead(StrictModel):
     id: int
     account_id: str
     conversation_id: str
-    sender_type: SenderType
-    sender_contact_id: str | None
+    sender_id: str | None
     msg_type: MessageType
     content: str
-    source: MessageSource
     created_at: datetime
 
 
@@ -98,13 +85,15 @@ class ConversationMessages(StrictModel):
 
 
 class MessageBulkItem(StrictModel):
-    sender_type: SenderType
+    sender_id: str | None = None
     msg_type: MessageType = MessageType.TEXT
     content: str
     created_at: datetime
 
+
 class MessageBulkCreate(StrictModel):
     messages: list[MessageBulkItem]
+
 
 class StatusResponse(StrictModel):
     status: CommandStatus

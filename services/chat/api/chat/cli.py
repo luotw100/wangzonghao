@@ -30,18 +30,13 @@ def create_account(args: argparse.Namespace) -> None:
         existing = db.query(Account).filter(Account.username == args.username).first()
         if existing:
             raise SystemExit(f"account already exists: {args.username}")
-        account_id = new_id("acct")
         now = utc_now()
         account = Account(
-            id=account_id,
+            id=new_id("acct"),
             username=args.username,
             password_hash=hash_password(args.password),
             nickname=args.nickname,
-            avatar_url=args.avatar_url,
             status=AccountStatus.ACTIVE,
-            is_deleted=False,
-            deleted_at=None,
-            last_login_at=None,
             created_at=now,
             updated_at=now,
         )
@@ -60,10 +55,10 @@ def list_accounts(_: argparse.Namespace) -> None:
     run_migrations()
     db = next(get_db())
     try:
-        rows = []
-        for account in db.query(Account).order_by(Account.created_at.asc()).all():
-            status = f"{account.status} deleted" if account.is_deleted else account.status
-            rows.append([account.id, account.username, account.nickname, status])
+        rows = [
+            [account.id, account.username, account.nickname, account.status]
+            for account in db.query(Account).order_by(Account.created_at.asc()).all()
+        ]
         print(_table(["id", "username", "nickname", "status"], rows))
     finally:
         db.close()
@@ -92,7 +87,6 @@ def main() -> None:
     create_parser.add_argument("--username", required=True)
     create_parser.add_argument("--password", required=True)
     create_parser.add_argument("--nickname", required=True)
-    create_parser.add_argument("--avatar-url")
     create_parser.set_defaults(func=create_account)
 
     list_parser = subparsers.add_parser("list-accounts")

@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session, joinedload
 
 from chat.auth_utils import hash_token, new_session_token, verify_password
 from chat.db import SessionLocal, get_db, utc_now
-from chat.enums import AccountStatus, CommandStatus, MessageSource, MessageType, SenderType
+from chat.enums import AccountStatus, CommandStatus, MessageType
 from chat.migrate import run_migrations
 from chat.models import (
     Account,
@@ -118,19 +118,17 @@ def get_auth_session(
     if (
         not auth_session
         or not auth_session.account
-        or auth_session.account.is_deleted
         or auth_session.account.status != AccountStatus.ACTIVE
     ):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已失效"
         )
-    if auth_session.expires_at is not None and auth_session.expires_at < utc_now():
+    if auth_session.expires_at < utc_now():
         db.delete(auth_session)
         db.commit()
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="登录已超时"
         )
-    auth_session.last_seen_at = utc_now()
     auth_session.expires_at = utc_now() + timedelta(hours=24)
     db.commit()
     return auth_session
@@ -146,15 +144,10 @@ def current_account(auth_session: AuthSessionDep) -> Account:
 CurrentAccountDep = Annotated[Account, Depends(current_account)]
 
 
-def get_contact_or_404(
-    db: Session, account_id: str, contact_id: str, include_deleted: bool = False
-) -> Contact:
-    query = db.query(Contact).filter(
+def get_contact_or_404(db: Session, account_id: str, contact_id: str) -> Contact:
+    contact = db.query(Contact).filter(
         Contact.account_id == account_id, Contact.id == contact_id
-    )
-    if not include_deleted:
-        query = query.filter(Contact.is_deleted.is_(False))
-    contact = query.first()
+    ).first()
     if not contact:
         raise HTTPException(status_code=404, detail="联系人不存在")
     return contact
@@ -164,18 +157,15 @@ def get_conversation_or_404(
     db: Session,
     account_id: str,
     conversation_id: str,
-    include_deleted: bool = False,
 ) -> Conversation:
-    query = (
+    conversation = (
         db.query(Conversation)
         .options(joinedload(Conversation.contact))
         .filter(
             Conversation.account_id == account_id, Conversation.id == conversation_id
         )
+        .first()
     )
-    if not include_deleted:
-        query = query.filter(Conversation.is_deleted.is_(False))
-    conversation = query.first()
     if not conversation:
         raise HTTPException(status_code=404, detail="会话不存在")
     return conversation
@@ -193,9 +183,6 @@ def get_or_create_direct_conversation(
         .first()
     )
     if conversation:
-        if conversation.is_deleted:
-            conversation.is_deleted = False
-            conversation.deleted_at = None
         if title:
             conversation.title = title
         conversation.updated_at = utc_now()
@@ -207,8 +194,6 @@ def get_or_create_direct_conversation(
         account_id=account_id,
         contact_id=contact.id,
         title=title or contact.nickname,
-        is_deleted=False,
-        deleted_at=None,
         created_at=now,
         updated_at=now,
     )
@@ -219,28 +204,17 @@ def get_or_create_direct_conversation(
 def add_message(
     db: Session,
     conversation: Conversation,
-    sender_type: str,
+    sender_id: str | None,
     msg_type: str,
     content: str,
-    source: MessageSource | None = None,
     created_at: datetime | None = None,
 ) -> Message:
-    if sender_type not in {SenderType.SELF, SenderType.CONTACT}:
-        raise HTTPException(
-            status_code=400, detail="sender_type 必须是 self 或 contact"
-        )
-
-    if source is None:
-        source = MessageSource.IMPORT if created_at else MessageSource.LIVE
-
     message = Message(
         account_id=conversation.account_id,
         conversation_id=conversation.id,
-        sender_type=sender_type,
-        sender_contact_id=conversation.contact_id if sender_type == SenderType.CONTACT else None,
+        sender_id=sender_id,
         msg_type=msg_type,
         content=content,
-        source=source,
         created_at=created_at or utc_now(),
     )
     db.add(message)
@@ -282,9 +256,7 @@ def get_messages_before_id(
 def build_messages_payload(
     db: Session, account_id: str, conversation_id: str, last_id: int, limit: int = 0
 ) -> dict[str, object]:
-    conversation = get_conversation_or_404(
-        db, account_id, conversation_id, include_deleted=True
-    )
+    conversation = get_conversation_or_404(db, account_id, conversation_id)
     messages = get_messages_after_id(db, account_id, conversation_id, last_id, limit)
     return {"conversation": conversation, "messages": messages}
 
@@ -297,7 +269,7 @@ def health() -> dict[str, str]:
 @app.post("/api/auth/login", response_model=LoginResponse)
 def login(login_in: LoginRequest, db: DbDep) -> LoginResponse:
     account = db.query(Account).filter(Account.username == login_in.username).first()
-    if not account or account.is_deleted or account.status != AccountStatus.ACTIVE:
+    if not account or account.status != AccountStatus.ACTIVE:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     if not verify_password(login_in.password, account.password_hash):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
@@ -309,9 +281,7 @@ def login(login_in: LoginRequest, db: DbDep) -> LoginResponse:
         account_id=account.id,
         expires_at=now + timedelta(hours=24),
         created_at=now,
-        last_seen_at=now,
     )
-    account.last_login_at = now
     account.updated_at = now
     db.add(auth_session)
     db.commit()
@@ -341,15 +311,13 @@ def update_me(update: AccountUpdate, account: CurrentAccountDep, db: DbDep) -> A
 
 
 @app.get("/api/contacts", response_model=list[ContactRead])
-def list_contacts(
-    account: CurrentAccountDep,
-    db: DbDep,
-    include_deleted: Annotated[bool, Query()] = False,
-) -> list[Contact]:
-    query = db.query(Contact).filter(Contact.account_id == account.id)
-    if not include_deleted:
-        query = query.filter(Contact.is_deleted.is_(False))
-    return query.order_by(Contact.updated_at.desc()).all()
+def list_contacts(account: CurrentAccountDep, db: DbDep) -> list[Contact]:
+    return (
+        db.query(Contact)
+        .filter(Contact.account_id == account.id)
+        .order_by(Contact.updated_at.desc())
+        .all()
+    )
 
 
 @app.post("/api/contacts", response_model=ContactRead)
@@ -363,9 +331,6 @@ def create_contact(
         username=contact_in.username or new_id("chatid"),
         nickname=contact_in.nickname,
         remark_name=contact_in.remark_name,
-        avatar_url=contact_in.avatar_url,
-        is_deleted=False,
-        deleted_at=None,
         created_at=now,
         updated_at=now,
     )
@@ -387,43 +352,21 @@ def update_contact(
     contact = get_contact_or_404(db, account.id, contact_id)
     if contact_update.remark_name is not None:
         contact.remark_name = contact_update.remark_name
-    if contact_update.avatar_url is not None:
-        contact.avatar_url = contact_update.avatar_url
     contact.updated_at = utc_now()
     db.commit()
     db.refresh(contact)
     return contact
 
 
-@app.delete("/api/contacts/{contact_id}", response_model=ContactRead)
-def delete_contact(contact_id: str, account: CurrentAccountDep, db: DbDep) -> Contact:
-    contact = get_contact_or_404(db, account.id, contact_id)
-    now = utc_now()
-    contact.is_deleted = True
-    contact.deleted_at = now
-    contact.updated_at = now
-    db.query(Conversation).filter(
-        Conversation.account_id == account.id, Conversation.contact_id == contact.id
-    ).update({"is_deleted": True, "deleted_at": now, "updated_at": now})
-    db.commit()
-    db.refresh(contact)
-    return contact
-
-
 @app.get("/api/conversations", response_model=list[ConversationRead])
-def list_conversations(
-    account: CurrentAccountDep,
-    db: DbDep,
-    include_deleted: Annotated[bool, Query()] = False,
-) -> list[Conversation]:
-    query = (
+def list_conversations(account: CurrentAccountDep, db: DbDep) -> list[Conversation]:
+    return (
         db.query(Conversation)
         .options(joinedload(Conversation.contact))
         .filter(Conversation.account_id == account.id)
+        .order_by(Conversation.updated_at.desc())
+        .all()
     )
-    if not include_deleted:
-        query = query.filter(Conversation.is_deleted.is_(False))
-    return query.order_by(Conversation.updated_at.desc()).all()
 
 
 @app.post(
@@ -448,7 +391,7 @@ def send_debug_message(
     message = add_message(
         db,
         conversation,
-        msg_in.sender_type,
+        msg_in.sender_id,
         msg_in.msg_type,
         msg_in.content,
         created_at=normalize_timestamp(msg_in.created_at) if msg_in.created_at else None,
@@ -468,7 +411,7 @@ def connector_send_message(
     account: CurrentAccountDep,
     db: DbDep,
 ) -> StatusResponse:
-    if msg_in.sender_type != SenderType.SELF:
+    if msg_in.sender_id is not None:
         raise HTTPException(
             status_code=400, detail="Connector 只能以当前登录账号发送消息"
         )
@@ -485,7 +428,7 @@ def connector_send_message(
     message = add_message(
         db,
         conversation,
-        SenderType.SELF,
+        None,
         msg_in.msg_type,
         msg_in.content,
         created_at=normalize_timestamp(msg_in.created_at) if msg_in.created_at else None,
@@ -509,11 +452,9 @@ def bulk_import_messages(
         Message(
             account_id=account.id,
             conversation_id=conversation.id,
-            sender_type=item.sender_type,
-            sender_contact_id=conversation.contact_id if item.sender_type == SenderType.CONTACT else None,
+            sender_id=item.sender_id,
             msg_type=item.msg_type,
             content=item.content,
-            source=MessageSource.IMPORT,
             created_at=normalize_timestamp(item.created_at),
         )
         for item in payload.messages
@@ -539,9 +480,7 @@ async def get_conversation_messages(
     if before_id is not None or (limit > 0 and last_id == 0 and timeout == 0):
         db = SessionLocal()
         try:
-            conversation = get_conversation_or_404(
-                db, account.id, conversation_id, include_deleted=True
-            )
+            conversation = get_conversation_or_404(db, account.id, conversation_id)
             if before_id is not None:
                 messages = get_messages_before_id(
                     db, account.id, conversation_id, before_id, limit or 100
@@ -604,16 +543,14 @@ def _resolve_media_account(
     if (
         not auth_session
         or not auth_session.account
-        or auth_session.account.is_deleted
         or auth_session.account.status != AccountStatus.ACTIVE
     ):
         raise HTTPException(status_code=401, detail="登录已失效")
-    if auth_session.expires_at is not None and auth_session.expires_at < utc_now():
+    if auth_session.expires_at < utc_now():
         db.delete(auth_session)
         db.commit()
         raise HTTPException(status_code=401, detail="登录已超时")
     now = utc_now()
-    auth_session.last_seen_at = now
     auth_session.expires_at = now + timedelta(hours=24)
     db.commit()
     return auth_session.account

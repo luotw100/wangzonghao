@@ -9,59 +9,78 @@
 </head>
 <body>
   <header>
-    <img id="logo" src="favicon.svg" alt="" width="26" height="26" />
-    <h1>Laborster Bridge</h1>
+    <img id="logo" src="favicon.svg" alt="" width="24" height="24" />
+    <span class="brand">Laborster Bridge</span>
+    <nav id="tabs">
+      <button class="tab active" data-tab="channels">Channels</button>
+      <button class="tab" data-tab="status">状态</button>
+      <button class="tab" data-tab="account">账号</button>
+      <button class="tab" data-tab="log">日志</button>
+    </nav>
     <span id="pill" class="pill off">未运行</span>
   </header>
 
   <main>
-    <section class="card" id="account-card">
-      <h2>账号</h2>
-      <div id="account-logged-out">
-        <div class="field">
-          <label>Studio 用户名</label>
-          <input id="login-user" type="text" autocomplete="off" />
-        </div>
-        <div class="field">
-          <label>Studio 密码</label>
-          <input id="login-pass" type="password" autocomplete="off" />
-        </div>
-        <button id="btn-login" class="primary">登录</button>
+    <!-- Channels -->
+    <section class="page active" id="page-channels">
+      <div class="page-head">
+        <h2>Channels <span id="ch-count" class="count">0</span></h2>
+        <button id="btn-ch-toggle" class="primary sm">+ 添加</button>
       </div>
-      <div id="account-logged-in" hidden>
+
+      <div id="ch-add" class="addbox" hidden>
+        <div class="row">
+          <input id="ch-user" type="text" placeholder="Chat 用户名" autocomplete="off" />
+          <input id="ch-pass" type="password" placeholder="Chat 密码" autocomplete="off" />
+          <button id="btn-ch-add" class="primary">添加</button>
+          <button id="btn-ch-cancel" class="ghost">取消</button>
+        </div>
+        <p class="hint">添加后会用账号密码换取 token 存入，并自动重连注册。</p>
+      </div>
+
+      <div id="ch-list" class="cards"></div>
+      <div id="ch-empty" class="empty-state" hidden>
+        <div class="big">还没有 channel</div>
+        <div>点右上「+ 添加」绑定一个 Chat 账号。</div>
+      </div>
+    </section>
+
+    <!-- 状态 -->
+    <section class="page" id="page-status">
+      <div class="page-head"><h2>运行状态</h2></div>
+      <div class="grid2">
+        <div class="stat"><label>daemon</label><b id="st-run">-</b></div>
+        <div class="stat"><label>status</label><b id="st-status">-</b></div>
+        <div class="stat"><label>近 5 分钟入站</label><b id="st-in">0</b></div>
+        <div class="stat"><label>待发送</label><b id="st-unsent">0</b></div>
+      </div>
+      <div class="stat wide"><label>studio</label><b id="st-studio">-</b></div>
+      <div class="stat wide" id="st-err-row" hidden>
+        <label>last_error</label><b id="st-err" class="err">-</b>
+      </div>
+    </section>
+
+    <!-- 账号 -->
+    <section class="page" id="page-account">
+      <div class="page-head"><h2>账号</h2></div>
+      <div id="account-out" class="panel narrow">
+        <div class="field"><label>Studio 用户名</label>
+          <input id="login-user" type="text" autocomplete="off" /></div>
+        <div class="field"><label>Studio 密码</label>
+          <input id="login-pass" type="password" autocomplete="off" /></div>
+        <button id="btn-login" class="primary block">登录</button>
+      </div>
+      <div id="account-in" class="panel narrow" hidden>
         <div class="kv"><span>用户名</span><b id="acc-user">-</b></div>
         <div class="kv"><span>bridge_id</span><b id="acc-bridge">-</b></div>
         <div class="kv"><span>machine_id</span><b id="acc-machine">-</b></div>
-        <button id="btn-logout">登出</button>
+        <button id="btn-logout" class="ghost block">登出</button>
       </div>
     </section>
 
-    <section class="card" id="channel-card">
-      <h2>Channels</h2>
-      <ul id="channel-list" class="list"></ul>
-      <div class="field">
-        <label>Chat 用户名</label>
-        <input id="ch-user" type="text" autocomplete="off" />
-      </div>
-      <div class="field">
-        <label>Chat 密码</label>
-        <input id="ch-pass" type="password" autocomplete="off" />
-      </div>
-      <button id="btn-ch-add" class="primary">添加 channel</button>
-    </section>
-
-    <section class="card" id="status-card">
-      <h2>状态</h2>
-      <div class="kv"><span>status</span><b id="st-status">-</b></div>
-      <div class="kv"><span>studio</span><b id="st-studio">-</b></div>
-      <div class="kv"><span>近 5 分钟入站</span><b id="st-in">0</b></div>
-      <div class="kv"><span>待发送</span><b id="st-unsent">0</b></div>
-      <div class="kv" id="st-err-row" hidden><span>last_error</span><b id="st-err" class="err">-</b></div>
-      <div id="st-channels"></div>
-    </section>
-
-    <section class="card" id="log-card">
-      <h2>日志</h2>
+    <!-- 日志 -->
+    <section class="page" id="page-log">
+      <div class="page-head"><h2>日志</h2></div>
       <div id="log" class="log"></div>
     </section>
   </main>

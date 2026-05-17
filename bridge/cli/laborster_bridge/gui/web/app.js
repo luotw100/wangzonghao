@@ -23,7 +23,15 @@ function renderResult(r) {
   if (lines.length) showMsg(lines[0], "ok");
 }
 
-// --- log stream (pushed from Python) ---
+// ---- tab routing ----
+function switchTab(name) {
+  for (const b of document.querySelectorAll(".tab"))
+    b.classList.toggle("active", b.dataset.tab === name);
+  for (const p of document.querySelectorAll(".page"))
+    p.classList.toggle("active", p.id === "page-" + name);
+}
+
+// ---- log stream ----
 const MAX_LOG = 500;
 function appendLog(ln) {
   const box = $("log");
@@ -41,11 +49,52 @@ function appendLog(ln) {
 }
 window.pushLog = appendLog;
 
-// --- views ---
+// ---- state shared across renders ----
+let savedChannels = [];      // [{index, username}]
+let liveByName = {};         // username -> {online, platform_self_id, peers_count}
+
+function renderChannels() {
+  const wrap = $("ch-list");
+  wrap.innerHTML = "";
+  $("ch-count").textContent = savedChannels.length;
+  $("ch-empty").hidden = savedChannels.length > 0;
+
+  for (const c of savedChannels) {
+    const live = liveByName[c.username] || {};
+    const online = !!live.online;
+    const card = document.createElement("div");
+    card.className = "chan";
+    card.innerHTML =
+      `<span class="dot ${online ? "on" : "off"}"></span>` +
+      `<div class="info">` +
+        `<div class="name">${esc(c.username)}</div>` +
+        `<div class="meta">self ${esc(live.platform_self_id || "-")}` +
+        `<span class="sep">·</span>peers ${live.peers_count || 0}</div>` +
+      `</div>` +
+      `<span class="badge ${online ? "on" : ""}">${online ? "online" : "offline"}</span>`;
+    const del = document.createElement("button");
+    del.className = "danger sm";
+    del.textContent = "删除";
+    del.onclick = async () => {
+      if (!confirm(`删除 channel：${c.username}？`)) return;
+      del.disabled = true;
+      renderResult(await api().channel_rm(c.index));
+      await refreshAll();
+    };
+    card.appendChild(del);
+    wrap.appendChild(card);
+  }
+}
+
+async function loadChannels() {
+  savedChannels = await api().channel_list();
+  renderChannels();
+}
+
 async function loadAccount() {
   const a = await api().account();
-  $("account-logged-out").hidden = a.logged_in;
-  $("account-logged-in").hidden = !a.logged_in;
+  $("account-out").hidden = a.logged_in;
+  $("account-in").hidden = !a.logged_in;
   if (a.logged_in) {
     $("acc-user").textContent = a.username || "-";
     $("acc-bridge").textContent = a.bridge_id || "-";
@@ -56,61 +105,28 @@ async function loadAccount() {
   }
 }
 
-async function loadChannels() {
-  const list = await api().channel_list();
-  const ul = $("channel-list");
-  ul.innerHTML = "";
-  if (!list.length) {
-    const li = document.createElement("li");
-    li.className = "empty";
-    li.textContent = "（无 channel）";
-    ul.appendChild(li);
-    return;
-  }
-  for (const c of list) {
-    const li = document.createElement("li");
-    const name = document.createElement("span");
-    name.textContent = c.username;
-    const btn = document.createElement("button");
-    btn.textContent = "删除";
-    btn.onclick = async () => {
-      if (!confirm(`删除 channel：${c.username}？`)) return;
-      btn.disabled = true;
-      renderResult(await api().channel_rm(c.index));
-      await refreshAll();
-    };
-    li.appendChild(name);
-    li.appendChild(btn);
-    ul.appendChild(li);
-  }
-}
-
 async function pollStatus() {
   let s;
   try { s = await api().status(); } catch (e) { return; }
   const snap = s.snapshot || {};
   const running = s.running;
+
   const pill = $("pill");
   pill.textContent = running ? "运行中" : "未运行";
   pill.className = "pill " + (running ? "on" : "off");
-  $("st-status").textContent = (snap.status || "idle") + (running ? "" : "（daemon 未运行）");
-  $("st-studio").textContent = snap.studio_url || "-";
+
+  $("st-run").textContent = running ? "运行中" : "未运行";
+  $("st-status").textContent = snap.status || "idle";
   $("st-in").textContent = snap.in_count_5m || 0;
   $("st-unsent").textContent = snap.outbound_pending || 0;
+  $("st-studio").textContent = snap.studio_url || "-";
   const errRow = $("st-err-row");
   if (snap.last_error) { errRow.hidden = false; $("st-err").textContent = snap.last_error; }
   else errRow.hidden = true;
-  const cc = $("st-channels");
-  cc.innerHTML = "";
-  for (const c of snap.channels || []) {
-    const d = document.createElement("div");
-    d.className = "chan-line";
-    d.innerHTML =
-      `<span class="dot ${c.online ? "on" : "off"}"></span>` +
-      `${esc(c.handle)} · self=${esc(c.platform_self_id || "-")} · ` +
-      `peers=${c.peers_count || 0} · ${c.online ? "online" : "offline"}`;
-    cc.appendChild(d);
-  }
+
+  liveByName = {};
+  for (const c of snap.channels || []) liveByName[c.handle] = c;
+  renderChannels();
 }
 
 async function refreshAll() {
@@ -119,8 +135,34 @@ async function refreshAll() {
   await pollStatus();
 }
 
-// --- actions ---
 function wire() {
+  for (const b of document.querySelectorAll(".tab"))
+    b.onclick = () => switchTab(b.dataset.tab);
+
+  $("btn-ch-toggle").onclick = () => {
+    const box = $("ch-add");
+    box.hidden = !box.hidden;
+    if (!box.hidden) $("ch-user").focus();
+  };
+  $("btn-ch-cancel").onclick = () => {
+    $("ch-add").hidden = true;
+    $("ch-user").value = ""; $("ch-pass").value = "";
+  };
+
+  $("btn-ch-add").onclick = async () => {
+    const u = $("ch-user").value.trim();
+    const p = $("ch-pass").value;
+    if (!u || !p) { showMsg("用户名和密码不能为空", "err"); return; }
+    const btn = $("btn-ch-add");
+    btn.disabled = true; btn.textContent = "添加中…";
+    try {
+      renderResult(await api().channel_add(u, p));
+      $("ch-user").value = ""; $("ch-pass").value = "";
+      $("ch-add").hidden = true;
+      await refreshAll();
+    } finally { btn.disabled = false; btn.textContent = "添加"; }
+  };
+
   $("btn-login").onclick = async () => {
     const u = $("login-user").value.trim();
     const p = $("login-pass").value;
@@ -137,19 +179,6 @@ function wire() {
   $("btn-logout").onclick = async () => {
     renderResult(await api().logout());
     await refreshAll();
-  };
-
-  $("btn-ch-add").onclick = async () => {
-    const u = $("ch-user").value.trim();
-    const p = $("ch-pass").value;
-    if (!u || !p) { showMsg("用户名和密码不能为空", "err"); return; }
-    const btn = $("btn-ch-add");
-    btn.disabled = true; btn.textContent = "添加中…";
-    try {
-      renderResult(await api().channel_add(u, p));
-      $("ch-user").value = ""; $("ch-pass").value = "";
-      await refreshAll();
-    } finally { btn.disabled = false; btn.textContent = "添加 channel"; }
   };
 
   $("btn-opendir").onclick = async () => { await api().open_data_dir(); };

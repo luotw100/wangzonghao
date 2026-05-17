@@ -42,7 +42,7 @@ export function useMessages(conversationId: string | null, enabled: boolean): Us
     if (!conversationIdRef.current) return;
     const id = conversationIdRef.current;
     try {
-      const initial = await api.getMessages(id, 0, 0, { limit: INITIAL_LIMIT });
+      const initial = await api.getMessagesBefore(id, undefined, INITIAL_LIMIT);
       if (cancelledRef.current || conversationIdRef.current !== id) return;
       reset(initial);
     } catch {
@@ -58,7 +58,7 @@ export function useMessages(conversationId: string | null, enabled: boolean): Us
 
     loadingOlderRef.current = true;
     try {
-      const older = await api.getMessages(id, 0, 0, { beforeId, limit: INITIAL_LIMIT });
+      const older = await api.getMessagesBefore(id, beforeId, INITIAL_LIMIT);
       if (cancelledRef.current || conversationIdRef.current !== id) return;
       const more = older.length === INITIAL_LIMIT;
       if (older.length > 0) {
@@ -105,7 +105,7 @@ export function useMessages(conversationId: string | null, enabled: boolean): Us
 
     (async () => {
       try {
-        const initial = await api.getMessages(id, 0, 0, { limit: INITIAL_LIMIT });
+        const initial = await api.getMessagesBefore(id, undefined, INITIAL_LIMIT);
         if (cancelled || conversationIdRef.current !== id) return;
         setMessages(initial);
         lastIdRef.current = initial.reduce((m, x) => (x.id > m ? x.id : m), 0);
@@ -122,7 +122,7 @@ export function useMessages(conversationId: string | null, enabled: boolean): Us
 
       while (!cancelled && conversationIdRef.current === id) {
         try {
-          const incoming = await api.getMessages(id, lastIdRef.current, 30);
+          const incoming = await api.getMessagesAfter(id, lastIdRef.current);
           if (cancelled || conversationIdRef.current !== id) return;
           if (incoming.length > 0) {
             setMessages((previous) => {

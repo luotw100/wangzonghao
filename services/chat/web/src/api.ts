@@ -150,10 +150,10 @@ export function sendMessage(
   conversationId: string,
   payload: { sender_id: string | null; msg_type: MessageType; content: string; created_at?: string }
 ) {
-  return request<{ status: string; id: number }>(`/conversations/${conversationId}/messages`, {
+  return request<{ status: string; count: number }>(`/conversations/${conversationId}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
+    body: JSON.stringify({ messages: [payload] }),
   });
 }
 
@@ -162,7 +162,7 @@ export function bulkSendMessages(
   messages: Array<{ sender_id: string | null; msg_type: MessageType; content: string; created_at: string }>
 ) {
   return request<{ status: string; count: number }>(
-    `/conversations/${conversationId}/messages/bulk`,
+    `/conversations/${conversationId}/messages`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -197,19 +197,24 @@ export function mediaUrl(storageKey: string): string {
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
-/**
- * Fetch messages for a conversation.
- *
- * Modes:
- *  - Long-poll (new messages): lastId > 0 or serverTimeout > 0
- *  - Initial load (latest N):  lastId=0, serverTimeout=0, options.limit set
- *  - Load older (scroll up):   options.beforeId set (always immediate)
- */
-export async function getMessages(
+export async function getMessagesBefore(
+  conversationId: string,
+  beforeId?: number,
+  limit = 100,
+): Promise<Message[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (beforeId !== undefined) params.set('before_id', String(beforeId));
+  const data = await request<{ messages: Message[] }>(
+    `/conversations/${conversationId}/messages/before?${params}`
+  );
+  return data?.messages || [];
+}
+
+export async function getMessagesAfter(
   conversationId: string,
   lastId: number,
+  limit = 0,
   serverTimeout = 30,
-  options?: { beforeId?: number; limit?: number }
 ): Promise<Message[]> {
   const token = getToken();
   const controller = new AbortController();
@@ -222,12 +227,11 @@ export async function getMessages(
     last_id: String(lastId),
     timeout: String(serverTimeout),
   });
-  if (options?.beforeId !== undefined) params.set('before_id', String(options.beforeId));
-  if (options?.limit !== undefined) params.set('limit', String(options.limit));
+  if (limit > 0) params.set('limit', String(limit));
 
   try {
     const res = await fetch(
-      `${API_BASE}/conversations/${conversationId}/messages?${params}`,
+      `${API_BASE}/conversations/${conversationId}/messages/after?${params}`,
       { headers, signal: controller.signal }
     );
     clearTimeout(timeoutId);

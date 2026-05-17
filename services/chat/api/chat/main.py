@@ -79,7 +79,13 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Laborster Chat", lifespan=lifespan)
+app = FastAPI(
+    title="Laborster Chat",
+    lifespan=lifespan,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
+)
 
 DbDep = Annotated[Session, Depends(get_db)]
 

@@ -1,17 +1,13 @@
 import argparse
-import uuid
 
 from prettytable import PrettyTable, SINGLE_BORDER
 
 from chat.auth_utils import hash_password
 from chat.db import get_db, utc_now
 from chat.enums import AccountStatus
+from chat.ids import new_id
 from chat.migrate import run_migrations
 from chat.models import Account
-
-
-def new_id(prefix: str) -> str:
-    return f"{prefix}_{uuid.uuid4().hex}"
 
 
 def _table(headers: list[str], rows: list[list]) -> str:

@@ -1,4 +1,5 @@
 import os
+import uuid
 from datetime import timedelta
 
 import boto3
@@ -42,55 +43,39 @@ _s3_public_client = boto3.client(
 )
 
 
-def s3_put(key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
-    _s3_client.put_object(Bucket=S3_BUCKET, Key=key, Body=data, ContentType=content_type)
-
-
-def s3_get(key: str) -> bytes:
-    resp = _s3_client.get_object(Bucket=S3_BUCKET, Key=key)
-    return resp["Body"].read()
-
-
-def s3_key_exists(key: str) -> bool:
-    try:
-        _s3_client.head_object(Bucket=S3_BUCKET, Key=key)
-        return True
-    except _s3_client.exceptions.ClientError:
-        return False
-
-
 def s3_generate_storage_key(account_id: str) -> str:
-    import uuid
     return f"media/{account_id}/{uuid.uuid4().hex}"
 
 
-def s3_presigned_put_url(key: str, content_type: str, expires: timedelta = UPLOAD_PRESIGN_EXPIRES) -> str:
-    return _s3_public_client.generate_presigned_url(
-        "put_object",
-        Params={"Bucket": S3_BUCKET, "Key": key, "ContentType": content_type},
+def s3_presigned_post(
+    key: str,
+    content_type: str,
+    max_bytes: int,
+    expires: timedelta = UPLOAD_PRESIGN_EXPIRES,
+) -> dict:
+    """Presigned POST that binds Content-Type and caps object size server-side."""
+    return _s3_public_client.generate_presigned_post(
+        Bucket=S3_BUCKET,
+        Key=key,
+        Fields={"Content-Type": content_type},
+        Conditions=[
+            {"Content-Type": content_type},
+            ["content-length-range", 1, max_bytes],
+        ],
         ExpiresIn=int(expires.total_seconds()),
     )
 
 
 def s3_presigned_get_url(
     key: str,
-    filename: str | None = None,
+    force_attachment: bool = False,
     expires: timedelta = DOWNLOAD_PRESIGN_EXPIRES,
 ) -> str:
     params: dict = {"Bucket": S3_BUCKET, "Key": key}
-    if filename:
-        safe_filename = filename.replace('"', "").replace("\\", "")
-        params["ResponseContentDisposition"] = f'attachment; filename="{safe_filename}"'
+    if force_attachment:
+        params["ResponseContentDisposition"] = "attachment"
     return _s3_public_client.generate_presigned_url(
         "get_object",
         Params=params,
         ExpiresIn=int(expires.total_seconds()),
     )
-
-
-def s3_head_content_type(key: str) -> str | None:
-    try:
-        resp = _s3_client.head_object(Bucket=S3_BUCKET, Key=key)
-        return resp.get("ContentType")
-    except _s3_client.exceptions.ClientError:
-        return None

@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from chat.enums import AccountStatus, CommandStatus, MessageType
 
@@ -19,12 +19,12 @@ class AccountRead(StrictModel):
 
 
 class AccountUpdate(StrictModel):
-    nickname: str
+    nickname: str = Field(min_length=1, max_length=128)
 
 
 class LoginRequest(StrictModel):
-    username: str
-    password: str
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=256)
 
 
 class LoginResponse(StrictModel):
@@ -33,13 +33,13 @@ class LoginResponse(StrictModel):
 
 
 class ContactCreate(StrictModel):
-    nickname: str
-    username: str | None = None
-    remark_name: str | None = None
+    nickname: str = Field(min_length=1, max_length=256)
+    username: str | None = Field(default=None, max_length=256)
+    remark_name: str | None = Field(default=None, max_length=256)
 
 
 class ContactUpdate(StrictModel):
-    remark_name: str | None = None
+    remark_name: str | None = Field(default=None, max_length=256)
 
 
 class ContactRead(StrictModel):
@@ -63,9 +63,9 @@ class ConversationRead(StrictModel):
 
 
 class MessageSend(StrictModel):
-    sender_id: str | None = None
+    sender_id: str | None = Field(default=None, max_length=48)
     msg_type: MessageType = MessageType.TEXT
-    content: str
+    content: str = Field(min_length=1, max_length=100_000)
     created_at: datetime | None = None
 
 
@@ -94,10 +94,11 @@ class StatusResponse(StrictModel):
 
 
 class UploadPresignRequest(StrictModel):
-    filename: str
-    mime_type: str
+    filename: str = Field(min_length=1, max_length=256)
+    mime_type: str = Field(min_length=1, max_length=128)
 
 
 class UploadPresignResponse(StrictModel):
     storage_key: str
     upload_url: str
+    fields: dict[str, str]

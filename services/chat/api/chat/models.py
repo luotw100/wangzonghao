@@ -5,6 +5,7 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    Index,
     String,
     Text,
     UniqueConstraint,
@@ -82,11 +83,12 @@ class Message(Base):
     __tablename__ = "chat_messages"
     __table_args__ = (
         CheckConstraint("msg_type IN ('text', 'image', 'audio', 'video', 'file')", name="ck_chat_msg_type"),
+        Index("ix_chat_messages_conversation_id_id", "conversation_id", "id"),
     )
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     account_id = Column(String(48), ForeignKey("chat_accounts.id"), nullable=False, index=True)
-    conversation_id = Column(String(48), ForeignKey("chat_conversations.id"), index=True, nullable=False)
+    conversation_id = Column(String(48), ForeignKey("chat_conversations.id"), nullable=False)
     sender_id = Column(String(48), ForeignKey("chat_contacts.id"), nullable=True)
     msg_type = Column(String(16), nullable=False)
     content = Column(Text, nullable=False)

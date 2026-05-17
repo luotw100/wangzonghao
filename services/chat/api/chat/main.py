@@ -1,16 +1,16 @@
-import asyncio
 import time
-import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, status
 from fastapi.responses import RedirectResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, joinedload
 
 from chat.auth_utils import hash_token, new_session_token, verify_password
 from chat.db import SessionLocal, get_db, utc_now
 from chat.enums import AccountStatus, CommandStatus, MessageType
+from chat.ids import new_id
 from chat.migrate import run_migrations
 from chat.models import (
     Account,
@@ -22,7 +22,7 @@ from chat.models import (
 from chat.s3 import (
     s3_generate_storage_key,
     s3_presigned_get_url,
-    s3_presigned_put_url,
+    s3_presigned_post,
 )
 from chat.schemas import (
     AccountRead,
@@ -34,7 +34,6 @@ from chat.schemas import (
     ConversationRead,
     LoginRequest,
     LoginResponse,
-    MessageSend,
     MessageSendRequest,
     StatusResponse,
     UploadPresignRequest,
@@ -64,18 +63,13 @@ def _get_upload_max_size() -> int:
     return UPLOAD_MAX_SIZE_BYTES
 
 
-MIME_TYPE_MAP: dict[str, MessageType] = {
-    "image/": MessageType.IMAGE,
-    "audio/": MessageType.AUDIO,
-    "video/": MessageType.VIDEO,
+# Browser-renderable active content uploaded to the media bucket and served
+# back inline is a stored-XSS vector, so it is rejected at presign time.
+DISALLOWED_UPLOAD_MIME_TYPES = {
+    "text/html",
+    "application/xhtml+xml",
+    "image/svg+xml",
 }
-
-
-def _infer_msg_type(mime_type: str) -> MessageType:
-    for prefix, mt in MIME_TYPE_MAP.items():
-        if mime_type.startswith(prefix):
-            return mt
-    return MessageType.FILE
 
 
 @asynccontextmanager
@@ -90,29 +84,21 @@ app = FastAPI(title="Laborster Chat", lifespan=lifespan)
 DbDep = Annotated[Session, Depends(get_db)]
 
 
-def new_id(prefix: str) -> str:
-    return f"{prefix}_{uuid.uuid4().hex}"
-
-
 def normalize_timestamp(value: datetime) -> datetime:
     if value.tzinfo is None:
         return value.replace(tzinfo=timezone.utc)
     return value
 
 
-def get_auth_session(
-    db: DbDep,
-    authorization: Annotated[str | None, Header()] = None,
-) -> AuthSession:
-    if not authorization or not authorization.startswith("Bearer "):
+def resolve_auth_session(db: Session, raw_token: str | None) -> AuthSession:
+    if not raw_token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="缺少登录令牌"
         )
-    token = authorization.removeprefix("Bearer ").strip()
     auth_session = (
         db.query(AuthSession)
         .options(joinedload(AuthSession.account))
-        .filter(AuthSession.id == hash_token(token))
+        .filter(AuthSession.id == hash_token(raw_token))
         .first()
     )
     if (
@@ -132,6 +118,19 @@ def get_auth_session(
     auth_session.expires_at = utc_now() + timedelta(hours=24)
     db.commit()
     return auth_session
+
+
+def _bearer_token(authorization: str | None) -> str | None:
+    if authorization and authorization.startswith("Bearer "):
+        return authorization.removeprefix("Bearer ").strip()
+    return None
+
+
+def get_auth_session(
+    db: DbDep,
+    authorization: Annotated[str | None, Header()] = None,
+) -> AuthSession:
+    return resolve_auth_session(db, _bearer_token(authorization))
 
 
 AuthSessionDep = Annotated[AuthSession, Depends(get_auth_session)]
@@ -276,9 +275,13 @@ def create_contact(
         updated_at=now,
     )
     db.add(contact)
-    db.flush()
-    get_or_create_direct_conversation(db, account.id, contact)
-    db.commit()
+    try:
+        db.flush()
+        get_or_create_direct_conversation(db, account.id, contact)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="该联系人已存在")
     db.refresh(contact)
     return contact
 
@@ -371,18 +374,25 @@ def get_messages_before(
     "/api/conversations/{conversation_id}/messages/after",
     response_model=ConversationMessages,
 )
-async def get_messages_after(
+def get_messages_after(
     conversation_id: str,
     account: CurrentAccountDep,
     last_id: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=0, le=500)] = 0,
     timeout: Annotated[int, Query(ge=0)] = 0,
 ) -> dict[str, object]:
+    # Sync endpoint: FastAPI runs it in the threadpool, so the blocking DB
+    # query and sleep below never stall the event loop. Each iteration uses a
+    # short-lived session so the pooled connection is released during sleep.
     start_time = time.time()
+    db = SessionLocal()
+    try:
+        conversation = get_conversation_or_404(db, account.id, conversation_id)
+    finally:
+        db.close()
     while True:
         db = SessionLocal()
         try:
-            conversation = get_conversation_or_404(db, account.id, conversation_id)
             q = db.query(Message).filter(
                 Message.account_id == account.id,
                 Message.conversation_id == conversation_id,
@@ -395,8 +405,7 @@ async def get_messages_after(
             db.close()
         if messages or (time.time() - start_time) >= timeout:
             return {"conversation": conversation, "messages": messages}
-        elapsed = time.time() - start_time
-        await asyncio.sleep(min(0.2, timeout - elapsed))
+        time.sleep(max(0.0, min(0.2, timeout - (time.time() - start_time))))
 
 
 @app.post("/api/uploads/presign", response_model=UploadPresignResponse)
@@ -404,43 +413,24 @@ def presign_upload(
     payload: UploadPresignRequest,
     account: CurrentAccountDep,
 ) -> UploadPresignResponse:
+    if payload.mime_type.split(";")[0].strip().lower() in DISALLOWED_UPLOAD_MIME_TYPES:
+        raise HTTPException(status_code=400, detail="不支持的文件类型")
     storage_key = s3_generate_storage_key(account.id)
-    upload_url = s3_presigned_put_url(storage_key, payload.mime_type)
-    return UploadPresignResponse(storage_key=storage_key, upload_url=upload_url)
+    post = s3_presigned_post(storage_key, payload.mime_type, _get_upload_max_size())
+    return UploadPresignResponse(
+        storage_key=storage_key,
+        upload_url=post["url"],
+        fields=post["fields"],
+    )
 
 
 def _resolve_media_account(
-    db: Annotated[Session, Depends(get_db)],
+    db: DbDep,
     authorization: Annotated[str | None, Header()] = None,
     token: Annotated[str | None, Query()] = None,
 ) -> Account:
-    raw_token: str | None = None
-    if authorization and authorization.startswith("Bearer "):
-        raw_token = authorization.removeprefix("Bearer ").strip()
-    elif token:
-        raw_token = token
-    if not raw_token:
-        raise HTTPException(status_code=401, detail="缺少登录令牌")
-    auth_session = (
-        db.query(AuthSession)
-        .options(joinedload(AuthSession.account))
-        .filter(AuthSession.id == hash_token(raw_token))
-        .first()
-    )
-    if (
-        not auth_session
-        or not auth_session.account
-        or auth_session.account.status != AccountStatus.ACTIVE
-    ):
-        raise HTTPException(status_code=401, detail="登录已失效")
-    if auth_session.expires_at < utc_now():
-        db.delete(auth_session)
-        db.commit()
-        raise HTTPException(status_code=401, detail="登录已超时")
-    now = utc_now()
-    auth_session.expires_at = now + timedelta(hours=24)
-    db.commit()
-    return auth_session.account
+    raw_token = _bearer_token(authorization) or token
+    return resolve_auth_session(db, raw_token).account
 
 
 MediaAccountDep = Annotated[Account, Depends(_resolve_media_account)]
@@ -450,10 +440,21 @@ MediaAccountDep = Annotated[Account, Depends(_resolve_media_account)]
 def serve_media(
     storage_key: str,
     account: MediaAccountDep,
+    db: DbDep,
 ) -> RedirectResponse:
     expected_prefix = f"media/{account.id}/"
     if not storage_key.startswith(expected_prefix):
         raise HTTPException(status_code=403, detail="无权访问该文件")
 
-    url = s3_presigned_get_url(storage_key)
+    msg_type = (
+        db.query(Message.msg_type)
+        .filter(Message.account_id == account.id, Message.content == storage_key)
+        .limit(1)
+        .scalar()
+    )
+    # Only image/audio/video are rendered inline; anything else (including a
+    # blob not yet attached to a message) is served as an attachment.
+    inline_types = {MessageType.IMAGE, MessageType.AUDIO, MessageType.VIDEO}
+    force_attachment = msg_type not in inline_types
+    url = s3_presigned_get_url(storage_key, force_attachment=force_attachment)
     return RedirectResponse(url=url)

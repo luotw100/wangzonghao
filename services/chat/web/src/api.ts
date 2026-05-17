@@ -45,6 +45,7 @@ export interface Message {
 export interface UploadPresignResponse {
   storage_key: string;
   upload_url: string;
+  fields: Record<string, string>;
 }
 
 export interface LoginResponse {
@@ -180,12 +181,11 @@ export function presignUpload(filename: string, mimeType: string): Promise<Uploa
   });
 }
 
-export async function uploadPresignedFile(uploadUrl: string, file: File): Promise<void> {
-  const res = await fetch(uploadUrl, {
-    method: 'PUT',
-    headers: { 'Content-Type': file.type || 'application/octet-stream' },
-    body: file,
-  });
+export async function uploadPresignedFile(presign: UploadPresignResponse, file: File): Promise<void> {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(presign.fields)) form.append(k, v);
+  form.append('file', file);
+  const res = await fetch(presign.upload_url, { method: 'POST', body: form });
   if (!res.ok) {
     throw new Error(`文件上传失败: HTTP ${res.status}`);
   }

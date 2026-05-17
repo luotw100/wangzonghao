@@ -30,21 +30,6 @@ jobs:
           path: bridge/cli/dist/LaborsterBridge.exe
           if-no-files-found: error
 
-  mac-x64:
-    runs-on: macos-13
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Build app
-        run: ./scripts/build_gui_mac.sh
-      - uses: actions/upload-artifact@v4
-        with:
-          name: LaborsterBridge-${{ github.event.inputs.version }}-mac-x64
-          path: bridge/cli/dist/LaborsterBridge-mac-x64.zip
-          if-no-files-found: error
-
   mac-arm64:
     runs-on: macos-14
     steps:

@@ -3,10 +3,25 @@
 from __future__ import annotations
 
 import json
+import ssl
 import time
 import urllib.error
 import urllib.request
 from typing import Any
+
+# Frozen (PyInstaller) builds ship no system CA bundle, so the default
+# SSL context can't verify the Cloudflare-fronted endpoints ("unable to
+# get local issuer certificate"). Pin certifi's CA bundle, which is
+# collected into the package by PyInstaller's certifi hook and is also
+# correct for the plain CLI.
+try:
+    import certifi
+
+    _SSL_CTX: ssl.SSLContext | None = ssl.create_default_context(
+        cafile=certifi.where()
+    )
+except Exception:
+    _SSL_CTX = None
 
 # Transient statuses worth retrying. 0 = network / TLS drop (the cloudflared
 # tunnel in front of the services is slow and occasionally tears down the
@@ -37,7 +52,7 @@ def _attempt(method: str, url: str, token: str | None, body: Any, timeout: float
     if token:
         req.add_header("Authorization", f"Bearer {token}")
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX) as resp:
             raw = resp.read().decode("utf-8", "replace")
             return json.loads(raw) if raw else None
     except urllib.error.HTTPError as exc:

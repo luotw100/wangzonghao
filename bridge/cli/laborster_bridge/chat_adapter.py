@@ -16,6 +16,8 @@ from typing import Iterator
 from . import config
 from .http import request_json
 
+_SCAN_BATCH = 200
+
 
 def _iso_z(created_at: str) -> str:
     dt = datetime.fromisoformat(created_at.replace("Z", "+00:00"))
@@ -78,6 +80,13 @@ class ChatAdapter:
         ]
 
     def scan(self, cursors: dict[str, str | None]) -> Iterator[dict]:
+        """Poll every thread, draining each fully from its cursor.
+
+        Per thread we page forward through ``/messages/after`` (id-ordered,
+        ``last_id`` exclusive) a batch at a time until a short page proves
+        the backlog is exhausted, so a thread with thousands of unseen
+        messages is fully pulled rather than capped at one batch.
+        """
         while not self._stopped:
             try:
                 self._refresh_threads()
@@ -89,35 +98,39 @@ class ChatAdapter:
             for thread in list(self._threads.values()):
                 if self._stopped:
                     break
-                since = 0
                 try:
                     since = int(cursors.get(thread["peer_id"]) or "0")
                 except (TypeError, ValueError):
                     since = 0
-                try:
-                    payload = self._req(
-                        "GET",
-                        f"/api/conversations/{thread['conv_id']}/messages"
-                        f"?last_id={since}&limit=200",
-                    )
-                except Exception:
-                    continue
-                for m in payload["messages"]:
-                    cursors[thread["peer_id"]] = str(m["id"])
-                    yielded = True
-                    yield {
-                        "peer_id": thread["peer_id"],
-                        "peer_display_name": thread["display_name"],
-                        "platform_msg_id": str(m["id"]),
-                        "sender_id": (
-                            self.platform_self_id
-                            if m["sender_type"] == "self"
-                            else thread["peer_id"]
-                        ),
-                        "msg_type": m.get("msg_type") or "text",
-                        "content": m["content"],
-                        "sent_at": _iso_z(m["created_at"]),
-                    }
+                while not self._stopped:
+                    try:
+                        payload = self._req(
+                            "GET",
+                            f"/api/conversations/{thread['conv_id']}/messages/after"
+                            f"?last_id={since}&limit={_SCAN_BATCH}",
+                        )
+                    except Exception:
+                        break
+                    msgs = payload["messages"]
+                    for m in msgs:
+                        since = int(m["id"])
+                        cursors[thread["peer_id"]] = str(m["id"])
+                        yielded = True
+                        yield {
+                            "peer_id": thread["peer_id"],
+                            "peer_display_name": thread["display_name"],
+                            "platform_msg_id": str(m["id"]),
+                            "sender_id": (
+                                self.platform_self_id
+                                if m["sender_id"] is None
+                                else thread["peer_id"]
+                            ),
+                            "msg_type": m.get("msg_type") or "text",
+                            "content": m["content"],
+                            "sent_at": _iso_z(m["created_at"]),
+                        }
+                    if len(msgs) < _SCAN_BATCH:
+                        break
             if not yielded:
                 time.sleep(2)
 
@@ -125,12 +138,15 @@ class ChatAdapter:
         thread = self._threads.get(peer_id)
         if not thread:
             raise RuntimeError(f"unknown peer {peer_id}")
-        r = self._req(
+        # sender_id omitted => the chat service records it as a self-sent
+        # message. The send endpoint returns StatusResponse (no message id),
+        # so there is no platform_msg_id to hand back.
+        self._req(
             "POST",
             f"/api/conversations/{thread['conv_id']}/messages",
-            {"sender_type": "self", "msg_type": "text", "content": content},
+            {"messages": [{"msg_type": "text", "content": content}]},
         )
-        return str(r["id"]) if r.get("id") is not None else ""
+        return ""
 
     def stop(self) -> None:
         self._stopped = True

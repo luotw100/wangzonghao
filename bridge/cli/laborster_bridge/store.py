@@ -76,7 +76,7 @@ class LocalStore:
             if self._closed:
                 return {}
             rows = self._db.execute(
-                """SELECT peer_id, MAX(platform_msg_id) AS last_id
+                """SELECT peer_id, MAX(CAST(platform_msg_id AS INTEGER)) AS last_id
                    FROM local_messages
                    WHERE inbox_id = ? AND platform_msg_id IS NOT NULL
                    GROUP BY peer_id""",
@@ -109,38 +109,42 @@ class LocalStore:
             self._db.commit()
             return cur.rowcount > 0
 
-    def get_unsent(self, limit: int, active_peers: set[str] | None) -> list[LocalMessage]:
-        if active_peers is not None and len(active_peers) == 0:
+    def get_unsent(self, limit: int, active_peers: set[str]) -> list[LocalMessage]:
+        """Unsent messages whose (inbox, peer) is in the takeover set.
+
+        The takeover set is the *only* gate: an empty set means nothing is
+        being taken over, so nothing is forwarded.
+        """
+        if not active_peers:
             return []
         with self._lock:
             if self._closed:
                 return []
-            if active_peers is None:
-                rows = self._db.execute(
-                    "SELECT * FROM local_messages WHERE sent = 0 ORDER BY id LIMIT ?",
-                    (limit,),
-                ).fetchall()
-            else:
-                keys = list(active_peers)
-                placeholders = ",".join("(?,?)" for _ in keys)
-                params: list = []
-                for k in keys:
-                    inbox_id, _, peer_id = k.partition("|")
-                    params += [inbox_id, peer_id]
-                params.append(limit)
-                rows = self._db.execute(
-                    f"""SELECT * FROM local_messages
-                        WHERE sent = 0 AND (inbox_id, peer_id) IN ({placeholders})
-                        ORDER BY id LIMIT ?""",
-                    params,
-                ).fetchall()
+            keys = list(active_peers)
+            placeholders = ",".join("(?,?)" for _ in keys)
+            params: list = []
+            for k in keys:
+                inbox_id, _, peer_id = k.partition("|")
+                params += [inbox_id, peer_id]
+            params.append(limit)
+            rows = self._db.execute(
+                f"""SELECT * FROM local_messages
+                    WHERE sent = 0 AND (inbox_id, peer_id) IN ({placeholders})
+                    ORDER BY id LIMIT ?""",
+                params,
+            ).fetchall()
         return [LocalMessage(**dict(r)) for r in rows]
 
-    def mark_sent(self, row_id: int) -> None:
+    def mark_sent(self, ids: list[int]) -> None:
+        if not ids:
+            return
         with self._lock:
             if self._closed:
                 return
-            self._db.execute("UPDATE local_messages SET sent = 1 WHERE id = ?", (row_id,))
+            self._db.executemany(
+                "UPDATE local_messages SET sent = 1 WHERE id = ?",
+                [(i,) for i in ids],
+            )
             self._db.commit()
 
     def count_unsent(self) -> int:

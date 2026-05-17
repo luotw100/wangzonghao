@@ -47,6 +47,7 @@ class BridgeRuntime:
         self._base_info = base_info
         self._on_auth_error = on_auth_error
 
+        self._lock = threading.Lock()  # guards _adapters
         self._adapters: dict[str, dict] = {}  # inbox_id -> {adapter, inbox, cursors, label}
         self._active_peers: set[str] = set()
         self._outbound_cursor = 0
@@ -72,12 +73,15 @@ class BridgeRuntime:
         if self._stop.is_set():
             return
         self._stop.set()
-        for e in self._adapters.values():
+        with self._lock:
+            adapters = list(self._adapters.values())
+        for e in adapters:
             e["adapter"].stop()
         for t in self._threads:
             if t is not threading.current_thread():
                 t.join(timeout=2)
-        self._adapters.clear()
+        with self._lock:
+            self._adapters.clear()
         self._push_state("idle")
         self._store.close()
         self._log("core", "info", "daemon stopped")
@@ -90,6 +94,8 @@ class BridgeRuntime:
         self._events.log(src, level, msg)
 
     def _push_state(self, status: str) -> None:
+        with self._lock:
+            entries = list(self._adapters.values())
         channels = [
             {
                 "inbox_id": e["inbox"]["id"],
@@ -98,7 +104,7 @@ class BridgeRuntime:
                 "online": True,
                 "peers_count": len(e["cursors"]),
             }
-            for e in self._adapters.values()
+            for e in entries
         ]
         since = (datetime.now(timezone.utc) - timedelta(minutes=5)).strftime(
             "%Y-%m-%dT%H:%M:%S.000Z"
@@ -185,16 +191,20 @@ class BridgeRuntime:
             if not inbox:
                 self._log("adapter", "warn", f"no inbox for {label}")
                 continue
-            self._adapters[inbox["id"]] = {
+            entry = {
                 "adapter": adapter,
                 "inbox": inbox,
                 "cursors": self._store.get_cursors(inbox["id"]),
                 "label": label,
             }
+            with self._lock:
+                self._adapters[inbox["id"]] = entry
 
         self._push_state("online")
 
-        for inbox_id in list(self._adapters):
+        with self._lock:
+            inbox_ids = list(self._adapters)
+        for inbox_id in inbox_ids:
             self._spawn(
                 lambda i=inbox_id: self._producer(i), f"producer-{inbox_id}"
             )
@@ -206,65 +216,85 @@ class BridgeRuntime:
 
     # --- loops ---
     def _producer(self, inbox_id: str) -> None:
-        entry = self._adapters[inbox_id]
-        try:
-            for msg in entry["adapter"].scan(entry["cursors"]):
+        # Supervised: if scan() raises, restart it (same cursors) unless the
+        # daemon is stopping or Studio has dropped this inbox (heartbeat
+        # removes it from _adapters, which ends the loop).
+        while not self._stop.is_set():
+            with self._lock:
+                entry = self._adapters.get(inbox_id)
+            if entry is None:
+                return
+            try:
+                self._run_producer(inbox_id, entry)
+            except Exception as exc:
                 if self._stop.is_set():
-                    break
-                lh = LocalStore.local_hash(
-                    inbox_id,
-                    msg["peer_id"],
-                    msg["sender_id"],
-                    msg["sent_at"],
-                    msg["msg_type"],
-                    msg["content"],
-                )
-                self._store.insert_message(
-                    {
-                        "inbox_id": inbox_id,
-                        "peer_id": msg["peer_id"],
-                        "peer_display_name": msg["peer_display_name"],
-                        "platform_msg_id": msg["platform_msg_id"],
-                        "sender_id": msg["sender_id"],
-                        "sent_at": msg["sent_at"],
-                        "msg_type": msg["msg_type"],
-                        "content": msg["content"],
-                        "mime_type": None,
-                        "local_hash": lh,
-                    }
-                )
-        except Exception as exc:
-            if not self._stop.is_set():
-                self._log("producer", "err", f"inbox={inbox_id}: {exc}")
+                    return
+                self._log("producer", "err", f"inbox={inbox_id}: {exc} — restart in 3s")
+                if self._sleep(3):
+                    return
+
+    def _run_producer(self, inbox_id: str, entry: dict) -> None:
+        for msg in entry["adapter"].scan(entry["cursors"]):
+            if self._stop.is_set():
+                break
+            lh = LocalStore.local_hash(
+                inbox_id,
+                msg["peer_id"],
+                msg["sender_id"],
+                msg["sent_at"],
+                msg["msg_type"],
+                msg["content"],
+            )
+            self._store.insert_message(
+                {
+                    "inbox_id": inbox_id,
+                    "peer_id": msg["peer_id"],
+                    "peer_display_name": msg["peer_display_name"],
+                    "platform_msg_id": msg["platform_msg_id"],
+                    "sender_id": msg["sender_id"],
+                    "sent_at": msg["sent_at"],
+                    "msg_type": msg["msg_type"],
+                    "content": msg["content"],
+                    "mime_type": None,
+                    "local_hash": lh,
+                }
+            )
 
     def _consumer(self) -> None:
         while not self._sleep(CONSUMER_S):
-            ap = self._active_peers if self._active_peers else None
-            rows = self._store.get_unsent(CONSUMER_BATCH, ap)
-            for row in rows:
-                if row.inbox_id not in self._adapters:
-                    self._store.mark_sent(row.id)
-                    continue
-                try:
-                    self._studio.push_incoming(
-                        [
-                            {
-                                "inbox_id": row.inbox_id,
-                                "peer_id": row.peer_id,
-                                "peer_display_name": row.peer_display_name,
-                                "platform_msg_id": row.platform_msg_id,
-                                "sender_id": row.sender_id,
-                                "msg_type": row.msg_type,
-                                "content": row.content,
-                                "sent_at": row.sent_at,
-                            }
-                        ]
-                    )
-                    self._store.mark_sent(row.id)
-                except Unauthorized:
-                    return  # heartbeat handles 401
-                except Exception as exc:
-                    self._log("consumer", "warn", f"push failed: {exc}")
+            # The takeover set is the only gate (empty => forward nothing).
+            rows = self._store.get_unsent(CONSUMER_BATCH, self._active_peers)
+            if not rows:
+                continue
+            with self._lock:
+                known = set(self._adapters)
+            stale = [r.id for r in rows if r.inbox_id not in known]
+            if stale:
+                self._store.mark_sent(stale)
+            batch = [r for r in rows if r.inbox_id in known]
+            if not batch:
+                continue
+            try:
+                self._studio.push_incoming(
+                    [
+                        {
+                            "inbox_id": r.inbox_id,
+                            "peer_id": r.peer_id,
+                            "peer_display_name": r.peer_display_name,
+                            "platform_msg_id": r.platform_msg_id,
+                            "sender_id": r.sender_id,
+                            "msg_type": r.msg_type,
+                            "content": r.content,
+                            "sent_at": r.sent_at,
+                        }
+                        for r in batch
+                    ]
+                )
+                self._store.mark_sent([r.id for r in batch])
+            except Unauthorized:
+                return  # heartbeat handles 401
+            except Exception as exc:
+                self._log("consumer", "warn", f"push failed: {exc}")
 
     def _heartbeat(self) -> None:
         self._beat()
@@ -275,11 +305,15 @@ class BridgeRuntime:
         try:
             res = self._studio.heartbeat()
             active_ids = {i["id"] for i in res["inboxes"]}
-            for inbox_id in list(self._adapters):
-                if inbox_id not in active_ids:
-                    self._log("heart", "warn", f"inbox {inbox_id} removed by Studio")
-                    self._adapters[inbox_id]["adapter"].stop()
-                    del self._adapters[inbox_id]
+            with self._lock:
+                removed = [
+                    (i, self._adapters.pop(i))
+                    for i in list(self._adapters)
+                    if i not in active_ids
+                ]
+            for inbox_id, entry in removed:
+                self._log("heart", "warn", f"inbox {inbox_id} removed by Studio")
+                entry["adapter"].stop()
             self._push_state("online")
         except Unauthorized:
             self._log("heart", "err", "401 · session revoked")
@@ -292,12 +326,14 @@ class BridgeRuntime:
 
     def _announce(self) -> None:
         while True:
-            for inbox_id, entry in list(self._adapters.items()):
+            with self._lock:
+                items = list(self._adapters.items())
+            for inbox_id, entry in items:
                 try:
                     peers = entry["adapter"].list_peers()
                     self._studio.announce_peers(inbox_id, peers)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    self._log("announce", "warn", f"inbox={inbox_id}: {exc}")
             if self._sleep(ANNOUNCE_S):
                 return
 
@@ -308,8 +344,8 @@ class BridgeRuntime:
                 self._active_peers = {
                     f"{p['inbox_id']}|{p['peer_platform_id']}" for p in peers
                 }
-            except Exception:
-                pass
+            except Exception as exc:
+                self._log("active", "warn", f"active-peers refresh failed: {exc}")
             if self._sleep(ACTIVE_PEERS_S):
                 return
 
@@ -336,7 +372,8 @@ class BridgeRuntime:
                     return
 
     def _dispatch_outbound(self, item: dict) -> None:
-        entry = self._adapters.get(item["inbox_id"])
+        with self._lock:
+            entry = self._adapters.get(item["inbox_id"])
         if not entry:
             self._studio.ack_outbound(item["id"], "failed", "inbox not found")
             return

@@ -82,9 +82,9 @@ export function HomePage() {
 
         <div style={{ display: 'flex', gap: 24, marginTop: 38, color: 'var(--ink-4)' }}>
           {[
-            { n: 'Channel', s: '微信·飞书·Chat', e: '消息源' },
-            { n: 'Device', s: '本地 daemon', e: '在你电脑' },
-            { n: 'Studio', s: '云端大脑', e: '在云端' },
+            { n: '聊天账号', s: '微信 · 飞书 等', e: '消息来源' },
+            { n: '设备', s: '主播电脑上运行', e: '在你电脑' },
+            { n: 'Studio', s: '统一管理后台', e: '在云端' },
           ].map((block, index) => (
             <div key={index} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
               <span className="eyebrow text-brass">{block.e}</span>
@@ -156,8 +156,8 @@ export function HomePage() {
 
         <div className="divider mt-6" style={{ marginTop: 24 }} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16, fontSize: 11, color: 'var(--ink-4)' }}>
-          <div><span className="mono text-ink-3">ADMIN</span> 账号通过 CLI 创建：<span className="mono">python -m studio.cli create-account --role admin</span></div>
-          <div>忘记密码时联系管理员在 Settings 中重置，或用 CLI 的 reset-password。</div>
+          <div>没有账号？请联系管理员为你创建。</div>
+          <div>忘记密码请联系管理员，在「设置」里帮你重置。</div>
         </div>
       </div>
     </div>

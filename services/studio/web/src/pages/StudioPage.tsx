@@ -33,11 +33,11 @@ const USER_NAV: { id: Tab; label: string; icon: string }[] = [
 ];
 
 const TAB_CONTEXT: Record<Tab, { ctx: string; sub: string }> = {
-  overview: { ctx: '总览', sub: 'overview · 全系统用户与资源' },
-  takeover: { ctx: '接管', sub: 'contacts · 你管的所有粉丝' },
-  persona: { ctx: '人设', sub: 'personas · 你能扮演的人' },
-  device: { ctx: '设备', sub: 'devices · 你的本地守护进程' },
-  settings: { ctx: '设置', sub: 'settings · 账号 · Provider' },
+  overview: { ctx: '总览', sub: '全部账号与数据一览' },
+  takeover: { ctx: '接管', sub: '你负责的所有粉丝' },
+  persona: { ctx: '人设', sub: '你可以扮演的人设' },
+  device: { ctx: '设备', sub: '主播电脑上的接入程序' },
+  settings: { ctx: '设置', sub: '账号与密码' },
 };
 
 export function StudioPage() {
@@ -217,8 +217,6 @@ export function StudioPage() {
               inboxes={inboxes}
               bridges={bridges}
               personas={personas}
-              providers={providers}
-              isAdmin={isAdmin}
               onChanged={loadAll}
               setError={setError}
             />
@@ -256,15 +254,15 @@ function PageHead({ title, kicker, right }: { title: string; kicker?: string; ri
   );
 }
 
-function TakeoverView({ inboxes, bridges, personas, providers, isAdmin, onChanged, setError }: {
+function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
   inboxes: Inbox[];
   bridges: Bridge[];
   personas: Persona[];
-  providers: ProviderConfig[];
-  isAdmin: boolean;
   onChanged: ChangeHandler;
   setError: (message: string) => void;
 }) {
+  const [showTaken, setShowTaken] = useState(true);
+  const [showAvailable, setShowAvailable] = useState(true);
   const [items, setItems] = useState<ConversationSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -365,83 +363,92 @@ function TakeoverView({ inboxes, bridges, personas, providers, isAdmin, onChange
   return (
     <div>
       <PageHead
-        title={`${takenItems.length} 个接管 · ${availableItems.length} 个未接管`}
-        kicker="contacts"
+        title={`${takenItems.length} 个已接管 · ${availableItems.length} 个未接管`}
+        kicker="你负责的所有粉丝"
         right={<button className="btn btn-sm btn-ghost" onClick={() => reload()}>{loading ? '刷新中…' : '刷新'}</button>}
       />
       {inboxOrder.length === 0 ? (
         <div style={{ padding: '0 28px 24px' }}>
           <Empty>
-            还没有任何接管号。在主播 PC 上启动本地设备 daemon，它登进的每个 chat 账号都会自动出现在这里。
+            还没有任何账号。先在「设备」页按步骤把账号接进来，接好后这里会自动出现粉丝。
           </Empty>
         </div>
       ) : (
         <div style={{ padding: '0 28px 24px', display: 'grid', gridTemplateColumns: 'minmax(300px, 380px) minmax(0, 1fr)', gap: 12, alignItems: 'start' }}>
-          <div style={{ display: 'grid', gap: 16 }}>
-            <div style={{ display: 'grid', gap: 12 }}>
-              <span className="eyebrow" style={{ paddingLeft: 2 }}>已接管 {takenItems.length}</span>
-              {inboxOrder.map(inbox => {
-                const convs = takenGrouped[inbox.id] ?? [];
-                if (convs.length === 0) return null;
-                return (
-                  <InboxGroup
-                    key={`taken-${inbox.id}`}
-                    inbox={inbox}
-                    bridge={bridges.find(bridge => bridge.id === inbox.bridge_id) ?? null}
-                    conversations={convs}
-                    selectedId={selectedId}
-                    onSelect={setSelectedId}
-                    personas={personas}
-                    providers={providers}
-                    isAdmin={isAdmin}
-                    onChanged={onChanged}
-                    onLocalRefresh={reload}
-                    setError={setError}
-                  />
-                );
-              })}
-              {takenItems.length === 0 && (
+          <div style={{ display: 'grid', gap: 12 }}>
+            <Drawer
+              title="已接管"
+              count={takenItems.length}
+              open={showTaken}
+              onToggle={() => setShowTaken(value => !value)}
+            >
+              {takenItems.length === 0 ? (
                 <div className="ink-3" style={{ fontSize: 12, padding: '4px 2px' }}>
-                  还没有接管任何会话。从下方列表点击「接管」。
+                  还没有接管任何会话。在下面「未接管」里点「接管」即可。
                 </div>
+              ) : (
+                inboxOrder.map(inbox => {
+                  const convs = takenGrouped[inbox.id] ?? [];
+                  if (convs.length === 0) return null;
+                  return (
+                    <InboxGroup
+                      key={`taken-${inbox.id}`}
+                      inbox={inbox}
+                      bridge={bridges.find(bridge => bridge.id === inbox.bridge_id) ?? null}
+                      conversations={convs}
+                      selectedId={selectedId}
+                      onSelect={setSelectedId}
+                      personas={personas}
+                      onChanged={onChanged}
+                      onLocalRefresh={reload}
+                      onSetTakeover={(id, value) => patchContact(id, { takeover: value })}
+                      setError={setError}
+                    />
+                  );
+                })
               )}
-            </div>
+            </Drawer>
 
-            <div style={{ display: 'grid', gap: 8 }}>
-              <span className="eyebrow" style={{ paddingLeft: 2 }}>未接管 {availableItems.length}</span>
-              {inboxOrder.map(inbox => {
-                const convs = availableGrouped[inbox.id] ?? [];
-                if (convs.length === 0) return null;
-                return (
-                  <div key={`avail-${inbox.id}`} className="card" style={{ padding: '10px 14px', display: 'grid', gap: 6 }}>
-                    <span className="mono ink-3" style={{ fontSize: 11 }}>{inbox.display_name}</span>
-                    {convs.map(item => (
-                      <div
-                        key={item.contact.id}
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--line-subtle)' }}
-                      >
-                        <button
-                          className="card"
-                          style={{ flex: 1, textAlign: 'left', padding: '6px 8px', background: selectedId === item.contact.id ? 'var(--brass-soft)' : undefined, borderColor: selectedId === item.contact.id ? 'var(--brass-line)' : 'var(--line-subtle)' }}
-                          onClick={() => setSelectedId(item.contact.id)}
+            <Drawer
+              title="未接管"
+              count={availableItems.length}
+              open={showAvailable}
+              onToggle={() => setShowAvailable(value => !value)}
+            >
+              {availableItems.length === 0 ? (
+                <div className="ink-3" style={{ fontSize: 12, padding: '4px 2px' }}>暂时没有未接管的粉丝。</div>
+              ) : (
+                inboxOrder.map(inbox => {
+                  const convs = availableGrouped[inbox.id] ?? [];
+                  if (convs.length === 0) return null;
+                  return (
+                    <div key={`avail-${inbox.id}`} className="card" style={{ padding: '10px 14px', display: 'grid', gap: 6 }}>
+                      <span className="ink-3" style={{ fontSize: 11 }}>{inbox.display_name}</span>
+                      {convs.map(item => (
+                        <div
+                          key={item.contact.id}
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--line-subtle)' }}
                         >
-                          <span style={{ fontSize: 13 }}>{item.contact.display_name}</span>
-                        </button>
-                        <button
-                          className="btn btn-sm"
-                          onClick={() => patchContact(item.contact.id, { takeover: true })}
-                        >
-                          接管
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-              {availableItems.length === 0 && (
-                <div className="ink-3" style={{ fontSize: 12, padding: '4px 2px' }}>暂无未接管会话。</div>
+                          <button
+                            className="card"
+                            style={{ flex: 1, textAlign: 'left', padding: '6px 8px', background: selectedId === item.contact.id ? 'var(--brass-soft)' : undefined, borderColor: selectedId === item.contact.id ? 'var(--brass-line)' : 'var(--line-subtle)' }}
+                            onClick={() => setSelectedId(item.contact.id)}
+                          >
+                            <span style={{ fontSize: 13 }}>{item.contact.display_name}</span>
+                          </button>
+                          <button
+                            className="btn btn-sm btn-primary"
+                            onClick={() => patchContact(item.contact.id, { takeover: true })}
+                          >
+                            + 接管
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })
               )}
-            </div>
+            </Drawer>
           </div>
 
           <div className="card" style={{ padding: 16, minHeight: 420 }}>
@@ -454,8 +461,6 @@ function TakeoverView({ inboxes, bridges, personas, providers, isAdmin, onChange
                 bridge={selectedBridge}
                 messages={messages}
                 personas={personas}
-                providers={providers}
-                isAdmin={isAdmin}
                 onPatch={patchContact}
               />
             )}
@@ -466,17 +471,16 @@ function TakeoverView({ inboxes, bridges, personas, providers, isAdmin, onChange
   );
 }
 
-function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, personas, providers, isAdmin, onChanged, onLocalRefresh, setError }: {
+function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, personas, onChanged, onLocalRefresh, onSetTakeover, setError }: {
   inbox: Inbox;
   bridge: Bridge | null;
   conversations: ConversationSummary[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   personas: Persona[];
-  providers: ProviderConfig[];
-  isAdmin: boolean;
   onChanged: ChangeHandler;
   onLocalRefresh: () => Promise<void>;
+  onSetTakeover: (contactId: string, value: boolean) => void;
   setError: (message: string) => void;
 }) {
   const [showSettings, setShowSettings] = useState(false);
@@ -490,10 +494,9 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, person
           <strong style={{ fontSize: 13 }}>{inbox.display_name}</strong>
           <span className="chip muted">{inbox.platform}</span>
           {!inbox.enabled && <span className="chip warn">已停用</span>}
-          {bridge && <span className="mono ink-3" style={{ fontSize: 11 }}>{bridge.machine_id}</span>}
         </div>
         <button className="btn btn-sm btn-ghost" onClick={() => setShowSettings(value => !value)}>
-          {showSettings ? '收起' : '默认值'}
+          {showSettings ? '收起' : '默认设置'}
         </button>
       </div>
 
@@ -501,8 +504,6 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, person
         <InboxDefaults
           inbox={inbox}
           personas={personas}
-          providers={providers}
-          isAdmin={isAdmin}
           onChanged={async () => {
             await Promise.resolve(onChanged());
             await onLocalRefresh();
@@ -513,40 +514,52 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, person
 
       {conversations.length === 0 ? (
         <div className="ink-3" style={{ fontSize: 12, padding: '8px 4px' }}>
-          暂无粉丝，收到第一条消息时会自动出现。
+          还没有粉丝，收到第一条消息时会自动出现。
         </div>
       ) : (
         <div style={{ display: 'grid', gap: 6 }}>
           {conversations.map(item => (
-            <button
+            <div
               key={item.contact.id}
               className="card"
-              onClick={() => onSelect(item.contact.id)}
               style={{
-                padding: '10px 12px',
-                textAlign: 'left',
+                padding: '8px 10px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
                 borderColor: selectedId === item.contact.id ? 'var(--brass-line)' : 'var(--line-subtle)',
                 background: selectedId === item.contact.id ? 'var(--brass-soft)' : 'var(--bg-base)',
               }}
             >
-              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-                <strong style={{ fontSize: 13 }}>{item.contact.display_name}</strong>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {item.contact.takeover
-                    ? (item.contact.reply_policy === 'autoreply'
-                        ? <span className="chip live">自动回复</span>
-                        : <span className="chip">已接管</span>)
-                    : <span className="chip muted">未接管</span>}
-                  <span className="chip muted">{item.message_count}</span>
+              <button
+                onClick={() => onSelect(item.contact.id)}
+                style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, color: 'inherit' }}
+              >
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
+                  <strong style={{ fontSize: 13 }}>{item.contact.display_name}</strong>
+                  {item.contact.reply_policy === 'autoreply'
+                    ? <span className="chip live">自动回复</span>
+                    : <span className="chip muted">{item.message_count}</span>}
                 </div>
-              </div>
-              <div className="ink-2" style={{ fontSize: 12, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {item.latest_message ? `${item.latest_message.role === 'self' ? '我' : '对方'}：${item.latest_message.content}` : '暂无消息'}
-              </div>
-              <div className="mono ink-3" style={{ fontSize: 10, marginTop: 4 }}>
-                {item.latest_message ? formatDateTime(item.latest_message.timestamp) : formatDateTime(item.contact.updated_at)}
-              </div>
-            </button>
+                <div className="ink-2" style={{ fontSize: 12, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {item.latest_message ? `${item.latest_message.role === 'self' ? '我' : '对方'}：${item.latest_message.content}` : '暂无消息'}
+                </div>
+                <div className="ink-3" style={{ fontSize: 10, marginTop: 4 }}>
+                  {item.latest_message ? formatDateTime(item.latest_message.timestamp) : formatDateTime(item.contact.updated_at)}
+                </div>
+              </button>
+              <button
+                className="btn btn-sm btn-ghost"
+                style={{ flex: '0 0 auto', color: 'var(--danger)' }}
+                title="不再由你接管这个粉丝"
+                onClick={() => {
+                  if (!confirm(`取消接管「${item.contact.display_name}」？取消后将停止自动回复。`)) return;
+                  onSetTakeover(item.contact.id, false);
+                }}
+              >
+                取消接管
+              </button>
+            </div>
           ))}
         </div>
       )}
@@ -554,66 +567,37 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, person
   );
 }
 
-function InboxDefaults({ inbox, personas, providers, isAdmin, onChanged, setError }: {
+function InboxDefaults({ inbox, personas, onChanged, setError }: {
   inbox: Inbox;
   personas: Persona[];
-  providers: ProviderConfig[];
-  isAdmin: boolean;
   onChanged: ChangeHandler;
   setError: (message: string) => void;
 }) {
   return (
-    <div style={{ display: 'grid', gap: 6, padding: '8px 10px', background: 'var(--bg-raised)', borderRadius: 8, border: '1px solid var(--line-subtle)' }}>
-      <div className="mono ink-3" style={{ fontSize: 11 }}>
-        新粉丝默认（已存在的粉丝不受影响）
+    <div style={{ display: 'grid', gap: 8, padding: '8px 10px', background: 'var(--bg-raised)', borderRadius: 8, border: '1px solid var(--line-subtle)' }}>
+      <div className="ink-3" style={{ fontSize: 11 }}>
+        新粉丝默认设置（已有的粉丝不受影响）
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '1fr 1fr' : '1fr', gap: 8 }}>
-        <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-          默认人设
-          <select
-            value={inbox.default_persona_id ?? ''}
-            className="select"
-            style={{ marginLeft: 6, marginTop: 2 }}
-            onChange={async event => {
-              if (!event.target.value) return;
-              try {
-                await api.updateInbox(inbox.id, { default_persona_id: event.target.value });
-                await Promise.resolve(onChanged());
-              } catch (err) {
-                setError(String(err));
-              }
-            }}
-          >
-            <option value="">（未选）</option>
-            {personas.map(persona => <option key={persona.id} value={persona.id}>{persona.name}</option>)}
-          </select>
-        </label>
-        {isAdmin && (
-          <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-            默认 Provider
-            <select
-              value={inbox.reply_provider_config_id ?? ''}
-              className="select"
-              style={{ marginLeft: 6, marginTop: 2 }}
-              onChange={async event => {
-                try {
-                  if (event.target.value) {
-                    await api.updateInbox(inbox.id, { reply_provider_config_id: event.target.value });
-                  } else {
-                    await api.updateInbox(inbox.id, { clear_reply_provider: true });
-                  }
-                  await Promise.resolve(onChanged());
-                } catch (err) {
-                  setError(String(err));
-                }
-              }}
-            >
-              <option value="">跟随全局默认</option>
-              {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}{provider.is_default ? ' · 全局默认' : ''}</option>)}
-            </select>
-          </label>
-        )}
-      </div>
+      <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>
+        默认人设
+        <select
+          value={inbox.default_persona_id ?? ''}
+          className="select"
+          style={{ marginLeft: 6, marginTop: 2 }}
+          onChange={async event => {
+            if (!event.target.value) return;
+            try {
+              await api.updateInbox(inbox.id, { default_persona_id: event.target.value });
+              await Promise.resolve(onChanged());
+            } catch (err) {
+              setError(String(err));
+            }
+          }}
+        >
+          <option value="">（未选）</option>
+          {personas.map(persona => <option key={persona.id} value={persona.id}>{persona.name}</option>)}
+        </select>
+      </label>
       <div>
         <button
           className="btn btn-sm btn-ghost"
@@ -626,21 +610,19 @@ function InboxDefaults({ inbox, personas, providers, isAdmin, onChanged, setErro
             }
           }}
         >
-          {inbox.enabled ? '停用整个接管号' : '启用整个接管号'}
+          {inbox.enabled ? '停用这个账号' : '启用这个账号'}
         </button>
       </div>
     </div>
   );
 }
 
-function ContactDetail({ contact, inbox, bridge, messages, personas, providers, isAdmin, onPatch }: {
+function ContactDetail({ contact, inbox, bridge, messages, personas, onPatch }: {
   contact: Contact;
   inbox: Inbox;
   bridge: Bridge | null;
   messages: Message[];
   personas: Persona[];
-  providers: ProviderConfig[];
-  isAdmin: boolean;
   onPatch: (contactId: string, patch: Parameters<typeof api.updateContact>[1]) => Promise<void>;
 }) {
   const [draftCard, setDraftCard] = useState(contact.card_md ?? '');
@@ -657,15 +639,34 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
-      <div style={{ borderBottom: '1px solid var(--line-subtle)', paddingBottom: 12 }}>
-        <div style={{ fontWeight: 600, fontSize: 16 }}>{contact.display_name}</div>
-        <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
-          {inbox.display_name} · {inbox.platform} · 粉丝平台 ID {contact.peer_platform_id}
+      <div style={{ borderBottom: '1px solid var(--line-subtle)', paddingBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 16 }}>{contact.display_name}</div>
+          <div className="ink-3" style={{ fontSize: 11, marginTop: 4 }}>
+            来自 {inbox.display_name}（{inbox.platform}）
+          </div>
         </div>
+        {contact.takeover ? (
+          <button
+            className="btn btn-sm btn-ghost"
+            style={{ color: 'var(--danger)' }}
+            onClick={() => {
+              if (!confirm(`取消接管「${contact.display_name}」？取消后将停止自动回复。`)) return;
+              onPatch(contact.id, { takeover: false });
+            }}
+          >
+            取消接管
+          </button>
+        ) : (
+          <button className="btn btn-sm btn-primary" onClick={() => onPatch(contact.id, { takeover: true })}>
+            + 接管
+          </button>
+        )}
       </div>
 
+      {contact.takeover && (
       <div style={{ display: 'grid', gap: 8, padding: 12, background: 'var(--bg-raised)', borderRadius: 8, border: '1px solid var(--line-subtle)' }}>
-        <div className="mono ink-3" style={{ fontSize: 11 }}>这个粉丝的接管设置</div>
+        <div className="ink-3" style={{ fontSize: 11 }}>这个粉丝的接管设置</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
           <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>
             人设
@@ -681,42 +682,11 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
               {personas.map(persona => <option key={persona.id} value={persona.id}>{persona.name}</option>)}
             </select>
           </label>
-          {isAdmin ? (
-            <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-              Provider
-              <select
-                value={contact.reply_provider_config_id ?? ''}
-                className="select"
-                style={{ marginLeft: 6 }}
-                onChange={event => {
-                  if (event.target.value) {
-                    onPatch(contact.id, { reply_provider_config_id: event.target.value });
-                  } else {
-                    onPatch(contact.id, { clear_reply_provider: true });
-                  }
-                }}
-              >
-                <option value="">
-                  跟随接管号/全局默认（{providers.find(provider => provider.id === inbox.reply_provider_config_id)?.name ?? '全局默认'}）
-                </option>
-                {providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}{provider.is_default ? ' · 全局默认' : ''}</option>)}
-              </select>
-            </label>
-          ) : (
-            <span className="chip muted">模型由管理员统一配置</span>
-          )}
-          <label className="mono" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
-            <input
-              type="checkbox"
-              checked={contact.takeover}
-              onChange={event => onPatch(contact.id, { takeover: event.target.checked })}
-            />
-            接管
-          </label>
-          <label className="mono" style={{ fontSize: 11, display: 'flex', alignItems: 'center', gap: 6 }}>
+          <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 6 }}>
+            回复方式
             <select
               value={contact.reply_policy}
-              disabled={!contact.takeover || (!canAutoreply && contact.reply_policy !== 'autoreply')}
+              disabled={!canAutoreply && contact.reply_policy !== 'autoreply'}
               onChange={event => {
                 const next = event.target.value as 'disabled' | 'autoreply';
                 if (next === 'autoreply') {
@@ -724,30 +694,30 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
                   const hasPersona = Boolean(contact.persona_id && persona?.persona_md && persona.persona_md.trim());
                   const hasCard = Boolean(contact.card_md && contact.card_md.trim());
                   if (!hasPersona || !hasCard) {
-                    const missing = [hasPersona ? null : '人设', hasCard ? null : '关系卡'].filter(Boolean).join(' 和 ');
-                    if (!confirm(`还缺${missing}（人设和关系卡缺一不可），自动回复不会真正生效。可以去「人设」页自动创建。仍要切换到自动回复吗？`)) return;
+                    const missing = [hasPersona ? null : '人设', hasCard ? null : '关系备注'].filter(Boolean).join(' 和 ');
+                    if (!confirm(`还缺${missing}（两样都要有才能自动回复）。可以去「人设」页自动生成。仍要开启自动回复吗？`)) return;
                   }
                 }
                 onPatch(contact.id, { reply_policy: next });
               }}
               style={{ fontSize: 11 }}
             >
-              <option value="disabled">不自动回复</option>
+              <option value="disabled">只接管，不自动回复</option>
               <option value="autoreply">自动回复</option>
             </select>
           </label>
         </div>
         {!canAutoreply && (
-          <div className="mono" style={{ fontSize: 11, color: 'var(--warn)' }}>
-            {!bridge && '— 这个接管号没绑定在线设备；'}
-            {bridge && bridge.status !== 'online' && `— 设备 ${bridge.machine_id} 离线；`}
-            {!inbox.enabled && '— 接管号已停用；'}
-            {!contact.persona_id && '— 没有人设；'}
-            自动接管启不来。
+          <div style={{ fontSize: 11, color: 'var(--warn)' }}>
+            {!bridge && '— 这个账号没有在线的设备；'}
+            {bridge && bridge.status !== 'online' && `— 设备「${bridge.machine_id}」当前离线；`}
+            {!inbox.enabled && '— 这个账号已停用；'}
+            {!contact.persona_id && '— 还没选人设；'}
+            目前无法自动回复。
           </div>
         )}
 
-        <label className="ink-3" style={{ fontSize: 11 }}>关系卡（card_md）— 简单写下你跟这个人的关系，AI 回复时会读到</label>
+        <label className="ink-3" style={{ fontSize: 11 }}>关系备注 —— 简单写下你和这个人的关系，回复时会参考它</label>
         <textarea
           className="textarea mono"
           style={{ minHeight: 90, fontSize: 12 }}
@@ -759,13 +729,13 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
           <button
             className="btn btn-sm btn-ghost"
             disabled={cardJobBusy}
-            title="从这个粉丝的全部聊天记录里自动提取关系卡（后台执行，不更新人设）"
+            title="读完和这个粉丝的全部聊天记录，自动整理出关系备注（在后台进行）"
             onClick={async () => {
               setCardJobBusy(true);
               setCardJobNote('');
               try {
                 await api.createDistillJob({ contact_ids: [contact.id], target_persona_id: null });
-                setCardJobNote('已提交，正在后台从聊天记录生成关系卡，稍后自动刷新。');
+                setCardJobNote('已开始，正在后台读聊天记录整理关系备注，稍后会自动刷新。');
               } catch (err) {
                 setCardJobNote(String(err));
               } finally {
@@ -773,7 +743,7 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
               }
             }}
           >
-            {cardJobBusy ? '提交中…' : '✶ 自动创建关系卡'}
+            {cardJobBusy ? '处理中…' : '✶ 自动整理关系备注'}
           </button>
           <div style={{ display: 'flex', gap: 6 }}>
             {draftCard !== (contact.card_md ?? '') && (
@@ -793,14 +763,15 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, providers, 
                 }
               }}
             >
-              {savingCard ? '保存中…' : '保存关系卡'}
+              {savingCard ? '保存中…' : '保存关系备注'}
             </button>
           </div>
         </div>
         {cardJobNote && (
-          <div className="mono ink-3" style={{ fontSize: 11 }}>{cardJobNote}</div>
+          <div className="ink-3" style={{ fontSize: 11 }}>{cardJobNote}</div>
         )}
       </div>
+      )}
 
       {messages.length === 0 ? (
         <Empty>暂无消息。</Empty>
@@ -853,12 +824,12 @@ function DevicesView({ bridges, inboxes, meUsername, onChanged, setError }: {
 
   return (
     <div>
-      <PageHead title="设备" kicker="devices · 你的本地守护进程" />
+      <PageHead title="设备" kicker="主播电脑上的接入程序" />
       <div style={{ padding: '0 28px 24px', display: 'grid', gap: 14 }}>
-        <BridgeCommandPanel meUsername={meUsername} setError={setError} />
+        <BridgeCommandPanel meUsername={meUsername} />
         {bridges.length === 0 ? (
           <Empty>
-            还没有设备。复制上面命令到主播的 PC 上运行；接好 chat 账号后会自动注册到这里。
+            还没有设备。按上面的步骤在主播电脑上接入账号，接好后会自动出现在这里。
           </Empty>
         ) : (
           <div style={{ display: 'grid', gap: 10 }}>
@@ -871,15 +842,15 @@ function DevicesView({ bridges, inboxes, meUsername, onChanged, setError }: {
                       {bridge.machine_id}
                       <span className={`chip ${statusChipClass(bridge.status)}`}>{statusText(bridge.status)}</span>
                     </div>
-                    <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
-                      最后心跳 {formatDateTime(bridge.last_seen_at)} · 承载 {(inboxesByBridge[bridge.id] || []).length} 个接管号
+                    <div className="ink-3" style={{ fontSize: 11, marginTop: 4 }}>
+                      最后在线 {formatDateTime(bridge.last_seen_at)} · 接入了 {(inboxesByBridge[bridge.id] || []).length} 个账号
                     </div>
                   </div>
                   <button
                     className="btn btn-sm btn-ghost"
                     style={{ color: 'var(--danger)' }}
                     onClick={async () => {
-                      if (!confirm(`确认撤销设备 ${bridge.machine_id}？该机器上的接管号会从它身上脱钩，daemon 下次调用会被 401。`)) return;
+                      if (!confirm(`确认移除设备「${bridge.machine_id}」？这台电脑上接入的账号会停止收发消息，需要重新接入。`)) return;
                       try {
                         await api.deleteBridge(bridge.id);
                         await Promise.resolve(onChanged());
@@ -888,14 +859,14 @@ function DevicesView({ bridges, inboxes, meUsername, onChanged, setError }: {
                       }
                     }}
                   >
-                    撤销
+                    移除
                   </button>
                 </div>
                 {(inboxesByBridge[bridge.id] || []).length > 0 && (
                   <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line-subtle)', display: 'grid', gap: 6 }}>
                     {(inboxesByBridge[bridge.id] || []).map(inbox => (
-                      <div key={inbox.id} className="mono" style={{ fontSize: 11, color: 'var(--ink-2)' }}>
-                        {inbox.platform} · {inbox.platform_self_id || '—'} · {inbox.display_name} · {inbox.enabled ? '启用' : '停用'}
+                      <div key={inbox.id} style={{ fontSize: 11, color: 'var(--ink-2)' }}>
+                        {inbox.display_name}（{inbox.platform}）· {inbox.enabled ? '使用中' : '已停用'}
                       </div>
                     ))}
                   </div>
@@ -919,7 +890,7 @@ function StatusDot({ status }: { status: Bridge['status'] }) {
 function statusText(status: Bridge['status']): string {
   if (status === 'online') return '在线';
   if (status === 'offline') return '离线';
-  return '已撤销';
+  return '已移除';
 }
 
 function statusChipClass(status: Bridge['status']): string {
@@ -941,7 +912,7 @@ function PersonasView({ personas, onChanged, setError }: {
     <div>
       <PageHead
         title="人设"
-        kicker="personas"
+        kicker="你可以扮演的人设"
         right={
           <div style={{ display: 'flex', gap: 6 }}>
             <button className="btn btn-primary btn-sm" onClick={() => setShowAuto(true)}>✶ 自动创建</button>
@@ -959,9 +930,9 @@ function PersonasView({ personas, onChanged, setError }: {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                   <div>
                     <div style={{ fontWeight: 500 }}>
-                      {persona.name} <span className="chip muted">{persona.status}</span>
+                      {persona.name} <span className="chip muted">{persona.status === 'active' ? '使用中' : '已归档'}</span>
                     </div>
-                    <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>
+                    <div className="ink-3" style={{ fontSize: 11, marginTop: 4 }}>
                       {persona.persona_md ? `${persona.persona_md.slice(0, 80)}${persona.persona_md.length > 80 ? '…' : ''}` : '（空）'}
                     </div>
                   </div>
@@ -971,7 +942,7 @@ function PersonasView({ personas, onChanged, setError }: {
                       className="btn btn-sm btn-ghost"
                       style={{ color: 'var(--danger)' }}
                       onClick={async () => {
-                        if (!confirm('确认删除？被引用时会失败。')) return;
+                        if (!confirm('确认删除这个人设？如果还有粉丝在用它，会删除失败。')) return;
                         try {
                           await api.deletePersona(persona.id);
                           await Promise.resolve(onChanged());
@@ -1057,13 +1028,13 @@ function CreatePersonaModal({ onClose, onCreated, onSwitchToAuto, setError }: {
       >
         <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>不用自己写 ——可以从聊天记录自动创建</div>
         <div className="ink-3" style={{ fontSize: 12, marginBottom: 10 }}>
-          选几段你和粉丝的真实对话，AI 会读完后替你总结出人设和每个粉丝的关系卡。
+          选几段你和粉丝的真实对话，AI 会读完后替你总结出人设和每个粉丝的关系备注。
         </div>
         <button className="btn btn-primary btn-sm" onClick={onSwitchToAuto}>✶ 用聊天记录自动创建</button>
       </div>
       <FormField label="名称"><input className="input" value={name} onChange={event => setName(event.target.value)} autoFocus /></FormField>
-      <FormField label="时区 (IANA)"><input className="input" value={tz} onChange={event => setTz(event.target.value)} placeholder="Asia/Shanghai" /></FormField>
-      <FormField label="persona_md (可空)">
+      <FormField label="时区"><input className="input" value={tz} onChange={event => setTz(event.target.value)} placeholder="Asia/Shanghai" /></FormField>
+      <FormField label="人设描述（可不填）">
         <textarea className="textarea mono" style={{ minHeight: 200 }} value={md} onChange={event => setMd(event.target.value)} />
       </FormField>
       <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建'} disabled={busy || !name.trim()} />
@@ -1137,23 +1108,23 @@ function AutoCreatePersonaModal({ onClose, onSubmitted, setError }: {
   return (
     <ModalShell onClose={onClose} title="✶ 自动创建人设">
       <div className="ink-3" style={{ fontSize: 12, marginBottom: 14 }}>
-        给人设起个名字，再选几段真实对话。AI 会在后台读完这些聊天，自动写出人设；同时也会顺手生成每个被选中粉丝的关系卡。生成在后台进行，关掉窗口也没关系。
+        给人设起个名字，再选几段真实对话。AI 会在后台读完这些聊天，自动写出人设；同时也会顺手生成每个被选中粉丝的关系备注。生成在后台进行，关掉窗口也没关系。
       </div>
       <FormField label="人设名称"><input className="input" value={name} onChange={event => setName(event.target.value)} autoFocus placeholder="例如：阿言（抖音）" /></FormField>
-      <FormField label="时区 (IANA)"><input className="input" value={tz} onChange={event => setTz(event.target.value)} placeholder="Asia/Shanghai" /></FormField>
-      <div className="mono ink-3" style={{ fontSize: 11, marginBottom: 6 }}>
-        从这些对话里提取（已选 {selected.size} / {items.length}）
+      <FormField label="时区"><input className="input" value={tz} onChange={event => setTz(event.target.value)} placeholder="Asia/Shanghai" /></FormField>
+      <div className="ink-3" style={{ fontSize: 11, marginBottom: 6 }}>
+        从这些对话里学习（已选 {selected.size} / {items.length}）
       </div>
       {loading ? (
-        <Empty>加载接管列表中…</Empty>
+        <Empty>正在加载已接管的粉丝…</Empty>
       ) : items.length === 0 ? (
-        <Empty>还没有接管任何会话。先去「接管」页接管一些粉丝。</Empty>
+        <Empty>还没有接管任何粉丝。先去「接管」页接管一些粉丝。</Empty>
       ) : (
         <div style={{ display: 'grid', gap: 12, maxHeight: '40vh', overflow: 'auto', marginBottom: 8 }}>
           {grouped.map(group => (
             <div key={group.inbox.id} className="card" style={{ padding: '10px 12px', display: 'grid', gap: 4 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span className="mono ink-3" style={{ fontSize: 11 }}>{group.inbox.display_name}</span>
+                <span className="ink-3" style={{ fontSize: 11 }}>{group.inbox.display_name}</span>
                 <button
                   className="btn btn-sm btn-ghost"
                   onClick={() => {
@@ -1223,8 +1194,8 @@ function EditPersonaModal({ persona, onClose, onSaved, setError }: {
   return (
     <ModalShell onClose={onClose} title={`编辑人设 · ${persona.name}`}>
       <FormField label="名称"><input className="input" value={name} onChange={event => setName(event.target.value)} /></FormField>
-      <FormField label="时区 (IANA)"><input className="input" value={tz} onChange={event => setTz(event.target.value)} placeholder="Asia/Shanghai" /></FormField>
-      <FormField label="persona_md">
+      <FormField label="时区"><input className="input" value={tz} onChange={event => setTz(event.target.value)} placeholder="Asia/Shanghai" /></FormField>
+      <FormField label="人设描述">
         <textarea className="textarea mono" style={{ minHeight: 320 }} value={md} onChange={event => setMd(event.target.value)} />
       </FormField>
       <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '保存中...' : '保存'} disabled={busy} />
@@ -1257,24 +1228,18 @@ function SettingsView({ providers, me, isAdmin, onChanged, setError }: {
 
   return (
     <div>
-      <PageHead title="设置" kicker="settings" />
+      <PageHead title="设置" kicker="账号与密码" />
       <div style={{ padding: '0 28px 24px', display: 'grid', gridTemplateColumns: '220px minmax(0, 1fr)', gap: 24 }}>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span className="eyebrow" style={{ padding: '6px 10px' }}>账号</span>
-          <button className="btn btn-ghost" style={{ justifyContent: 'flex-start' }}>个人 · @{me}</button>
+          <button className="btn btn-ghost" style={{ justifyContent: 'flex-start' }}>我的账号 · @{me}</button>
           {isAdmin && <span className="eyebrow mt-3" style={{ padding: '6px 10px', marginTop: 12 }}>系统</span>}
-          {isAdmin && <button className="btn" style={{ justifyContent: 'flex-start', background: 'var(--bg-raised)' }}>Provider</button>}
+          {isAdmin && <button className="btn" style={{ justifyContent: 'flex-start', background: 'var(--bg-raised)' }}>AI 回复模型</button>}
         </nav>
         <div style={{ display: 'grid', gap: 14 }}>
           <PasswordPanel me={me} setError={setError} />
           {isAdmin && <AccountsPanel accounts={accounts} onChanged={loadAccounts} setError={setError} />}
           {isAdmin && <ProviderPanel providers={providers} onChanged={onChanged} onCreate={() => setShowCreate(true)} setError={setError} />}
-          {!isAdmin && (
-            <div className="card p-5">
-              <div style={{ fontWeight: 600, marginBottom: 8 }}>模型配置</div>
-              <div className="text-sm text-ink-3">模型 Provider 由管理员统一配置，接管时无需选择模型。</div>
-            </div>
-          )}
         </div>
       </div>
       {isAdmin && showCreate && (
@@ -1294,18 +1259,23 @@ function SettingsView({ providers, me, isAdmin, onChanged, setError }: {
 function PasswordPanel({ me, setError }: { me: string; setError: (message: string) => void }) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [ok, setOk] = useState('');
 
+  const mismatch = confirmPassword.length > 0 && newPassword !== confirmPassword;
+  const canSubmit = Boolean(currentPassword && newPassword && newPassword === confirmPassword);
+
   const handle = async () => {
-    if (!currentPassword || !newPassword) return;
+    if (!canSubmit) return;
     setBusy(true);
     setOk('');
     try {
       await api.changeOwnPassword({ current_password: currentPassword, new_password: newPassword });
       setCurrentPassword('');
       setNewPassword('');
-      setOk('密码已更新，请重新登录。');
+      setConfirmPassword('');
+      setOk('密码已修改，请用新密码重新登录。');
     } catch (err) {
       setError(String(err));
     } finally {
@@ -1315,13 +1285,15 @@ function PasswordPanel({ me, setError }: { me: string; setError: (message: strin
 
   return (
     <div className="card p-5">
-      <div style={{ fontWeight: 600, marginBottom: 8 }}>个人 · @{me}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 8, alignItems: 'end' }}>
+      <div style={{ fontWeight: 600, marginBottom: 8 }}>我的账号 · @{me}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, alignItems: 'end' }}>
         <FormField label="当前密码"><input className="input" type="password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} /></FormField>
         <FormField label="新密码"><input className="input" type="password" value={newPassword} onChange={event => setNewPassword(event.target.value)} /></FormField>
-        <button className="btn btn-primary btn-sm" onClick={handle} disabled={busy || !currentPassword || !newPassword}>{busy ? '保存中…' : '重置密码'}</button>
+        <FormField label="再输一次新密码"><input className="input" type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} /></FormField>
+        <button className="btn btn-primary btn-sm" onClick={handle} disabled={busy || !canSubmit}>{busy ? '保存中…' : '修改密码'}</button>
       </div>
-      {ok && <div className="mono" style={{ color: 'var(--live)', fontSize: 11 }}>{ok}</div>}
+      {mismatch && <div style={{ color: 'var(--danger)', fontSize: 11, marginTop: 6 }}>两次输入的新密码不一致</div>}
+      {ok && <div style={{ color: 'var(--live)', fontSize: 11, marginTop: 6 }}>{ok}</div>}
     </div>
   );
 }
@@ -1337,8 +1309,8 @@ function AccountsPanel({ accounts, onChanged, setError }: {
   return (
     <div className="card p-5">
       <div className="row gap-2" style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-        <span style={{ fontWeight: 600 }}>账号 · 用户管理</span>
-        <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={() => setShowCreate(true)}>+ 新账号</button>
+        <span style={{ fontWeight: 600 }}>账号管理</span>
+        <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={() => setShowCreate(true)}>+ 新建账号</button>
       </div>
       {accounts.length === 0 ? <Empty>还没有账号。</Empty> : (
         <div style={{ display: 'grid', gap: 10 }}>
@@ -1346,8 +1318,8 @@ function AccountsPanel({ accounts, onChanged, setError }: {
             <div key={account.id} className="card" style={{ padding: '12px 14px' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                 <div>
-                  <div style={{ fontWeight: 500 }}>@{account.username} <span className="chip muted">{account.role}</span> <span className={`chip ${account.status === 'active' ? 'live' : 'danger'}`}>{account.status}</span></div>
-                  <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>{account.display_name || '未命名'} · 最后登录 {formatDateTime(account.last_login_at)}</div>
+                  <div style={{ fontWeight: 500 }}>@{account.username} <span className="chip muted">{account.role === 'admin' ? '管理员' : '普通用户'}</span> <span className={`chip ${account.status === 'active' ? 'live' : 'danger'}`}>{account.status === 'active' ? '已启用' : '已停用'}</span></div>
+                  <div className="ink-3" style={{ fontSize: 11, marginTop: 4 }}>{account.display_name || '未命名'} · 最后登录 {formatDateTime(account.last_login_at)}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button className="btn btn-sm btn-ghost" onClick={() => setResetting(account)}>重置密码</button>
@@ -1383,18 +1355,18 @@ function ProviderPanel({ providers, onChanged, onCreate, setError }: {
   return (
     <div className="card p-5">
       <div className="row gap-2" style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-        <span style={{ fontWeight: 600 }}>Provider · LLM 接入</span>
-        <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={onCreate}>+ 新接入</button>
+        <span style={{ fontWeight: 600 }}>AI 回复模型</span>
+        <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={onCreate}>+ 添加模型</button>
       </div>
-      <div className="text-sm text-ink-3" style={{ marginBottom: 12 }}>管理员维护全局默认模型；未来可在接管上覆盖。</div>
-      {providers.length === 0 ? <Empty>还没有 Provider。</Empty> : (
+      <div className="text-sm text-ink-3" style={{ marginBottom: 12 }}>这里配置自动回复使用的 AI 模型，所有账号统一使用。</div>
+      {providers.length === 0 ? <Empty>还没有配置模型。</Empty> : (
         <div style={{ display: 'grid', gap: 10 }}>
           {providers.map(provider => (
             <div key={provider.id} className="card" style={{ padding: '14px 16px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                 <div>
-                  <div style={{ fontWeight: 500 }}>{provider.name} {provider.is_default && <span className="chip live">全局默认</span>}</div>
-                  <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>{provider.base_url} · model: {provider.default_model} · key: {provider.api_key_preview ?? '未设置'}</div>
+                  <div style={{ fontWeight: 500 }}>{provider.name} {provider.is_default && <span className="chip live">默认</span>}</div>
+                  <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>{provider.base_url} · {provider.default_model} · 密钥 {provider.api_key_preview ?? '未设置'}</div>
                 </div>
                 <button
                   className="btn btn-sm btn-ghost"
@@ -1444,12 +1416,12 @@ function CreateProviderModal({ onClose, onCreated, setError }: {
   };
 
   return (
-    <ModalShell onClose={onClose} title="新建 Provider Config">
+    <ModalShell onClose={onClose} title="添加 AI 回复模型">
       <FormField label="名称"><input className="input" value={name} onChange={event => setName(event.target.value)} placeholder="例如 Deepseek" autoFocus /></FormField>
-      <FormField label="base_url"><input className="input mono" value={baseUrl} onChange={event => setBaseUrl(event.target.value)} placeholder="https://api.deepseek.com" /></FormField>
-      <FormField label="api_key"><input className="input mono" type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} /></FormField>
-      <FormField label="default_model"><input className="input mono" value={model} onChange={event => setModel(event.target.value)} placeholder="deepseek-chat" /></FormField>
-      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建'} disabled={busy || !name.trim() || !baseUrl.trim() || !model.trim()} />
+      <FormField label="接口地址"><input className="input mono" value={baseUrl} onChange={event => setBaseUrl(event.target.value)} placeholder="https://api.deepseek.com" /></FormField>
+      <FormField label="密钥"><input className="input mono" type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} /></FormField>
+      <FormField label="模型名"><input className="input mono" value={model} onChange={event => setModel(event.target.value)} placeholder="deepseek-chat" /></FormField>
+      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '保存中...' : '保存'} disabled={busy || !name.trim() || !baseUrl.trim() || !model.trim()} />
     </ModalShell>
   );
 }
@@ -1465,8 +1437,12 @@ function CreateAccountModal({ onClose, onCreated, setError }: {
   const [role, setRole] = useState<AccountRole>('user');
   const [busy, setBusy] = useState(false);
 
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const mismatch = confirmPassword.length > 0 && password !== confirmPassword;
+  const canSubmit = Boolean(username.trim() && password && password === confirmPassword);
+
   const handle = async () => {
-    if (!username.trim() || !password) return;
+    if (!canSubmit) return;
     setBusy(true);
     try {
       await api.createAccount({
@@ -1485,16 +1461,18 @@ function CreateAccountModal({ onClose, onCreated, setError }: {
 
   return (
     <ModalShell onClose={onClose} title="新建账号">
-      <FormField label="username"><input className="input mono" value={username} onChange={event => setUsername(event.target.value)} autoFocus /></FormField>
-      <FormField label="display_name"><input className="input" value={displayName} onChange={event => setDisplayName(event.target.value)} /></FormField>
-      <FormField label="password"><input className="input mono" type="password" value={password} onChange={event => setPassword(event.target.value)} /></FormField>
-      <FormField label="role">
+      <FormField label="登录名"><input className="input mono" value={username} onChange={event => setUsername(event.target.value)} autoFocus /></FormField>
+      <FormField label="显示名称"><input className="input" value={displayName} onChange={event => setDisplayName(event.target.value)} /></FormField>
+      <FormField label="密码"><input className="input mono" type="password" value={password} onChange={event => setPassword(event.target.value)} /></FormField>
+      <FormField label="再输一次密码"><input className="input mono" type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} /></FormField>
+      {mismatch && <div style={{ color: 'var(--danger)', fontSize: 11, marginBottom: 12 }}>两次输入的密码不一致</div>}
+      <FormField label="角色">
         <select className="select" value={role} onChange={event => setRole(event.target.value as AccountRole)}>
           <option value="user">普通用户</option>
           <option value="admin">管理员</option>
         </select>
       </FormField>
-      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建'} disabled={busy || !username.trim() || !password} />
+      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建'} disabled={busy || !canSubmit} />
     </ModalShell>
   );
 }
@@ -1506,10 +1484,14 @@ function ResetAccountPasswordModal({ account, onClose, onSaved, setError }: {
   setError: (message: string) => void;
 }) {
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [busy, setBusy] = useState(false);
 
+  const mismatch = confirmPassword.length > 0 && password !== confirmPassword;
+  const canSubmit = Boolean(password && password === confirmPassword);
+
   const handle = async () => {
-    if (!password) return;
+    if (!canSubmit) return;
     setBusy(true);
     try {
       await api.resetAccountPassword(account.id, password);
@@ -1524,8 +1506,10 @@ function ResetAccountPasswordModal({ account, onClose, onSaved, setError }: {
   return (
     <ModalShell onClose={onClose} title={`重置密码 · @${account.username}`}>
       <FormField label="新密码"><input className="input mono" type="password" value={password} onChange={event => setPassword(event.target.value)} autoFocus /></FormField>
-      <div className="mono ink-3" style={{ fontSize: 11 }}>保存后该账号已有网页登录态会失效。</div>
-      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '保存中...' : '保存'} disabled={busy || !password} />
+      <FormField label="再输一次新密码"><input className="input mono" type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} /></FormField>
+      {mismatch && <div style={{ color: 'var(--danger)', fontSize: 11, marginBottom: 8 }}>两次输入的新密码不一致</div>}
+      <div className="ink-3" style={{ fontSize: 11 }}>保存后这个账号需要用新密码重新登录。</div>
+      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '保存中...' : '保存'} disabled={busy || !canSubmit} />
     </ModalShell>
   );
 }
@@ -1539,6 +1523,40 @@ function formatDateTime(value: string | null | undefined): string {
 
 function Empty({ children }: { children: ReactNode }) {
   return <div className="card ink-3" style={{ padding: 18, textAlign: 'center' }}>{children}</div>;
+}
+
+function Drawer({ title, count, open, onToggle, children }: {
+  title: string;
+  count: number;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <div style={{ display: 'grid', gap: open ? 10 : 0 }}>
+      <button
+        onClick={onToggle}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 8,
+          width: '100%',
+          padding: '8px 10px',
+          background: 'var(--bg-raised)',
+          border: '1px solid var(--line-subtle)',
+          borderRadius: 8,
+          cursor: 'pointer',
+          color: 'var(--ink-1)',
+          textAlign: 'left',
+        }}
+      >
+        <span style={{ fontSize: 12, color: 'var(--ink-3)', transform: open ? 'rotate(90deg)' : 'none', transition: 'transform .15s' }}>▶</span>
+        <span style={{ fontWeight: 600, fontSize: 13 }}>{title}</span>
+        <span className="chip muted" style={{ marginLeft: 'auto' }}>{count}</span>
+      </button>
+      {open && <div style={{ display: 'grid', gap: 10 }}>{children}</div>}
+    </div>
+  );
 }
 
 function FormField({ label, children }: { label: string; children: ReactNode }) {
@@ -1575,97 +1593,45 @@ function ModalActions({ onCancel, onConfirm, confirmLabel, disabled }: {
   );
 }
 
-function buildBridgeCommand({
-  studioUsername,
-  studioUrl,
-  chatBaseUrl,
-  chatUsername,
-}: {
-  studioUsername: string;
-  studioUrl: string;
-  chatBaseUrl: string;
-  chatUsername: string;
-}): string {
-  return [
-    'docker compose run --rm bridge \\',
-    `  --studio-username=${studioUsername || '<studio账号>'} \\`,
-    '  --studio-password=<填入你的密码> \\',
-    `  --studio-url=${studioUrl} \\`,
-    `  --chat-inbox 'base_url=${chatBaseUrl},username=${chatUsername || '<chat账号>'},password=<chat账号密码>'`,
-  ].join('\n');
-}
-
-function BridgeCommandPanel({ meUsername, setError }: {
-  meUsername: string;
-  setError: (message: string) => void;
-}) {
-  const [studioUrl, setStudioUrl] = useState('http://host.docker.internal:23457');
-  const [chatBaseUrl, setChatBaseUrl] = useState('http://host.docker.internal:23456');
-  const [chatUsername, setChatUsername] = useState(meUsername);
-  const [copied, setCopied] = useState(false);
-
-  const command = useMemo(
-    () => buildBridgeCommand({
-      studioUsername: meUsername,
-      studioUrl,
-      chatBaseUrl,
-      chatUsername,
-    }),
-    [meUsername, studioUrl, chatBaseUrl, chatUsername],
-  );
-
-  const onCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(command);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch (err) {
-      setError(String(err));
-    }
-  };
+function BridgeCommandPanel({ meUsername }: { meUsername: string }) {
+  const steps: { cmd: string; desc: string }[] = [
+    { cmd: '/state 一个文件夹路径', desc: '选个文件夹用来存放数据，比如桌面新建的一个空文件夹。每次打开都要先做这一步。' },
+    { cmd: '/login', desc: `按提示输入你登录本网站的账号和密码（你的账号是 ${meUsername}）。` },
+    { cmd: '/channel add', desc: '按提示输入要托管的聊天账号和密码，可以重复这一步添加多个账号。' },
+    { cmd: '/status', desc: '查看当前连接情况；显示「在线」就说明接好了。' },
+  ];
 
   return (
-    <div className="card" style={{ padding: 16, display: 'grid', gap: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <span style={{ fontWeight: 600, fontSize: 13 }}>快速生成命令</span>
-        <span className="mono ink-3" style={{ fontSize: 11 }}>
-          在主播 PC 的 <span className="mono">services/bridge/</span> 下执行
-        </span>
-        <button className="btn btn-sm btn-ghost" style={{ marginLeft: 'auto' }} onClick={onCopy}>
-          {copied ? '已复制' : '复制命令'}
-        </button>
+    <div className="card" style={{ padding: 16, display: 'grid', gap: 12 }}>
+      <div>
+        <div style={{ fontWeight: 600, fontSize: 14 }}>怎么把账号接进来</div>
+        <div className="ink-3" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.6 }}>
+          在主播本人的电脑上打开 Laborster 设备程序，会出现一个输入框。按下面的顺序，
+          一行一行把指令输进去、回车，再按提示填信息即可。接好之后这一页会自动列出设备和账号。
+        </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-        <label className="mono ink-3" style={{ fontSize: 11 }}>
-          studio-url
-          <input className="input mono" style={{ marginTop: 2 }} value={studioUrl} onChange={e => setStudioUrl(e.target.value)} />
-        </label>
-        <label className="mono ink-3" style={{ fontSize: 11 }}>
-          chat base_url
-          <input className="input mono" style={{ marginTop: 2 }} value={chatBaseUrl} onChange={e => setChatBaseUrl(e.target.value)} />
-        </label>
-        <label className="mono ink-3" style={{ fontSize: 11 }}>
-          chat username
-          <input className="input mono" style={{ marginTop: 2 }} value={chatUsername} onChange={e => setChatUsername(e.target.value)} placeholder="alice" />
-        </label>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {steps.map((step, index) => (
+          <div
+            key={step.cmd}
+            style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '10px 12px', background: 'var(--bg-raised)', border: '1px solid var(--line-subtle)', borderRadius: 8 }}
+          >
+            <span
+              className="serif"
+              style={{ flex: '0 0 22px', width: 22, height: 22, borderRadius: 999, background: 'var(--brass-soft)', color: 'var(--brass)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13 }}
+            >
+              {index + 1}
+            </span>
+            <div style={{ minWidth: 0 }}>
+              <div className="mono" style={{ fontSize: 13, color: 'var(--ink-1)' }}>{step.cmd}</div>
+              <div className="ink-3" style={{ fontSize: 12, marginTop: 3, lineHeight: 1.55 }}>{step.desc}</div>
+            </div>
+          </div>
+        ))}
       </div>
-      <pre
-        className="mono"
-        style={{
-          margin: 0,
-          padding: 12,
-          background: 'var(--bg-deep)',
-          border: '1px solid var(--line-subtle)',
-          borderRadius: 8,
-          fontSize: 12,
-          lineHeight: 1.55,
-          whiteSpace: 'pre-wrap',
-          wordBreak: 'break-all',
-          color: 'var(--ink-2)',
-        }}
-      >{command}</pre>
-      <div className="mono ink-3" style={{ fontSize: 11 }}>
-        密码不要写进命令历史；建议 <span className="mono">read -s</span> 或 <span className="mono">.env</span> 注入。
+      <div className="ink-3" style={{ fontSize: 12, lineHeight: 1.6 }}>
+        想看完整命令列表，在设备程序里输入 <span className="mono">/help</span>。设备程序保持开着才会一直工作；
+        关掉窗口就会停止收发消息，重新打开后按第 1、2 步即可恢复。
       </div>
     </div>
   );
@@ -1694,7 +1660,7 @@ function OverviewView({ setError }: { setError: (message: string) => void }) {
     <div>
       <PageHead
         title="总览"
-        kicker="overview · SaaS 运营视角"
+        kicker="全部账号与数据一览"
         right={<button className="btn btn-sm btn-ghost" onClick={() => reload()}>{loading ? '刷新中…' : '刷新'}</button>}
       />
       <div style={{ padding: '0 28px 24px', display: 'grid', gap: 14 }}>
@@ -1703,20 +1669,19 @@ function OverviewView({ setError }: { setError: (message: string) => void }) {
         ) : (
           <>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
-              <StatCard label="账号" value={data.totals.accounts} sub={`管理员 ${data.totals.admins} · 用户 ${data.totals.users}`} />
+              <StatCard label="账号" value={data.totals.accounts} sub={`管理员 ${data.totals.admins} · 普通用户 ${data.totals.users}`} />
               <StatCard label="设备" value={`${data.totals.bridges_online} 在线`} sub={`离线 ${data.totals.bridges_offline}`} />
-              <StatCard label="接管号" value={data.totals.inboxes} />
+              <StatCard label="接管账号" value={data.totals.inboxes} />
               <StatCard label="人设" value={data.totals.personas} />
-              <StatCard label="粉丝" value={data.totals.contacts} sub={`接管中 ${data.totals.contacts_autoreply}`} />
+              <StatCard label="粉丝" value={data.totals.contacts} sub={`自动回复中 ${data.totals.contacts_autoreply}`} />
               <StatCard label="消息" value={data.totals.messages} />
-              <StatCard label="Provider" value={data.totals.providers} />
-              <StatCard label="待发 outbound" value={data.totals.outbound_pending} />
+              <StatCard label="待发送" value={data.totals.outbound_pending} />
             </div>
 
             <div className="card" style={{ padding: 16 }}>
               <div style={{ fontWeight: 600, marginBottom: 10 }}>账号明细</div>
               {data.accounts.length === 0 ? (
-                <Empty>系统里还没有账号。用 <span className="mono">python -m studio.cli create-account</span> 创建一个。</Empty>
+                <Empty>系统里还没有账号。在「设置」里点「新建账号」创建一个。</Empty>
               ) : (
                 <div style={{ overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -1727,9 +1692,9 @@ function OverviewView({ setError }: { setError: (message: string) => void }) {
                         <th style={overviewTh}>状态</th>
                         <th style={overviewTh}>最后登录</th>
                         <th style={overviewTh}>设备</th>
-                        <th style={overviewTh}>接管号</th>
+                        <th style={overviewTh}>接管账号</th>
                         <th style={overviewTh}>人设</th>
-                        <th style={overviewTh}>粉丝(接管中)</th>
+                        <th style={overviewTh}>粉丝(自动回复)</th>
                         <th style={overviewTh}>消息</th>
                       </tr>
                     </thead>
@@ -1741,10 +1706,10 @@ function OverviewView({ setError }: { setError: (message: string) => void }) {
                             <div className="mono ink-3" style={{ fontSize: 10 }}>{row.account.display_name || '未命名'}</div>
                           </td>
                           <td style={overviewTd}>
-                            <span className={`chip ${row.account.role === 'admin' ? 'warn' : 'muted'}`}>{row.account.role}</span>
+                            <span className={`chip ${row.account.role === 'admin' ? 'warn' : 'muted'}`}>{row.account.role === 'admin' ? '管理员' : '普通用户'}</span>
                           </td>
                           <td style={overviewTd}>
-                            <span className={`chip ${row.account.status === 'active' ? 'live' : 'danger'}`}>{row.account.status}</span>
+                            <span className={`chip ${row.account.status === 'active' ? 'live' : 'danger'}`}>{row.account.status === 'active' ? '已启用' : '已停用'}</span>
                           </td>
                           <td style={overviewTd} className="mono ink-3">{formatDateTime(row.account.last_login_at)}</td>
                           <td style={overviewTd}>

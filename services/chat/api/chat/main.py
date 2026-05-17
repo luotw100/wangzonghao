@@ -209,11 +209,19 @@ def get_or_create_direct_conversation(
 
 @app.get("/api/health")
 def health() -> dict[str, str]:
+    """健康检查。返回 `{"status": "ok"}`，可用于负载均衡探活。"""
     return {"status": "ok"}
 
 
 @app.post("/api/auth/login", response_model=LoginResponse)
 def login(login_in: LoginRequest, db: DbDep) -> LoginResponse:
+    """登录。
+
+    验证用户名和密码，成功后创建一个有效期 24 小时的 session，并返回 Bearer token。
+    后续所有需要鉴权的接口都需要在请求头携带 `Authorization: Bearer <token>`。
+    每次成功鉴权会自动将有效期续期 24 小时。
+    账号被禁用（status=disabled）时即使密码正确也会拒绝登录。
+    """
     account = db.query(Account).filter(Account.username == login_in.username).first()
     if not account or account.status != AccountStatus.ACTIVE:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
@@ -237,6 +245,11 @@ def login(login_in: LoginRequest, db: DbDep) -> LoginResponse:
 
 @app.post("/api/auth/logout", response_model=StatusResponse)
 def logout(auth_session: AuthSessionDep, db: DbDep) -> StatusResponse:
+    """退出登录。
+
+    删除当前请求所使用的 session token，使其立即失效。
+    其他设备上的 session 不受影响。
+    """
     db.delete(auth_session)
     db.commit()
     return StatusResponse(status=CommandStatus.SUCCESS)
@@ -244,11 +257,13 @@ def logout(auth_session: AuthSessionDep, db: DbDep) -> StatusResponse:
 
 @app.get("/api/auth/me", response_model=AccountRead)
 def me(account: CurrentAccountDep) -> Account:
+    """获取当前登录账号的详细信息。"""
     return account
 
 
 @app.patch("/api/auth/me", response_model=AccountRead)
 def update_me(update: AccountUpdate, account: CurrentAccountDep, db: DbDep) -> Account:
+    """修改当前账号资料（目前仅支持改昵称）。"""
     account.nickname = update.nickname
     account.updated_at = utc_now()
     db.commit()
@@ -258,6 +273,7 @@ def update_me(update: AccountUpdate, account: CurrentAccountDep, db: DbDep) -> A
 
 @app.get("/api/contacts", response_model=list[ContactRead])
 def list_contacts(account: CurrentAccountDep, db: DbDep) -> list[Contact]:
+    """获取当前账号的所有联系人，按最后更新时间降序排列。"""
     return (
         db.query(Contact)
         .filter(Contact.account_id == account.id)
@@ -270,6 +286,12 @@ def list_contacts(account: CurrentAccountDep, db: DbDep) -> list[Contact]:
 def create_contact(
     contact_in: ContactCreate, account: CurrentAccountDep, db: DbDep
 ) -> Contact:
+    """创建联系人。
+
+    创建成功后，系统会自动为该联系人创建一个一对一会话（同一账号下一个联系人只有一个会话）。
+    同一账号下 username 不可重复，重复提交会返回 409。
+    若不传 username，系统自动生成一个唯一 ID 作为其外部标识。
+    """
     now = utc_now()
     contact = Contact(
         id=new_id("ct"),
@@ -299,6 +321,7 @@ def update_contact(
     account: CurrentAccountDep,
     db: DbDep,
 ) -> Contact:
+    """更新联系人（目前仅支持修改备注名）。传 null 可清除备注。"""
     contact = get_contact_or_404(db, account.id, contact_id)
     if contact_update.remark_name is not None:
         contact.remark_name = contact_update.remark_name
@@ -310,6 +333,7 @@ def update_contact(
 
 @app.get("/api/conversations", response_model=list[ConversationRead])
 def list_conversations(account: CurrentAccountDep, db: DbDep) -> list[Conversation]:
+    """获取当前账号的所有一对一会话，按最后活跃时间降序排列（最新有消息的在前）。每条会话内嵌了联系人详情。"""
     return (
         db.query(Conversation)
         .options(joinedload(Conversation.contact))
@@ -328,6 +352,13 @@ def send_messages(
     account: CurrentAccountDep,
     db: DbDep,
 ) -> StatusResponse:
+    """向指定会话批量写入消息。
+
+    支持一次提交多条，按数组顺序依次写入，返回实际写入的条数（`count` 字段）。
+    媒体消息（image/audio/video/file）的 content 必须是以 `media/{account_id}/` 开头的 storage key，
+    需先通过 POST /api/uploads/presign 完成上传后再填入，否则会返回 400。
+    可以通过 sender_id 指定发送方，null 表示本人发出，联系人 ID 表示对方发出，用于导入历史记录。
+    """
     conversation = get_conversation_or_404(db, account.id, conversation_id)
     expected_prefix = f"media/{account.id}/"
     for msg in payload.messages:
@@ -365,6 +396,12 @@ def get_messages_before(
     before_id: Annotated[int | None, Query(ge=1)] = None,
     limit: Annotated[int, Query(ge=1, le=500)] = 100,
 ) -> dict[str, object]:
+    """向前翻页获取历史消息。
+
+    - `before_id`：只返回 ID 严格小于此值的消息，用于向上翻页加载更早的内容。不传则从最新一条开始。
+    - `limit`：最多返回条数，默认 100，最大 500。
+    - 返回结果按 ID 升序排列（时间从旧到新），方便直接渲染到聊天界面。
+    """
     conversation = get_conversation_or_404(db, account.id, conversation_id)
     q = db.query(Message).filter(
         Message.account_id == account.id,
@@ -387,6 +424,14 @@ def get_messages_after(
     limit: Annotated[int, Query(ge=0, le=500)] = 0,
     timeout: Annotated[int, Query(ge=0)] = 0,
 ) -> dict[str, object]:
+    """拉取新消息（支持长轮询）。
+
+    - `last_id`：只返回 ID 严格大于此值的消息，客户端应把上次收到的最大消息 ID 传进来。首次拉取传 0。
+    - `limit`：最多返回条数，0 表示不限制（返回全部）。
+    - `timeout`：长轮询等待秒数。若当前无新消息，服务端会阻塞最多 timeout 秒后返回（期间每 200ms 轮询一次数据库）。
+      传 0 则立即返回（短轮询）。注意：此接口在线程池中同步运行，不会阻塞事件循环，每次轮询间隔会释放数据库连接。
+    - 返回结果按 ID 升序排列（时间从旧到新）。
+    """
     # Sync endpoint: FastAPI runs it in the threadpool, so the blocking DB
     # query and sleep below never stall the event loop. Each iteration uses a
     # short-lived session so the pooled connection is released during sleep.
@@ -419,6 +464,15 @@ def presign_upload(
     payload: UploadPresignRequest,
     account: CurrentAccountDep,
 ) -> UploadPresignResponse:
+    """申请媒体文件上传的预签名信息。
+
+    返回 `upload_url`（S3 地址）和 `fields`（签名表单字段）。
+    客户端用 multipart/form-data 把 fields 里的所有键值对加上文件二进制（key='file'）一起 POST 到 upload_url，
+    S3 返回 204 表示上传成功。
+    上传完成后，将返回的 `storage_key` 填入消息的 content 字段发送即可。
+
+    注意：text/html、application/xhtml+xml、image/svg+xml 等 MIME 类型会被拒绝（防止存储型 XSS）。
+    """
     if payload.mime_type.split(";")[0].strip().lower() in DISALLOWED_UPLOAD_MIME_TYPES:
         raise HTTPException(status_code=400, detail="不支持的文件类型")
     storage_key = s3_generate_storage_key(account.id)
@@ -448,6 +502,16 @@ def serve_media(
     account: MediaAccountDep,
     db: DbDep,
 ) -> RedirectResponse:
+    """获取媒体文件访问链接（302 重定向到 S3 预签名 URL）。
+
+    只允许访问属于当前账号的文件（storage key 必须以 `media/{account_id}/` 开头），否则返回 403。
+    鉴权支持两种方式：Header `Authorization: Bearer <token>` 或 Query 参数 `?token=<token>`，
+    后者方便在 `<img>`/`<video>` 等标签的 src 属性中直接使用。
+
+    根据消息类型自动决定 Content-Disposition：
+    - image/audio/video 类型设为 inline（浏览器直接预览）；
+    - file 类型或尚未关联到任何消息的文件设为 attachment（强制下载）。
+    """
     expected_prefix = f"media/{account.id}/"
     if not storage_key.startswith(expected_prefix):
         raise HTTPException(status_code=403, detail="无权访问该文件")

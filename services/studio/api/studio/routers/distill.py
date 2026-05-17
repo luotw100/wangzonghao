@@ -19,6 +19,7 @@ router = APIRouter()
 
 @router.get("/api/distill-jobs")
 def list_distill_jobs(db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
+    """获取蒸馏任务列表，按创建时间降序排列。管理员可看到所有账号的，普通用户只能看到自己的。"""
     query = db.query(DistillJob)
     if not is_admin(account):
         query = query.filter(DistillJob.account_id == account.id)
@@ -28,6 +29,16 @@ def list_distill_jobs(db: Annotated[Session, Depends(get_db)], account: CurrentA
 
 @router.post("/api/distill-jobs")
 def create_distill_job(payload: DistillJobCreate, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
+    """创建蒸馏任务（异步执行）。
+
+    任务创建后状态为 pending，由后台 worker 异步处理，状态流转：pending → running → done / failed。
+    可通过 GET /api/distill-jobs/{job_id} 轮询进度。
+
+    冲突检测（返回 409 的情况）：
+    - 选中的某个联系人已在另一个 pending/running 任务中；
+    - 指定的目标人设已在另一个 pending/running 任务中；
+    - 没有可用的全局默认 Provider（未配置任何 Provider 时）。
+    """
     if not payload.contact_ids:
         raise HTTPException(status_code=422, detail="contact_ids 不能为空")
     contact_ids = list(dict.fromkeys(payload.contact_ids))  # dedup, keep order
@@ -70,6 +81,7 @@ def create_distill_job(payload: DistillJobCreate, db: Annotated[Session, Depends
 
 @router.get("/api/distill-jobs/{job_id}")
 def get_distill_job(job_id: str, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
+    """获取单个蒸馏任务的详情和当前进度。"""
     query = db.query(DistillJob).filter(DistillJob.id == job_id)
     if not is_admin(account):
         query = query.filter(DistillJob.account_id == account.id)

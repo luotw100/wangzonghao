@@ -29,12 +29,14 @@ router = APIRouter()
 
 @router.get("/api/accounts")
 def list_accounts(db: Annotated[Session, Depends(get_db)], account: AdminAccountDep):
+    """获取所有账号列表（仅管理员可调用），按创建时间升序排列。"""
     items = db.query(Account).order_by(Account.created_at.asc()).all()
     return [s_account(item) for item in items]
 
 
 @router.post("/api/accounts")
 def create_account(payload: AccountCreate, db: Annotated[Session, Depends(get_db)], account: AdminAccountDep):
+    """创建新账号（仅管理员可调用）。用户名全局唯一，重复时返回 409。"""
     created = create_account_record(
         db,
         username=payload.username,
@@ -49,6 +51,7 @@ def create_account(payload: AccountCreate, db: Annotated[Session, Depends(get_db
 
 @router.put("/api/accounts/{account_id}")
 def update_account(account_id: str, payload: AccountUpdate, db: Annotated[Session, Depends(get_db)], account: AdminAccountDep):
+    """更新账号信息（仅管理员可调用）。只传需要修改的字段。若将 status 设为非 active，该账号所有 session 立即失效。"""
     target = db.query(Account).filter(Account.id == account_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="账号不存在")
@@ -71,6 +74,7 @@ def update_account(account_id: str, payload: AccountUpdate, db: Annotated[Sessio
 def reset_account_password(
     account_id: str, payload: AccountPasswordReset, db: Annotated[Session, Depends(get_db)], account: AdminAccountDep
 ):
+    """重置他人密码（仅管理员可调用）。不需要验证旧密码。重置后该账号所有 session 立即失效，需重新登录。"""
     target = db.query(Account).filter(Account.id == account_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="账号不存在")
@@ -83,6 +87,13 @@ def reset_account_password(
 
 @router.get("/api/admin/overview")
 def admin_overview(db: Annotated[Session, Depends(get_db)], account: AdminAccountDep):
+    """全局运营概览（仅管理员可调用）。
+
+    返回两个部分：
+    - `totals`：全局汇总数据，包括账号数、在线/离线 Bridge 数、Inbox 数、Persona 数、联系人数、
+      开启 AI 接管的联系人数、消息总数、全局 Provider 数、待发 outbound 消息数。
+    - `accounts`：每个账号的详细统计，包含账号信息及其下各类资源的计数。
+    """
     accounts = db.query(Account).order_by(Account.created_at.asc()).all()
 
     bridge_counts: Dict[str, Dict[str, int]] = {}

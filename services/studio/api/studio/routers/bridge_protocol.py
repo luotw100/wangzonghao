@@ -201,6 +201,9 @@ def bridge_register_inboxes(
 
 @router.post("/api/bridge/heartbeat")
 def bridge_heartbeat(db: Annotated[Session, Depends(get_db)], bridge: BridgeDep):
+    """Bridge 心跳。每次调用刷新 last_seen_at，并将 status 置为 online（若此前因超时被标记为 offline）。
+    返回当前 Bridge 服务的 Inbox 列表（含最新配置），Bridge 可借此感知 Inbox 绑定变化。
+    """
     now = utc_now()
     bridge.last_seen_at = now
     if bridge.status != BridgeStatus.ONLINE:
@@ -238,6 +241,19 @@ def bridge_incoming(
     db: Annotated[Session, Depends(get_db)],
     bridge: BridgeDep,
 ):
+    """批量上报入站消息（Bridge → Studio）。
+
+    Studio 对每条消息执行以下处理：
+    1. 校验 inbox_id 确实属于当前 Bridge，不属于则 rejected+1；
+    2. 按 peer_platform_id 查找或自动创建 Contact（继承 Inbox 的默认人设和 Provider）；
+    3. 双重去重：先按 msg_hash（SHA256 of contact_id+sender_id+sent_at+msg_type+content），
+       再按 platform_msg_id（向后兼容旧数据）；重复则 deduped+1；
+    4. 写入消息，role 由 sender_id 与 inbox.platform_self_id 比较决定（self / counterpart）；
+    5. 若是媒体消息且附带 content_hash，写入 MediaHash 表（避免后续重复上传）；
+    6. 若对方发来消息且 reply_policy=autoreply，将 contact.pending_reply 置为 true，触发 worker 生成回复。
+
+    返回 accepted / deduped / rejected 计数。
+    """
     accepted = 0
     deduped = 0
     rejected = 0
@@ -359,6 +375,15 @@ async def bridge_outbound(
     cursor: int = Query(0, ge=0),
     timeout: int = Query(0, ge=0, le=60),
 ):
+    """拉取待发消息（支持长轮询）。Bridge 用此接口驱动主动发送流程。
+
+    - `cursor`：只返回 ID 严格大于此值且 status=pending、send_after<=now 的消息，每次最多 50 条。
+      Bridge 应将最后一条消息的 id 作为新 cursor 供下次调用。
+    - `timeout`：长轮询等待秒数（0~60）。无消息时服务端等待最多 timeout 秒，期间每 0.1~0.5s 查询一次；
+      超时后返回空列表。传 0 则立即返回（短轮询）。
+    - 返回的每条消息包含 peer_platform_id（用于定位平台侧发送目标）。
+    - Bridge 取到消息后应尽快调用 POST /api/bridge/outbound/{id}/ack 回报发送结果。
+    """
     deadline = time.time() + timeout
     while True:
         from studio.db import SessionLocal
@@ -404,6 +429,12 @@ async def bridge_outbound(
 def bridge_outbound_ack(
     outbound_id: int, payload: BridgeOutboundAck, db: Annotated[Session, Depends(get_db)], bridge: BridgeDep
 ):
+    """回报待发消息的发送结果。
+
+    - result=sent：消息状态变为 delivered，记录 delivered_at；
+    - result=failed：消息状态变为 failed，记录 failed_reason；
+    - 若消息不在 pending 状态（已 delivered/failed/canceled），直接返回当前状态，不重复处理（幂等）。
+    """
     from studio.serializers import s_outbound
     o = (
         db.query(OutboundMessage)
@@ -431,6 +462,14 @@ def bridge_media_presign_upload(
     payload: BridgeMediaPresignRequest,
     bridge: BridgeDep,
 ):
+    """申请媒体文件直传 Studio S3 的预签名 PUT URL。
+
+    返回 storage_key 和 upload_url。Bridge 用 HTTP PUT 将文件二进制直接上传到 upload_url，
+    上传成功后将 storage_key 作为消息的 content 通过 /api/bridge/incoming 上报。
+
+    注意：若同一文件可能重复上传，应优先使用 POST /api/bridge/media/check-or-presign，
+    避免相同内容被多次传输。
+    """
     storage_key = f"media/{bridge.id}/{uuid.uuid4().hex}"
     upload_url = s3_presigned_put_url(storage_key, payload.mime_type)
     return {"storage_key": storage_key, "upload_url": upload_url}
@@ -526,7 +565,11 @@ def bridge_active_peers(
     db: Annotated[Session, Depends(get_db)],
     bridge: BridgeDep,
 ):
-    """Return peers with takeover=True for inboxes served by this bridge."""
+    """获取当前 Bridge 下所有已开启 AI 接管（takeover=true）且状态正常的联系人列表。
+
+    Bridge 用此接口初始化本地的"接管名单"，决定哪些 peer 的消息要触发 AI 回复。
+    返回格式：[{"inbox_id": "...", "peer_platform_id": "..."}]。
+    """
     rows = (
         db.query(Contact.peer_platform_id, Inbox.id.label("inbox_id"))
         .join(Inbox, Inbox.id == Contact.inbox_id)
@@ -550,6 +593,10 @@ def bridge_media_serve(
     storage_key: str,
     bridge: BridgeDep,
 ):
+    """获取 Bridge 上传的媒体文件（302 重定向到 S3 预签名 URL）。
+
+    只允许访问属于当前 Bridge 的文件（storage key 必须以 `media/{bridge_id}/` 开头），否则返回 403。
+    """
     if not storage_key.startswith(f"media/{bridge.id}/"):
         raise HTTPException(status_code=403, detail="无权访问该文件")
     url = s3_presigned_get_url(storage_key)

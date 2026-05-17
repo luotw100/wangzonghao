@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Laborster Bridge</title>
+  <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <img id="logo" src="favicon.svg" alt="" width="26" height="26" />
+    <h1>Laborster Bridge</h1>
+    <span id="pill" class="pill off">未运行</span>
+  </header>
+
+  <main>
+    <section class="card" id="account-card">
+      <h2>账号</h2>
+      <div id="account-logged-out">
+        <div class="field">
+          <label>Studio 用户名</label>
+          <input id="login-user" type="text" autocomplete="off" />
+        </div>
+        <div class="field">
+          <label>Studio 密码</label>
+          <input id="login-pass" type="password" autocomplete="off" />
+        </div>
+        <button id="btn-login" class="primary">登录</button>
+      </div>
+      <div id="account-logged-in" hidden>
+        <div class="kv"><span>用户名</span><b id="acc-user">-</b></div>
+        <div class="kv"><span>bridge_id</span><b id="acc-bridge">-</b></div>
+        <div class="kv"><span>machine_id</span><b id="acc-machine">-</b></div>
+        <button id="btn-logout">登出</button>
+      </div>
+    </section>
+
+    <section class="card" id="channel-card">
+      <h2>Channels</h2>
+      <ul id="channel-list" class="list"></ul>
+      <div class="field">
+        <label>Chat 用户名</label>
+        <input id="ch-user" type="text" autocomplete="off" />
+      </div>
+      <div class="field">
+        <label>Chat 密码</label>
+        <input id="ch-pass" type="password" autocomplete="off" />
+      </div>
+      <button id="btn-ch-add" class="primary">添加 channel</button>
+    </section>
+
+    <section class="card" id="status-card">
+      <h2>状态</h2>
+      <div class="kv"><span>status</span><b id="st-status">-</b></div>
+      <div class="kv"><span>studio</span><b id="st-studio">-</b></div>
+      <div class="kv"><span>近 5 分钟入站</span><b id="st-in">0</b></div>
+      <div class="kv"><span>待发送</span><b id="st-unsent">0</b></div>
+      <div class="kv" id="st-err-row" hidden><span>last_error</span><b id="st-err" class="err">-</b></div>
+      <div id="st-channels"></div>
+    </section>
+
+    <section class="card" id="log-card">
+      <h2>日志</h2>
+      <div id="log" class="log"></div>
+    </section>
+  </main>
+
+  <footer>
+    <button id="btn-opendir" class="link">打开数据目录</button>
+    <span id="msg"></span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -133,8 +133,13 @@ def cmd_state(ctx: Context, args: list[str]) -> dict:
 
 
 def cmd_login(ctx: Context, args: list[str]) -> dict:
-    username = ctx.ask_line("Studio 用户名: ").strip()
-    password = ctx.ask_secret("Studio 密码: ")
+    # GUI passes credentials as explicit args (no prompt available);
+    # the CLI passes none and falls back to interactive prompts.
+    if len(args) >= 2:
+        username, password = args[0].strip(), args[1]
+    else:
+        username = ctx.ask_line("Studio 用户名: ").strip()
+        password = ctx.ask_secret("Studio 密码: ")
     if not username or not password:
         return {"error": "用户名和密码不能为空"}
     data = state.load()
@@ -191,8 +196,13 @@ def cmd_channel(ctx: Context, args: list[str]) -> dict:
         }
 
     if sub == "add":
-        username = ctx.ask_line("Chat 用户名: ").strip()
-        password = ctx.ask_secret("Chat 密码: ")
+        # GUI: /channel add <username> <password> (explicit args).
+        # CLI: /channel add → interactive prompts.
+        if len(args) >= 3:
+            username, password = args[1].strip(), args[2]
+        else:
+            username = ctx.ask_line("Chat 用户名: ").strip()
+            password = ctx.ask_secret("Chat 密码: ")
         if not username or not password:
             return {"error": "用户名和密码不能为空"}
         try:

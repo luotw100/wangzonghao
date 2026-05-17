@@ -90,7 +90,6 @@ class ConversationMessages(StrictModel):
 
 class StatusResponse(StrictModel):
     status: CommandStatus
-    id: int | None = None
     count: int | None = None
 
 

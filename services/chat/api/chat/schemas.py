@@ -62,11 +62,15 @@ class ConversationRead(StrictModel):
     contact: ContactRead
 
 
-class MessageCreate(StrictModel):
+class MessageSend(StrictModel):
     sender_id: str | None = None
     msg_type: MessageType = MessageType.TEXT
     content: str
     created_at: datetime | None = None
+
+
+class MessageSendRequest(StrictModel):
+    messages: list[MessageSend]
 
 
 class MessageRead(StrictModel):
@@ -82,17 +86,6 @@ class MessageRead(StrictModel):
 class ConversationMessages(StrictModel):
     conversation: ConversationRead
     messages: list[MessageRead]
-
-
-class MessageBulkItem(StrictModel):
-    sender_id: str | None = None
-    msg_type: MessageType = MessageType.TEXT
-    content: str
-    created_at: datetime
-
-
-class MessageBulkCreate(StrictModel):
-    messages: list[MessageBulkItem]
 
 
 class StatusResponse(StrictModel):

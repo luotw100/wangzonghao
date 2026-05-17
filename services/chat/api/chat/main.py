@@ -34,8 +34,8 @@ from chat.schemas import (
     ConversationRead,
     LoginRequest,
     LoginResponse,
-    MessageBulkCreate,
-    MessageCreate,
+    MessageSend,
+    MessageSendRequest,
     StatusResponse,
     UploadPresignRequest,
     UploadPresignResponse,
@@ -372,82 +372,35 @@ def list_conversations(account: CurrentAccountDep, db: DbDep) -> list[Conversati
 @app.post(
     "/api/conversations/{conversation_id}/messages", response_model=StatusResponse
 )
-def send_debug_message(
+def send_messages(
     conversation_id: str,
-    msg_in: MessageCreate,
+    payload: MessageSendRequest,
     account: CurrentAccountDep,
     db: DbDep,
 ) -> StatusResponse:
     conversation = get_conversation_or_404(db, account.id, conversation_id)
-
-    if msg_in.msg_type != MessageType.TEXT:
-        expected_prefix = f"media/{account.id}/"
-        if not msg_in.content.startswith(expected_prefix):
+    expected_prefix = f"media/{account.id}/"
+    for msg in payload.messages:
+        if msg.msg_type != MessageType.TEXT and not msg.content.startswith(expected_prefix):
             raise HTTPException(
                 status_code=400,
                 detail=f"媒体消息的 content 必须是以 {expected_prefix} 开头的 storage key",
             )
 
-    message = add_message(
-        db,
-        conversation,
-        msg_in.sender_id,
-        msg_in.msg_type,
-        msg_in.content,
-        created_at=normalize_timestamp(msg_in.created_at) if msg_in.created_at else None,
-    )
-    db.commit()
-    db.refresh(message)
-    return StatusResponse(status=CommandStatus.SUCCESS, id=message.id)
-
-
-@app.post(
-    "/api/connector/conversations/{conversation_id}/messages",
-    response_model=StatusResponse,
-)
-def connector_send_message(
-    conversation_id: str,
-    msg_in: MessageCreate,
-    account: CurrentAccountDep,
-    db: DbDep,
-) -> StatusResponse:
-    if msg_in.sender_id is not None:
-        raise HTTPException(
-            status_code=400, detail="Connector 只能以当前登录账号发送消息"
+    if len(payload.messages) == 1:
+        msg = payload.messages[0]
+        message = add_message(
+            db,
+            conversation,
+            msg.sender_id,
+            msg.msg_type,
+            msg.content,
+            created_at=normalize_timestamp(msg.created_at) if msg.created_at else None,
         )
-    conversation = get_conversation_or_404(db, account.id, conversation_id)
+        db.commit()
+        db.refresh(message)
+        return StatusResponse(status=CommandStatus.SUCCESS, id=message.id)
 
-    if msg_in.msg_type != MessageType.TEXT:
-        expected_prefix = f"media/{account.id}/"
-        if not msg_in.content.startswith(expected_prefix):
-            raise HTTPException(
-                status_code=400,
-                detail=f"媒体消息的 content 必须是以 {expected_prefix} 开头的 storage key",
-            )
-
-    message = add_message(
-        db,
-        conversation,
-        None,
-        msg_in.msg_type,
-        msg_in.content,
-        created_at=normalize_timestamp(msg_in.created_at) if msg_in.created_at else None,
-    )
-    db.commit()
-    db.refresh(message)
-    return StatusResponse(status=CommandStatus.SUCCESS, id=message.id)
-
-
-@app.post(
-    "/api/conversations/{conversation_id}/messages/bulk", response_model=StatusResponse
-)
-def bulk_import_messages(
-    conversation_id: str,
-    payload: MessageBulkCreate,
-    account: CurrentAccountDep,
-    db: DbDep,
-) -> StatusResponse:
-    conversation = get_conversation_or_404(db, account.id, conversation_id)
     to_insert = [
         Message(
             account_id=account.id,
@@ -455,7 +408,7 @@ def bulk_import_messages(
             sender_id=item.sender_id,
             msg_type=item.msg_type,
             content=item.content,
-            created_at=normalize_timestamp(item.created_at),
+            created_at=normalize_timestamp(item.created_at) if item.created_at else utc_now(),
         )
         for item in payload.messages
     ]

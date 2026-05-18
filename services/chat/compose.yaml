@@ -4,7 +4,7 @@ services:
       context: ./web
       dockerfile: Dockerfile
     ports:
-      - 23456:23456
+      - "127.0.0.1:23456:23456"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:

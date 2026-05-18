@@ -132,6 +132,8 @@ def parse_users(var_name: str) -> list[UserSpec]:
 def http_request(method: str, url: str, token: str = "", body: dict | None = None) -> tuple[int, str]:
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
+    # Cloudflare Bot Fight Mode blocks the default Python-urllib UA with 403.
+    req.add_header("User-Agent", "curl/8.0")
     if body is not None:
         req.add_header("Content-Type", "application/json")
     if token:

@@ -36,6 +36,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -64,6 +65,25 @@ def warn(msg: str) -> None:
 def die(msg: str) -> "None":
     print(f"\033[31m[fail]\033[0m {msg}", file=sys.stderr)
     raise SystemExit(1)
+
+
+# ---------- parallel ----------
+
+def run_parallel(jobs: list, workers: int = 8) -> None:
+    """Run zero-arg callables concurrently; re-raise the first failure.
+
+    die() raises SystemExit, which ThreadPoolExecutor captures per-future and
+    re-raises here on .result() — so fail-fast still aborts the script (after
+    the in-flight batch drains), just from the main thread.
+    """
+    if not jobs:
+        return
+    if len(jobs) == 1:
+        jobs[0]()
+        return
+    with ThreadPoolExecutor(max_workers=min(workers, len(jobs))) as ex:
+        for fut in [ex.submit(j) for j in jobs]:
+            fut.result()
 
 
 # ---------- env ----------
@@ -317,17 +337,30 @@ def import_one_chat(chat_url: str, token: str, owner: str, doc: dict) -> None:
     ok(f"{owner} ← {remark}: {len(msgs)} messages")
 
 
+def import_owner_chats(chat_url: str, user: UserSpec, docs: list[dict]) -> None:
+    """One owner's chats: single login, then sequential imports.
+
+    Kept sequential within an owner — the imports share one token and each
+    re-lists GET /api/conversations, so concurrent imports for the same owner
+    would race on that list. Different owners are fully independent.
+    """
+    token = chat_login(chat_url, user)
+    for doc in docs:
+        import_one_chat(chat_url, token, user.username, doc)
+
+
 def import_seed_chats(chat_url: str, chat_users: list[UserSpec]) -> None:
     chats = load_seed_chats()
     validate_chats_match_users(chats, chat_users)
     by_name = {u.username: u for u in chat_users}
-    tokens: dict[str, str] = {}
-    log(f"importing {len(chats)} seed conversations")
+    by_owner: dict[str, list[dict]] = {}
     for _, doc in chats:
-        owner = doc["meta"]["ownerId"]
-        if owner not in tokens:
-            tokens[owner] = chat_login(chat_url, by_name[owner])
-        import_one_chat(chat_url, tokens[owner], owner, doc)
+        by_owner.setdefault(doc["meta"]["ownerId"], []).append(doc)
+    log(f"importing {len(chats)} seed conversations across {len(by_owner)} owners")
+    run_parallel([
+        lambda o=owner, d=docs: import_owner_chats(chat_url, by_name[o], d)
+        for owner, docs in by_owner.items()
+    ])
 
 
 # ---------- main ----------
@@ -350,15 +383,19 @@ def main() -> None:
     log(f"studio: {studio_url}  chat: {chat_url}")
     log(f"chat users  : {', '.join(u.username for u in chat_users)}")
     log(f"studio users: {', '.join(u.username for u in studio_users)}")
-    wait_health(chat_url, "chat-api")
-    wait_health(studio_url, "studio-api")
+    run_parallel([
+        lambda: wait_health(chat_url, "chat-api"),
+        lambda: wait_health(studio_url, "studio-api"),
+    ])
 
-    for u in chat_users:
-        create_chat_account(u)
-    for u in studio_users:
-        create_studio_account(u.username, u.password, u.display)
-
-    studio_seed_provider()
+    # chat accounts, studio accounts and the provider are mutually independent;
+    # each is a slow `docker compose exec`, so this phase gains the most.
+    run_parallel(
+        [lambda u=u: create_chat_account(u) for u in chat_users]
+        + [lambda u=u: create_studio_account(u.username, u.password, u.display)
+           for u in studio_users]
+        + [studio_seed_provider]
+    )
 
     import_seed_chats(chat_url, chat_users)
 

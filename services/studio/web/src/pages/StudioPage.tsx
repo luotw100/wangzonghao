@@ -29,7 +29,6 @@ const USER_NAV: { id: Tab; label: string; icon: string }[] = [
   { id: 'takeover', label: '接管', icon: '◇' },
   { id: 'persona', label: '人设', icon: '✶' },
   { id: 'device', label: '设备', icon: '⌥' },
-  { id: 'settings', label: '设置', icon: '⚙' },
 ];
 
 const TAB_CONTEXT: Record<Tab, { ctx: string; sub: string }> = {
@@ -50,6 +49,8 @@ export function StudioPage() {
   const [inboxes, setInboxes] = useState<Inbox[]>([]);
   const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [error, setError] = useState('');
+  const [accountMenuOpen, setAccountMenuOpen] = useState(false);
+  const [showChangePassword, setShowChangePassword] = useState(false);
 
   const loadAll = useCallback(async () => {
     try {
@@ -142,16 +143,56 @@ export function StudioPage() {
             );
           })}
         </div>
-        <div style={{ marginTop: 'auto' }}>
+        <div style={{ marginTop: 'auto', position: 'relative' }}>
+          {accountMenuOpen && (
+            <>
+              <div
+                onClick={() => setAccountMenuOpen(false)}
+                style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 'calc(100% + 8px)',
+                  bottom: 0,
+                  zIndex: 41,
+                  minWidth: 168,
+                  background: 'var(--bg-raised)',
+                  border: '1px solid var(--line)',
+                  borderRadius: 10,
+                  padding: 6,
+                  display: 'grid',
+                  gap: 2,
+                  boxShadow: 'var(--shadow)',
+                }}
+              >
+                <div className="ink-3" style={{ fontSize: 11, padding: '6px 10px' }}>@{me.username}</div>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ justifyContent: 'flex-start' }}
+                  onClick={() => { setAccountMenuOpen(false); setShowChangePassword(true); }}
+                >
+                  修改密码
+                </button>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  style={{ justifyContent: 'flex-start', color: 'var(--danger)' }}
+                  onClick={handleLogout}
+                >
+                  退出登录
+                </button>
+              </div>
+            </>
+          )}
           <button
-            title={`@${me.username} · 退出`}
-            onClick={handleLogout}
+            title={`@${me.username}`}
+            onClick={() => setAccountMenuOpen(open => !open)}
             style={{
               width: 36,
               height: 36,
               borderRadius: 999,
-              background: 'var(--bg-raised)',
-              border: '1px solid var(--line)',
+              background: accountMenuOpen ? 'var(--brass-soft)' : 'var(--bg-raised)',
+              border: `1px solid ${accountMenuOpen ? 'var(--brass-line)' : 'var(--line)'}`,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -234,10 +275,18 @@ export function StudioPage() {
             />
           )}
           {tab === 'settings' && (
-            <SettingsView providers={providers} me={me.username} isAdmin={isAdmin} onChanged={loadAll} setError={setError} />
+            <SettingsView providers={providers} isAdmin={isAdmin} onChanged={loadAll} setError={setError} />
           )}
         </main>
       </div>
+
+      {showChangePassword && (
+        <ChangePasswordModal
+          me={me.username}
+          onClose={() => setShowChangePassword(false)}
+          setError={setError}
+        />
+      )}
     </div>
   );
 }
@@ -374,8 +423,8 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
           </Empty>
         </div>
       ) : (
-        <div style={{ padding: '0 28px 24px', display: 'grid', gridTemplateColumns: 'minmax(300px, 380px) minmax(0, 1fr)', gap: 12, alignItems: 'start' }}>
-          <div style={{ display: 'grid', gap: 12 }}>
+        <div className="takeover-grid" style={{ padding: '0 28px 24px' }}>
+          <div style={{ display: 'grid', gap: 12, minWidth: 0 }}>
             <Drawer
               title="已接管"
               count={takenItems.length}
@@ -790,6 +839,7 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, onPatch }: 
                     background: message.role === 'self' ? 'var(--brass-soft)' : 'var(--bg-raised)',
                     border: '1px solid var(--line-subtle)',
                     whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
                     fontSize: 13,
                     lineHeight: 1.5,
                   }}
@@ -824,7 +874,7 @@ function DevicesView({ bridges, inboxes, meUsername, onChanged, setError }: {
 
   return (
     <div>
-      <PageHead title="设备" kicker="主播电脑上的接入程序" />
+      <PageHead title="设备" kicker="Windows / mac 上的接入程序" />
       <div style={{ padding: '0 28px 24px', display: 'grid', gap: 14 }}>
         <BridgeCommandPanel meUsername={meUsername} />
         {bridges.length === 0 ? (
@@ -1203,9 +1253,8 @@ function EditPersonaModal({ persona, onClose, onSaved, setError }: {
   );
 }
 
-function SettingsView({ providers, me, isAdmin, onChanged, setError }: {
+function SettingsView({ providers, isAdmin, onChanged, setError }: {
   providers: ProviderConfig[];
-  me: string;
   isAdmin: boolean;
   onChanged: ChangeHandler;
   setError: (message: string) => void;
@@ -1228,19 +1277,13 @@ function SettingsView({ providers, me, isAdmin, onChanged, setError }: {
 
   return (
     <div>
-      <PageHead title="设置" kicker="账号与密码" />
-      <div style={{ padding: '0 28px 24px', display: 'grid', gridTemplateColumns: '220px minmax(0, 1fr)', gap: 24 }}>
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <span className="eyebrow" style={{ padding: '6px 10px' }}>账号</span>
-          <button className="btn btn-ghost" style={{ justifyContent: 'flex-start' }}>我的账号 · @{me}</button>
-          {isAdmin && <span className="eyebrow mt-3" style={{ padding: '6px 10px', marginTop: 12 }}>系统</span>}
-          {isAdmin && <button className="btn" style={{ justifyContent: 'flex-start', background: 'var(--bg-raised)' }}>AI 回复模型</button>}
-        </nav>
-        <div style={{ display: 'grid', gap: 14 }}>
-          <PasswordPanel me={me} setError={setError} />
-          {isAdmin && <AccountsPanel accounts={accounts} onChanged={loadAccounts} setError={setError} />}
-          {isAdmin && <ProviderPanel providers={providers} onChanged={onChanged} onCreate={() => setShowCreate(true)} setError={setError} />}
+      <PageHead title="设置" kicker="账号管理与 AI 模型" />
+      <div style={{ padding: '0 28px 24px', display: 'grid', gap: 14 }}>
+        <div className="ink-3" style={{ fontSize: 12 }}>
+          修改自己的密码、退出登录请点左下角的头像。下面是管理员专属设置。
         </div>
+        {isAdmin && <AccountsPanel accounts={accounts} onChanged={loadAccounts} setError={setError} />}
+        {isAdmin && <ProviderPanel providers={providers} onChanged={onChanged} onCreate={() => setShowCreate(true)} setError={setError} />}
       </div>
       {isAdmin && showCreate && (
         <CreateProviderModal
@@ -1256,7 +1299,11 @@ function SettingsView({ providers, me, isAdmin, onChanged, setError }: {
   );
 }
 
-function PasswordPanel({ me, setError }: { me: string; setError: (message: string) => void }) {
+function ChangePasswordModal({ me, onClose, setError }: {
+  me: string;
+  onClose: () => void;
+  setError: (message: string) => void;
+}) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -1284,17 +1331,14 @@ function PasswordPanel({ me, setError }: { me: string; setError: (message: strin
   };
 
   return (
-    <div className="card p-5">
-      <div style={{ fontWeight: 600, marginBottom: 8 }}>我的账号 · @{me}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 8, alignItems: 'end' }}>
-        <FormField label="当前密码"><input className="input" type="password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} /></FormField>
-        <FormField label="新密码"><input className="input" type="password" value={newPassword} onChange={event => setNewPassword(event.target.value)} /></FormField>
-        <FormField label="再输一次新密码"><input className="input" type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} /></FormField>
-        <button className="btn btn-primary btn-sm" style={{ marginBottom: 12 }} onClick={handle} disabled={busy || !canSubmit}>{busy ? '保存中…' : '修改密码'}</button>
-      </div>
-      {mismatch && <div style={{ color: 'var(--danger)', fontSize: 11, marginTop: 6 }}>两次输入的新密码不一致</div>}
-      {ok && <div style={{ color: 'var(--live)', fontSize: 11, marginTop: 6 }}>{ok}</div>}
-    </div>
+    <ModalShell onClose={onClose} title={`修改密码 · @${me}`}>
+      <FormField label="当前密码"><input className="input" type="password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} autoFocus /></FormField>
+      <FormField label="新密码"><input className="input" type="password" value={newPassword} onChange={event => setNewPassword(event.target.value)} /></FormField>
+      <FormField label="再输一次新密码"><input className="input" type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} /></FormField>
+      {mismatch && <div style={{ color: 'var(--danger)', fontSize: 11, marginBottom: 8 }}>两次输入的新密码不一致</div>}
+      {ok && <div style={{ color: 'var(--live)', fontSize: 11, marginBottom: 8 }}>{ok}</div>}
+      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '保存中…' : '修改密码'} disabled={busy || !canSubmit} />
+    </ModalShell>
   );
 }
 
@@ -1594,11 +1638,23 @@ function ModalActions({ onCancel, onConfirm, confirmLabel, disabled }: {
 }
 
 function BridgeCommandPanel({ meUsername }: { meUsername: string }) {
-  const steps: { cmd: string; desc: string }[] = [
-    { cmd: '/state 一个文件夹路径', desc: '选个文件夹用来存放数据，比如桌面新建的一个空文件夹。每次打开都要先做这一步。' },
-    { cmd: '/login', desc: `按提示输入你登录本网站的账号和密码（你的账号是 ${meUsername}）。` },
-    { cmd: '/channel add', desc: '按提示输入要托管的聊天账号和密码，可以重复这一步添加多个账号。' },
-    { cmd: '/status', desc: '查看当前连接情况；显示「在线」就说明接好了。' },
+  const steps: { title: string; desc: string }[] = [
+    {
+      title: '下载并打开 Laborster Bridge',
+      desc: '在主播本人的电脑上下载对应版本：Windows 双击 .exe，mac 双击 App。mac 首次打开若提示「无法验证开发者」，右键图标 → 打开 即可。数据目录已固定，无需设置。',
+    },
+    {
+      title: '在「账号」标签里登录',
+      desc: `打开顶部「账号」标签，填入你登录本网站的账号（你的账号是 ${meUsername}）和密码，点「登录」。`,
+    },
+    {
+      title: '在「Channels」标签里添加聊天账号',
+      desc: '切到「Channels」标签，点右上「+ 添加」，填入要托管的聊天账号和密码，点「添加」。可重复添加多个账号。',
+    },
+    {
+      title: '在「状态」标签里确认接好',
+      desc: '切到「状态」标签，daemon 显示「运行中」即说明接好了。接好之后这一页会自动列出设备和账号。',
+    },
   ];
 
   return (
@@ -1606,14 +1662,13 @@ function BridgeCommandPanel({ meUsername }: { meUsername: string }) {
       <div>
         <div style={{ fontWeight: 600, fontSize: 14 }}>怎么把账号接进来</div>
         <div className="ink-3" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.6 }}>
-          在主播本人的电脑上打开 Laborster 设备程序，会出现一个输入框。按下面的顺序，
-          一行一行把指令输进去、回车，再按提示填信息即可。接好之后这一页会自动列出设备和账号。
+          在主播本人的电脑上安装并打开 Laborster Bridge 桌面程序，按下面四步操作即可，全程在窗口里点选，不用敲命令。
         </div>
       </div>
       <div style={{ display: 'grid', gap: 8 }}>
         {steps.map((step, index) => (
           <div
-            key={step.cmd}
+            key={step.title}
             style={{ display: 'flex', gap: 12, alignItems: 'flex-start', padding: '10px 12px', background: 'var(--bg-raised)', border: '1px solid var(--line-subtle)', borderRadius: 8 }}
           >
             <span
@@ -1623,15 +1678,14 @@ function BridgeCommandPanel({ meUsername }: { meUsername: string }) {
               {index + 1}
             </span>
             <div style={{ minWidth: 0 }}>
-              <div className="mono" style={{ fontSize: 13, color: 'var(--ink-1)' }}>{step.cmd}</div>
+              <div style={{ fontSize: 13, color: 'var(--ink-1)', fontWeight: 500 }}>{step.title}</div>
               <div className="ink-3" style={{ fontSize: 12, marginTop: 3, lineHeight: 1.55 }}>{step.desc}</div>
             </div>
           </div>
         ))}
       </div>
       <div className="ink-3" style={{ fontSize: 12, lineHeight: 1.6 }}>
-        想看完整命令列表，在设备程序里输入 <span className="mono">/help</span>。设备程序保持开着才会一直工作；
-        关掉窗口就会停止收发消息，重新打开后按第 1、2 步即可恢复。
+        程序保持打开才会一直收发消息，最小化可在后台继续运行；关闭窗口会停止，重新打开后会自动登录恢复。
       </div>
     </div>
   );

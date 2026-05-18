@@ -236,6 +236,19 @@ input::placeholder, textarea::placeholder {
 .card { background: var(--bg-base); border: 1px solid var(--line-subtle); border-radius: var(--r-lg); }
 .divider { height: 1px; background: var(--line-subtle); }
 
+/* Takeover: list + detail. minmax(0,…) lets both tracks shrink instead of
+   overflowing into each other; stacks vertically when too narrow. */
+.takeover-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 380px) minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.takeover-grid > * { min-width: 0; }
+@media (max-width: 920px) {
+  .takeover-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
 /* Status dot */
 .dot { width: 6px; height: 6px; border-radius: 999px; display: inline-block; }
 .dot-live { background: var(--live); box-shadow: 0 0 0 2px var(--live-soft); animation: lampPulse 2.4s ease-in-out infinite; }

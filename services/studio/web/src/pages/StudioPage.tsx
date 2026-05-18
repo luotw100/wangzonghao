@@ -1352,7 +1352,7 @@ function AccountsPanel({ accounts, onChanged, setError }: {
 
   return (
     <div className="card p-5">
-      <div className="row gap-2" style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
         <span style={{ fontWeight: 600 }}>账号管理</span>
         <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={() => setShowCreate(true)}>+ 新建账号</button>
       </div>
@@ -1398,7 +1398,7 @@ function ProviderPanel({ providers, onChanged, onCreate, setError }: {
 }) {
   return (
     <div className="card p-5">
-      <div className="row gap-2" style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
         <span style={{ fontWeight: 600 }}>AI 回复模型</span>
         <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={onCreate}>+ 添加模型</button>
       </div>

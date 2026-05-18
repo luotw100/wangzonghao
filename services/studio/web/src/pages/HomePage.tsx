@@ -40,7 +40,6 @@ export function HomePage() {
   return (
     <div className="lab-screen lab-tech-grid" style={{ display: 'flex', height: '100dvh' }}>
       <div
-        className="col"
         style={{
           flex: 1,
           padding: '48px 56px',
@@ -51,7 +50,7 @@ export function HomePage() {
           flexDirection: 'column',
         }}
       >
-        <div className="row gap-3" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span className="lab-mark" />
           <span style={{ fontFamily: 'var(--f-serif)', fontSize: 18, fontWeight: 500, letterSpacing: '-0.01em' }}>Laborster</span>
           <span className="chip mono" style={{ marginLeft: 6 }}>Studio</span>
@@ -102,7 +101,7 @@ export function HomePage() {
         </h2>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <label className="col gap-2" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <span className="text-xs text-ink-3 mono">USERNAME</span>
             <input
               className="input"
@@ -115,7 +114,7 @@ export function HomePage() {
               placeholder="alice"
             />
           </label>
-          <label className="col gap-2" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <label style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <span className="text-xs text-ink-3 mono">PASSWORD</span>
             <input
               className="input"

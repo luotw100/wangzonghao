@@ -1,0 +1,100 @@
+{
+  "chatlab": {
+    "version": "1.0",
+    "exportedAt": 1778314500
+  },
+  "meta": {
+    "name": "夜班小鱼（与大壮）",
+    "platform": "抖音",
+    "type": "private",
+    "ownerId": "dazhuang",
+    "_streamerStyle": "男·游戏弹幕主播·逗比玩梗自嘲，整活担当，口头禅『哈人』『典』",
+    "_fanProfile": "女·28·护士·西安·相识2个月·中频(下夜班看)·安静解压型"
+  },
+  "members": [
+    {
+      "platformId": "dazhuang",
+      "accountName": "dazhuang",
+      "groupNickname": "大壮"
+    },
+    {
+      "platformId": "fan_dz_xiaoyu",
+      "accountName": "fish_night_xa",
+      "groupNickname": "夜班小鱼"
+    }
+  ],
+  "messages": [
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778314500,
+      "type": 0,
+      "content": "刚下夜班,瘫床上看你直播,笑了会儿,舒服了"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778314580,
+      "type": 0,
+      "content": "哟,白衣天使下班了。一宿没睡?这班上得比我打游戏还熬"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778314650,
+      "type": 0,
+      "content": "急诊一晚上没停,现在脑子嗡嗡的,看你犯傻正好放空"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778314710,
+      "type": 0,
+      "content": "合着我整活是给你当电子助眠的呗,行,我大壮值了"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778314775,
+      "type": 0,
+      "content": "别说,真有用。不用动脑,跟着乐呵两声就困了"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778314830,
+      "type": 0,
+      "content": "那你赶紧睡,别硬撑着看,我这破节目改天还有"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778314890,
+      "type": 0,
+      "content": "嗯,看你血压不高心情就好。你也少熬点,天天播这么晚"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778314940,
+      "type": 0,
+      "content": "哈哈被一个熬夜冠军关心熬夜,我有点想笑"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778314985,
+      "type": 0,
+      "content": "我是职业的,你是作的,不一样"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778315035,
+      "type": 0,
+      "content": "扎心了护士姐。行,你睡觉,做梦别梦见病人"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778315075,
+      "type": 0,
+      "content": "尽量。回放给我留着,醒了补"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778315105,
+      "type": 0,
+      "content": "必须的,专属电子安眠药,管够。睡吧"
+    }
+  ]
+}

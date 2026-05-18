@@ -1,0 +1,112 @@
+{
+  "chatlab": {
+    "version": "1.0",
+    "exportedAt": 1778873400
+  },
+  "meta": {
+    "name": "老李五金（与大壮）",
+    "platform": "快手",
+    "type": "private",
+    "ownerId": "dazhuang",
+    "_streamerStyle": "男·游戏弹幕主播·逗比玩梗自嘲，整活担当，口头禅『哈人』『典』",
+    "_fanProfile": "男·50·五金店店主·潍坊·相识10天·低频·认真发言不懂网络梗"
+  },
+  "members": [
+    {
+      "platformId": "dazhuang",
+      "accountName": "dazhuang",
+      "groupNickname": "大壮"
+    },
+    {
+      "platformId": "fan_dz_uncle",
+      "accountName": "li_wujin_wf",
+      "groupNickname": "老李五金"
+    }
+  ],
+  "messages": [
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778873400,
+      "type": 0,
+      "content": "主播你好。我闺女让我刷快手解闷,刷到你这了"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778873460,
+      "type": 0,
+      "content": "李叔好啊!欢迎欢迎,咱直播间难得来位长辈,稀客"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778873515,
+      "type": 0,
+      "content": "你们年轻人说的那个『典』是啥意思,我没看懂"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778873575,
+      "type": 0,
+      "content": "哈哈这个……就是『太经典了』的意思,网上玩笑话,叔您别太较真"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778873625,
+      "type": 0,
+      "content": "哦。那『哈人』呢,是哈尔滨人吗"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778873680,
+      "type": 0,
+      "content": "噗——不是不是,是『吓人』,吓一跳那个吓。叔您太可爱了"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778873730,
+      "type": 0,
+      "content": "原来如此。你们这词得有本字典啊,我记记"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778873785,
+      "type": 0,
+      "content": "您还真记上了哈哈。叔您别学这些,听着乐呵就行,伤神"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778873845,
+      "type": 0,
+      "content": "也是。我看你打游戏挺热闹,比我守店强,我店里一天没俩人"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778873900,
+      "type": 0,
+      "content": "五金生意稳当,叔您那是闷声发财,比我这敲键盘的强多了"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778873950,
+      "type": 0,
+      "content": "你这孩子会说话。行,我不懂归不懂,以后没事来看看你"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778873995,
+      "type": 0,
+      "content": "随时欢迎李叔!您来我给您讲明白了再玩,不收学费"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778874035,
+      "type": 0,
+      "content": "哈哈好,那我去关店门了,改天见"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778874060,
+      "type": 0,
+      "content": "您慢走,路上看着车!回头见李叔"
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "chatlab": {
+    "version": "1.0",
+    "exportedAt": 1778762400
+  },
+  "meta": {
+    "name": "张先生(意向)（与周晴）",
+    "platform": "微信",
+    "type": "private",
+    "ownerId": "zhouqing",
+    "_streamerStyle": "女·汽车销售·专业有分寸，引导式跟进话术，偶尔生活化拉近距离",
+    "_fanProfile": "男·35·公司中层·北京·有娃家庭·相识2周·中频问价·理性比价谨慎"
+  },
+  "members": [
+    {
+      "platformId": "zhouqing",
+      "accountName": "zhouqing",
+      "groupNickname": "周晴"
+    },
+    {
+      "platformId": "fan_zq_zhang",
+      "accountName": "zhang_bj_suv",
+      "groupNickname": "张先生(意向)"
+    }
+  ],
+  "messages": [
+    {
+      "sender": "fan_zq_zhang",
+      "timestamp": 1778762400,
+      "type": 0,
+      "content": "周经理,上次说的那台7座,隔壁4S报价比你低八千,你怎么说"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778762490,
+      "type": 0,
+      "content": "张哥您好~ 这个我得帮您看仔细,八千差价是裸车还是落地?他家有没有捆绑装潢和保险"
+    },
+    {
+      "sender": "fan_zq_zhang",
+      "timestamp": 1778762560,
+      "type": 0,
+      "content": "他说裸车,保险让我自己看"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778762655,
+      "type": 0,
+      "content": "那您让他把落地全款明细发您一张,我这边也给您出一张,一项一项对,别只看裸车数字吃亏"
+    },
+    {
+      "sender": "fan_zq_zhang",
+      "timestamp": 1778762730,
+      "type": 0,
+      "content": "行,这话在理。其实我就纠结要不要上顶配,娃还小用得着那些功能吗"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778762830,
+      "type": 0,
+      "content": "实在跟您说,顶配那套娱乐系统您家这阶段用不太上,中配带全套安全辅助,带娃跑高速更值,差价留着养车"
+    },
+    {
+      "sender": "fan_zq_zhang",
+      "timestamp": 1778762880,
+      "type": 0,
+      "content": "你居然不推我买贵的"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778762950,
+      "type": 0,
+      "content": "您要长期开,推个不合适的下回就不找我了。我做的是回头客~"
+    },
+    {
+      "sender": "fan_zq_zhang",
+      "timestamp": 1778763015,
+      "type": 0,
+      "content": "踏实。那周末我带媳妇过去试驾,顺便把那家明细带给你算"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778763095,
+      "type": 0,
+      "content": "好嘞,我周六上午给您留台中配试驾车,儿童座椅我也装好,让嫂子和孩子一起感受下"
+    },
+    {
+      "sender": "fan_zq_zhang",
+      "timestamp": 1778763140,
+      "type": 0,
+      "content": "想得周到。周六见"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778763180,
+      "type": 0,
+      "content": "周六见张哥~ 来之前我把对比表做好发您微信,您先心里有数"
+    }
+  ]
+}

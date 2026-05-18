@@ -1,0 +1,100 @@
+{
+  "chatlab": {
+    "version": "1.0",
+    "exportedAt": 1778035800
+  },
+  "meta": {
+    "name": "老周跑长途（与苏糖）",
+    "platform": "快手",
+    "type": "private",
+    "ownerId": "sutang",
+    "_streamerStyle": "女·娱乐主播(舞蹈才艺)·东北大碴子味，直爽热情爱开玩笑，自称『姐』",
+    "_fanProfile": "男·31·货车司机·常年流动·相识8个月·低频(夜间跑车)·沉默朴实"
+  },
+  "members": [
+    {
+      "platformId": "sutang",
+      "accountName": "sutang",
+      "groupNickname": "苏糖"
+    },
+    {
+      "platformId": "fan_stg_lao",
+      "accountName": "zhou_truck",
+      "groupNickname": "老周跑长途"
+    }
+  ],
+  "messages": [
+    {
+      "sender": "fan_stg_lao",
+      "timestamp": 1778035800,
+      "type": 0,
+      "content": "还在播呢"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778035870,
+      "type": 0,
+      "content": "嚯,周哥这点儿冒泡,又跑夜车呢?现在哪段?"
+    },
+    {
+      "sender": "fan_stg_lao",
+      "timestamp": 1778035960,
+      "type": 0,
+      "content": "京沪高速,服务区眯一会儿。听着你这屋热闹,不困"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778036040,
+      "type": 0,
+      "content": "你这工作是真不容易,一跑一宿。困了千万靠边眯,别硬开,听见没"
+    },
+    {
+      "sender": "fan_stg_lao",
+      "timestamp": 1778036115,
+      "type": 0,
+      "content": "知道。一个人跑车闷,你这嗓门一咋呼,精神点"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778036175,
+      "type": 0,
+      "content": "哈哈我这大碴子嗓还能给你提神,值了。要不姐给你来一段?"
+    },
+    {
+      "sender": "fan_stg_lao",
+      "timestamp": 1778036215,
+      "type": 0,
+      "content": "中。来个带劲儿的"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778036270,
+      "type": 0,
+      "content": "安排!这段蹦迪的,周哥跟着抖抖腿别睡着——"
+    },
+    {
+      "sender": "fan_stg_lao",
+      "timestamp": 1778036390,
+      "type": 0,
+      "content": "得劲。行了你忙,我再开俩小时"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778036455,
+      "type": 0,
+      "content": "路上慢点,命比货金贵。到地儿了弹幕言语一声,姐知道你平安"
+    },
+    {
+      "sender": "fan_stg_lao",
+      "timestamp": 1778036485,
+      "type": 0,
+      "content": "嗯。到了说"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778036510,
+      "type": 0,
+      "content": "记着啊!大老远的别让姐惦记着"
+    }
+  ]
+}

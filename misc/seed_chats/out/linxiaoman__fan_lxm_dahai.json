@@ -1,0 +1,124 @@
+{
+  "chatlab": {
+    "version": "1.0",
+    "exportedAt": 1778629200
+  },
+  "meta": {
+    "name": "深海(老粉)（与林小漫）",
+    "platform": "抖音",
+    "type": "private",
+    "ownerId": "linxiaoman",
+    "_streamerStyle": "女·娱乐主播(唱聊)·温柔软糯爱撒娇，开口『宝』，多用波浪号和颜文字",
+    "_fanProfile": "男·38·程序员·上海·相识2年·内向沉默铁粉·几乎每天来打卡"
+  },
+  "members": [
+    {
+      "platformId": "linxiaoman",
+      "accountName": "linxiaoman",
+      "groupNickname": "林小漫"
+    },
+    {
+      "platformId": "fan_lxm_dahai",
+      "accountName": "deepsea_code",
+      "groupNickname": "深海(老粉)"
+    }
+  ],
+  "messages": [
+    {
+      "sender": "fan_lxm_dahai",
+      "timestamp": 1778629200,
+      "type": 0,
+      "content": "下播了吗"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1778629295,
+      "type": 0,
+      "content": "海哥还没睡呀~ 刚下，今天又是你守到最后一个 (´;ω;`)"
+    },
+    {
+      "sender": "fan_lxm_dahai",
+      "timestamp": 1778629365,
+      "type": 0,
+      "content": "嗯。加班，顺手挂着听"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1778629425,
+      "type": 0,
+      "content": "天天加到这个点……你也太拼了，悠着点身体啦宝"
+    },
+    {
+      "sender": "fan_lxm_dahai",
+      "timestamp": 1778629465,
+      "type": 0,
+      "content": "习惯了"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1778629545,
+      "type": 0,
+      "content": "你每次就两个字哈哈哈，认识你两年了，话还是这么省 (˘･_･˘)"
+    },
+    {
+      "sender": "fan_lxm_dahai",
+      "timestamp": 1778629655,
+      "type": 0,
+      "content": "不会聊。听你唱歌就挺好"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1778629785,
+      "type": 0,
+      "content": "嘴上不说，榜一默默挂着的总是你。我都记着呢～"
+    },
+    {
+      "sender": "fan_lxm_dahai",
+      "timestamp": 1778629875,
+      "type": 0,
+      "content": "别声张。我就听个安静"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1778629950,
+      "type": 0,
+      "content": "知道知道，低调大哥嘛。明天想听啥提前点，我备着"
+    },
+    {
+      "sender": "fan_lxm_dahai",
+      "timestamp": 1778630010,
+      "type": 0,
+      "content": "随便。你常唱的那几首就行"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1778630110,
+      "type": 0,
+      "content": "那首《晚风》对吧，你每次都不说但我看你停留最久 hhh"
+    },
+    {
+      "sender": "fan_lxm_dahai",
+      "timestamp": 1778630165,
+      "type": 0,
+      "content": "……被你发现了"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1778630235,
+      "type": 0,
+      "content": "快去睡吧，明天不许再熬到这点了，拉钩 (｡･ω･｡)ﾉ"
+    },
+    {
+      "sender": "fan_lxm_dahai",
+      "timestamp": 1778630265,
+      "type": 0,
+      "content": "行。晚安"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1778630290,
+      "type": 0,
+      "content": "晚安海哥～ 做个好梦，记得吃早饭！"
+    }
+  ]
+}

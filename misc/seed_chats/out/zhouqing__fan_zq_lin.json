@@ -1,0 +1,88 @@
+{
+  "chatlab": {
+    "version": "1.0",
+    "exportedAt": 1778936700
+  },
+  "meta": {
+    "name": "林律师（与周晴）",
+    "platform": "微信",
+    "type": "private",
+    "ownerId": "zhouqing",
+    "_streamerStyle": "女·汽车销售·专业有分寸，引导式跟进话术，偶尔生活化拉近距离",
+    "_fanProfile": "女·29·律师·深圳·首购代步·相识3天·低频·高冷高效只要重点"
+  },
+  "members": [
+    {
+      "platformId": "zhouqing",
+      "accountName": "zhouqing",
+      "groupNickname": "周晴"
+    },
+    {
+      "platformId": "fan_zq_lin",
+      "accountName": "lawyer_lin_sz",
+      "groupNickname": "林律师"
+    }
+  ],
+  "messages": [
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1778936700,
+      "type": 0,
+      "content": "时间有限,直接说:这款,落地多少,什么时候能提,要点就行"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778936785,
+      "type": 0,
+      "content": "好的林律师,三句话:落地18.6万全包;现车,定金今天交三天可提;颜色白/灰有现车"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1778936855,
+      "type": 0,
+      "content": "贷款方案别给我推,全款。还有别的隐藏费用吗"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778936930,
+      "type": 0,
+      "content": "没有,18.6万含购置税、保险、上牌,出库前给您逐项清单,多一分算我的"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1778936980,
+      "type": 0,
+      "content": "可以。试驾要预约多久"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778937050,
+      "type": 0,
+      "content": "您时间宝贵,不用走流程排队,您说个时段我直接给您留车留人,15分钟试完不耽误"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1778937095,
+      "type": 0,
+      "content": "明天中午12点半,我只有四十分钟"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778937160,
+      "type": 0,
+      "content": "记下了,明天12:30,白色试驾车备好,合同我提前拟好,您试完满意当场能签,四十分钟够"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1778937195,
+      "type": 0,
+      "content": "效率不错。明天见"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778937235,
+      "type": 0,
+      "content": "明天见林律师~ 到楼下停车场发我,我下去接您直接上车,不浪费您一分钟"
+    }
+  ]
+}

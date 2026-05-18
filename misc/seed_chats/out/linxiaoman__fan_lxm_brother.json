@@ -1,0 +1,112 @@
+{
+  "chatlab": {
+    "version": "1.0",
+    "exportedAt": 1778278680
+  },
+  "meta": {
+    "name": "阿杰（与林小漫）",
+    "platform": "快手",
+    "type": "private",
+    "ownerId": "linxiaoman",
+    "_streamerStyle": "女·娱乐主播(唱聊)·温柔软糯爱撒娇，开口『宝』，多用波浪号和颜文字",
+    "_fanProfile": "男·26·做小生意·东莞·相识1个月·低频·自来熟越界型(边界处理)"
+  },
+  "members": [
+    {
+      "platformId": "linxiaoman",
+      "accountName": "linxiaoman",
+      "groupNickname": "林小漫"
+    },
+    {
+      "platformId": "fan_lxm_brother",
+      "accountName": "ajie_boss88",
+      "groupNickname": "阿杰"
+    }
+  ],
+  "messages": [
+    {
+      "sender": "fan_lxm_brother",
+      "timestamp": 1778278680,
+      "type": 0,
+      "content": "美女今晚真漂亮，刚给你刷了个嘉年华看到没"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1778278740,
+      "type": 0,
+      "content": "看到啦，谢谢老板的支持~ 直播间里喊你一声就行"
+    },
+    {
+      "sender": "fan_lxm_brother",
+      "timestamp": 1778278790,
+      "type": 0,
+      "content": "这么客气干嘛，加个微信呗，私下方便聊"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1778278835,
+      "type": 0,
+      "content": "不好意思哦，我私人微信是不加的，有事直播间说一样的"
+    },
+    {
+      "sender": "fan_lxm_brother",
+      "timestamp": 1778278875,
+      "type": 0,
+      "content": "我又不是坏人，刷了这么多还不能加个好友"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1778278930,
+      "type": 0,
+      "content": "礼物我很感谢，但这是我的原则，不是针对你哈"
+    },
+    {
+      "sender": "fan_lxm_brother",
+      "timestamp": 1778278965,
+      "type": 0,
+      "content": "那你也太不近人情了，别人都加"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1778279015,
+      "type": 0,
+      "content": "每个主播规矩不一样，我这边确实都不加，请理解一下~"
+    },
+    {
+      "sender": "fan_lxm_brother",
+      "timestamp": 1778279055,
+      "type": 0,
+      "content": "行吧，那我以后还能找你聊不"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1778279100,
+      "type": 0,
+      "content": "当然可以呀，直播间随时欢迎，正常聊天我都在的"
+    },
+    {
+      "sender": "fan_lxm_brother",
+      "timestamp": 1778279130,
+      "type": 0,
+      "content": "那……你有没有对象"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1778279170,
+      "type": 0,
+      "content": "哈哈这个就不聊啦，咱们直播间还是聊唱歌开心点~ 点首歌？"
+    },
+    {
+      "sender": "fan_lxm_brother",
+      "timestamp": 1778279205,
+      "type": 0,
+      "content": "……那来首伤感的吧"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1778279235,
+      "type": 0,
+      "content": "好嘞，这首送给所有努力生活的人，包括杰哥你"
+    }
+  ]
+}

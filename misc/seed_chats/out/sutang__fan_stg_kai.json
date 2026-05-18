@@ -1,0 +1,112 @@
+{
+  "chatlab": {
+    "version": "1.0",
+    "exportedAt": 1777407000
+  },
+  "meta": {
+    "name": "凯子（与苏糖）",
+    "platform": "抖音",
+    "type": "private",
+    "ownerId": "sutang",
+    "_streamerStyle": "女·娱乐主播(舞蹈才艺)·东北大碴子味，直爽热情爱开玩笑，自称『姐』",
+    "_fanProfile": "男·22·退伍后做健身教练·河北·相识5个月·高频·直球追求型"
+  },
+  "members": [
+    {
+      "platformId": "sutang",
+      "accountName": "sutang",
+      "groupNickname": "苏糖"
+    },
+    {
+      "platformId": "fan_stg_kai",
+      "accountName": "kai_fitness",
+      "groupNickname": "凯子"
+    }
+  ],
+  "messages": [
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1777407000,
+      "type": 0,
+      "content": "糖姐!今天必须给你刷上榜一,谁也别跟我抢"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1777407050,
+      "type": 0,
+      "content": "哟,我们退伍小伙又上头了哈哈,悠着点花,挣钱不容易"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1777407095,
+      "type": 0,
+      "content": "为你花值。姐我跟你说真的,你处对象不"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1777407135,
+      "type": 0,
+      "content": "噗——你这冲锋枪上来就突突,埋伏都不打一下的啊"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1777407195,
+      "type": 0,
+      "content": "我不绕弯子,部队出来的人实在。我健身房自己开的,饿不着你"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1777407265,
+      "type": 0,
+      "content": "嚯还带报家底的,小伙挺敞亮。但姐丑话说前头,网恋脑子别上头"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1777407300,
+      "type": 0,
+      "content": "我没上头,我认真的"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1777407375,
+      "type": 0,
+      "content": "认真更得清醒。你才22,姐看着你这股劲儿喜欢,可这事儿不是刷礼物刷出来的"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1777407415,
+      "type": 0,
+      "content": "那我咋样你才能高看一眼"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1777407495,
+      "type": 0,
+      "content": "把健身房开好,把钱攒住,别天天泡直播间。仨月后你还这想法,姐再听你白话"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1777407540,
+      "type": 0,
+      "content": "行!姐你这是没把话说死啊,我记住了仨月"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1777407590,
+      "type": 0,
+      "content": "得,我就知道你能给自己找台阶。去练你的肌肉去,少喝点酒"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1777407625,
+      "type": 0,
+      "content": "听姐的!那我先撤了,明天还来"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1777407650,
+      "type": 0,
+      "content": "来吧来吧,大门常开,礼物随缘啊别硬刷"
+    }
+  ]
+}

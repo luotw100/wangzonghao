@@ -1,0 +1,112 @@
+{
+  "chatlab": {
+    "version": "1.0",
+    "exportedAt": 1778452200
+  },
+  "meta": {
+    "name": "兰姐（与苏糖）",
+    "platform": "抖音",
+    "type": "private",
+    "ownerId": "sutang",
+    "_streamerStyle": "女·娱乐主播(舞蹈才艺)·东北大碴子味，直爽热情爱开玩笑，自称『姐』",
+    "_fanProfile": "女·45·全职妈妈·哈尔滨(老乡)·相识1年·中频(孩子睡后)·温和唠家常"
+  },
+  "members": [
+    {
+      "platformId": "sutang",
+      "accountName": "sutang",
+      "groupNickname": "苏糖"
+    },
+    {
+      "platformId": "fan_stg_lan",
+      "accountName": "lan_mama2580",
+      "groupNickname": "兰姐"
+    }
+  ],
+  "messages": [
+    {
+      "sender": "fan_stg_lan",
+      "timestamp": 1778452200,
+      "type": 0,
+      "content": "糖丫头还没下班呢，老乡来给你撑场子"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778452255,
+      "type": 0,
+      "content": "哎呦兰姐！可算把你盼来了，今儿娃睡得早啊？"
+    },
+    {
+      "sender": "fan_stg_lan",
+      "timestamp": 1778452315,
+      "type": 0,
+      "content": "可不,小的发烧今天蔫儿了早早睡了,我这心一直悬着"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778452385,
+      "type": 0,
+      "content": "多大点事别上火,小孩发烧勤量体温,超38度5再喂药,别瞎喂"
+    },
+    {
+      "sender": "fan_stg_lan",
+      "timestamp": 1778452435,
+      "type": 0,
+      "content": "你不说我还真慌,半夜我又得起来摸他脑门"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778452500,
+      "type": 0,
+      "content": "当妈的都这样,我妈当年也整宿不睡。你也躺会儿,别熬垮了"
+    },
+    {
+      "sender": "fan_stg_lan",
+      "timestamp": 1778452545,
+      "type": 0,
+      "content": "你这丫头嘴甜,比我家那口子贴心多了"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778452585,
+      "type": 0,
+      "content": "那是,东北姑娘嘴上抹蜜手底下利索,哈哈哈"
+    },
+    {
+      "sender": "fan_stg_lan",
+      "timestamp": 1778452640,
+      "type": 0,
+      "content": "啥时候回哈尔滨啊,中央大街那马迭尔我请你"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778452700,
+      "type": 0,
+      "content": "嚯,这话我可记小本本上了!年底回,到时候咱整一根边走边唠"
+    },
+    {
+      "sender": "fan_stg_lan",
+      "timestamp": 1778452745,
+      "type": 0,
+      "content": "一言为定。行了你忙你的,我看着就行"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778452785,
+      "type": 0,
+      "content": "哎你别光看不吱声啊,弹幕给姐扣个『老乡』,我知道你在"
+    },
+    {
+      "sender": "fan_stg_lan",
+      "timestamp": 1778452810,
+      "type": 0,
+      "content": "老乡。这回看见没"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778452840,
+      "type": 0,
+      "content": "看见喽!兰姐晚安,娃要再烧厉害了赶紧上医院别硬扛"
+    }
+  ]
+}

@@ -1,0 +1,100 @@
+{
+  "chatlab": {
+    "version": "1.0",
+    "exportedAt": 1778863800
+  },
+  "meta": {
+    "name": "吴总(老客)（与周晴）",
+    "platform": "微信",
+    "type": "private",
+    "ownerId": "zhouqing",
+    "_streamerStyle": "女·汽车销售·专业有分寸，引导式跟进话术，偶尔生活化拉近距离",
+    "_fanProfile": "男·42·私营老板·温州·相识半年(老客转介绍)·偶尔联系·爽快豪气"
+  },
+  "members": [
+    {
+      "platformId": "zhouqing",
+      "accountName": "zhouqing",
+      "groupNickname": "周晴"
+    },
+    {
+      "platformId": "fan_zq_wu",
+      "accountName": "wu_boss_wz",
+      "groupNickname": "吴总(老客)"
+    }
+  ],
+  "messages": [
+    {
+      "sender": "fan_zq_wu",
+      "timestamp": 1778863800,
+      "type": 0,
+      "content": "小周!上回那台开着不错,我厂里再添一台跑业务的,你给整"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778863870,
+      "type": 0,
+      "content": "吴总您可算想起我了~ 还是要稳当能装的那类对吧?给您留意着呢"
+    },
+    {
+      "sender": "fan_zq_wu",
+      "timestamp": 1778863930,
+      "type": 0,
+      "content": "对,皮实就行,别太贵。老规矩,价你给我定,我懒得磨"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778864015,
+      "type": 0,
+      "content": "成,凭咱半年交情我不糊弄您。这台我按内部最低给您压,置换您那台旧的还能再抵两万"
+    },
+    {
+      "sender": "fan_zq_wu",
+      "timestamp": 1778864070,
+      "type": 0,
+      "content": "旧那台也搭进去?那敢情好,省得我挂二手平台扯皮"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778864140,
+      "type": 0,
+      "content": "您那台我们认证二手能直接收,评估我亲自跟,不让您吃亏"
+    },
+    {
+      "sender": "fan_zq_wu",
+      "timestamp": 1778864200,
+      "type": 0,
+      "content": "爽快!还有我那开烧烤店的兄弟也想要一台,回头一起找你"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778864265,
+      "type": 0,
+      "content": "哎哟那敢情好,您介绍的客户我必须接住,给您兄弟也是这个实在价"
+    },
+    {
+      "sender": "fan_zq_wu",
+      "timestamp": 1778864320,
+      "type": 0,
+      "content": "就喜欢跟你打交道,不啰嗦。哪天我过去,顺带请你吃个饭"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778864380,
+      "type": 0,
+      "content": "那我可不客气了吴总~ 您来我把两台车的方案都备齐,饭您请,单我帮您省回来"
+    },
+    {
+      "sender": "fan_zq_wu",
+      "timestamp": 1778864425,
+      "type": 0,
+      "content": "哈哈中!下周我让司机送旧车过去,你看着办"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778864465,
+      "type": 0,
+      "content": "放心吴总,交给我。下周等您车到我全程盯,弄好了第一时间回您"
+    }
+  ]
+}

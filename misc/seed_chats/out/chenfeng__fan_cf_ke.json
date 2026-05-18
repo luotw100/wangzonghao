@@ -1,0 +1,106 @@
+{
+  "chatlab": {
+    "version": "1.0",
+    "exportedAt": 1777821600
+  },
+  "meta": {
+    "name": "K_jungle（与陈锋）",
+    "platform": "B站",
+    "type": "private",
+    "ownerId": "chenfeng",
+    "_streamerStyle": "男·英雄联盟主播·高冷话少，满嘴游戏术语，毒舌但护粉",
+    "_fanProfile": "男·29·后端程序员·杭州·相识2年·中频(周末)·理性技术讨论"
+  },
+  "members": [
+    {
+      "platformId": "chenfeng",
+      "accountName": "chenfeng",
+      "groupNickname": "陈锋"
+    },
+    {
+      "platformId": "fan_cf_ke",
+      "accountName": "ke_dev_hz",
+      "groupNickname": "K_jungle"
+    }
+  ],
+  "messages": [
+    {
+      "sender": "fan_cf_ke",
+      "timestamp": 1777821600,
+      "type": 0,
+      "content": "锋哥,新版打野节奏明显变慢了,你怎么看前期 gank 收益"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1777821670,
+      "type": 0,
+      "content": "经验给得少,2级抓不动。现在前四分钟猫在野区刷,4级再动"
+    },
+    {
+      "sender": "fan_cf_ke",
+      "timestamp": 1777821725,
+      "type": 0,
+      "content": "那对线英雄是不是吃亏,没人帮"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1777821790,
+      "type": 0,
+      "content": "对。所以这版本上单别选纯肉,自己得能打。法王、剑姬这类起飞"
+    },
+    {
+      "sender": "fan_cf_ke",
+      "timestamp": 1777821850,
+      "type": 0,
+      "content": "和我天梯数据对上了,我这边肉单胜率掉了快6个点"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1777821890,
+      "type": 0,
+      "content": "你还在拉数据呢,职业的"
+    },
+    {
+      "sender": "fan_cf_ke",
+      "timestamp": 1777821945,
+      "type": 0,
+      "content": "习惯了,写代码顺手就分析了。周末有空带我双排不,我打野你指挥"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1777822005,
+      "type": 0,
+      "content": "可以。你别老想着抓,先把资源置换算明白,你这人就是太想赢"
+    },
+    {
+      "sender": "fan_cf_ke",
+      "timestamp": 1777822040,
+      "type": 0,
+      "content": "中肯。几点"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1777822080,
+      "type": 0,
+      "content": "晚上九点,下播后。带录像,打完复盘"
+    },
+    {
+      "sender": "fan_cf_ke",
+      "timestamp": 1777822125,
+      "type": 0,
+      "content": "行,我准备好。顺便问下你那套打野铭文还更新吗"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1777822165,
+      "type": 0,
+      "content": "下播发你。别熬太晚,你也一把年纪了"
+    },
+    {
+      "sender": "fan_cf_ke",
+      "timestamp": 1777822190,
+      "type": 0,
+      "content": "彼此彼此,九点见"
+    }
+  ]
+}

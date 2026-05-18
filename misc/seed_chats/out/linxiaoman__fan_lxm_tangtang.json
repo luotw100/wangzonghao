@@ -1,0 +1,112 @@
+{
+  "chatlab": {
+    "version": "1.0",
+    "exportedAt": 1776891900
+  },
+  "meta": {
+    "name": "糖糖崽崽（与林小漫）",
+    "platform": "抖音",
+    "type": "private",
+    "ownerId": "linxiaoman",
+    "_streamerStyle": "女·娱乐主播(唱聊)·温柔软糯爱撒娇，开口『宝』，多用波浪号和颜文字",
+    "_fanProfile": "女·19·大学生(声乐社)·成都·相识3个月·中频·活泼话痨小迷妹"
+  },
+  "members": [
+    {
+      "platformId": "linxiaoman",
+      "accountName": "linxiaoman",
+      "groupNickname": "林小漫"
+    },
+    {
+      "platformId": "fan_lxm_tangtang",
+      "accountName": "tang_0o0",
+      "groupNickname": "糖糖崽崽"
+    }
+  ],
+  "messages": [
+    {
+      "sender": "fan_lxm_tangtang",
+      "timestamp": 1776891900,
+      "type": 0,
+      "content": "漫漫漫漫漫！！！我又来啦今天的妆好绝啊啊啊"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1776891950,
+      "type": 0,
+      "content": "崽崽你来啦~ 谢谢夸夸，今天试了新眼影嘿嘿"
+    },
+    {
+      "sender": "fan_lxm_tangtang",
+      "timestamp": 1776891995,
+      "type": 0,
+      "content": "姐姐你副歌那个转音是怎么练的呜呜我怎么练都破音"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1776892055,
+      "type": 0,
+      "content": "气息没沉下去呀，你是不是一紧张就提肩膀"
+    },
+    {
+      "sender": "fan_lxm_tangtang",
+      "timestamp": 1776892085,
+      "type": 0,
+      "content": "！！！你怎么知道我社团老师也这么说"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1776892155,
+      "type": 0,
+      "content": "过来人嘛~ 每天躺着练腹式呼吸，先别急着冲高音"
+    },
+    {
+      "sender": "fan_lxm_tangtang",
+      "timestamp": 1776892195,
+      "type": 0,
+      "content": "记下来了！姐姐能不能哪天连麦听我唱一句 求求"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1776892260,
+      "type": 0,
+      "content": "可以呀，等你练两周稳一点，周末专门留个时段陪你 (｡>‿‿<｡ )"
+    },
+    {
+      "sender": "fan_lxm_tangtang",
+      "timestamp": 1776892285,
+      "type": 0,
+      "content": "啊啊啊真的吗我能高兴一整个学期"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1776892340,
+      "type": 0,
+      "content": "真的，骗你干嘛~ 但作业先写完哦，别学我当年挂科"
+    },
+    {
+      "sender": "fan_lxm_tangtang",
+      "timestamp": 1776892370,
+      "type": 0,
+      "content": "哈哈哈姐姐你居然挂过科"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1776892405,
+      "type": 0,
+      "content": "嘘——这是我们之间的秘密 (¬‿¬ )"
+    },
+    {
+      "sender": "fan_lxm_tangtang",
+      "timestamp": 1776892445,
+      "type": 0,
+      "content": "成交！那我去练气息了，下播前我还来"
+    },
+    {
+      "sender": "linxiaoman",
+      "timestamp": 1776892465,
+      "type": 0,
+      "content": "去吧去吧，回来给姐汇报进度~"
+    }
+  ]
+}

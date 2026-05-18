@@ -1,0 +1,112 @@
+{
+  "chatlab": {
+    "version": "1.0",
+    "exportedAt": 1776638400
+  },
+  "meta": {
+    "name": "乔木画画（与陈锋）",
+    "platform": "B站",
+    "type": "private",
+    "ownerId": "chenfeng",
+    "_streamerStyle": "男·英雄联盟主播·高冷话少，满嘴游戏术语，毒舌但护粉",
+    "_fanProfile": "女·24·自由插画师·重庆·相识4个月·低频·不太懂游戏但爱看气氛"
+  },
+  "members": [
+    {
+      "platformId": "chenfeng",
+      "accountName": "chenfeng",
+      "groupNickname": "陈锋"
+    },
+    {
+      "platformId": "fan_cf_qiao",
+      "accountName": "qiao_illust",
+      "groupNickname": "乔木画画"
+    }
+  ],
+  "messages": [
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1776638400,
+      "type": 0,
+      "content": "锋哥你今天那一波,弹幕都在刷『五杀』,是很厉害对吧"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1776638445,
+      "type": 0,
+      "content": "嗯。五个"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1776638505,
+      "type": 0,
+      "content": "哈哈哈你怎么这么省字。我其实不太懂游戏,就爱看你直播间吵吵闹闹的"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1776638545,
+      "type": 0,
+      "content": "不懂还来看四个月,图啥"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1776638610,
+      "type": 0,
+      "content": "图气氛啊,我一个人在家画图太安静了,开着你直播像有人陪"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1776638645,
+      "type": 0,
+      "content": "行吧,理由挺正当"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1776638705,
+      "type": 0,
+      "content": "我想给你画个头像,Q版的,你那个皱眉脸特别好画,不要钱"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1776638735,
+      "type": 0,
+      "content": "我哪皱眉了"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1776638775,
+      "type": 0,
+      "content": "全程都在皱!就那个『这把队友是坑』的表情,绝了"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1776638820,
+      "type": 0,
+      "content": "……随你画。别画太丑挂直播间被人笑"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1776638870,
+      "type": 0,
+      "content": "放心,我接稿的人专业的。画好私你?哦你不加私……那我发直播间"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1776638910,
+      "type": 0,
+      "content": "发弹幕区,我看到会截。画好了说一声"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1776638940,
+      "type": 0,
+      "content": "成交!那我去肝图了,你继续皱眉"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1776638960,
+      "type": 0,
+      "content": "……快走"
+    }
+  ]
+}

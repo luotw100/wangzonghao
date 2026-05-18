@@ -1,0 +1,118 @@
+{
+  "chatlab": {
+    "version": "1.0",
+    "exportedAt": 1778543700
+  },
+  "meta": {
+    "name": "小宇要上王者（与陈锋）",
+    "platform": "B站",
+    "type": "private",
+    "ownerId": "chenfeng",
+    "_streamerStyle": "男·英雄联盟主播·高冷话少，满嘴游戏术语，毒舌但护粉",
+    "_fanProfile": "男·17·高中生·长沙·相识1年·高频·中二崇拜·想上分(被劝学习)"
+  },
+  "members": [
+    {
+      "platformId": "chenfeng",
+      "accountName": "chenfeng",
+      "groupNickname": "陈锋"
+    },
+    {
+      "platformId": "fan_cf_xiaoyu",
+      "accountName": "xiaoyu_carry",
+      "groupNickname": "小宇要上王者"
+    }
+  ],
+  "messages": [
+    {
+      "sender": "fan_cf_xiaoyu",
+      "timestamp": 1778543700,
+      "type": 0,
+      "content": "锋哥!我又卡铂金了,带带我呗求求了"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1778543740,
+      "type": 0,
+      "content": "几点了"
+    },
+    {
+      "sender": "fan_cf_xiaoyu",
+      "timestamp": 1778543770,
+      "type": 0,
+      "content": "刚十二点,周末不上学"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1778543805,
+      "type": 0,
+      "content": "明天周日没作业?"
+    },
+    {
+      "sender": "fan_cf_xiaoyu",
+      "timestamp": 1778543835,
+      "type": 0,
+      "content": "……还有点。打完这把就写"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1778543895,
+      "type": 0,
+      "content": "铂金卡住不是手不行,是脑子没在打。补刀30个一波清不掉说明意识就没养成"
+    },
+    {
+      "sender": "fan_cf_xiaoyu",
+      "timestamp": 1778543920,
+      "type": 0,
+      "content": "那我多打几把不就练出来了"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1778543975,
+      "type": 0,
+      "content": "无脑打只会把烂习惯打牢。回放看一遍,死哪了为什么死,比打十把强"
+    },
+    {
+      "sender": "fan_cf_xiaoyu",
+      "timestamp": 1778544005,
+      "type": 0,
+      "content": "哥你以前不也天天通宵上分"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1778544055,
+      "type": 0,
+      "content": "所以我现在劝你别学我。我那时候不读书是真没退路,你有"
+    },
+    {
+      "sender": "fan_cf_xiaoyu",
+      "timestamp": 1778544080,
+      "type": 0,
+      "content": "……懂了"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1778544125,
+      "type": 0,
+      "content": "段位我帮你看replay可以,通宵别想。先睡,作业明天上午写完发我看"
+    },
+    {
+      "sender": "fan_cf_xiaoyu",
+      "timestamp": 1778544145,
+      "type": 0,
+      "content": "啊还要查作业"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1778544180,
+      "type": 0,
+      "content": "嫌烦?嫌烦就别喊哥。说到做到,睡了"
+    },
+    {
+      "sender": "fan_cf_xiaoyu",
+      "timestamp": 1778544200,
+      "type": 0,
+      "content": "好嘞锋哥晚安!作业写完发你"
+    }
+  ]
+}

@@ -11,34 +11,14 @@ from studio.models import (
     Message,
     OutboundMessage,
     Persona,
-    ProviderConfig,
 )
-
-
-def mask_api_key(api_key: Optional[str]) -> Optional[str]:
-    if not api_key:
-        return None
-    if len(api_key) <= 8:
-        return "*" * len(api_key)
-    return f"{api_key[:4]}...{api_key[-4:]}"
 
 
 def s_account(a: Account) -> Dict[str, Any]:
     return {
         "id": a.id, "username": a.username, "display_name": a.display_name,
-        "role": a.role, "status": a.status,
+        "status": a.status,
         "created_at": a.created_at,
-    }
-
-
-def s_provider(p: ProviderConfig) -> Dict[str, Any]:
-    return {
-        "id": p.id, "owner_account_id": p.owner_account_id,
-        "name": p.name, "base_url": p.base_url,
-        "default_model": p.default_model,
-        "scope": p.scope, "status": p.status, "is_default": p.is_default,
-        "has_api_key": bool(p.api_key), "api_key_preview": mask_api_key(p.api_key),
-        "created_at": p.created_at, "updated_at": p.updated_at,
     }
 
 
@@ -63,7 +43,6 @@ def s_inbox(i: Inbox) -> Dict[str, Any]:
         "id": i.id, "account_id": i.account_id, "bridge_id": i.bridge_id,
         "platform": i.platform, "display_name": i.display_name,
         "default_persona_id": i.default_persona_id,
-        "reply_provider_config_id": i.reply_provider_config_id,
         "enabled": i.enabled, "platform_self_id": i.platform_self_id,
         "created_at": i.created_at, "updated_at": i.updated_at,
     }
@@ -74,7 +53,6 @@ def s_contact(c: Contact) -> Dict[str, Any]:
         "id": c.id, "inbox_id": c.inbox_id, "peer_platform_id": c.peer_platform_id,
         "display_name": c.display_name, "card_md": c.card_md,
         "persona_id": c.persona_id,
-        "reply_provider_config_id": c.reply_provider_config_id,
         "takeover": c.takeover,
         "reply_policy": c.reply_policy,
         "pending_reply": c.pending_reply,

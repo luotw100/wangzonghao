@@ -34,25 +34,24 @@ docker compose up -d --build
 
 Studio web/API 通过 Nginx 暴露在 `http://localhost:23457`。
 
-Studio 登录页只做登录；首个 admin 必须用 CLI 创建：
+Studio 登录页只做登录；账号和 Provider 都用服务端 CLI 创建：
 
 ```bash
 docker compose exec -T studio-api uv run python -m studio.cli create-account \
-  --username admin --password Admin123 --display-name 平台管理员 --role admin
+  --username u1 --password Pw123 --display-name 主播一
+docker compose exec -T studio-api uv run python -m studio.cli create-provider \
+  --name dev --base-url https://api.deepseek.com --api-key sk-xxx --default-model deepseek-v4-flash
 ```
 
 当前推荐顺序：
 
-1. 用上面 CLI 创建首个 admin。
-2. 用 admin 登录 Studio。Admin 默认进入 **总览** tab（系统级仪表盘：账号/设备/接管号/消息汇总）。
-3. 在 Settings 中创建普通用户账号和全局默认 ProviderConfig（普通用户看不到 Provider tab）。
-4. 用对应普通用户登录后创建至少一个 Persona。
-5. 启动 Bridge（在 Studio 的 设备 tab 顶部有「快速生成命令」面板可一键复制）。
-6. 等 Bridge handshake 创建 Bridge、`POST /api/bridge/inboxes` 注册 Inbox。
-7. 在 Takeover tab 中给 Contact 配置 Persona、autoreply 和 card；Provider override 只对 admin 可见，普通用户使用全局默认 Provider。
-8. 在 Takeover tab 中给 Contact 配置 Persona、autoreply 和 card，可创建 distill job 蒸馏 Persona 和 Card。
+1. 用上面 CLI 创建账号和全局默认 Provider。
+2. 用该账号登录 Studio，创建至少一个 Persona。
+3. 启动 Bridge（在 Studio 的 设备 tab 顶部有「快速生成命令」面板可一键复制）。
+4. 等 Bridge handshake 创建 Bridge、`POST /api/bridge/inboxes` 注册 Inbox。
+5. 在 Takeover tab 中给 Contact 配置 Persona、autoreply 和 card，可创建 distill job 蒸馏 Persona 和 Card。reply/distill 恒用 CLI 维护的全局默认 Provider。
 
-> 一键 dev seed：`python3 scripts/seed_dev.py`，全部配置走 `scripts/.env`（参考 `scripts/.env.example`，所有键必填、无代码默认值）。它创建一个 Studio admin、`CHAT_SEED_USERS` / `STUDIO_SEED_USERS` 两份独立清单里的用户（格式严格为 `username:password:display`，Studio role=user），以及一个共享 Provider。仅建账号 + provider，不播种 persona/contact/消息（清空 volume 后可重复执行，已存在的账号会告警跳过）。
+> 一键 dev seed：`python3 scripts/seed_dev.py`，全部配置走 `scripts/.env`（参考 `scripts/.env.example`，所有键必填、无代码默认值）。它创建 `CHAT_SEED_USERS` / `STUDIO_SEED_USERS` 两份独立清单里的用户（格式严格为 `username:password:display`），并经 `studio.cli create-provider` 创建一个全局 Provider。仅建账号 + provider，不播种 persona/contact/消息（清空 volume 后可重复执行；账号已存在会告警跳过，未清空 volume 重跑会多建一行 Provider，最新者为默认）。
 
 ## 启动 Bridge（命令行 daemon）
 
@@ -98,14 +97,17 @@ docker compose exec -T chat-api uv run python -m chat.cli list-accounts
 docker compose exec -T chat-api uv run python -m chat.cli reset-password --username alice --password NewPassword
 ```
 
-Studio：CLI 是首个 admin 的唯一创建入口；登录页仅提供 username/password 登录。后续账号管理走 Web Settings——admin 可创建/list/停用启用账号、重置任意账号密码；普通 user 可修改自己的密码。CLI 同时保留作为运维/救援入口：
+Studio：账号开通和 Provider 维护只有 CLI 一条路径，没有任何 Web 管理入口；登录页仅提供 username/password 登录，Web 端只能改自己的密码。
 
 ```bash
 cd services/studio
 docker compose exec -T studio-api uv run python -m studio.cli create-account \
-  --username admin --password Admin123 --display-name 平台管理员 --role admin
+  --username u1 --password Pw123 --display-name 主播一
 docker compose exec -T studio-api uv run python -m studio.cli list-accounts
-docker compose exec -T studio-api uv run python -m studio.cli reset-password --username demo --password NewPassword
+docker compose exec -T studio-api uv run python -m studio.cli reset-password --username u1 --password NewPassword
+docker compose exec -T studio-api uv run python -m studio.cli create-provider \
+  --name dev --base-url https://api.deepseek.com --api-key sk-xxx --default-model deepseek-v4-flash
+docker compose exec -T studio-api uv run python -m studio.cli list-providers
 ```
 
 ## 构建命令

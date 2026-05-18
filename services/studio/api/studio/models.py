@@ -7,8 +7,8 @@ Principles:
   (markdown). Inbox is a logical platform-side identity; Bridge is the
   daemon process that physically runs adapters. An Inbox is bound to one
   Bridge (Inbox.bridge_id) and a Bridge can serve N inboxes.
-- ProviderConfigs are admin-maintained global configs. Inbox and Contact may
-    hold optional overrides; runtime falls back to the global default Provider.
+- ProviderConfig is a single operator-maintained global config, managed via
+  the server-side CLI. Runtime always uses the default global Provider.
 """
 
 from sqlalchemy import (
@@ -37,7 +37,6 @@ from studio.db import Base
 class Account(Base):
     __tablename__ = "accounts"
     __table_args__ = (
-        CheckConstraint("role IN ('admin', 'user')", name="ck_account_role"),
         CheckConstraint("status IN ('active', 'disabled')", name="ck_account_status"),
     )
 
@@ -45,7 +44,6 @@ class Account(Base):
     username      = Column(String(64), nullable=False, unique=True, index=True)
     password_hash = Column(String(128), nullable=False)
     display_name  = Column(String(128), nullable=True)
-    role          = Column(String(16), nullable=False)
     status        = Column(String(16), nullable=False)
     created_at    = Column(DateTime(timezone=True), nullable=False)
     updated_at    = Column(DateTime(timezone=True), nullable=False)
@@ -83,7 +81,6 @@ class ProviderConfig(Base):
     )
 
     id               = Column(String(48), primary_key=True, index=True)
-    owner_account_id = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
     name             = Column(String(128), nullable=False)
     base_url         = Column(String(512), nullable=False)
     api_key          = Column(Text, nullable=True)
@@ -154,7 +151,6 @@ class Inbox(Base):
     platform                 = Column(String(32), nullable=False)
     display_name             = Column(String(256), nullable=False)
     default_persona_id       = Column(String(48), ForeignKey("personas.id"), nullable=True)
-    reply_provider_config_id = Column(String(48), ForeignKey("provider_configs.id"), nullable=True)
     enabled                  = Column(Boolean, nullable=False)
     platform_self_id         = Column(String(128), nullable=True)
     created_at               = Column(DateTime(timezone=True), nullable=False)
@@ -179,7 +175,6 @@ class Contact(Base):
     display_name                = Column(String(256), nullable=False)
     card_md                     = Column(Text, nullable=True)
     persona_id                  = Column(String(48), ForeignKey("personas.id"), nullable=True)
-    reply_provider_config_id    = Column(String(48), ForeignKey("provider_configs.id"), nullable=True)
     takeover                    = Column(Boolean, nullable=False)
     reply_policy                = Column(String(16), nullable=False)
     pending_reply               = Column(Boolean, nullable=False)

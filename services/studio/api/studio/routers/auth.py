@@ -8,15 +8,13 @@ from sqlalchemy.orm import Session
 from studio.auth_utils import hash_password, verify_password
 from studio.db import get_db, utc_now
 from studio.deps import (
-    AdminAccountDep,
     CurrentAccountDep,
-    create_account_record,
     create_auth_session,
     extract_bearer,
     hash_token,
     revoke_account_sessions,
 )
-from studio.enums import AccountRole, AccountStatus
+from studio.enums import AccountStatus
 from studio.models import Account, AuthSession
 from studio.schemas import LoginRequest, OwnPasswordChange
 from studio.serializers import s_account

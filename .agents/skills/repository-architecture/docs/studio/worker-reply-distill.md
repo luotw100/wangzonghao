@@ -118,7 +118,7 @@
 2. Contact status 是 active。
 3. Contact `reply_policy == 'autoreply'`（`disabled` 时跳过）。
 4. Inbox 存在且 enabled。
-5. Provider 从 `contact.reply_provider_config_id or inbox.reply_provider_config_id or global default provider` 解析到，且状态 active。
+5. Provider 由 `get_default_provider(db)` 返回全局默认（`scope=global`、`status=active`、`is_default=True`）。
 6. Provider 存在且有 API key。
 7. Persona 存在。
 8. History 非空。

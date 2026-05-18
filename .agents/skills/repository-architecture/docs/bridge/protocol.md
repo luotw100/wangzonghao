@@ -15,7 +15,7 @@ handshake 只做一件事：用 Studio 账号密码换 **account session token**
 7. 后续所有请求带 `Authorization: Bearer {token}` 和 `X-Machine-Id: {machine_id}`，包括 `POST /api/bridge/inboxes` 注册 channel 集合。
 8. 重启直接复用持久化的 token，无需密码、无需重新 handshake。仅当 token 被撤销/失效（401）才重新 `/login` 输密码。
 
-token 过期为 24h 滑动续期（每次请求碰到即续），与浏览器一致。session 撤销是 account 粒度的唯一安全控制：改密码 / 管理员重置密码 / 禁用账号都会删除该 account 的全部 session（web 与所有 Bridge 一并失效）。撤销单个 Bridge 时只把该 Bridge 状态置为 `revoked`（不动 session），鉴权按 `(account, machine_id)` 解析到该行后因 `revoked` 拒绝，账号其他 session 不受影响；Bridge 下次调用收到 401。
+token 过期为 24h 滑动续期（每次请求碰到即续），与浏览器一致。session 撤销是 account 粒度的唯一安全控制：改密码会删除该 account 的全部 session（web 与所有 Bridge 一并失效）。撤销单个 Bridge 时只把该 Bridge 状态置为 `revoked`（不动 session），鉴权按 `(account, machine_id)` 解析到该行后因 `revoked` 拒绝，账号其他 session 不受影响；Bridge 下次调用收到 401。
 
 ## 消息类型
 
@@ -167,7 +167,7 @@ Bridge 会停止本地存在但不在 response 中的 adapter。
 1. 校验 Inbox 存在、属于 Bridge account、且绑定到当前 Bridge。
 2. 不合法则 `rejected += 1`。
 3. 按 `(inbox_id, peer_platform_id)` upsert Contact。
-4. 新 Contact 字段：`persona_id = inbox.default_persona_id`；`reply_provider_config_id = inbox.reply_provider_config_id`；`takeover = False`；`reply_policy = disabled`；`pending_reply = False`；`status = active`。
+4. 新 Contact 字段：`persona_id = inbox.default_persona_id`；`takeover = False`；`reply_policy = disabled`；`pending_reply = False`；`status = active`。
 5. 主去重：计算 `msg_hash = sha256(contact_id \x00 sender_id \x00 sent_at_canonical \x00 msg_type \x00 content_for_hash)`，`content_for_hash` 对媒体消息使用 `content_hash` 字段；已有相同 `msg_hash` 则 `deduped += 1`。
 6. 次级去重（后向兼容）：若 `platform_msg_id` 存在，检查 `external_id = live:{platform_msg_id}` 是否已存在。
 7. 计算 `role = 'self'`（sender_id == inbox.platform_self_id）或 `'counterpart'`。

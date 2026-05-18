@@ -17,13 +17,3 @@ def get_default_provider(db: Session) -> ProviderConfig | None:
         .order_by(ProviderConfig.updated_at.desc())
         .first()
     )
-
-
-def resolve_provider_config(db: Session, provider_id: str | None = None) -> ProviderConfig | None:
-    if provider_id:
-        return (
-            db.query(ProviderConfig)
-            .filter(ProviderConfig.id == provider_id, ProviderConfig.status == ProviderStatus.ACTIVE)
-            .first()
-        )
-    return get_default_provider(db)

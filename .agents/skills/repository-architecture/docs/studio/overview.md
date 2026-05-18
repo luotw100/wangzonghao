@@ -29,7 +29,7 @@ services/studio/
       reply.py
       runtime.py
       schemas.py
-      serializers.py           ← 响应序列化函数 s_account / s_provider / ...
+      serializers.py           ← 响应序列化函数 s_account / s_persona / ...
       worker.py
       distill/
         packer.py
@@ -37,9 +37,7 @@ services/studio/
         prompts/fold.md
       routers/
         __init__.py
-        auth.py               ← health + auth endpoints
-        accounts.py            ← account CRUD + admin overview
-        providers.py           ← ProviderConfig CRUD
+        auth.py               ← health + 登录/登出/me/改自己密码
         personas.py            ← Persona CRUD
         bridges.py             ← Bridge list + revoke
         inboxes.py             ← Inbox 操作（Inbox 创建仅通过 bridge handshake）
@@ -113,14 +111,11 @@ services/studio/
 
 ## Studio Web 当前 tabs
 
-Admin tab 导航：总览（默认） · 接管 · 人设 · 设备 · 设置
+tab 导航：接管（默认） · 人设 · 设备
 
-普通用户 tab 导航：接管（默认） · 人设 · 设备 · 设置
-
-- **总览**（admin only）：跨账号系统级统计。
 - **接管**：Contact 级接管配置和消息预览。
 - **人设**：create/edit/delete Persona。
 - **设备**：Bridge 状态、快速启动命令和 revoke。
-- **设置**：密码修改、账号管理（admin）、Provider 管理（admin）。
+- 改自己密码走左下角头像菜单的弹窗，没有独立设置 tab，也没有任何账号 / Provider 管理界面。
 
 Bridge 和 Inbox 主要由 daemon handshake 自动创建；UI 当前不要求手动创建 Bridge。

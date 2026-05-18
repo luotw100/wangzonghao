@@ -53,7 +53,6 @@
 `main.py` 当前使用手写 serializer（非 Pydantic response model）：
 
 - `s_account()`
-- `s_provider()`：mask API key。
 - `s_persona()`
 - `s_bridge()`
 - `s_inbox()`
@@ -64,9 +63,8 @@
 
 ## Ownership helpers
 
-这些 helper 当前用于按 account 校验归属；admin 账号可跨 account 读取，普通 user 只读自己的数据：
+这些 helper 按 account 校验归属；每个账号只能读写自己的数据：
 
-- `get_provider_or_404()`。
 - `get_account_persona()`。
 - `get_account_bridge()`。
 - `get_account_inbox()`。
@@ -79,8 +77,7 @@
 主要 request models：
 
 - `LoginRequest`。
-- `AccountCreate`、`AccountUpdate`、`AccountPasswordReset`、`OwnPasswordChange`。
-- `ProviderConfigCreate`、`ProviderConfigUpdate`。
+- `OwnPasswordChange`。
 - `PersonaCreate`、`PersonaUpdate`。
 - `InboxUpdate`——Inbox 仅由 bridge handshake 自动创建，没有独立创建 schema。
 - `ContactUpdate`。
@@ -98,30 +95,9 @@
 - `GET /api/auth/me`
 - `PUT /api/auth/password`
 
-`PUT /api/auth/password` 要求当前密码和新密码，成功后会删除该账号所有 Web AuthSession。
+`PUT /api/auth/password` 要求当前密码和新密码，成功后会删除该账号所有 Web AuthSession（web 与所有 Bridge 一并下线）。
 
-首个 admin 没有 Web 入口——必须用 `python -m studio.cli create-account --role admin` 创建。
-
-### Account admin
-
-- `GET /api/accounts`
-- `POST /api/accounts`
-- `PUT /api/accounts/{account_id}`
-- `PUT /api/accounts/{account_id}/password`
-- `GET /api/admin/overview`
-
-这些 endpoint 需要 admin role。Admin 可在 Web 设置页创建账号、列出账号、停用/启用账号和重置任意账号密码。`GET /api/admin/overview` 返回系统总览：账号列表（带每个账号的 bridges/inboxes/personas/contacts/messages 计数）和全局合计，给 Studio 前端的 admin 总览 tab 用。
-
-### ProviderConfig
-
-- `GET /api/provider-configs`
-- `POST /api/provider-configs`
-- `PUT /api/provider-configs/{provider_id}`
-- `DELETE /api/provider-configs/{provider_id}`
-
-Create 时对 `base_url` 做 `rstrip('/')`。Delete 不校验引用完整性（如 Provider 是否被 Inbox/Contact 引用）。
-
-ProviderConfig endpoints 当前需要 admin role。创建 ProviderConfig 时会把已有 default 清掉，并把新 ProviderConfig 设为全局默认。
+Studio 没有 admin 概念，没有任何账号管理 / Provider 管理的 Web API。账号开通和 Provider 维护只能用服务端 `studio.cli`（见 CLI 小节）。
 
 ### Persona
 
@@ -201,9 +177,11 @@ Bridge protocol endpoints 见 `docs/bridge/protocol.md`。当前包含：
 
 `python -m studio.cli` 当前命令：
 
-- `create-account`
+- `create-account`（`--username --password --display-name`）
 - `list-accounts`
-- `reset-password`
-- `set-role`
+- `reset-password`（`--username --password`）
+- `create-provider`（`--name --base-url [--api-key] --default-model`）：校验 `base_url` 在 `ALLOWED_BASE_URLS` 白名单，清掉已有 default，新建者 `is_default=True`。
+- `list-providers`
+- `delete-provider`（`--id`）
 
-当前 account id 生成规则是 `acc_{完整 UUID hex}`（128 bit，无截断）。Create 显式设置 role、active status 和 timestamps。CLI 输出使用带颜色的表格；账号管理的主路径是 Studio Web 设置页。
+account id 生成规则是 `acc_{完整 UUID hex}`（128 bit，无截断）。Create 显式设置 active status 和 timestamps。CLI 输出使用带颜色的表格。账号开通和 Provider 维护的唯一路径就是这个 CLI——没有任何 Web 入口。

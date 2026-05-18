@@ -22,7 +22,6 @@ app = FastAPI(
 )
 
 from studio.routers import (  # noqa: E402
-    accounts,
     auth,
     bridge_protocol,
     bridges,
@@ -30,12 +29,9 @@ from studio.routers import (  # noqa: E402
     distill,
     inboxes,
     personas,
-    providers,
 )
 
 app.include_router(auth.router)
-app.include_router(accounts.router)
-app.include_router(providers.router)
 app.include_router(personas.router)
 app.include_router(bridges.router)
 app.include_router(inboxes.router)

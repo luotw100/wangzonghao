@@ -21,8 +21,7 @@
 
 主要类型：
 
-- `Account`
-- `ProviderConfig`
+- `Account`（无 `role`）
 - `Persona`（含 `timezone: string`）
 - `Bridge`
 - `Inbox`
@@ -33,10 +32,7 @@
 
 主要函数：
 
-- Auth：`login`、`authLogout`、`authMe`、`changeOwnPassword`。
-- Admin overview：`getAdminOverview`（admin-only，返回 `AdminOverview { totals, accounts[] }`）。
-- Account admin：`getAccounts`、`createAccount`、`updateAccount`、`resetAccountPassword`。
-- Providers：`getProviderConfigs`、`createProviderConfig`、`updateProviderConfig`、`deleteProviderConfig`。
+- Auth：`login`、`authLogout`、`authMe`、`changeOwnPassword`。没有任何账号管理 / Provider / overview 函数。
 - Personas：`getPersonas`、`getPersona`、`createPersona`（含 `timezone?`）、`updatePersona`（含 `timezone?`）、`deletePersona`。
 - Bridges：`getBridges`、`deleteBridge`。
 - Inboxes：`getInboxes`、`updateInbox`。
@@ -68,16 +64,11 @@
 - 纯 username/password form，仅提供登录功能。
 - 调 `api.login()` → `api.setToken()` 保存 token → auth `refresh()` → 跳转 `/studio`。
 - 登录失败时显示错误。
-- 提示首个 admin 用 CLI 创建（`python -m studio.cli create-account --role admin`），账号管理与密码重置都走 Studio Settings 页。
+- 账号由服务端 `studio.cli create-account` 创建，没有任何 Web 注册/管理入口。
 
 ### StudioPage 顶层
 
-Tab 类型按角色区分：
-
-- Admin：`overview`（默认） · `takeover` · `persona` · `device` · `settings`
-- 普通用户：`takeover`（默认） · `persona` · `device` · `settings`
-
-`overview` 是 admin 专属：调 `getAdminOverview()`，渲染全局 totals 卡片 + 跨账号明细表（设备 / 接管号 / 人设 / 粉丝(接管中) / 消息）。其它 tab 的查询在 admin 时不按 account 过滤，因此 admin 也能跨用户穿透排查。
+只有一套 tab（无角色概念）：`takeover`（默认） · `persona` · `device`。每个账号只能看自己的数据（后端按 `account_id` 过滤）。改自己密码是左下角头像菜单触发的 `ChangePasswordModal` 弹窗，不是独立 tab。
 
 顶层 state：
 
@@ -85,10 +76,9 @@ Tab 类型按角色区分：
 - `bridges`
 - `personas`
 - `inboxes`
-- `providers`
 - `error`
 
-`loadAll()` 并发拉取 bridges、personas、inboxes。当前账号 role 是 admin 时额外拉 providers；普通 user 不拉 ProviderConfig。`loadAll()` 每 10 秒后台静默轮询一次（`setInterval`，不触发 loading 状态）。
+`loadAll()` 并发拉取 bridges、personas、inboxes，每 10 秒后台静默轮询一次（`setInterval`，不触发 loading 状态）。
 
 ## TakeoverView
 
@@ -135,7 +125,6 @@ Chip 三态：`takeover=false` → `未接管`；`takeover=true && reply_policy=
 编辑 Inbox 默认值：
 
 - `default_persona_id`。
-- admin 可编辑 `reply_provider_config_id`；普通 user 不展示 Provider 选择。
 - `enabled`。
 
 保存时调用 `api.updateInbox()`。
@@ -147,16 +136,11 @@ Chip 三态：`takeover=false` → `未接管`；`takeover=true && reply_policy=
 - display name。
 - peer platform id。
 - Persona select。
-- admin 可看到 Provider override select；普通 user 看到“模型由管理员统一配置”。
 - autoreply switch。切换到 `autoreply` 前的 warning gate：若该 contact 没有 persona（或 persona `persona_md` 为空）或 `card_md` 为空，`confirm()` 警告"人设和关系卡缺一不可，自动回复不会真正生效"，取消则不 patch。
 - card markdown editor。下方一个「✶ 自动创建关系卡」按钮：调 `api.createDistillJob({ contact_ids: [contact.id], target_persona_id: null })`，后台从该粉丝全部聊天记录提取关系卡、不动人设；提交后显示 note，靠 3s 轮询自动刷新出新 `card_md`。
 - recent messages。
 
-Provider 运行时解析：
-
-```text
-contact.reply_provider_config_id ?? inbox.reply_provider_config_id ?? global default provider
-```
+Provider 运行时恒为 CLI 维护的全局默认 Provider（前端不涉及 Provider 选择）。
 
 接管 ready 条件在 UI 中由以下因素计算：
 
@@ -173,12 +157,6 @@ contact.reply_provider_config_id ?? inbox.reply_provider_config_id ?? global def
 - 显示 status、machine_id、last seen、承载的 Inboxes。
 - revoke 调 `api.deleteBridge()`。
 
-## OverviewView (admin)
-
-- 顶部 `StatCard` 网格：账号 / 设备 / 接管号 / 人设 / 粉丝 / 消息 / Provider / 待发 outbound 全局合计。
-- 下方账号明细表：每行一个 Studio Account，列出 role、status、最后登录、设备在线数、接管号、人设、粉丝(其中接管中)、消息总数。
-- 数据来自 `getAdminOverview()`；右上角刷新按钮重拉。
-
 ## PersonasView
 
 - 列出 Persona。
@@ -189,20 +167,9 @@ contact.reply_provider_config_id ?? inbox.reply_provider_config_id ?? global def
 - Delete 调 `api.deletePersona()`。
 - 设计取舍：persona 不做版本历史（用户建多个 persona 即可），card 单张直接覆盖——二者均可从 source-of-truth 消息重新蒸出，无需快照。
 
-## SettingsView
+## ChangePasswordModal
 
-Settings 当前包含：
-
-- `PasswordPanel`：当前账号输入旧密码和新密码后重置自己的密码。
-- `AccountsPanel`：仅 admin 可见，列出账号、创建账号、停用/启用账号、重置任意账号密码。
-- `ProviderPanel`：仅 admin 可见，列出 ProviderConfig、创建 ProviderConfig、删除 ProviderConfig。
-
-## ProviderPanel
-
-- 列出 ProviderConfig。
-- Create modal 调 `api.createProviderConfig()`。
-- Delete 调 `api.deleteProviderConfig()`。
-- UI 只有 provider create 和 delete；provider edit 表单未实现（API client 已有 `updateProviderConfig()`）。
+唯一的账号相关 UI：从左下角头像菜单打开的弹窗，输入当前密码 + 新密码两次，调 `api.changeOwnPassword()`。成功后该账号全部 session 失效（web 与所有 Bridge 一并下线），提示重新登录。没有 SettingsView / AccountsPanel / ProviderPanel / OverviewView。
 
 ## Shared UI helpers
 

@@ -5,10 +5,9 @@ Run after `docker compose up -d --build` in services/chat and services/studio.
 Everything is driven by scripts/.env (copy scripts/.env.example). All values
 are required and explicit — nothing is defaulted, guessed, or skipped:
 
-  - SEED_ADMIN_*        one Studio admin (used only to create the Provider)
   - CHAT_SEED_USERS     users created in Chat
-  - STUDIO_SEED_USERS   users created in Studio (role=user)
-  - PROVIDER_*          one shared Studio Provider (admin auth)
+  - STUDIO_SEED_USERS   users created in Studio
+  - PROVIDER_*          the single global Studio Provider (created via CLI)
 
 CHAT_SEED_USERS and STUDIO_SEED_USERS are independent lists. If you want the
 same credentials on both sides, write the same entries in both — the script
@@ -16,7 +15,8 @@ does not couple them.
 
 Accounts + provider only — no personas, contacts, or seed messages. Re-run
 after wiping volumes (docker compose down -v) for a clean baseline. Accounts
-that already exist surface a warning and are left untouched.
+that already exist surface a warning and are left untouched; re-running
+without a wipe creates an extra Provider row (the newest becomes default).
 """
 
 from __future__ import annotations
@@ -147,10 +147,11 @@ def wait_health(url: str, name: str, tries: int = 30) -> None:
 
 # ---------- CLI account creation (via docker compose exec) ----------
 
-def docker_create(service_dir: Path, service: str, module: str, cli_args: list[str], label: str) -> None:
+def docker_cli(service_dir: Path, service: str, module: str, subcommand: str,
+               cli_args: list[str], label: str) -> None:
     cmd = [
         "docker", "compose", "exec", "-T", service,
-        "uv", "run", "python", "-m", module, "create-account", *cli_args,
+        "uv", "run", "python", "-m", module, subcommand, *cli_args,
     ]
     result = subprocess.run(cmd, cwd=service_dir, capture_output=True, text=True)
     if result.returncode == 0:
@@ -163,60 +164,35 @@ def docker_create(service_dir: Path, service: str, module: str, cli_args: list[s
 
 def create_chat_account(u: UserSpec) -> None:
     log(f"creating chat account: {u.username}")
-    docker_create(
-        CHAT_DIR, "chat-api", "chat.cli",
+    docker_cli(
+        CHAT_DIR, "chat-api", "chat.cli", "create-account",
         ["--username", u.username, "--password", u.password, "--nickname", u.display],
         f"chat account {u.username}",
     )
 
 
-def create_studio_account(username: str, password: str, display: str, role: str) -> None:
-    log(f"creating studio account: {username} ({role})")
-    docker_create(
-        STUDIO_DIR, "studio-api", "studio.cli",
-        ["--username", username, "--password", password,
-         "--display-name", display, "--role", role],
+def create_studio_account(username: str, password: str, display: str) -> None:
+    log(f"creating studio account: {username}")
+    docker_cli(
+        STUDIO_DIR, "studio-api", "studio.cli", "create-account",
+        ["--username", username, "--password", password, "--display-name", display],
         f"studio account {username}",
     )
 
 
-# ---------- Studio API ----------
-
-def studio_login(studio_url: str, username: str, password: str) -> str:
-    code, body = http_request(
-        "POST", f"{studio_url}/api/auth/login",
-        body={"username": username, "password": password},
-    )
-    if code != 200:
-        die(f"studio admin login failed for {username} (HTTP {code}): {body}")
-    try:
-        token = json.loads(body).get("token", "")
-    except json.JSONDecodeError:
-        token = ""
-    if not token:
-        die(f"studio admin login returned no token: {body}")
-    return token
-
-
-def studio_seed_provider(studio_url: str, admin_token: str) -> None:
+def studio_seed_provider() -> None:
     name = env_required("PROVIDER_NAME")
     base_url = env_required("PROVIDER_BASE_URL")
     model = env_required("PROVIDER_MODEL")
     api_key = env_required("PROVIDER_API_KEY")
 
-    code, body = http_request("GET", f"{studio_url}/api/provider-configs", token=admin_token)
-    if code == 200 and len(json.loads(body)) > 0:
-        ok("studio provider already configured — leaving untouched")
-        return
-
     log(f"creating studio provider: {name}")
-    code, body = http_request(
-        "POST", f"{studio_url}/api/provider-configs", token=admin_token,
-        body={"name": name, "base_url": base_url, "api_key": api_key, "default_model": model},
+    docker_cli(
+        STUDIO_DIR, "studio-api", "studio.cli", "create-provider",
+        ["--name", name, "--base-url", base_url,
+         "--api-key", api_key, "--default-model", model],
+        f"studio provider {name}",
     )
-    if code != 200:
-        die(f"create provider failed (HTTP {code}): {body}")
-    ok("studio provider created")
 
 
 # ---------- main ----------
@@ -230,35 +206,25 @@ def main() -> None:
     chat_url = env_required("CHAT_URL")
     studio_url = env_required("STUDIO_URL")
 
-    admin_user = env_required("SEED_ADMIN_USER")
-    admin_pass = env_required("SEED_ADMIN_PASS")
-    admin_display = env_required("SEED_ADMIN_DISPLAY")
-
     chat_users = parse_users("CHAT_SEED_USERS")
     studio_users = parse_users("STUDIO_SEED_USERS")
 
     log(f"studio: {studio_url}  chat: {chat_url}")
-    log(f"admin: {admin_user}")
     log(f"chat users  : {', '.join(u.username for u in chat_users)}")
     log(f"studio users: {', '.join(u.username for u in studio_users)}")
     wait_health(chat_url, "chat-api")
     wait_health(studio_url, "studio-api")
 
-    # Studio admin (studio-only — Chat has no admin concept).
-    create_studio_account(admin_user, admin_pass, admin_display, "admin")
-
     for u in chat_users:
         create_chat_account(u)
     for u in studio_users:
-        create_studio_account(u.username, u.password, u.display, "user")
+        create_studio_account(u.username, u.password, u.display)
 
-    admin_token = studio_login(studio_url, admin_user, admin_pass)
-    studio_seed_provider(studio_url, admin_token)
+    studio_seed_provider()
 
     print()
     print("---")
     print("seed done. credentials:")
-    print(f"  studio admin: {admin_user} / {admin_pass}   ({studio_url})")
     for u in chat_users:
         print(f"  chat user   : {u.username} / {u.password}   ({chat_url})")
     for u in studio_users:

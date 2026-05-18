@@ -6,11 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from studio.db import get_db
-from studio.deps import CurrentAccountDep, get_account_contact, get_account_persona, is_admin, new_id
+from studio.deps import CurrentAccountDep, get_account_contact, get_account_persona, new_id
 from studio.db import utc_now
 from studio.enums import DistillJobStatus
 from studio.models import DistillJob, Inbox
-from studio.provider_policy import resolve_provider_config
+from studio.provider_policy import get_default_provider
 from studio.schemas import DistillJobCreate
 from studio.serializers import s_distill_job
 
@@ -19,10 +19,8 @@ router = APIRouter()
 
 @router.get("/api/distill-jobs")
 def list_distill_jobs(db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
-    """获取蒸馏任务列表，按创建时间降序排列。管理员可看到所有账号的，普通用户只能看到自己的。"""
-    query = db.query(DistillJob)
-    if not is_admin(account):
-        query = query.filter(DistillJob.account_id == account.id)
+    """获取当前账号的蒸馏任务列表，按创建时间降序排列。"""
+    query = db.query(DistillJob).filter(DistillJob.account_id == account.id)
     items = query.order_by(DistillJob.created_at.desc()).all()
     return [s_distill_job(j) for j in items]
 
@@ -48,9 +46,7 @@ def create_distill_job(payload: DistillJobCreate, db: Annotated[Session, Depends
 
     if payload.target_persona_id is not None:
         get_account_persona(db, account, payload.target_persona_id)
-    if payload.provider_config_id is not None and not is_admin(account):
-        raise HTTPException(status_code=403, detail="只有管理员可以指定 Provider")
-    provider_config = resolve_provider_config(db, payload.provider_config_id)
+    provider_config = get_default_provider(db)
     if not provider_config:
         raise HTTPException(status_code=409, detail="没有可用的全局默认 Provider")
 
@@ -82,9 +78,9 @@ def create_distill_job(payload: DistillJobCreate, db: Annotated[Session, Depends
 @router.get("/api/distill-jobs/{job_id}")
 def get_distill_job(job_id: str, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
     """获取单个蒸馏任务的详情和当前进度。"""
-    query = db.query(DistillJob).filter(DistillJob.id == job_id)
-    if not is_admin(account):
-        query = query.filter(DistillJob.account_id == account.id)
+    query = db.query(DistillJob).filter(
+        DistillJob.id == job_id, DistillJob.account_id == account.id
+    )
     j = query.first()
     if not j:
         raise HTTPException(status_code=404, detail="Distill Job 不存在")

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from studio.db import get_db, utc_now
-from studio.deps import CurrentAccountDep, get_account_persona, is_admin, new_id
+from studio.deps import CurrentAccountDep, get_account_persona, new_id
 from studio.enums import PersonaStatus
 from studio.models import Contact, Inbox, Persona
 from studio.schemas import PersonaCreate, PersonaUpdate
@@ -26,10 +26,8 @@ def _validate_timezone(tz: str) -> str:
 
 @router.get("/api/personas")
 def list_personas(db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
-    """获取人设列表，按创建时间降序排列。管理员可看到所有账号的人设，普通用户只能看到自己的。"""
-    query = db.query(Persona)
-    if not is_admin(account):
-        query = query.filter(Persona.account_id == account.id)
+    """获取当前账号的人设列表，按创建时间降序排列。"""
+    query = db.query(Persona).filter(Persona.account_id == account.id)
     items = query.order_by(Persona.created_at.desc()).all()
     return [s_persona(p) for p in items]
 

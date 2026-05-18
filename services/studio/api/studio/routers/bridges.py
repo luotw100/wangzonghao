@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from studio.db import get_db, utc_now
-from studio.deps import CurrentAccountDep, get_account_bridge, is_admin
+from studio.deps import CurrentAccountDep, get_account_bridge
 from studio.enums import BridgeStatus, OutboundStatus
 from studio.models import Bridge, Inbox, OutboundMessage
 from studio.serializers import s_bridge
@@ -16,13 +16,14 @@ router = APIRouter()
 
 @router.get("/api/bridges")
 def list_bridges(db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
-    """获取 Bridge 列表（已撤销的除外），按创建时间降序排列。管理员可看到所有账号的，普通用户只能看到自己的。
+    """获取当前账号的 Bridge 列表（已撤销的除外），按创建时间降序排列。
 
     Bridge 代表一个运行中的守护进程实例，由 Bridge 守护程序首次握手时自动创建，用户无法手动创建。
     """
-    query = db.query(Bridge).filter(Bridge.status != BridgeStatus.REVOKED)
-    if not is_admin(account):
-        query = query.filter(Bridge.account_id == account.id)
+    query = db.query(Bridge).filter(
+        Bridge.status != BridgeStatus.REVOKED,
+        Bridge.account_id == account.id,
+    )
     items = query.order_by(Bridge.created_at.desc()).all()
     return [s_bridge(b) for b in items]
 

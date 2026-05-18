@@ -4,8 +4,6 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 from studio.enums import (
-    AccountRole,
-    AccountStatus,
     ContactStatus,
     OutboundAckResult,
     OutboundMessageType,
@@ -27,62 +25,11 @@ class LoginRequest(StrictModel):
     password: str = Field(description="明文密码（传输层走 HTTPS 加密）")
 
 
-class AccountCreate(StrictModel):
-    """创建账号请求体（仅管理员可调用）。"""
-
-    username: str = Field(description="登录用用户名，全局唯一")
-    password: str = Field(description="初始密码")
-    display_name: Optional[str] = Field(description="显示名称（可选）")
-    role: AccountRole = Field(description="账号角色：admin（管理员，可管理所有账号和全局配置）/ user（普通用户，只能管理自己的数据）")
-
-
-class AccountUpdate(StrictModel):
-    """更新账号信息请求体（仅管理员可调用）。只传需要修改的字段。"""
-
-    display_name: Optional[str] = Field(default=None, description="新显示名称，传 null 可清除")
-    role: Optional[AccountRole] = Field(default=None, description="新角色")
-    status: Optional[AccountStatus] = Field(
-        default=None,
-        description="新状态：active（正常）/ disabled（禁用）。设为非 active 时，该账号的所有 session 会被立即清除，强制下线。",
-    )
-
-
-class AccountPasswordReset(StrictModel):
-    """管理员重置他人密码请求体。重置后该账号的所有 session 立即失效。"""
-
-    password: str = Field(description="新密码（明文）")
-
-
 class OwnPasswordChange(StrictModel):
     """修改自己密码的请求体。修改成功后当前账号的所有 session（含其他设备）立即失效，需重新登录。"""
 
     current_password: str = Field(description="当前密码（用于验证身份）")
     new_password: str = Field(description="新密码（明文）")
-
-
-# --- Provider Configs ---
-
-class ProviderConfigCreate(StrictModel):
-    """创建 LLM Provider 配置请求体（仅管理员可调用）。
-
-    Provider 是全局共享的 LLM 服务配置，蒸馏（Distill）和自动回复（Autoreply）都会用到。
-    每次创建新 Provider 时，旧的 is_default 会被自动取消，新 Provider 成为默认。
-    base_url 必须在白名单中，否则返回 400。
-    """
-
-    name: str = Field(description="配置名称，便于人工识别（如 'GPT-4o 正式环境'）")
-    base_url: str = Field(description="LLM 服务的 OpenAI 兼容接口根地址，必须在系统白名单中")
-    api_key: Optional[str] = Field(description="API Key（可选，部分私有部署的服务不需要）")
-    default_model: str = Field(description="默认使用的模型 ID，如 gpt-4o、qwen-max 等")
-
-
-class ProviderConfigUpdate(StrictModel):
-    """更新 LLM Provider 配置请求体（仅管理员可调用）。只传需要修改的字段。"""
-
-    name: Optional[str] = Field(default=None, description="新名称")
-    base_url: Optional[str] = Field(default=None, description="新接口根地址，必须在系统白名单中")
-    api_key: Optional[str] = Field(default=None, description="新 API Key，传 null 可清除")
-    default_model: Optional[str] = Field(default=None, description="新默认模型 ID")
 
 
 # --- Personas ---
@@ -126,7 +73,6 @@ class InboxUpdate(StrictModel):
     """更新 Inbox 配置请求体。只传需要修改的字段。
 
     Inbox 代表一个平台账号（如某个微信号、飞书账号），由 Bridge 守护进程握手时自动创建，不支持手动创建。
-    `reply_provider_config_id` 和 `clear_reply_provider` 仅管理员可修改。
     """
 
     display_name: Optional[str] = Field(default=None, description="新显示名称")
@@ -138,20 +84,12 @@ class InboxUpdate(StrictModel):
         default=None,
         description="重新绑定到指定 Bridge。通常无需手动操作，Bridge 握手时会自动更新。",
     )
-    reply_provider_config_id: Optional[str] = Field(
-        default=None,
-        description="（仅管理员）为此 Inbox 指定专属的 LLM Provider，优先级高于全局默认 Provider。",
-    )
     enabled: Optional[bool] = Field(
         default=None,
         description="是否启用自动回复功能。关闭后此 Inbox 下的联系人不会触发 AI 回复，但消息仍会正常存储。",
     )
     clear_bridge: Optional[bool] = Field(
         default=None, description="传 true 可解除与当前 Bridge 的绑定，使 Inbox 进入未绑定状态。"
-    )
-    clear_reply_provider: Optional[bool] = Field(
-        default=None,
-        description="（仅管理员）传 true 可清除 Inbox 级别的 Provider 覆盖，回退到全局默认 Provider。",
     )
 
 
@@ -161,7 +99,6 @@ class ContactUpdate(StrictModel):
     """更新 Contact 配置请求体。只传需要修改的字段。
 
     Contact 是平台上的一个对话方（如一个微信好友），在 Bridge 收到消息时自动创建。
-    `reply_provider_config_id` 和 `clear_reply_provider` 仅管理员可修改。
     """
 
     display_name: Optional[str] = Field(default=None, description="新显示名称")
@@ -172,14 +109,6 @@ class ContactUpdate(StrictModel):
     persona_id: Optional[str] = Field(
         default=None,
         description="为此联系人单独指定使用的人设 ID，优先级高于 Inbox 的 default_persona_id。",
-    )
-    reply_provider_config_id: Optional[str] = Field(
-        default=None,
-        description="（仅管理员）为此联系人指定专属的 LLM Provider，优先级最高，高于 Inbox 级别和全局默认。",
-    )
-    clear_reply_provider: Optional[bool] = Field(
-        default=None,
-        description="（仅管理员）传 true 可清除 Contact 级别的 Provider 覆盖。",
     )
     takeover: Optional[bool] = Field(
         default=None,
@@ -211,10 +140,6 @@ class DistillJobCreate(StrictModel):
     target_persona_id: Optional[str] = Field(
         default=None,
         description="蒸馏结果写入的目标人设 ID。不传则由系统选择默认人设。该人设不能已有进行中的蒸馏任务。",
-    )
-    provider_config_id: Optional[str] = Field(
-        default=None,
-        description="（仅管理员）指定执行蒸馏时使用的 LLM Provider。不传则使用全局默认 Provider，若无可用 Provider 则返回 409。",
     )
 
 

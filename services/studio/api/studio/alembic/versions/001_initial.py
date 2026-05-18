@@ -25,11 +25,9 @@ def upgrade() -> None:
         sa.Column("username", sa.String(64), nullable=False, unique=True),
         sa.Column("password_hash", sa.String(128), nullable=False),
         sa.Column("display_name", sa.String(128), nullable=True),
-        sa.Column("role", sa.String(16), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.CheckConstraint("role IN ('admin', 'user')", name="ck_account_role"),
         sa.CheckConstraint("status IN ('active', 'disabled')", name="ck_account_status"),
     )
     op.create_index("ix_accounts_id", "accounts", ["id"])
@@ -48,7 +46,6 @@ def upgrade() -> None:
     op.create_table(
         "provider_configs",
         sa.Column("id", sa.String(48), primary_key=True),
-        sa.Column("owner_account_id", sa.String(48), sa.ForeignKey("accounts.id"), nullable=False),
         sa.Column("name", sa.String(128), nullable=False),
         sa.Column("base_url", sa.String(512), nullable=False),
         sa.Column("api_key", sa.Text, nullable=True),
@@ -62,7 +59,6 @@ def upgrade() -> None:
         sa.CheckConstraint("status IN ('active', 'disabled')", name="ck_provider_status"),
     )
     op.create_index("ix_provider_configs_id", "provider_configs", ["id"])
-    op.create_index("ix_provider_configs_owner_account_id", "provider_configs", ["owner_account_id"])
 
     op.create_table(
         "personas",
@@ -103,7 +99,6 @@ def upgrade() -> None:
         sa.Column("platform", sa.String(32), nullable=False),
         sa.Column("display_name", sa.String(256), nullable=False),
         sa.Column("default_persona_id", sa.String(48), sa.ForeignKey("personas.id"), nullable=True),
-        sa.Column("reply_provider_config_id", sa.String(48), sa.ForeignKey("provider_configs.id"), nullable=True),
         sa.Column("enabled", sa.Boolean, nullable=False),
         sa.Column("platform_self_id", sa.String(128), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -121,7 +116,6 @@ def upgrade() -> None:
         sa.Column("display_name", sa.String(256), nullable=False),
         sa.Column("card_md", sa.Text, nullable=True),
         sa.Column("persona_id", sa.String(48), sa.ForeignKey("personas.id"), nullable=True),
-        sa.Column("reply_provider_config_id", sa.String(48), sa.ForeignKey("provider_configs.id"), nullable=True),
         sa.Column("takeover", sa.Boolean, nullable=False),
         sa.Column("reply_policy", sa.String(16), nullable=False),
         sa.Column("pending_reply", sa.Boolean, nullable=False),

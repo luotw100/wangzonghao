@@ -12,8 +12,6 @@ from studio.deps import (
     get_account_contact,
     get_account_inbox,
     get_account_persona,
-    get_provider_or_404,
-    is_admin,
     new_id,
 )
 from studio.enums import OutboundStatus
@@ -26,13 +24,11 @@ router = APIRouter()
 
 @router.get("/api/inboxes")
 def list_inboxes(db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
-    """获取 Inbox 列表，按创建时间降序排列。管理员可看到所有账号的，普通用户只能看到自己的。
+    """获取当前账号的 Inbox 列表，按创建时间降序排列。
 
     Inbox 代表一个平台账号身份（如一个微信号），由 Bridge 握手时自动创建，不支持手动创建。
     """
-    query = db.query(Inbox)
-    if not is_admin(account):
-        query = query.filter(Inbox.account_id == account.id)
+    query = db.query(Inbox).filter(Inbox.account_id == account.id)
     items = query.order_by(Inbox.created_at.desc()).all()
     return [s_inbox(i) for i in items]
 
@@ -47,7 +43,6 @@ def get_inbox(inbox_id: str, db: Annotated[Session, Depends(get_db)], account: C
 def update_inbox(inbox_id: str, payload: InboxUpdate, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
     """更新 Inbox 配置。只传需要修改的字段。
 
-    - `reply_provider_config_id` / `clear_reply_provider`：仅管理员可修改，普通用户操作返回 403。
     - `clear_bridge=true`：解除与当前 Bridge 的绑定，Inbox 进入未绑定状态，不再收发消息。
     - `enabled=false`：关闭自动回复，消息仍正常存储但不触发 AI 回复。
     """
@@ -63,13 +58,6 @@ def update_inbox(inbox_id: str, payload: InboxUpdate, db: Annotated[Session, Dep
         inbox.bridge_id = payload.bridge_id
     if payload.clear_bridge:
         inbox.bridge_id = None
-    if ("reply_provider_config_id" in fields or payload.clear_reply_provider) and not is_admin(account):
-        raise HTTPException(status_code=403, detail="只有管理员可以修改 Provider")
-    if "reply_provider_config_id" in fields and payload.reply_provider_config_id is not None:
-        get_provider_or_404(db, payload.reply_provider_config_id)
-        inbox.reply_provider_config_id = payload.reply_provider_config_id
-    if payload.clear_reply_provider:
-        inbox.reply_provider_config_id = None
     if "enabled" in fields and payload.enabled is not None:
         inbox.enabled = payload.enabled
     inbox.updated_at = utc_now()

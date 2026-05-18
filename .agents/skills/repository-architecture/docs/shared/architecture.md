@@ -59,9 +59,7 @@ Bridge 当前不负责：
 
 Studio 当前负责：
 
-- Account auth；
-- admin account management；
-- admin-only ProviderConfig CRUD；
+- Account auth（仅登录 / 登出 / 改自己密码）；
 - Persona CRUD；
 - Bridge auto-registration 和 revoke；
 - Inbox list/default settings；
@@ -82,24 +80,23 @@ Account
   │    ├─ Contact
   │    │    ├─ Message
   │    │    └─ OutboundMessage
-  │    ├─ default Persona ref
-  │    └─ optional ProviderConfig override ref
+  │    └─ default Persona ref
   └─ DistillJob
        ├─ source Inbox
        ├─ target Persona
-       └─ ProviderConfig
+       └─ resolved ProviderConfig (恒为全局默认)
 
 ProviderConfig
-        └─ owner Account ref
+        单个全局配置，无 owner，由服务端 CLI 维护
 ```
 
 ### Account
 
-Studio 登录账号，带 `admin | user` role。数据库没有任何账号时，Web 登录页可创建首个 admin；之后账号创建、列表、停用/启用和重置密码的主路径是 Studio Web 设置页。Web auth session 和 Bridge session 是两套表。
+Studio 登录账号，无角色概念（没有 admin）。账号只能用服务端 `studio.cli create-account` 开通；Web 端只有登录 / 登出 / 改自己密码。每个账号只能读写自己的数据。Web 与 Bridge 共用同一张 account 粒度 session 表。
 
 ### ProviderConfig
 
-管理员维护的全局 LLM Provider 配置，包含 `base_url`、`api_key`、`default_model`、`scope`、`status`、`is_default`。Inbox 和 Contact 保留可选 Provider override；普通 user UI 不展示 Provider。
+运维通过 `studio.cli create-provider` 维护的单个全局 LLM Provider 配置，包含 `base_url`、`api_key`、`default_model`、`scope`、`status`、`is_default`；最新创建者成为唯一默认。没有 per-Inbox / per-Contact override，reply/distill 恒用全局默认 Provider。
 
 ### Persona
 
@@ -111,11 +108,11 @@ Studio 登录账号，带 `admin | user` role。数据库没有任何账号时�
 
 ### Inbox
 
-一个平台身份，例如一个 Chat account。Handshake 按 `(account_id, platform, platform_self_id)` upsert Inbox。Inbox 可以绑定一个 Bridge，并保存默认 Persona 和可选 Provider override。
+一个平台身份，例如一个 Chat account。Handshake 按 `(account_id, platform, platform_self_id)` upsert Inbox。Inbox 可以绑定一个 Bridge，并保存默认 Persona。
 
 ### Contact
 
-接管单元，属于一个 Inbox，对应平台里的一个 peer。Contact 保存 display name、关系卡、Persona 引用、可选 Provider override、`takeover`（Bridge 是否上报消息）、`reply_policy`（`disabled | autoreply`，Studio 是否自动回复）、`pending_reply` flag 和 status。
+接管单元，属于一个 Inbox，对应平台里的一个 peer。Contact 保存 display name、关系卡、Persona 引用、`takeover`（Bridge 是否上报消息）、`reply_policy`（`disabled | autoreply`，Studio 是否自动回复）、`pending_reply` flag 和 status。
 
 ### Message
 

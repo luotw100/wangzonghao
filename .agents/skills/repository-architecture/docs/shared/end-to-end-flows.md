@@ -148,7 +148,7 @@ maybe_reply(contact_id)
 - Contact 存在且 `status == active`。
 - Contact `reply_policy == 'autoreply'`。
 - Inbox 存在且 enabled。
-- Provider 来自 `contact.reply_provider_config_id or inbox.reply_provider_config_id or global default provider`。
+- Provider 恒为 `get_default_provider(db)`（CLI 维护的全局默认）。
 - Provider 存在且有 API key。
 - Persona 存在。
 - History 非空。

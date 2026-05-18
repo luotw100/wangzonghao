@@ -67,13 +67,11 @@ async function request<T>(path: string, options: RequestInit = {}, timeout = 150
 // --- Types ---
 
 export type AccountStatus = 'active' | 'disabled';
-export type AccountRole = 'admin' | 'user';
 
 export interface Account {
   id: string;
   username: string;
   display_name: string | null;
-  role: AccountRole;
   status: AccountStatus;
   created_at: string;
 }
@@ -81,21 +79,6 @@ export interface Account {
 export interface LoginResponse {
   token: string;
   account: Account;
-}
-
-export interface ProviderConfig {
-  id: string;
-  owner_account_id: string;
-  name: string;
-  base_url: string;
-  api_key_preview?: string;
-  has_api_key?: boolean;
-  default_model: string;
-  scope: 'global';
-  status: 'active' | 'disabled';
-  is_default: boolean;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface Persona {
@@ -128,7 +111,6 @@ export interface Inbox {
   platform: string;
   display_name: string;
   default_persona_id: string | null;
-  reply_provider_config_id: string | null;
   enabled: boolean;
   platform_self_id: string | null;
   created_at: string;
@@ -142,7 +124,6 @@ export interface Contact {
   display_name: string;
   card_md: string | null;
   persona_id: string | null;
-  reply_provider_config_id: string | null;
   takeover: boolean;
   reply_policy: 'disabled' | 'autoreply';
   pending_reply: boolean;
@@ -191,38 +172,6 @@ export interface DistillJob {
   finished_at: string | null;
 }
 
-export interface AdminOverviewTotals {
-  accounts: number;
-  admins: number;
-  users: number;
-  bridges_online: number;
-  bridges_offline: number;
-  inboxes: number;
-  personas: number;
-  contacts: number;
-  contacts_autoreply: number;
-  messages: number;
-  providers: number;
-  outbound_pending: number;
-}
-
-export interface AdminOverviewAccount {
-  account: Account;
-  bridges_online: number;
-  bridges_offline: number;
-  bridges_revoked: number;
-  inboxes: number;
-  personas: number;
-  contacts: number;
-  contacts_autoreply: number;
-  messages: number;
-}
-
-export interface AdminOverview {
-  totals: AdminOverviewTotals;
-  accounts: AdminOverviewAccount[];
-}
-
 // --- Auth ---
 
 export function login(username: string, password: string): Promise<LoginResponse> {
@@ -247,78 +196,6 @@ export function changeOwnPassword(data: { current_password: string; new_password
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-}
-
-// --- Admin overview ---
-
-export function getAdminOverview() {
-  return request<AdminOverview>('/admin/overview');
-}
-
-// --- Account Admin ---
-
-export function getAccounts() {
-  return request<Account[]>('/accounts');
-}
-
-export function createAccount(data: {
-  username: string; password: string; display_name: string | null; role: AccountRole;
-}) {
-  return request<Account>('/accounts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-}
-
-export function updateAccount(
-  id: string,
-  data: { display_name?: string | null; role?: AccountRole; status?: AccountStatus },
-) {
-  return request<Account>(`/accounts/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-}
-
-export function resetAccountPassword(id: string, password: string) {
-  return request<{ status: string; id: string }>(`/accounts/${id}/password`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password }),
-  });
-}
-
-// --- Provider Configs ---
-
-export function getProviderConfigs() {
-  return request<ProviderConfig[]>('/provider-configs');
-}
-
-export function createProviderConfig(data: {
-  name: string; base_url: string; api_key: string | null; default_model: string;
-}) {
-  return request<ProviderConfig>('/provider-configs', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-}
-
-export function updateProviderConfig(
-  id: string,
-  data: { name?: string; base_url?: string; api_key?: string; default_model?: string },
-) {
-  return request<ProviderConfig>(`/provider-configs/${id}`, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  });
-}
-
-export function deleteProviderConfig(id: string) {
-  return request<void>(`/provider-configs/${id}`, { method: 'DELETE' });
 }
 
 // --- Personas ---
@@ -361,8 +238,6 @@ export function updateInbox(
   data: {
     display_name?: string;
     default_persona_id?: string;
-    reply_provider_config_id?: string;
-    clear_reply_provider?: boolean;
     enabled?: boolean;
   },
 ) {
@@ -387,8 +262,6 @@ export function updateContact(
     display_name?: string;
     card_md?: string | null;
     persona_id?: string;
-    reply_provider_config_id?: string;
-    clear_reply_provider?: boolean;
     takeover?: boolean;
     reply_policy?: 'disabled' | 'autoreply';
     status?: 'active' | 'archived';
@@ -408,7 +281,7 @@ export function getDistillJob(jobId: string) {
   return request<DistillJob>(`/distill-jobs/${jobId}`);
 }
 export function createDistillJob(data: {
-  contact_ids: string[]; target_persona_id?: string | null; provider_config_id?: string | null;
+  contact_ids: string[]; target_persona_id?: string | null;
 }) {
   return request<DistillJob>('/distill-jobs', {
     method: 'POST',

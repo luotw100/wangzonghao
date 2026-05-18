@@ -9,8 +9,8 @@ from sqlalchemy.orm import Session
 
 from studio.auth_utils import hash_password, hash_token, new_session_token, verify_password
 from studio.db import get_db, utc_now
-from studio.enums import AccountRole, AccountStatus, BridgeStatus
-from studio.models import Account, AuthSession, Bridge, Inbox, Persona, ProviderConfig
+from studio.enums import AccountStatus, BridgeStatus
+from studio.models import Account, AuthSession, Bridge, Inbox, Persona
 
 
 def new_id(prefix: str) -> str:
@@ -31,7 +31,6 @@ def create_account_record(
     username: str,
     password: str,
     display_name: Optional[str],
-    role: AccountRole,
 ) -> Account:
     username = username.strip()
     if not username:
@@ -47,7 +46,6 @@ def create_account_record(
         username=username,
         password_hash=hash_password(password),
         display_name=display_name,
-        role=role,
         status=AccountStatus.ACTIVE,
         created_at=now,
         updated_at=now,
@@ -70,7 +68,7 @@ def revoke_account_sessions(db: Session, account_id: str) -> None:
     """Kill every session for an account — web and bridge alike.
 
     The single security control under sliding expiry. Called on password
-    change, admin password reset, and account disable.
+    change.
     """
     db.query(AuthSession).filter(
         AuthSession.account_id == account_id
@@ -102,28 +100,7 @@ def get_account(
     return account
 
 
-def is_admin(account: Account) -> bool:
-    return account.role == AccountRole.ADMIN
-
-
-def require_admin(account: Account) -> Account:
-    if not is_admin(account):
-        raise HTTPException(status_code=403, detail="需要管理员权限")
-    return account
-
-
 CurrentAccountDep = Annotated[Account, Depends(get_account)]
-
-
-def _admin_dep(
-    db: Annotated[Session, Depends(get_db)],
-    authorization: Annotated[Optional[str], Header()] = None,
-) -> Account:
-    account = get_account(db, authorization)
-    return require_admin(account)
-
-
-AdminAccountDep = Annotated[Account, Depends(_admin_dep)]
 
 
 # ---------------------------------------------------------------------------
@@ -178,17 +155,10 @@ BridgeDep = Annotated[Bridge, Depends(get_authed_bridge)]
 DbDep = Annotated[Session, Depends(get_db)]
 
 
-def get_provider_or_404(db: Session, provider_id: str) -> ProviderConfig:
-    p = db.query(ProviderConfig).filter(ProviderConfig.id == provider_id).first()
-    if not p:
-        raise HTTPException(status_code=404, detail="Provider Config 不存在")
-    return p
-
-
 def get_account_persona(db: Session, account: Account, persona_id: str) -> Persona:
-    query = db.query(Persona).filter(Persona.id == persona_id)
-    if not is_admin(account):
-        query = query.filter(Persona.account_id == account.id)
+    query = db.query(Persona).filter(
+        Persona.id == persona_id, Persona.account_id == account.id
+    )
     p = query.first()
     if not p:
         raise HTTPException(status_code=404, detail="Persona 不存在")
@@ -196,9 +166,9 @@ def get_account_persona(db: Session, account: Account, persona_id: str) -> Perso
 
 
 def get_account_bridge(db: Session, account: Account, bridge_id: str) -> Bridge:
-    query = db.query(Bridge).filter(Bridge.id == bridge_id)
-    if not is_admin(account):
-        query = query.filter(Bridge.account_id == account.id)
+    query = db.query(Bridge).filter(
+        Bridge.id == bridge_id, Bridge.account_id == account.id
+    )
     b = query.first()
     if not b:
         raise HTTPException(status_code=404, detail="Bridge 不存在")
@@ -206,9 +176,9 @@ def get_account_bridge(db: Session, account: Account, bridge_id: str) -> Bridge:
 
 
 def get_account_inbox(db: Session, account: Account, inbox_id: str) -> Inbox:
-    query = db.query(Inbox).filter(Inbox.id == inbox_id)
-    if not is_admin(account):
-        query = query.filter(Inbox.account_id == account.id)
+    query = db.query(Inbox).filter(
+        Inbox.id == inbox_id, Inbox.account_id == account.id
+    )
     i = query.first()
     if not i:
         raise HTTPException(status_code=404, detail="Inbox 不存在")
@@ -217,9 +187,9 @@ def get_account_inbox(db: Session, account: Account, inbox_id: str) -> Inbox:
 
 def get_account_contact(db: Session, account: Account, contact_id: str):
     from studio.models import Contact
-    query = db.query(Contact).join(Inbox, Inbox.id == Contact.inbox_id).filter(Contact.id == contact_id)
-    if not is_admin(account):
-        query = query.filter(Inbox.account_id == account.id)
+    query = db.query(Contact).join(Inbox, Inbox.id == Contact.inbox_id).filter(
+        Contact.id == contact_id, Inbox.account_id == account.id
+    )
     c = query.first()
     if not c:
         raise HTTPException(status_code=404, detail="Contact 不存在")

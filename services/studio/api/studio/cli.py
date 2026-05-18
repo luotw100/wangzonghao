@@ -3,11 +3,12 @@ import argparse
 from prettytable import PrettyTable, SINGLE_BORDER
 
 from studio.auth_utils import hash_password
+from studio.clients import ALLOWED_BASE_URLS
 from studio.db import get_db, utc_now
 from studio.deps import new_id
-from studio.enums import AccountRole, AccountStatus
+from studio.enums import AccountStatus, ProviderScope, ProviderStatus
 from studio.migrate import run_migrations
-from studio.models import Account
+from studio.models import Account, ProviderConfig
 
 
 def _table(headers: list[str], rows: list[list]) -> str:
@@ -17,6 +18,14 @@ def _table(headers: list[str], rows: list[list]) -> str:
     for row in rows:
         t.add_row(["" if cell is None else str(cell) for cell in row])
     return t.get_string()
+
+
+def _mask_api_key(api_key: str | None) -> str:
+    if not api_key:
+        return ""
+    if len(api_key) <= 8:
+        return "*" * len(api_key)
+    return f"{api_key[:4]}...{api_key[-4:]}"
 
 
 def create_account(args: argparse.Namespace) -> None:
@@ -33,7 +42,6 @@ def create_account(args: argparse.Namespace) -> None:
             username=args.username,
             password_hash=hash_password(args.password),
             display_name=args.display_name,
-            role=args.role,
             status=AccountStatus.ACTIVE,
             created_at=now,
             updated_at=now,
@@ -42,8 +50,8 @@ def create_account(args: argparse.Namespace) -> None:
         db.commit()
         print(f"created studio account {account.username}")
         print(_table(
-            ["id", "username", "display_name", "role", "status"],
-            [[account.id, account.username, account.display_name, account.role, account.status]],
+            ["id", "username", "display_name", "status"],
+            [[account.id, account.username, account.display_name, account.status]],
         ))
     finally:
         db.close()
@@ -55,8 +63,8 @@ def list_accounts(_: argparse.Namespace) -> None:
     try:
         rows = []
         for account in db.query(Account).order_by(Account.created_at.asc()).all():
-            rows.append([account.id, account.username, account.display_name or "", account.role, account.status])
-        print(_table(["id", "username", "display_name", "role", "status"], rows))
+            rows.append([account.id, account.username, account.display_name or "", account.status])
+        print(_table(["id", "username", "display_name", "status"], rows))
     finally:
         db.close()
 
@@ -76,30 +84,88 @@ def reset_password(args: argparse.Namespace) -> None:
         db.close()
 
 
-def set_role(args: argparse.Namespace) -> None:
+def _validate_base_url(base_url: str) -> str:
+    normalized = base_url.rstrip("/")
+    if normalized not in ALLOWED_BASE_URLS:
+        raise SystemExit(f"base_url not in whitelist: {base_url!r}")
+    return normalized
+
+
+def create_provider(args: argparse.Namespace) -> None:
+    """Create a Provider and make it the single global default.
+
+    Provider is the only LLM config; reply brain and distill always use the
+    default global Provider. Creating a new one clears the previous default.
+    """
     run_migrations()
     db = next(get_db())
     try:
-        account = db.query(Account).filter(Account.username == args.username).first()
-        if not account:
-            raise SystemExit(f"account not found: {args.username}")
-        account.role = args.role
-        account.updated_at = utc_now()
+        now = utc_now()
+        db.query(ProviderConfig).filter(ProviderConfig.is_default.is_(True)).update(
+            {ProviderConfig.is_default: False, ProviderConfig.updated_at: now},
+            synchronize_session=False,
+        )
+        p = ProviderConfig(
+            id=new_id("p"),
+            name=args.name,
+            base_url=_validate_base_url(args.base_url),
+            api_key=args.api_key,
+            default_model=args.default_model,
+            scope=ProviderScope.GLOBAL,
+            status=ProviderStatus.ACTIVE,
+            is_default=True,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(p)
         db.commit()
-        print(f"updated role for {account.username} -> {account.role}")
+        print(f"created studio provider {p.name} (now default)")
+        print(_table(
+            ["id", "name", "base_url", "default_model", "api_key", "is_default"],
+            [[p.id, p.name, p.base_url, p.default_model, _mask_api_key(p.api_key), p.is_default]],
+        ))
+    finally:
+        db.close()
+
+
+def list_providers(_: argparse.Namespace) -> None:
+    run_migrations()
+    db = next(get_db())
+    try:
+        rows = []
+        for p in db.query(ProviderConfig).order_by(ProviderConfig.updated_at.desc()).all():
+            rows.append([p.id, p.name, p.base_url, p.default_model,
+                         _mask_api_key(p.api_key), p.status, p.is_default])
+        print(_table(
+            ["id", "name", "base_url", "default_model", "api_key", "status", "is_default"],
+            rows,
+        ))
+    finally:
+        db.close()
+
+
+def delete_provider(args: argparse.Namespace) -> None:
+    run_migrations()
+    db = next(get_db())
+    try:
+        p = db.query(ProviderConfig).filter(ProviderConfig.id == args.id).first()
+        if not p:
+            raise SystemExit(f"provider not found: {args.id}")
+        db.delete(p)
+        db.commit()
+        print(f"deleted studio provider {args.id}")
     finally:
         db.close()
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Manage Laborster Studio accounts")
+    parser = argparse.ArgumentParser(description="Manage Laborster Studio accounts and providers")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     create_parser = subparsers.add_parser("create-account")
     create_parser.add_argument("--username", required=True)
     create_parser.add_argument("--password", required=True)
     create_parser.add_argument("--display-name", required=True)
-    create_parser.add_argument("--role", choices=[r.value for r in AccountRole], required=True)
     create_parser.set_defaults(func=create_account)
 
     list_parser = subparsers.add_parser("list-accounts")
@@ -110,10 +176,19 @@ def main() -> None:
     reset_parser.add_argument("--password", required=True)
     reset_parser.set_defaults(func=reset_password)
 
-    role_parser = subparsers.add_parser("set-role")
-    role_parser.add_argument("--username", required=True)
-    role_parser.add_argument("--role", choices=[r.value for r in AccountRole], required=True)
-    role_parser.set_defaults(func=set_role)
+    pcreate_parser = subparsers.add_parser("create-provider")
+    pcreate_parser.add_argument("--name", required=True)
+    pcreate_parser.add_argument("--base-url", required=True)
+    pcreate_parser.add_argument("--api-key", default=None)
+    pcreate_parser.add_argument("--default-model", required=True)
+    pcreate_parser.set_defaults(func=create_provider)
+
+    plist_parser = subparsers.add_parser("list-providers")
+    plist_parser.set_defaults(func=list_providers)
+
+    pdelete_parser = subparsers.add_parser("delete-provider")
+    pdelete_parser.add_argument("--id", required=True)
+    pdelete_parser.set_defaults(func=delete_provider)
 
     args = parser.parse_args()
     args.func(args)

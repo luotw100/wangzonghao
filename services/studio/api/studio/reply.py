@@ -49,7 +49,7 @@ from studio.models import (
     OutboundMessage,
     Persona,
 )
-from studio.provider_policy import resolve_provider_config
+from studio.provider_policy import get_default_provider
 from studio.s3 import s3_get, s3_put
 
 logger = logging.getLogger(__name__)
@@ -139,8 +139,7 @@ def _decide(db: ORMSession, contact_id: str) -> _ReplyDecision:
     inbox = db.query(Inbox).filter(Inbox.id == contact.inbox_id).first()
     if not inbox or not inbox.enabled:
         return _ReplyDecision("inbox disabled", None, [])
-    provider_id = contact.reply_provider_config_id or inbox.reply_provider_config_id
-    pc = resolve_provider_config(db, provider_id)
+    pc = get_default_provider(db)
     if not pc or not pc.api_key:
         return _ReplyDecision("provider 缺失或没 api_key（含全局默认 Provider）", None, [])
 

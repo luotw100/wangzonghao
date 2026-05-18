@@ -18,7 +18,6 @@ Studio 使用 PostgreSQL。Schema 由 Alembic 迁移管理。所有 DateTime 列
 - `username`：`String(64)`，唯一。
 - `password_hash`：`String(128)`。
 - `display_name`：`String(128)`，nullable。
-- `role`：`String(16)`，CHECK `admin | user`。
 - `status`：`String(16)`，CHECK `active | disabled`。
 - timestamps（`timestamptz`，`created_at` / `updated_at`）。
 
@@ -31,14 +30,13 @@ Web 控制台与 Bridge daemon 共用的唯一 session 表，account 粒度，�
 - `expires_at`：`timestamptz`，NOT NULL，24h 滑动续期。
 - `created_at`：`timestamptz`。
 - `account = relationship("Account")`。
-- 撤销是 account 粒度的唯一安全控制（`revoke_account_sessions`）：改密码 / 管理员重置 / 禁用账号删除该 account 全部 session。
+- 撤销是 account 粒度的唯一安全控制（`revoke_account_sessions`）：改密码删除该 account 全部 session。
 
 ### `provider_configs` — `ProviderConfig`
 
 OpenAI-compatible LLM Provider。
 
 - `id`：`String(48)`，格式 `p_` + 完整 UUID hex。
-- `owner_account_id`：`String(48)`。
 - `name`：`String(128)`。
 - `base_url`：`String(512)`。
 - `api_key`：`Text`，nullable。
@@ -81,7 +79,6 @@ OpenAI-compatible LLM Provider。
 - `platform`：`String(32)`。
 - `display_name`：`String(256)`。
 - `default_persona_id`：`String(48)`，nullable。
-- `reply_provider_config_id`：`String(48)`，nullable。
 - `enabled`：Boolean。
 - `platform_self_id`：`String(128)`，nullable；Bridge handshake 上报。
 - timestamps（`timestamptz`）。
@@ -96,7 +93,6 @@ OpenAI-compatible LLM Provider。
 - `display_name`：`String(256)`，展示名（mutable）。
 - `card_md`：`Text`，nullable。
 - `persona_id`：`String(48)`，nullable。
-- `reply_provider_config_id`：`String(48)`，nullable override。
 - `takeover`：Boolean。Bridge 是否上报该会话消息。`True` → Bridge 将此 peer 的本地消息上传到 Studio；`False` → Bridge 本地采集但不推送。
 - `reply_policy`：`String(16)`，CHECK `disabled | autoreply`。Studio reply brain 是否自动回复。默认 `disabled`；设为 `autoreply` 后对方发消息会触发 LLM 回复。
 - `pending_reply`：Boolean。
@@ -167,8 +163,10 @@ LLM 调用日志。
 ## 关系图
 
 ```text
+ProviderConfig
+  单个全局配置，无 owner，由服务端 CLI 维护
+
 Account
-  may own ProviderConfig as admin creator
   owns Persona
   owns Bridge
   owns Inbox
@@ -181,13 +179,11 @@ Bridge
 Inbox
   owns Contact
   references default Persona
-  optionally references ProviderConfig override
 
 Contact
   owns Message
   owns OutboundMessage
   references Persona
-  optionally references ProviderConfig override
 
 Contact 有两个创建入口：
 
@@ -214,4 +210,4 @@ Bridge 上传新媒体时写入；`POST /api/bridge/media/check-or-presign` 查�
 
 ## Provider 解析规则
 
-当前 Studio Provider 由管理员维护。普通用户 UI 不展示 Provider。Reply 和 Distill 使用的 Provider 解析为：Contact override → Inbox override → 全局默认 Provider。
+Studio Provider 是单个全局配置，由运维通过 `studio.cli create-provider` 维护（最新创建者 `is_default=True`，旧的清除）。没有 per-Inbox / per-Contact override。Reply 和 Distill 恒用 `get_default_provider` 返回的全局默认 Provider；无可用默认 Provider 时 distill 创建返回 409、reply 跳过。

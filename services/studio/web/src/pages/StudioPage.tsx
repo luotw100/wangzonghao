@@ -1,73 +1,56 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as api from '../lib/api';
 import type {
-  Account,
-  AccountRole,
   Bridge,
   Contact,
   ConversationSummary,
   Inbox,
   Message,
   Persona,
-  ProviderConfig,
 } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
-type Tab = 'overview' | 'takeover' | 'persona' | 'device' | 'settings';
+type Tab = 'takeover' | 'persona' | 'device';
 type ChangeHandler = () => void | Promise<void>;
 
-const ADMIN_NAV: { id: Tab; label: string; icon: string }[] = [
-  { id: 'overview', label: '总览', icon: '◎' },
-  { id: 'takeover', label: '接管', icon: '◇' },
-  { id: 'persona', label: '人设', icon: '✶' },
-  { id: 'device', label: '设备', icon: '⌥' },
-  { id: 'settings', label: '设置', icon: '⚙' },
-];
-
-const USER_NAV: { id: Tab; label: string; icon: string }[] = [
+const NAV: { id: Tab; label: string; icon: string }[] = [
   { id: 'takeover', label: '接管', icon: '◇' },
   { id: 'persona', label: '人设', icon: '✶' },
   { id: 'device', label: '设备', icon: '⌥' },
 ];
 
 const TAB_CONTEXT: Record<Tab, { ctx: string; sub: string }> = {
-  overview: { ctx: '总览', sub: '全部账号与数据一览' },
   takeover: { ctx: '接管', sub: '你负责的所有粉丝' },
   persona: { ctx: '人设', sub: '你可以扮演的人设' },
   device: { ctx: '设备', sub: '主播电脑上的接入程序' },
-  settings: { ctx: '设置', sub: '账号与密码' },
 };
 
 export function StudioPage() {
   const navigate = useNavigate();
   const { account: me, logout } = useAuth();
-  const isAdmin = me?.role === 'admin';
-  const [tab, setTab] = useState<Tab>(isAdmin ? 'overview' : 'takeover');
+  const [tab, setTab] = useState<Tab>('takeover');
   const [bridges, setBridges] = useState<Bridge[]>([]);
   const [personas, setPersonas] = useState<Persona[]>([]);
   const [inboxes, setInboxes] = useState<Inbox[]>([]);
-  const [providers, setProviders] = useState<ProviderConfig[]>([]);
   const [error, setError] = useState('');
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
 
   const loadAll = useCallback(async () => {
     try {
-      const [nextBridges, nextPersonas, nextInboxes, nextProviders] = await Promise.all([
+      const [nextBridges, nextPersonas, nextInboxes] = await Promise.all([
         api.getBridges(),
         api.getPersonas(),
         api.getInboxes(),
-        isAdmin ? api.getProviderConfigs() : Promise.resolve([]),
       ]);
       setBridges(nextBridges);
       setPersonas(nextPersonas);
       setInboxes(nextInboxes);
-      setProviders(nextProviders);
     } catch (err) {
       setError(String(err));
     }
-  }, [isAdmin]);
+  }, []);
 
   useEffect(() => {
     loadAll();
@@ -101,7 +84,7 @@ export function StudioPage() {
       >
         <span className="lab-mark" style={{ marginBottom: 18 }} />
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8, width: '100%', alignItems: 'center' }}>
-          {(isAdmin ? ADMIN_NAV : USER_NAV).map(item => {
+          {NAV.map(item => {
             const active = tab === item.id;
             return (
               <button
@@ -250,9 +233,6 @@ export function StudioPage() {
         )}
 
         <main style={{ flex: 1, overflow: 'auto' }}>
-          {tab === 'overview' && isAdmin && (
-            <OverviewView setError={setError} />
-          )}
           {tab === 'takeover' && (
             <TakeoverView
               inboxes={inboxes}
@@ -273,9 +253,6 @@ export function StudioPage() {
               onChanged={loadAll}
               setError={setError}
             />
-          )}
-          {tab === 'settings' && (
-            <SettingsView providers={providers} isAdmin={isAdmin} onChanged={loadAll} setError={setError} />
           )}
         </main>
       </div>
@@ -1253,52 +1230,6 @@ function EditPersonaModal({ persona, onClose, onSaved, setError }: {
   );
 }
 
-function SettingsView({ providers, isAdmin, onChanged, setError }: {
-  providers: ProviderConfig[];
-  isAdmin: boolean;
-  onChanged: ChangeHandler;
-  setError: (message: string) => void;
-}) {
-  const [showCreate, setShowCreate] = useState(false);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-
-  const loadAccounts = useCallback(async () => {
-    if (!isAdmin) return;
-    try {
-      setAccounts(await api.getAccounts());
-    } catch (err) {
-      setError(String(err));
-    }
-  }, [isAdmin, setError]);
-
-  useEffect(() => {
-    loadAccounts();
-  }, [loadAccounts]);
-
-  return (
-    <div>
-      <PageHead title="设置" kicker="账号管理与 AI 模型" />
-      <div style={{ padding: '0 28px 24px', display: 'grid', gap: 14 }}>
-        <div className="ink-3" style={{ fontSize: 12 }}>
-          修改自己的密码、退出登录请点左下角的头像。下面是管理员专属设置。
-        </div>
-        {isAdmin && <AccountsPanel accounts={accounts} onChanged={loadAccounts} setError={setError} />}
-        {isAdmin && <ProviderPanel providers={providers} onChanged={onChanged} onCreate={() => setShowCreate(true)} setError={setError} />}
-      </div>
-      {isAdmin && showCreate && (
-        <CreateProviderModal
-          onClose={() => setShowCreate(false)}
-          onCreated={async () => {
-            setShowCreate(false);
-            await Promise.resolve(onChanged());
-          }}
-          setError={setError}
-        />
-      )}
-    </div>
-  );
-}
-
 function ChangePasswordModal({ me, onClose, setError }: {
   me: string;
   onClose: () => void;
@@ -1338,222 +1269,6 @@ function ChangePasswordModal({ me, onClose, setError }: {
       {mismatch && <div style={{ color: 'var(--danger)', fontSize: 11, marginBottom: 8 }}>两次输入的新密码不一致</div>}
       {ok && <div style={{ color: 'var(--live)', fontSize: 11, marginBottom: 8 }}>{ok}</div>}
       <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '保存中…' : '修改密码'} disabled={busy || !canSubmit} />
-    </ModalShell>
-  );
-}
-
-function AccountsPanel({ accounts, onChanged, setError }: {
-  accounts: Account[];
-  onChanged: ChangeHandler;
-  setError: (message: string) => void;
-}) {
-  const [showCreate, setShowCreate] = useState(false);
-  const [resetting, setResetting] = useState<Account | null>(null);
-
-  return (
-    <div className="card p-5">
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-        <span style={{ fontWeight: 600 }}>账号管理</span>
-        <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={() => setShowCreate(true)}>+ 新建账号</button>
-      </div>
-      {accounts.length === 0 ? <Empty>还没有账号。</Empty> : (
-        <div style={{ display: 'grid', gap: 10 }}>
-          {accounts.map(account => (
-            <div key={account.id} className="card" style={{ padding: '12px 14px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-                <div>
-                  <div style={{ fontWeight: 500 }}>@{account.username} <span className="chip muted">{account.role === 'admin' ? '管理员' : '普通用户'}</span> <span className={`chip ${account.status === 'active' ? 'live' : 'danger'}`}>{account.status === 'active' ? '已启用' : '已停用'}</span></div>
-                  <div className="ink-3" style={{ fontSize: 11, marginTop: 4 }}>{account.display_name || '未命名'}</div>
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  <button className="btn btn-sm btn-ghost" onClick={() => setResetting(account)}>重置密码</button>
-                  <button
-                    className="btn btn-sm btn-ghost"
-                    onClick={async () => {
-                      try {
-                        await api.updateAccount(account.id, { status: account.status === 'active' ? 'disabled' : 'active' });
-                        await Promise.resolve(onChanged());
-                      } catch (err) { setError(String(err)); }
-                    }}
-                  >
-                    {account.status === 'active' ? '停用' : '启用'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-      {showCreate && <CreateAccountModal onClose={() => setShowCreate(false)} onCreated={async () => { setShowCreate(false); await Promise.resolve(onChanged()); }} setError={setError} />}
-      {resetting && <ResetAccountPasswordModal account={resetting} onClose={() => setResetting(null)} onSaved={async () => { setResetting(null); await Promise.resolve(onChanged()); }} setError={setError} />}
-    </div>
-  );
-}
-
-function ProviderPanel({ providers, onChanged, onCreate, setError }: {
-  providers: ProviderConfig[];
-  onChanged: ChangeHandler;
-  onCreate: () => void;
-  setError: (message: string) => void;
-}) {
-  return (
-    <div className="card p-5">
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-        <span style={{ fontWeight: 600 }}>AI 回复模型</span>
-        <button className="btn btn-sm btn-primary" style={{ marginLeft: 'auto' }} onClick={onCreate}>+ 添加模型</button>
-      </div>
-      <div className="text-sm text-ink-3" style={{ marginBottom: 12 }}>这里配置自动回复使用的 AI 模型，所有账号统一使用。</div>
-      {providers.length === 0 ? <Empty>还没有配置模型。</Empty> : (
-        <div style={{ display: 'grid', gap: 10 }}>
-          {providers.map(provider => (
-            <div key={provider.id} className="card" style={{ padding: '14px 16px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                <div>
-                  <div style={{ fontWeight: 500 }}>{provider.name} {provider.is_default && <span className="chip live">默认</span>}</div>
-                  <div className="mono ink-3" style={{ fontSize: 11, marginTop: 4 }}>{provider.base_url} · {provider.default_model} · 密钥 {provider.api_key_preview ?? '未设置'}</div>
-                </div>
-                <button
-                  className="btn btn-sm btn-ghost"
-                  style={{ color: 'var(--danger)' }}
-                  onClick={async () => {
-                    if (!confirm('确认删除？')) return;
-                    try { await api.deleteProviderConfig(provider.id); await Promise.resolve(onChanged()); }
-                    catch (err) { setError(String(err)); }
-                  }}
-                >删除</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CreateProviderModal({ onClose, onCreated, setError }: {
-  onClose: () => void;
-  onCreated: () => void | Promise<void>;
-  setError: (message: string) => void;
-}) {
-  const [name, setName] = useState('');
-  const [baseUrl, setBaseUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [model, setModel] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const handle = async () => {
-    if (!name.trim() || !baseUrl.trim() || !model.trim()) return;
-    setBusy(true);
-    try {
-      await api.createProviderConfig({
-        name: name.trim(),
-        base_url: baseUrl.trim(),
-        api_key: apiKey || null,
-        default_model: model.trim(),
-      });
-      await Promise.resolve(onCreated());
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <ModalShell onClose={onClose} title="添加 AI 回复模型">
-      <FormField label="名称"><input className="input" value={name} onChange={event => setName(event.target.value)} placeholder="例如 Deepseek" autoFocus /></FormField>
-      <FormField label="接口地址"><input className="input mono" value={baseUrl} onChange={event => setBaseUrl(event.target.value)} placeholder="https://api.deepseek.com" /></FormField>
-      <FormField label="密钥"><input className="input mono" type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} /></FormField>
-      <FormField label="模型名"><input className="input mono" value={model} onChange={event => setModel(event.target.value)} placeholder="deepseek-chat" /></FormField>
-      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '保存中...' : '保存'} disabled={busy || !name.trim() || !baseUrl.trim() || !model.trim()} />
-    </ModalShell>
-  );
-}
-
-function CreateAccountModal({ onClose, onCreated, setError }: {
-  onClose: () => void;
-  onCreated: () => void | Promise<void>;
-  setError: (message: string) => void;
-}) {
-  const [username, setUsername] = useState('');
-  const [displayName, setDisplayName] = useState('');
-  const [password, setPassword] = useState('');
-  const [role, setRole] = useState<AccountRole>('user');
-  const [busy, setBusy] = useState(false);
-
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const mismatch = confirmPassword.length > 0 && password !== confirmPassword;
-  const canSubmit = Boolean(username.trim() && password && password === confirmPassword);
-
-  const handle = async () => {
-    if (!canSubmit) return;
-    setBusy(true);
-    try {
-      await api.createAccount({
-        username: username.trim(),
-        password,
-        display_name: displayName.trim() || null,
-        role,
-      });
-      await Promise.resolve(onCreated());
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <ModalShell onClose={onClose} title="新建账号">
-      <FormField label="登录名"><input className="input mono" value={username} onChange={event => setUsername(event.target.value)} autoFocus /></FormField>
-      <FormField label="显示名称"><input className="input" value={displayName} onChange={event => setDisplayName(event.target.value)} /></FormField>
-      <FormField label="密码"><input className="input mono" type="password" value={password} onChange={event => setPassword(event.target.value)} /></FormField>
-      <FormField label="再输一次密码"><input className="input mono" type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} /></FormField>
-      {mismatch && <div style={{ color: 'var(--danger)', fontSize: 11, marginBottom: 12 }}>两次输入的密码不一致</div>}
-      <FormField label="角色">
-        <select className="select" value={role} onChange={event => setRole(event.target.value as AccountRole)}>
-          <option value="user">普通用户</option>
-          <option value="admin">管理员</option>
-        </select>
-      </FormField>
-      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '创建中...' : '创建'} disabled={busy || !canSubmit} />
-    </ModalShell>
-  );
-}
-
-function ResetAccountPasswordModal({ account, onClose, onSaved, setError }: {
-  account: Account;
-  onClose: () => void;
-  onSaved: () => void | Promise<void>;
-  setError: (message: string) => void;
-}) {
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const mismatch = confirmPassword.length > 0 && password !== confirmPassword;
-  const canSubmit = Boolean(password && password === confirmPassword);
-
-  const handle = async () => {
-    if (!canSubmit) return;
-    setBusy(true);
-    try {
-      await api.resetAccountPassword(account.id, password);
-      await Promise.resolve(onSaved());
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <ModalShell onClose={onClose} title={`重置密码 · @${account.username}`}>
-      <FormField label="新密码"><input className="input mono" type="password" value={password} onChange={event => setPassword(event.target.value)} autoFocus /></FormField>
-      <FormField label="再输一次新密码"><input className="input mono" type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} /></FormField>
-      {mismatch && <div style={{ color: 'var(--danger)', fontSize: 11, marginBottom: 8 }}>两次输入的新密码不一致</div>}
-      <div className="ink-3" style={{ fontSize: 11 }}>保存后这个账号需要用新密码重新登录。</div>
-      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '保存中...' : '保存'} disabled={busy || !canSubmit} />
     </ModalShell>
   );
 }
@@ -1687,117 +1402,6 @@ function BridgeCommandPanel({ meUsername }: { meUsername: string }) {
       <div className="ink-3" style={{ fontSize: 12, lineHeight: 1.6 }}>
         程序保持打开才会一直收发消息，最小化可在后台继续运行；关闭窗口会停止，重新打开后会自动登录恢复。
       </div>
-    </div>
-  );
-}
-
-function OverviewView({ setError }: { setError: (message: string) => void }) {
-  const [data, setData] = useState<api.AdminOverview | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const reload = useCallback(async () => {
-    setLoading(true);
-    try {
-      setData(await api.getAdminOverview());
-    } catch (err) {
-      setError(String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, [setError]);
-
-  useEffect(() => {
-    reload();
-  }, [reload]);
-
-  return (
-    <div>
-      <PageHead
-        title="总览"
-        kicker="全部账号与数据一览"
-        right={<button className="btn btn-sm btn-ghost" onClick={() => reload()}>{loading ? '刷新中…' : '刷新'}</button>}
-      />
-      <div style={{ padding: '0 28px 24px', display: 'grid', gap: 14 }}>
-        {!data ? (
-          <Empty>正在加载…</Empty>
-        ) : (
-          <>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 10 }}>
-              <StatCard label="账号" value={data.totals.accounts} sub={`管理员 ${data.totals.admins} · 普通用户 ${data.totals.users}`} />
-              <StatCard label="设备" value={`${data.totals.bridges_online} 在线`} sub={`离线 ${data.totals.bridges_offline}`} />
-              <StatCard label="接管账号" value={data.totals.inboxes} />
-              <StatCard label="人设" value={data.totals.personas} />
-              <StatCard label="粉丝" value={data.totals.contacts} sub={`自动回复中 ${data.totals.contacts_autoreply}`} />
-              <StatCard label="消息" value={data.totals.messages} />
-              <StatCard label="待发送" value={data.totals.outbound_pending} />
-            </div>
-
-            <div className="card" style={{ padding: 16 }}>
-              <div style={{ fontWeight: 600, marginBottom: 10 }}>账号明细</div>
-              {data.accounts.length === 0 ? (
-                <Empty>系统里还没有账号。在「设置」里点「新建账号」创建一个。</Empty>
-              ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                    <thead>
-                      <tr style={{ textAlign: 'left', color: 'var(--ink-3)' }}>
-                        <th style={overviewTh}>账号</th>
-                        <th style={overviewTh}>角色</th>
-                        <th style={overviewTh}>状态</th>
-                        <th style={overviewTh}>设备</th>
-                        <th style={overviewTh}>接管账号</th>
-                        <th style={overviewTh}>人设</th>
-                        <th style={overviewTh}>粉丝(自动回复)</th>
-                        <th style={overviewTh}>消息</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.accounts.map(row => (
-                        <tr key={row.account.id} style={{ borderTop: '1px solid var(--line-subtle)' }}>
-                          <td style={overviewTd}>
-                            <div style={{ fontWeight: 500 }}>@{row.account.username}</div>
-                            <div className="mono ink-3" style={{ fontSize: 10 }}>{row.account.display_name || '未命名'}</div>
-                          </td>
-                          <td style={overviewTd}>
-                            <span className={`chip ${row.account.role === 'admin' ? 'warn' : 'muted'}`}>{row.account.role === 'admin' ? '管理员' : '普通用户'}</span>
-                          </td>
-                          <td style={overviewTd}>
-                            <span className={`chip ${row.account.status === 'active' ? 'live' : 'danger'}`}>{row.account.status === 'active' ? '已启用' : '已停用'}</span>
-                          </td>
-                          <td style={overviewTd}>
-                            <span className="mono">{row.bridges_online}</span>
-                            <span className="ink-3" style={{ fontSize: 10 }}> / {row.bridges_online + row.bridges_offline}</span>
-                          </td>
-                          <td style={overviewTd}>{row.inboxes}</td>
-                          <td style={overviewTd}>{row.personas}</td>
-                          <td style={overviewTd}>
-                            <span className="mono">{row.contacts}</span>
-                            <span className="ink-3" style={{ fontSize: 10 }}> ({row.contacts_autoreply})</span>
-                          </td>
-                          <td style={overviewTd}>{row.messages}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </div>
-    </div>
-  );
-}
-
-const overviewTh: CSSProperties = { padding: '6px 10px', fontWeight: 500, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.04em' };
-const overviewTd: CSSProperties = { padding: '8px 10px', verticalAlign: 'middle' };
-
-function StatCard({ label, value, sub }: { label: string; value: number | string; sub?: string }) {
-  return (
-    <div className="card" style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span className="eyebrow">{label}</span>
-      <span className="serif" style={{ fontSize: 26, lineHeight: 1, letterSpacing: '-0.02em' }}>{value}</span>
-      {sub && <span className="mono ink-3" style={{ fontSize: 11 }}>{sub}</span>}
     </div>
   );
 }

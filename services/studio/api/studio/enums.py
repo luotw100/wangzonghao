@@ -1,11 +1,6 @@
 from enum import StrEnum
 
 
-class AccountRole(StrEnum):
-    ADMIN = "admin"
-    USER = "user"
-
-
 class AccountStatus(StrEnum):
     ACTIVE = "active"
     DISABLED = "disabled"

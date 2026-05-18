@@ -29,7 +29,6 @@ def upgrade() -> None:
         sa.Column("status", sa.String(16), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("last_login_at", sa.DateTime(timezone=True), nullable=True),
         sa.CheckConstraint("role IN ('admin', 'user')", name="ck_account_role"),
         sa.CheckConstraint("status IN ('active', 'disabled')", name="ck_account_status"),
     )
@@ -40,9 +39,8 @@ def upgrade() -> None:
         "auth_sessions",
         sa.Column("id", sa.String(64), primary_key=True),
         sa.Column("account_id", sa.String(48), sa.ForeignKey("accounts.id"), nullable=False),
-        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
+        sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False),
     )
     op.create_index("ix_auth_sessions_id", "auth_sessions", ["id"])
     op.create_index("ix_auth_sessions_account_id", "auth_sessions", ["account_id"])
@@ -96,16 +94,6 @@ def upgrade() -> None:
     )
     op.create_index("ix_bridges_id", "bridges", ["id"])
     op.create_index("ix_bridges_account_id", "bridges", ["account_id"])
-
-    op.create_table(
-        "bridge_sessions",
-        sa.Column("id", sa.String(64), primary_key=True),
-        sa.Column("bridge_id", sa.String(48), sa.ForeignKey("bridges.id"), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("last_seen_at", sa.DateTime(timezone=True), nullable=False),
-    )
-    op.create_index("ix_bridge_sessions_id", "bridge_sessions", ["id"])
-    op.create_index("ix_bridge_sessions_bridge_id", "bridge_sessions", ["bridge_id"])
 
     op.create_table(
         "inboxes",
@@ -252,7 +240,6 @@ def downgrade() -> None:
     op.drop_table("messages")
     op.drop_table("contacts")
     op.drop_table("inboxes")
-    op.drop_table("bridge_sessions")
     op.drop_table("bridges")
     op.drop_table("personas")
     op.drop_table("provider_configs")

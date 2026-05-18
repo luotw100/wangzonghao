@@ -20,15 +20,18 @@ Studio 使用 PostgreSQL。Schema 由 Alembic 迁移管理。所有 DateTime 列
 - `display_name`：`String(128)`，nullable。
 - `role`：`String(16)`，CHECK `admin | user`。
 - `status`：`String(16)`，CHECK `active | disabled`。
-- timestamps（`timestamptz`）和 `last_login_at`（nullable）。
+- timestamps（`timestamptz`，`created_at` / `updated_at`）。
 
 ### `auth_sessions` — `AuthSession`
 
-Web 登录 session。
+Web 控制台与 Bridge daemon 共用的唯一 session 表，account 粒度，不含客户端判别字段。Bridge 身份不在 token 里——由认证出的 account + `X-Machine-Id` 头解析。
 
 - `id`：`String(64)`，token sha256 主键。
-- `account_id`：`String(48)`。
-- `created_at`、`last_seen_at`（`timestamptz`）。
+- `account_id`：`String(48)`，FK，索引。
+- `expires_at`：`timestamptz`，NOT NULL，24h 滑动续期。
+- `created_at`：`timestamptz`。
+- `account = relationship("Account")`。
+- 撤销是 account 粒度的唯一安全控制（`revoke_account_sessions`）：改密码 / 管理员重置 / 禁用账号删除该 account 全部 session。
 
 ### `provider_configs` — `ProviderConfig`
 
@@ -67,14 +70,6 @@ OpenAI-compatible LLM Provider。
 - `status`：`String(16)`，CHECK `online | offline | revoked`。
 - `last_seen_at`：nullable `timestamptz`。
 - unique `(account_id, machine_id)`。
-
-### `bridge_sessions` — `BridgeSession`
-
-Bridge 运行时 token。
-
-- `id`：`String(64)`，token sha256 主键。
-- `bridge_id`：`String(48)`。
-- `created_at`、`last_seen_at`（`timestamptz`）。
 
 ### `inboxes` — `Inbox`
 
@@ -178,9 +173,9 @@ Account
   owns Bridge
   owns Inbox
   owns DistillJob
+  owns AuthSession (web 与 Bridge 共用)
 
 Bridge
-  owns BridgeSession
   serves Inbox via Inbox.bridge_id
 
 Inbox

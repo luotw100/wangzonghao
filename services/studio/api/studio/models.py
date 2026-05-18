@@ -25,6 +25,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
 
 from studio.db import Base
 
@@ -48,17 +49,26 @@ class Account(Base):
     status        = Column(String(16), nullable=False)
     created_at    = Column(DateTime(timezone=True), nullable=False)
     updated_at    = Column(DateTime(timezone=True), nullable=False)
-    last_login_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class AuthSession(Base):
+    """Single token table for both web console and bridge daemons.
+
+    A session is purely (token -> account, expiry). It carries no client
+    discriminator: bridge identity is resolved separately from the
+    authenticated account + the X-Machine-Id the daemon sends. Revocation
+    is account-scoped (delete all rows for an account), which is the only
+    real security control under sliding expiry.
+    """
+
     __tablename__ = "auth_sessions"
 
     id           = Column(String(64), primary_key=True, index=True)
     account_id   = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
-    expires_at   = Column(DateTime(timezone=True), nullable=True)
+    expires_at   = Column(DateTime(timezone=True), nullable=False)
     created_at   = Column(DateTime(timezone=True), nullable=False)
-    last_seen_at = Column(DateTime(timezone=True), nullable=False)
+
+    account      = relationship("Account")
 
 
 # ---------------------------------------------------------------------------
@@ -127,15 +137,6 @@ class Bridge(Base):
     last_seen_at = Column(DateTime(timezone=True), nullable=True)
     created_at   = Column(DateTime(timezone=True), nullable=False)
     updated_at   = Column(DateTime(timezone=True), nullable=False)
-
-
-class BridgeSession(Base):
-    __tablename__ = "bridge_sessions"
-
-    id           = Column(String(64), primary_key=True, index=True)
-    bridge_id    = Column(String(48), ForeignKey("bridges.id"), nullable=False, index=True)
-    created_at   = Column(DateTime(timezone=True), nullable=False)
-    last_seen_at = Column(DateTime(timezone=True), nullable=False)
 
 
 # ---------------------------------------------------------------------------

@@ -32,20 +32,21 @@
 `get_account()` 当前流程：
 
 1. 解析 Bearer token。
-2. hash token 后查询 `AuthSession`。
-3. 加载 Account。
-4. 拒绝缺失或非 active account。
-5. 更新 `AuthSession.last_seen_at`。
+2. hash token 后查询 `AuthSession`；不存在拒绝。
+3. `expires_at` 已过期则删除该 session 并拒绝。
+4. 经 `AuthSession.account` 加载 Account；拒绝缺失或非 active account。
+5. 续期 `AuthSession.expires_at`（now + 24h）。
 
 ### Bridge auth
 
-`get_authed_bridge()` 当前流程：
+`get_authed_bridge()` 当前流程（与 web auth 共用 `auth_sessions`，account 粒度）：
 
 1. 解析 Bearer token。
-2. hash token 后查询 `BridgeSession`。
-3. 加载 Bridge。
-4. Bridge 不存在或 status 是 revoked 时拒绝。
-5. 更新 `BridgeSession.last_seen_at`。
+2. hash token 后查询 `AuthSession`；不存在拒绝；`expires_at` 过期则删除并拒绝。
+3. 经 `AuthSession.account` 加载 Account；拒绝缺失或非 active account。
+4. 无 `X-Machine-Id` 头拒绝；按 `(account_id, X-Machine-Id)` 查 Bridge。
+5. Bridge 不存在或 status 是 revoked 时拒绝。
+6. 续期 `AuthSession.expires_at`（now + 24h）。
 
 ## Serializers
 
@@ -142,8 +143,7 @@ Delete 当前在 Persona 被 Inbox default 或 Contact 引用时返回 409。
 1. 找到当前 Bridge 绑定的 Inbox ids。
 2. 把这些 Inbox 下 pending outbound 标成 canceled。
 3. 解绑 Inboxes。
-4. 删除 BridgeSession。
-5. Bridge status 置 `revoked`。
+4. Bridge status 置 `revoked`（不动 session；鉴权按 `(account, machine_id)` 解析到该行后因 revoked 拒绝）。
 
 ### Inboxes
 

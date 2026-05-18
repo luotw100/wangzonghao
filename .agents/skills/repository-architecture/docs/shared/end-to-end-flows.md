@@ -35,8 +35,9 @@ REPL 启动（--state / /state 指定状态目录）→ 读 laborster.json
   → 无 studio_token → /login：用户输 Studio 账号密码
       → POST Studio /api/bridge/handshake（唯一用 Studio 密码的调用）
       → Studio 校验账号密码，按 (account_id, machine_id) 找/建 Bridge
-      → 删除旧 BridgeSession，创建新 token
+      → create_auth_session 签发 account session token（与 web 共用 auth_sessions）
       → 返回 token、bridge_id、machine_id、account_id
+      → 后续 /api/bridge/* 带 Bearer token + X-Machine-Id 头
       → 写入 laborster.json（0600）；Studio 密码用完即弃，绝不落盘
   → 有 studio_token → 直接复用，不需密码、不重新 handshake
 

@@ -4,18 +4,18 @@
 
 ## 认证模型
 
-handshake 只做一件事：用 Studio 账号密码换 session token，等价于浏览器登录。`handshake` 是唯一接受密码的端点，其余 `/api/bridge/*` 全部 Bearer token 鉴权（含 channel 注册）。
+handshake 只做一件事：用 Studio 账号密码换 **account session token**，与浏览器登录共用同一张 `auth_sessions` 表。session 只是 `(token → account, expires_at)`，不携带任何客户端判别字段。Bridge 身份不在 token 里——由认证出的 account + daemon 每次请求带的 `X-Machine-Id` 头在服务端解析出 Bridge 行。`handshake` 是唯一接受密码的端点，其余 `/api/bridge/*` 全部 Bearer token 鉴权（含 channel 注册）。
 
 1. Bridge 登录时用户输入 Studio username/password；可带本地持久化 `machine_id`。
 2. Bridge 调 handshake。
 3. Studio 校验账号密码与 active 状态。
 4. 带 `machine_id` 则按 `(account_id, machine_id)` 查已有 Bridge；没带（首次）则生成 `machine_id` 并创建新 Bridge。
-5. Studio 删除该 Bridge 旧 BridgeSession，创建并返回新 token + `bridge_id` + `machine_id` + `account_id`。handshake 不注册任何 Inbox。
+5. Studio 创建并返回新 account session token + `bridge_id` + `machine_id` + `account_id`。handshake 不注册任何 Inbox。
 6. Bridge 把 token 持久化到本地 0600 文件；Studio 密码用完即弃，绝不落盘。
-7. 后续所有请求带 `Authorization: Bearer {token}`，包括 `POST /api/bridge/inboxes` 注册 channel 集合。
+7. 后续所有请求带 `Authorization: Bearer {token}` 和 `X-Machine-Id: {machine_id}`，包括 `POST /api/bridge/inboxes` 注册 channel 集合。
 8. 重启直接复用持久化的 token，无需密码、无需重新 handshake。仅当 token 被撤销/失效（401）才重新 `/login` 输密码。
 
-撤销 Bridge 时，Studio 删除 BridgeSession 并把 Bridge 状态置为 `revoked`；Bridge 下次调用收到 401。
+token 过期为 24h 滑动续期（每次请求碰到即续），与浏览器一致。session 撤销是 account 粒度的唯一安全控制：改密码 / 管理员重置密码 / 禁用账号都会删除该 account 的全部 session（web 与所有 Bridge 一并失效）。撤销单个 Bridge 时只把该 Bridge 状态置为 `revoked`（不动 session），鉴权按 `(account, machine_id)` 解析到该行后因 `revoked` 拒绝，账号其他 session 不受影响；Bridge 下次调用收到 401。
 
 ## 消息类型
 
@@ -47,8 +47,7 @@ Bridge 协议支持多种消息类型。`msg_type` 字段值：`text | image | a
 1. 校验 Studio account username/password，且 account status 必须是 active。
 2. 带 `machine_id` 则按 `(account_id, machine_id)` 查已有 Bridge；没带（首次）生成新 `machine_id`（`m_` + uuid hex 前 12 字符）并创建新 Bridge。
 3. 标记 Bridge online，更新 `last_seen_at`。
-4. 删除这个 Bridge 的旧 `BridgeSession`。
-5. 生成 token，插入新 `BridgeSession`，commit。
+4. 调 `create_auth_session(db, account)` 生成 account session token，插入 `auth_sessions`，commit。
 
 ### Response
 
@@ -109,13 +108,14 @@ Token 鉴权（Bearer Bridge session token）。注册/刷新本 Bridge 服务�
 
 ### Auth
 
-Bearer Bridge session token。
+Bearer account session token + `X-Machine-Id` 头。
 
 ### 当前行为
 
-- 用 token hash 查 `BridgeSession`。
-- session 不存在或 Bridge revoked 时拒绝。
-- 更新 session `last_seen_at`。
+- 用 token hash 查 `auth_sessions`；不存在、已过期或 account 非 active 时拒绝。
+- 无 `X-Machine-Id` 时拒绝；按 `(account_id, X-Machine-Id)` 查 Bridge。
+- Bridge 不存在或 revoked 时拒绝。
+- 续期 session `expires_at`（now + 24h）。
 - 如果 Bridge status 不是 online，则置为 online。
 - 更新 Bridge `last_seen_at`。
 - 返回当前 `Inbox.bridge_id == bridge.id` 的 Inbox 列表。

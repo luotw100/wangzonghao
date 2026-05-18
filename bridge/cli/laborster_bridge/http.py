@@ -41,7 +41,14 @@ class HttpError(RuntimeError):
         self.body = body
 
 
-def _attempt(method: str, url: str, token: str | None, body: Any, timeout: float) -> Any:
+def _attempt(
+    method: str,
+    url: str,
+    token: str | None,
+    body: Any,
+    timeout: float,
+    headers: dict[str, str] | None = None,
+) -> Any:
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     # Cloudflare in front of the services blocks the default Python-urllib
@@ -51,6 +58,9 @@ def _attempt(method: str, url: str, token: str | None, body: Any, timeout: float
         req.add_header("Content-Type", "application/json")
     if token:
         req.add_header("Authorization", f"Bearer {token}")
+    for k, v in (headers or {}).items():
+        if v is not None:
+            req.add_header(k, v)
     try:
         with urllib.request.urlopen(req, timeout=timeout, context=_SSL_CTX) as resp:
             raw = resp.read().decode("utf-8", "replace")
@@ -72,6 +82,7 @@ def request_json(
     token: str | None = None,
     body: Any | None = None,
     timeout: float = 20.0,
+    headers: dict[str, str] | None = None,
 ) -> Any:
     """JSON request with bounded retry on transient failures.
 
@@ -82,7 +93,7 @@ def request_json(
     last: HttpError | None = None
     for attempt in range(len(_RETRY_BACKOFF) + 1):
         try:
-            return _attempt(method, url, token, body, timeout)
+            return _attempt(method, url, token, body, timeout, headers)
         except HttpError as exc:
             if exc.status not in _RETRY_STATUSES or attempt == len(_RETRY_BACKOFF):
                 raise

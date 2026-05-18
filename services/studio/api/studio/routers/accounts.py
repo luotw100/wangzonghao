@@ -8,11 +8,10 @@ from sqlalchemy.orm import Session
 
 from studio.auth_utils import hash_password
 from studio.db import get_db, utc_now
-from studio.deps import AdminAccountDep, create_account_record, is_admin
+from studio.deps import AdminAccountDep, create_account_record, is_admin, revoke_account_sessions
 from studio.enums import AccountRole, AccountStatus, BridgeStatus, OutboundStatus
 from studio.models import (
     Account,
-    AuthSession,
     Bridge,
     Contact,
     Inbox,
@@ -63,7 +62,7 @@ def update_account(account_id: str, payload: AccountUpdate, db: Annotated[Sessio
     if "status" in fields and payload.status is not None:
         target.status = payload.status
         if payload.status != AccountStatus.ACTIVE:
-            db.query(AuthSession).filter(AuthSession.account_id == target.id).delete(synchronize_session=False)
+            revoke_account_sessions(db, target.id)
     target.updated_at = utc_now()
     db.commit()
     db.refresh(target)
@@ -80,7 +79,7 @@ def reset_account_password(
         raise HTTPException(status_code=404, detail="账号不存在")
     target.password_hash = hash_password(payload.password)
     target.updated_at = utc_now()
-    db.query(AuthSession).filter(AuthSession.account_id == target.id).delete(synchronize_session=False)
+    revoke_account_sessions(db, target.id)
     db.commit()
     return {"status": "updated", "id": target.id}
 

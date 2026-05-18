@@ -1363,7 +1363,7 @@ function AccountsPanel({ accounts, onChanged, setError }: {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
                 <div>
                   <div style={{ fontWeight: 500 }}>@{account.username} <span className="chip muted">{account.role === 'admin' ? '管理员' : '普通用户'}</span> <span className={`chip ${account.status === 'active' ? 'live' : 'danger'}`}>{account.status === 'active' ? '已启用' : '已停用'}</span></div>
-                  <div className="ink-3" style={{ fontSize: 11, marginTop: 4 }}>{account.display_name || '未命名'} · 最后登录 {formatDateTime(account.last_login_at)}</div>
+                  <div className="ink-3" style={{ fontSize: 11, marginTop: 4 }}>{account.display_name || '未命名'}</div>
                 </div>
                 <div style={{ display: 'flex', gap: 6 }}>
                   <button className="btn btn-sm btn-ghost" onClick={() => setResetting(account)}>重置密码</button>
@@ -1744,7 +1744,6 @@ function OverviewView({ setError }: { setError: (message: string) => void }) {
                         <th style={overviewTh}>账号</th>
                         <th style={overviewTh}>角色</th>
                         <th style={overviewTh}>状态</th>
-                        <th style={overviewTh}>最后登录</th>
                         <th style={overviewTh}>设备</th>
                         <th style={overviewTh}>接管账号</th>
                         <th style={overviewTh}>人设</th>
@@ -1765,7 +1764,6 @@ function OverviewView({ setError }: { setError: (message: string) => void }) {
                           <td style={overviewTd}>
                             <span className={`chip ${row.account.status === 'active' ? 'live' : 'danger'}`}>{row.account.status === 'active' ? '已启用' : '已停用'}</span>
                           </td>
-                          <td style={overviewTd} className="mono ink-3">{formatDateTime(row.account.last_login_at)}</td>
                           <td style={overviewTd}>
                             <span className="mono">{row.bridges_online}</span>
                             <span className="ink-3" style={{ fontSize: 10 }}> / {row.bridges_online + row.bridges_offline}</span>

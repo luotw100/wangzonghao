@@ -14,6 +14,7 @@ from studio.deps import (
     create_auth_session,
     extract_bearer,
     hash_token,
+    revoke_account_sessions,
 )
 from studio.enums import AccountRole, AccountStatus
 from studio.models import Account, AuthSession
@@ -68,6 +69,6 @@ def change_own_password(payload: OwnPasswordChange, account: CurrentAccountDep, 
         raise HTTPException(status_code=400, detail="当前密码错误")
     account.password_hash = hash_password(payload.new_password)
     account.updated_at = utc_now()
-    db.query(AuthSession).filter(AuthSession.account_id == account.id).delete(synchronize_session=False)
+    revoke_account_sessions(db, account.id)
     db.commit()
     return {"status": "updated"}

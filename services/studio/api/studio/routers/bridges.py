@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from studio.db import get_db, utc_now
 from studio.deps import CurrentAccountDep, get_account_bridge, is_admin
 from studio.enums import BridgeStatus, OutboundStatus
-from studio.models import Bridge, BridgeSession, Inbox, OutboundMessage
+from studio.models import Bridge, Inbox, OutboundMessage
 from studio.serializers import s_bridge
 
 router = APIRouter()
@@ -34,8 +34,9 @@ def delete_bridge(bridge_id: str, db: Annotated[Session, Depends(get_db)], accou
     执行以下操作：
     1. 将该 Bridge 下所有 Inbox 的待发消息（status=pending）标记为 canceled；
     2. 解除所有 Inbox 与该 Bridge 的绑定（bridge_id 置为 null）；
-    3. 删除该 Bridge 的所有 session token（即使守护进程还在运行，下次心跳或拉取消息时会收到 401）；
-    4. 将 Bridge 状态设为 revoked。
+    3. 将 Bridge 状态设为 revoked——鉴权按 (account, machine_id) 解析到该
+       Bridge 行后会因 status=revoked 直接拒绝，即使守护进程还在运行，下次
+       心跳或拉取消息时会收到 401。账号的 web/其他机器 session 不受影响。
     被撤销的 Bridge 守护进程若要重新接入，需重新执行握手流程。
     """
     b = get_account_bridge(db, account, bridge_id)
@@ -48,9 +49,6 @@ def delete_bridge(bridge_id: str, db: Annotated[Session, Depends(get_db)], accou
         db.query(Inbox).filter(Inbox.bridge_id == b.id).update(
             {Inbox.bridge_id: None}, synchronize_session=False
         )
-    db.query(BridgeSession).filter(BridgeSession.bridge_id == b.id).delete(
-        synchronize_session=False
-    )
     b.status = BridgeStatus.REVOKED
     b.updated_at = utc_now()
     db.commit()

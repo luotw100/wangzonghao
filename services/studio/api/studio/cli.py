@@ -37,7 +37,6 @@ def create_account(args: argparse.Namespace) -> None:
             status=AccountStatus.ACTIVE,
             created_at=now,
             updated_at=now,
-            last_login_at=None,
         )
         db.add(account)
         db.commit()

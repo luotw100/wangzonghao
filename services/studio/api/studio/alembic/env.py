@@ -9,7 +9,6 @@ from studio.models import (  # noqa: F401 — ensure all models imported for aut
     Account,
     AuthSession,
     Bridge,
-    BridgeSession,
     Contact,
     DistillJob,
     Inbox,

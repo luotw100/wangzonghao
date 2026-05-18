@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from studio.auth_utils import hash_password, hash_token, new_session_token, verify_password
 from studio.db import get_db, utc_now
 from studio.enums import AccountRole, AccountStatus, BridgeStatus
-from studio.models import Account, AuthSession, Bridge, BridgeSession, Inbox, Persona, ProviderConfig
+from studio.models import Account, AuthSession, Bridge, Inbox, Persona, ProviderConfig
 
 
 def new_id(prefix: str) -> str:
@@ -51,7 +51,6 @@ def create_account_record(
         status=AccountStatus.ACTIVE,
         created_at=now,
         updated_at=now,
-        last_login_at=None,
     )
     db.add(created)
     return created
@@ -60,14 +59,22 @@ def create_account_record(
 def create_auth_session(db: Session, account: Account) -> str:
     token = new_session_token()
     now = utc_now()
-    expires_at = now + timedelta(hours=24)
     db.add(AuthSession(
         id=hash_token(token), account_id=account.id,
-        expires_at=expires_at, created_at=now, last_seen_at=now,
+        expires_at=now + timedelta(hours=24), created_at=now,
     ))
-    account.last_login_at = now
-    account.updated_at = now
     return token
+
+
+def revoke_account_sessions(db: Session, account_id: str) -> None:
+    """Kill every session for an account — web and bridge alike.
+
+    The single security control under sliding expiry. Called on password
+    change, admin password reset, and account disable.
+    """
+    db.query(AuthSession).filter(
+        AuthSession.account_id == account_id
+    ).delete(synchronize_session=False)
 
 
 # ---------------------------------------------------------------------------
@@ -82,15 +89,14 @@ def get_account(
     s = db.query(AuthSession).filter(AuthSession.id == hash_token(token)).first()
     if not s:
         raise HTTPException(status_code=401, detail="登录已失效")
-    if s.expires_at is not None and s.expires_at < utc_now():
+    now = utc_now()
+    if s.expires_at < now:
         db.query(AuthSession).filter(AuthSession.id == s.id).delete()
         db.commit()
         raise HTTPException(status_code=401, detail="登录已超时")
-    account = db.query(Account).filter(Account.id == s.account_id).first()
+    account = s.account
     if not account or account.status != AccountStatus.ACTIVE:
         raise HTTPException(status_code=401, detail="登录已失效")
-    now = utc_now()
-    s.last_seen_at = now
     s.expires_at = now + timedelta(hours=24)
     db.commit()
     return account
@@ -127,15 +133,37 @@ AdminAccountDep = Annotated[Account, Depends(_admin_dep)]
 def get_authed_bridge(
     db: Annotated[Session, Depends(get_db)],
     authorization: Annotated[Optional[str], Header()] = None,
+    x_machine_id: Annotated[Optional[str], Header()] = None,
 ) -> Bridge:
+    """Authenticate a /api/bridge/* call.
+
+    Same session token table as the web console (account-scoped). The
+    bridge identity is not in the token: it comes from the X-Machine-Id
+    the daemon persists and sends on every request, resolved against the
+    authenticated account's Bridge row.
+    """
     token = extract_bearer(authorization)
-    session = db.query(BridgeSession).filter(BridgeSession.id == hash_token(token)).first()
-    if not session:
-        raise HTTPException(status_code=401, detail="无效的 bridge 令牌")
-    bridge = db.query(Bridge).filter(Bridge.id == session.bridge_id).first()
+    s = db.query(AuthSession).filter(AuthSession.id == hash_token(token)).first()
+    if not s:
+        raise HTTPException(status_code=401, detail="登录已失效")
+    now = utc_now()
+    if s.expires_at < now:
+        db.query(AuthSession).filter(AuthSession.id == s.id).delete()
+        db.commit()
+        raise HTTPException(status_code=401, detail="登录已超时")
+    account = s.account
+    if not account or account.status != AccountStatus.ACTIVE:
+        raise HTTPException(status_code=401, detail="登录已失效")
+    if not x_machine_id:
+        raise HTTPException(status_code=401, detail="缺少 machine 标识")
+    bridge = (
+        db.query(Bridge)
+        .filter(Bridge.account_id == account.id, Bridge.machine_id == x_machine_id)
+        .first()
+    )
     if not bridge or bridge.status == BridgeStatus.REVOKED:
         raise HTTPException(status_code=401, detail="bridge 已被撤销")
-    session.last_seen_at = utc_now()
+    s.expires_at = now + timedelta(hours=24)
     db.commit()
     return bridge
 

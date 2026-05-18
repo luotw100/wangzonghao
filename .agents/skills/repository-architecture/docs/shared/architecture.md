@@ -35,7 +35,7 @@ Studio 与 Chat 之间没有代码 import 和直接 API 调用；仅 Bridge 的 
 Bridge 当前负责：
 
 - ChatAdapter 登录（HTTP POST `/api/auth/login`）；
-- StudioClient handshake 用密码换 session token；token 鉴权 `POST /api/bridge/inboxes` 注册 channel 拿 Inbox 映射；
+- StudioClient handshake 用密码换 account session token（与 web 共用 `auth_sessions`）；token + `X-Machine-Id` 头鉴权 `POST /api/bridge/inboxes` 注册 channel 拿 Inbox 映射；
 - live inbound 扫描（per-inbox async generator 轮询 chat API）；
 - SQLite 本地去重（`local_messages` 表，`UNIQUE(inbox_id, local_hash)`）；
 - consumer 按 activePeers 过滤后批量推 `/api/bridge/incoming`；
@@ -75,9 +75,9 @@ Studio 当前负责：
 
 ```text
 Account
+  ├─ AuthSession (web 与 Bridge 共用，account 粒度)
   ├─ Persona
   ├─ Bridge
-  │    └─ BridgeSession
   ├─ Inbox
   │    ├─ Contact
   │    │    ├─ Message
@@ -107,7 +107,7 @@ Studio 登录账号，带 `admin | user` role。数据库没有任何账号时�
 
 ### Bridge
 
-本地 daemon 注册行，由 `(account_id, machine_id)` 唯一标识。`machine_id` 由 Studio 在首次握手时生成并返回，Bridge 持久化后跨重启复用。Handshake 会 upsert Bridge，并清除该 Bridge 旧 session。
+本地 daemon 注册行，由 `(account_id, machine_id)` 唯一标识。`machine_id` 由 Studio 在首次握手时生成并返回，Bridge 持久化后跨重启复用，并在每个 `/api/bridge/*` 请求带 `X-Machine-Id` 头供服务端解析本行。Handshake upsert Bridge 并签发 account session token（与 web 共用，不再有独立 bridge session）。
 
 ### Inbox
 

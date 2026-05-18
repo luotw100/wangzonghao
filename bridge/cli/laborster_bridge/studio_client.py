@@ -14,17 +14,27 @@ from .http import request_json
 
 
 class StudioClient:
-    def __init__(self, get_token: Callable[[], str | None]) -> None:
+    def __init__(
+        self,
+        get_token: Callable[[], str | None],
+        get_machine_id: Callable[[], str | None] = lambda: None,
+    ) -> None:
         self._get_token = get_token
+        self._get_machine_id = get_machine_id
         self._base = config.STUDIO_BASE_URL
 
     def _req(self, method: str, path: str, body=None, timeout: float = 20.0):
+        # The session token is account-scoped (same table as the web
+        # console). Which Bridge row this call belongs to is resolved
+        # server-side from this machine_id, not from the token.
+        machine_id = self._get_machine_id()
         return request_json(
             method,
             f"{self._base}{path}",
             token=self._get_token(),
             body=body,
             timeout=timeout,
+            headers={"X-Machine-Id": machine_id} if machine_id else None,
         )
 
     def handshake(self, username: str, password: str, machine_id: str | None) -> dict:

@@ -27,7 +27,7 @@ def s_account(a: Account) -> Dict[str, Any]:
     return {
         "id": a.id, "username": a.username, "display_name": a.display_name,
         "role": a.role, "status": a.status,
-        "created_at": a.created_at, "last_login_at": a.last_login_at,
+        "created_at": a.created_at,
     }
 
 

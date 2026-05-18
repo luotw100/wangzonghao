@@ -12,9 +12,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
-from studio.auth_utils import verify_password, new_session_token, hash_token
+from studio.auth_utils import verify_password
 from studio.db import get_db, utc_now
-from studio.deps import BridgeDep, new_id
+from studio.deps import BridgeDep, create_auth_session, new_id
 from studio.enums import (
     AccountStatus,
     BridgeStatus,
@@ -28,7 +28,6 @@ from studio.enums import (
 from studio.models import (
     Account,
     Bridge,
-    BridgeSession,
     Contact,
     Inbox,
     MediaHash,
@@ -58,7 +57,9 @@ def bridge_handshake(payload: BridgeHandshake, db: Annotated[Session, Depends(ge
     1. Verify Studio account credentials.
     2. Upsert Bridge by (account_id, machine_id). If no machine_id given
        (first launch), Studio generates one with id_new("m").
-    3. Wipe prior BridgeSession rows for this bridge; mint a fresh token.
+    3. Mint a fresh account session token (same table as the web console).
+       The daemon sends X-Machine-Id on every subsequent /api/bridge/*
+       call; the bridge identity is resolved from that, not the token.
 
     Channel registration is a separate token-authenticated call
     (POST /api/bridge/inboxes). The bridge persists the token and reuses
@@ -102,16 +103,7 @@ def bridge_handshake(payload: BridgeHandshake, db: Annotated[Session, Depends(ge
         bridge.last_seen_at = now
         bridge.updated_at = now
 
-    db.query(BridgeSession).filter(BridgeSession.bridge_id == bridge.id).delete(
-        synchronize_session=False
-    )
-    raw_token = new_session_token()
-    db.add(BridgeSession(
-        id=hash_token(raw_token),
-        bridge_id=bridge.id,
-        created_at=now,
-        last_seen_at=now,
-    ))
+    raw_token = create_auth_session(db, account)
     db.commit()
 
     return {

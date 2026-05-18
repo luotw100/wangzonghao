@@ -47,6 +47,9 @@ def _make_runtime(ctx: Context) -> BridgeRuntime:
     def get_token() -> str | None:
         return state.load().get("studio_token")
 
+    def get_machine_id() -> str | None:
+        return state.load().get("machine_id")
+
     def base_info() -> dict:
         d = state.load()
         return {
@@ -70,7 +73,7 @@ def _make_runtime(ctx: Context) -> BridgeRuntime:
         ctx.events.log("core", "err", "Studio token 已失效并清除，请重新 /login")
 
     return BridgeRuntime(
-        StudioClient(get_token),
+        StudioClient(get_token, get_machine_id),
         list(data.get("channels", [])),
         LocalStore(str(config.db_file())),
         ctx.events,

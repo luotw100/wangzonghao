@@ -80,7 +80,11 @@ def upgrade() -> None:
         sa.CheckConstraint("msg_type IN ('text', 'image', 'audio', 'video', 'file')", name="ck_chat_msg_type"),
     )
     op.create_index("ix_chat_messages_account_id", "chat_messages", ["account_id"])
-    op.create_index("ix_chat_messages_conversation_id", "chat_messages", ["conversation_id"])
+    op.create_index(
+        "ix_chat_messages_conversation_id_id",
+        "chat_messages",
+        ["conversation_id", "id"],
+    )
 
 
 def downgrade() -> None:

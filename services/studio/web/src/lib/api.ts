@@ -76,7 +76,6 @@ export interface Account {
   role: AccountRole;
   status: AccountStatus;
   created_at: string;
-  last_login_at: string | null;
 }
 
 export interface LoginResponse {

@@ -2,7 +2,6 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 import { Navigate } from 'react-router-dom';
 import * as api from './api';
 import type { Account } from './api';
-import { LaborsterLogo } from '../components/Icons';
 
 interface AuthState {
   account: Account | null;
@@ -58,10 +57,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 function Splash() {
   return (
-    <div className="w-full h-dvh flex items-center justify-center bg-bg-primary tech-grid">
-      <div className="w-12 h-12 rounded-full bg-bg-tertiary flex items-center justify-center laborster-empty-logo opacity-60">
-        <LaborsterLogo size={24} id="splashGrad" />
-      </div>
+    <div
+      className="lab-screen lab-tech-grid"
+      style={{ height: '100dvh', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+    >
+      <span className="lab-mark" style={{ opacity: 0.7 }} />
     </div>
   );
 }
@@ -71,13 +71,5 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const { account, loading } = useAuth();
   if (loading) return <Splash />;
   if (!account) return <Navigate to="/" replace />;
-  return <>{children}</>;
-}
-
-
-export function RedirectIfAuthed({ children }: { children: ReactNode }) {
-  const { account, loading } = useAuth();
-  if (loading) return <Splash />;
-  if (account) return <Navigate to="/studio" replace />;
   return <>{children}</>;
 }

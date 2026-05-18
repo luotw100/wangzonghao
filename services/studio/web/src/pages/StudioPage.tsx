@@ -424,10 +424,10 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
                   return (
                     <div key={`avail-${inbox.id}`} className="card" style={{ padding: '10px 14px', display: 'grid', gap: 6 }}>
                       <span className="ink-3" style={{ fontSize: 11 }}>{inbox.display_name}</span>
-                      {convs.map(item => (
+                      {convs.map((item, index) => (
                         <div
                           key={item.contact.id}
-                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 0', borderBottom: '1px solid var(--line-subtle)' }}
+                          style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 0', borderBottom: index < convs.length - 1 ? '1px solid var(--line-subtle)' : 'none' }}
                         >
                           <button
                             className="card"
@@ -1290,7 +1290,7 @@ function PasswordPanel({ me, setError }: { me: string; setError: (message: strin
         <FormField label="当前密码"><input className="input" type="password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} /></FormField>
         <FormField label="新密码"><input className="input" type="password" value={newPassword} onChange={event => setNewPassword(event.target.value)} /></FormField>
         <FormField label="再输一次新密码"><input className="input" type="password" value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} /></FormField>
-        <button className="btn btn-primary btn-sm" onClick={handle} disabled={busy || !canSubmit}>{busy ? '保存中…' : '修改密码'}</button>
+        <button className="btn btn-primary btn-sm" style={{ marginBottom: 12 }} onClick={handle} disabled={busy || !canSubmit}>{busy ? '保存中…' : '修改密码'}</button>
       </div>
       {mismatch && <div style={{ color: 'var(--danger)', fontSize: 11, marginTop: 6 }}>两次输入的新密码不一致</div>}
       {ok && <div style={{ color: 'var(--live)', fontSize: 11, marginTop: 6 }}>{ok}</div>}

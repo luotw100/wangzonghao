@@ -1,7 +1,7 @@
 {
   "chatlab": {
     "version": "1.0",
-    "exportedAt": 1776638400
+    "exportedAt": 1779062400
   },
   "meta": {
     "name": "乔木画画（与陈锋）",
@@ -25,88 +25,304 @@
   ],
   "messages": [
     {
-      "sender": "fan_cf_qiao",
-      "timestamp": 1776638400,
-      "type": 0,
-      "content": "锋哥你今天那一波,弹幕都在刷『五杀』,是很厉害对吧"
-    },
-    {
       "sender": "chenfeng",
-      "timestamp": 1776638445,
+      "timestamp": 1768694400,
       "type": 0,
-      "content": "嗯。五个"
+      "content": "继续加油"
     },
     {
       "sender": "fan_cf_qiao",
-      "timestamp": 1776638505,
+      "timestamp": 1768922134,
       "type": 0,
-      "content": "哈哈哈你怎么这么省字。我其实不太懂游戏,就爱看你直播间吵吵闹闹的"
+      "content": "行了，下次见"
     },
     {
       "sender": "chenfeng",
-      "timestamp": 1776638545,
+      "timestamp": 1769103188,
       "type": 0,
-      "content": "不懂还来看四个月,图啥"
+      "content": "你在吗"
     },
     {
       "sender": "fan_cf_qiao",
-      "timestamp": 1776638610,
+      "timestamp": 1769265625,
       "type": 0,
-      "content": "图气氛啊,我一个人在家画图太安静了,开着你直播像有人陪"
+      "content": "给点建议呗"
     },
     {
       "sender": "chenfeng",
-      "timestamp": 1776638645,
+      "timestamp": 1769428925,
       "type": 0,
-      "content": "行吧,理由挺正当"
+      "content": "怎么样"
     },
     {
       "sender": "fan_cf_qiao",
-      "timestamp": 1776638705,
+      "timestamp": 1769674590,
       "type": 0,
-      "content": "我想给你画个头像,Q版的,你那个皱眉脸特别好画,不要钱"
+      "content": "行了，下次见"
     },
     {
       "sender": "chenfeng",
-      "timestamp": 1776638735,
+      "timestamp": 1769880054,
       "type": 0,
-      "content": "我哪皱眉了"
+      "content": "你咋这么强"
     },
     {
       "sender": "fan_cf_qiao",
-      "timestamp": 1776638775,
+      "timestamp": 1770081371,
       "type": 0,
-      "content": "全程都在皱!就那个『这把队友是坑』的表情,绝了"
+      "content": "好，继续练"
     },
     {
       "sender": "chenfeng",
-      "timestamp": 1776638820,
+      "timestamp": 1770302474,
       "type": 0,
-      "content": "……随你画。别画太丑挂直播间被人笑"
+      "content": "别放弃"
     },
     {
       "sender": "fan_cf_qiao",
-      "timestamp": 1776638870,
+      "timestamp": 1770522402,
       "type": 0,
-      "content": "放心,我接稿的人专业的。画好私你?哦你不加私……那我发直播间"
+      "content": "今天有问题吗"
     },
     {
       "sender": "chenfeng",
-      "timestamp": 1776638910,
+      "timestamp": 1770751950,
       "type": 0,
-      "content": "发弹幕区,我看到会截。画好了说一声"
+      "content": "怎么样"
     },
     {
       "sender": "fan_cf_qiao",
-      "timestamp": 1776638940,
+      "timestamp": 1770946348,
       "type": 0,
-      "content": "成交!那我去肝图了,你继续皱眉"
+      "content": "怎么样"
     },
     {
       "sender": "chenfeng",
-      "timestamp": 1776638960,
+      "timestamp": 1771176939,
       "type": 0,
-      "content": "……快走"
+      "content": "好，继续练"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1771393938,
+      "type": 0,
+      "content": "今天有问题吗"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1771570340,
+      "type": 0,
+      "content": "别放弃"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1771820471,
+      "type": 0,
+      "content": "有前景"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1772049849,
+      "type": 0,
+      "content": "有前景"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1772231746,
+      "type": 0,
+      "content": "今天有问题吗"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1772467880,
+      "type": 0,
+      "content": "又来了"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1772704899,
+      "type": 0,
+      "content": "你咋这么强"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1772923432,
+      "type": 0,
+      "content": "这把怎么样"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1773164837,
+      "type": 0,
+      "content": "有前景"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1773421691,
+      "type": 0,
+      "content": "行了，下次见"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1773663726,
+      "type": 0,
+      "content": "今天有问题吗"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1773896341,
+      "type": 0,
+      "content": "好，继续练"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1774112047,
+      "type": 0,
+      "content": "你在吗"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1774339350,
+      "type": 0,
+      "content": "多看回放"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1774581901,
+      "type": 0,
+      "content": "继续加油"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1774824418,
+      "type": 0,
+      "content": "怎么样"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1775053075,
+      "type": 0,
+      "content": "继续加油"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1775252355,
+      "type": 0,
+      "content": "有前景"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1775456552,
+      "type": 0,
+      "content": "别放弃"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1775678376,
+      "type": 0,
+      "content": "别在这扯了"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1775907804,
+      "type": 0,
+      "content": "别在这扯了"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1776096267,
+      "type": 0,
+      "content": "行了，下次见"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1776360434,
+      "type": 0,
+      "content": "你在吗"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1776530865,
+      "type": 0,
+      "content": "怎么样"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1776747473,
+      "type": 0,
+      "content": "这把怎么样"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1776946518,
+      "type": 0,
+      "content": "怎么样"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1777153154,
+      "type": 0,
+      "content": "给点建议呗"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1777365875,
+      "type": 0,
+      "content": "嗯"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1777558621,
+      "type": 0,
+      "content": "今天有问题吗"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1777737724,
+      "type": 0,
+      "content": "嗯"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1777936206,
+      "type": 0,
+      "content": "继续加油"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1778096282,
+      "type": 0,
+      "content": "又来了"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1778254987,
+      "type": 0,
+      "content": "锋哥"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1778482272,
+      "type": 0,
+      "content": "别在这扯了"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1778740356,
+      "type": 0,
+      "content": "你在吗"
+    },
+    {
+      "sender": "chenfeng",
+      "timestamp": 1778916914,
+      "type": 0,
+      "content": "好，继续练"
+    },
+    {
+      "sender": "fan_cf_qiao",
+      "timestamp": 1779120680,
+      "type": 0,
+      "content": "你在吗"
     }
   ]
 }

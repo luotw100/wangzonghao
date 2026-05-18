@@ -1,7 +1,7 @@
 {
   "chatlab": {
     "version": "1.0",
-    "exportedAt": 1778314500
+    "exportedAt": 1779062400
   },
   "meta": {
     "name": "夜班小鱼（与大壮）",
@@ -25,76 +25,784 @@
   ],
   "messages": [
     {
-      "sender": "fan_dz_xiaoyu",
-      "timestamp": 1778314500,
-      "type": 0,
-      "content": "刚下夜班,瘫床上看你直播,笑了会儿,舒服了"
-    },
-    {
       "sender": "dazhuang",
-      "timestamp": 1778314580,
+      "timestamp": 1773878400,
       "type": 0,
-      "content": "哟,白衣天使下班了。一宿没睡?这班上得比我打游戏还熬"
+      "content": "典了典了"
     },
     {
       "sender": "fan_dz_xiaoyu",
-      "timestamp": 1778314650,
+      "timestamp": 1773924862,
       "type": 0,
-      "content": "急诊一晚上没停,现在脑子嗡嗡的,看你犯傻正好放空"
+      "content": "下次见哈"
     },
     {
       "sender": "dazhuang",
-      "timestamp": 1778314710,
+      "timestamp": 1773962758,
       "type": 0,
-      "content": "合着我整活是给你当电子助眠的呗,行,我大壮值了"
+      "content": "这把典不典"
     },
     {
       "sender": "fan_dz_xiaoyu",
-      "timestamp": 1778314775,
+      "timestamp": 1774009337,
       "type": 0,
-      "content": "别说,真有用。不用动脑,跟着乐呵两声就困了"
+      "content": "逗你玩呢"
     },
     {
       "sender": "dazhuang",
-      "timestamp": 1778314830,
+      "timestamp": 1774048298,
       "type": 0,
-      "content": "那你赶紧睡,别硬撑着看,我这破节目改天还有"
+      "content": "陪我聊会儿"
     },
     {
       "sender": "fan_dz_xiaoyu",
-      "timestamp": 1778314890,
+      "timestamp": 1774091899,
       "type": 0,
-      "content": "嗯,看你血压不高心情就好。你也少熬点,天天播这么晚"
+      "content": "笑死我了"
     },
     {
       "sender": "dazhuang",
-      "timestamp": 1778314940,
+      "timestamp": 1774139934,
       "type": 0,
-      "content": "哈哈被一个熬夜冠军关心熬夜,我有点想笑"
+      "content": "这谁啊"
     },
     {
       "sender": "fan_dz_xiaoyu",
-      "timestamp": 1778314985,
+      "timestamp": 1774188958,
       "type": 0,
-      "content": "我是职业的,你是作的,不一样"
+      "content": "晚安各位"
     },
     {
       "sender": "dazhuang",
-      "timestamp": 1778315035,
+      "timestamp": 1774231121,
       "type": 0,
-      "content": "扎心了护士姐。行,你睡觉,做梦别梦见病人"
+      "content": "典了典了"
     },
     {
       "sender": "fan_dz_xiaoyu",
-      "timestamp": 1778315075,
+      "timestamp": 1774262356,
       "type": 0,
-      "content": "尽量。回放给我留着,醒了补"
+      "content": "爱你们啊"
     },
     {
       "sender": "dazhuang",
-      "timestamp": 1778315105,
+      "timestamp": 1774293735,
       "type": 0,
-      "content": "必须的,专属电子安眠药,管够。睡吧"
+      "content": "这把典不典"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1774342491,
+      "type": 0,
+      "content": "又来了你"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1774388465,
+      "type": 0,
+      "content": "笑死我了"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1774430681,
+      "type": 0,
+      "content": "笑死我了"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1774464528,
+      "type": 0,
+      "content": "你又出事了"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1774513681,
+      "type": 0,
+      "content": "感谢支持"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1774559598,
+      "type": 0,
+      "content": "别走啊"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1774592360,
+      "type": 0,
+      "content": "我不信"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1774627154,
+      "type": 0,
+      "content": "你这也太逗了"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1774674542,
+      "type": 0,
+      "content": "你又出事了"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1774713837,
+      "type": 0,
+      "content": "笑死我了"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1774759211,
+      "type": 0,
+      "content": "好了拜拜"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1774806289,
+      "type": 0,
+      "content": "这把典不典"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1774838991,
+      "type": 0,
+      "content": "我们继续整活"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1774886279,
+      "type": 0,
+      "content": "这把典不典"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1774936408,
+      "type": 0,
+      "content": "好了拜拜"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1774969445,
+      "type": 0,
+      "content": "你这也太逗了"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1775007619,
+      "type": 0,
+      "content": "逗你玩呢"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1775053239,
+      "type": 0,
+      "content": "继续整活"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1775085936,
+      "type": 0,
+      "content": "继续整活"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1775133743,
+      "type": 0,
+      "content": "这谁啊"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1775182875,
+      "type": 0,
+      "content": "别走啊"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1775223253,
+      "type": 0,
+      "content": "好了拜拜"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1775273480,
+      "type": 0,
+      "content": "爱你们啊"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1775305348,
+      "type": 0,
+      "content": "这谁啊"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1775346744,
+      "type": 0,
+      "content": "哈哈哈哈"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1775394414,
+      "type": 0,
+      "content": "又来了你"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1775424906,
+      "type": 0,
+      "content": "别走啊"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1775470408,
+      "type": 0,
+      "content": "爱你们啊"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1775515424,
+      "type": 0,
+      "content": "继续整活"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1775562361,
+      "type": 0,
+      "content": "壮哥"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1775607875,
+      "type": 0,
+      "content": "别走啊"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1775656821,
+      "type": 0,
+      "content": "好了拜拜"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1775697823,
+      "type": 0,
+      "content": "壮哥"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1775741757,
+      "type": 0,
+      "content": "好了拜拜"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1775783460,
+      "type": 0,
+      "content": "笑死我了"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1775823253,
+      "type": 0,
+      "content": "哈哈哈哈"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1775862868,
+      "type": 0,
+      "content": "继续打游戏去"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1775898495,
+      "type": 0,
+      "content": "你可真会吹"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1775929791,
+      "type": 0,
+      "content": "晚安各位"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1775979513,
+      "type": 0,
+      "content": "别走啊"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1776019615,
+      "type": 0,
+      "content": "你可真会吹"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1776068225,
+      "type": 0,
+      "content": "笑死我了"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1776106898,
+      "type": 0,
+      "content": "壮哥"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1776139049,
+      "type": 0,
+      "content": "好了拜拜"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1776184692,
+      "type": 0,
+      "content": "晚安各位"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1776233775,
+      "type": 0,
+      "content": "继续打游戏去"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1776269454,
+      "type": 0,
+      "content": "你又出事了"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1776318364,
+      "type": 0,
+      "content": "我不信"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1776350194,
+      "type": 0,
+      "content": "别走啊"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1776389893,
+      "type": 0,
+      "content": "下次见哈"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1776420926,
+      "type": 0,
+      "content": "别走啊"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1776460463,
+      "type": 0,
+      "content": "继续打游戏去"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1776506486,
+      "type": 0,
+      "content": "哈哈哈哈"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1776539328,
+      "type": 0,
+      "content": "好了拜拜"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1776573622,
+      "type": 0,
+      "content": "感谢支持"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1776620328,
+      "type": 0,
+      "content": "下次见哈"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1776652985,
+      "type": 0,
+      "content": "别走啊"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1776692228,
+      "type": 0,
+      "content": "典了典了"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1776730626,
+      "type": 0,
+      "content": "笑死我了"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1776765108,
+      "type": 0,
+      "content": "这把典不典"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1776804453,
+      "type": 0,
+      "content": "这把典不典"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1776843610,
+      "type": 0,
+      "content": "继续打游戏去"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1776882168,
+      "type": 0,
+      "content": "下次见哈"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1776912772,
+      "type": 0,
+      "content": "典了典了"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1776946566,
+      "type": 0,
+      "content": "哈人哈人"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1776996491,
+      "type": 0,
+      "content": "好了拜拜"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1777032351,
+      "type": 0,
+      "content": "继续整活"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1777081881,
+      "type": 0,
+      "content": "继续打游戏去"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1777116972,
+      "type": 0,
+      "content": "继续整活"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1777161746,
+      "type": 0,
+      "content": "你可真会吹"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1777204001,
+      "type": 0,
+      "content": "我们继续整活"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1777239887,
+      "type": 0,
+      "content": "好了拜拜"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1777278586,
+      "type": 0,
+      "content": "晚安各位"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1777316464,
+      "type": 0,
+      "content": "笑死我了"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1777362492,
+      "type": 0,
+      "content": "这谁啊"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1777398555,
+      "type": 0,
+      "content": "好了拜拜"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1777445975,
+      "type": 0,
+      "content": "我们继续整活"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1777477198,
+      "type": 0,
+      "content": "晚安各位"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1777518571,
+      "type": 0,
+      "content": "好了拜拜"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1777551475,
+      "type": 0,
+      "content": "又来了你"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1777586367,
+      "type": 0,
+      "content": "典了典了"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1777636020,
+      "type": 0,
+      "content": "又来了你"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1777671210,
+      "type": 0,
+      "content": "哈人哈人"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1777717600,
+      "type": 0,
+      "content": "陪我聊会儿"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1777761270,
+      "type": 0,
+      "content": "下次见哈"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1777803964,
+      "type": 0,
+      "content": "你可真会吹"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1777841900,
+      "type": 0,
+      "content": "再来一把"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1777886462,
+      "type": 0,
+      "content": "陪我聊会儿"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1777922082,
+      "type": 0,
+      "content": "你就是我的小棉袄"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1777959130,
+      "type": 0,
+      "content": "你这也太逗了"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778008200,
+      "type": 0,
+      "content": "下次见哈"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778049646,
+      "type": 0,
+      "content": "逗你玩呢"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778081565,
+      "type": 0,
+      "content": "逗你玩呢"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778120367,
+      "type": 0,
+      "content": "我们继续整活"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778154306,
+      "type": 0,
+      "content": "你就是我的小棉袄"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778186166,
+      "type": 0,
+      "content": "逗你玩呢"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778221796,
+      "type": 0,
+      "content": "哈人哈人"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778267139,
+      "type": 0,
+      "content": "晚安各位"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778310344,
+      "type": 0,
+      "content": "继续打游戏去"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778356088,
+      "type": 0,
+      "content": "继续打游戏去"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778396102,
+      "type": 0,
+      "content": "你可真会吹"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778441847,
+      "type": 0,
+      "content": "哈人哈人"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778489435,
+      "type": 0,
+      "content": "你又出事了"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778527230,
+      "type": 0,
+      "content": "晚安各位"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778569814,
+      "type": 0,
+      "content": "下次见哈"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778612734,
+      "type": 0,
+      "content": "爱你们啊"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778658424,
+      "type": 0,
+      "content": "壮哥"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778697168,
+      "type": 0,
+      "content": "我们继续整活"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778732063,
+      "type": 0,
+      "content": "又来了你"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778779583,
+      "type": 0,
+      "content": "继续打游戏去"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778823967,
+      "type": 0,
+      "content": "壮哥"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778854494,
+      "type": 0,
+      "content": "你可真会吹"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778894096,
+      "type": 0,
+      "content": "继续打游戏去"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778938941,
+      "type": 0,
+      "content": "下次见哈"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1778981597,
+      "type": 0,
+      "content": "继续打游戏去"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1779022080,
+      "type": 0,
+      "content": "继续打游戏去"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1779069594,
+      "type": 0,
+      "content": "继续整活"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1779101077,
+      "type": 0,
+      "content": "哈人哈人"
+    },
+    {
+      "sender": "fan_dz_xiaoyu",
+      "timestamp": 1779134406,
+      "type": 0,
+      "content": "你这也太逗了"
     }
   ]
 }

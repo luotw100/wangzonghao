@@ -1,7 +1,7 @@
 {
   "chatlab": {
     "version": "1.0",
-    "exportedAt": 1778936700
+    "exportedAt": 1779062400
   },
   "meta": {
     "name": "林律师（与周晴）",
@@ -25,64 +25,244 @@
   ],
   "messages": [
     {
-      "sender": "fan_zq_lin",
-      "timestamp": 1778936700,
-      "type": 0,
-      "content": "时间有限,直接说:这款,落地多少,什么时候能提,要点就行"
-    },
-    {
       "sender": "zhouqing",
-      "timestamp": 1778936785,
+      "timestamp": 1778803200,
       "type": 0,
-      "content": "好的林律师,三句话:落地18.6万全包;现车,定金今天交三天可提;颜色白/灰有现车"
+      "content": "期待您的决定"
     },
     {
       "sender": "fan_zq_lin",
-      "timestamp": 1778936855,
+      "timestamp": 1778808939,
       "type": 0,
-      "content": "贷款方案别给我推,全款。还有别的隐藏费用吗"
+      "content": "这个方案怎么样"
     },
     {
       "sender": "zhouqing",
-      "timestamp": 1778936930,
+      "timestamp": 1778814763,
       "type": 0,
-      "content": "没有,18.6万含购置税、保险、上牌,出库前给您逐项清单,多一分算我的"
+      "content": "我给您详细讲解"
     },
     {
       "sender": "fan_zq_lin",
-      "timestamp": 1778936980,
+      "timestamp": 1778822050,
       "type": 0,
-      "content": "可以。试驾要预约多久"
+      "content": "我会跟进"
     },
     {
       "sender": "zhouqing",
-      "timestamp": 1778937050,
+      "timestamp": 1778829930,
       "type": 0,
-      "content": "您时间宝贵,不用走流程排队,您说个时段我直接给您留车留人,15分钟试完不耽误"
+      "content": "请问您需要什么帮助"
     },
     {
       "sender": "fan_zq_lin",
-      "timestamp": 1778937095,
+      "timestamp": 1778835056,
       "type": 0,
-      "content": "明天中午12点半,我只有四十分钟"
+      "content": "好的，下周见"
     },
     {
       "sender": "zhouqing",
-      "timestamp": 1778937160,
+      "timestamp": 1778842766,
       "type": 0,
-      "content": "记下了,明天12:30,白色试驾车备好,合同我提前拟好,您试完满意当场能签,四十分钟够"
+      "content": "这个方案怎么样"
     },
     {
       "sender": "fan_zq_lin",
-      "timestamp": 1778937195,
+      "timestamp": 1778849048,
       "type": 0,
-      "content": "效率不错。明天见"
+      "content": "还有优惠吗"
     },
     {
       "sender": "zhouqing",
-      "timestamp": 1778937235,
+      "timestamp": 1778855440,
       "type": 0,
-      "content": "明天见林律师~ 到楼下停车场发我,我下去接您直接上车,不浪费您一分钟"
+      "content": "您好，有什么问题吗"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1778861029,
+      "type": 0,
+      "content": "还有优惠吗"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778867540,
+      "type": 0,
+      "content": "请问您需要什么帮助"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1778874360,
+      "type": 0,
+      "content": "再联系您"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778881555,
+      "type": 0,
+      "content": "我想看看"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1778887204,
+      "type": 0,
+      "content": "我给您介绍一下"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778894373,
+      "type": 0,
+      "content": "再联系您"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1778900592,
+      "type": 0,
+      "content": "祝您愉快"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778906073,
+      "type": 0,
+      "content": "期待您的决定"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1778911159,
+      "type": 0,
+      "content": "我给您介绍一下"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778917800,
+      "type": 0,
+      "content": "周经理你好"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1778924829,
+      "type": 0,
+      "content": "请问您需要什么帮助"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778932960,
+      "type": 0,
+      "content": "我给您详细讲解"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1778938539,
+      "type": 0,
+      "content": "您放心"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778945399,
+      "type": 0,
+      "content": "我给您详细讲解"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1778951694,
+      "type": 0,
+      "content": "期待您的决定"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778957317,
+      "type": 0,
+      "content": "这个是标准的"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1778962318,
+      "type": 0,
+      "content": "还有优惠吗"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778970326,
+      "type": 0,
+      "content": "还有优惠吗"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1778977547,
+      "type": 0,
+      "content": "什么时候有车"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778984609,
+      "type": 0,
+      "content": "您这个想法很好"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1778990949,
+      "type": 0,
+      "content": "请问您需要什么帮助"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1778998584,
+      "type": 0,
+      "content": "您这个想法很好"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1779006457,
+      "type": 0,
+      "content": "再联系您"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1779012651,
+      "type": 0,
+      "content": "我想看看"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1779019576,
+      "type": 0,
+      "content": "我们有多个方案"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1779025747,
+      "type": 0,
+      "content": "价格怎么样"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1779033820,
+      "type": 0,
+      "content": "价格怎么样"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1779041153,
+      "type": 0,
+      "content": "您好，有什么问题吗"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1779048868,
+      "type": 0,
+      "content": "这个是标准的"
+    },
+    {
+      "sender": "zhouqing",
+      "timestamp": 1779054454,
+      "type": 0,
+      "content": "什么时候有车"
+    },
+    {
+      "sender": "fan_zq_lin",
+      "timestamp": 1779062713,
+      "type": 0,
+      "content": "您这个想法很好"
     }
   ]
 }

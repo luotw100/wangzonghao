@@ -1,7 +1,7 @@
 {
   "chatlab": {
     "version": "1.0",
-    "exportedAt": 1777407000
+    "exportedAt": 1779062400
   },
   "meta": {
     "name": "凯子（与苏糖）",
@@ -25,88 +25,904 @@
   ],
   "messages": [
     {
-      "sender": "fan_stg_kai",
-      "timestamp": 1777407000,
-      "type": 0,
-      "content": "糖姐!今天必须给你刷上榜一,谁也别跟我抢"
-    },
-    {
       "sender": "sutang",
-      "timestamp": 1777407050,
+      "timestamp": 1766102400,
       "type": 0,
-      "content": "哟,我们退伍小伙又上头了哈哈,悠着点花,挣钱不容易"
+      "content": "晚安，睡吧"
     },
     {
       "sender": "fan_stg_kai",
-      "timestamp": 1777407095,
+      "timestamp": 1766206029,
       "type": 0,
-      "content": "为你花值。姐我跟你说真的,你处对象不"
+      "content": "又来蹭我直播呢"
     },
     {
       "sender": "sutang",
-      "timestamp": 1777407135,
+      "timestamp": 1766314560,
       "type": 0,
-      "content": "噗——你这冲锋枪上来就突突,埋伏都不打一下的啊"
+      "content": "你别调戏我"
     },
     {
       "sender": "fan_stg_kai",
-      "timestamp": 1777407195,
+      "timestamp": 1766404702,
       "type": 0,
-      "content": "我不绕弯子,部队出来的人实在。我健身房自己开的,饿不着你"
+      "content": "你这体力真好"
     },
     {
       "sender": "sutang",
-      "timestamp": 1777407265,
+      "timestamp": 1766475552,
       "type": 0,
-      "content": "嚯还带报家底的,小伙挺敞亮。但姐丑话说前头,网恋脑子别上头"
+      "content": "哎呦，凯子来啦"
     },
     {
       "sender": "fan_stg_kai",
-      "timestamp": 1777407300,
+      "timestamp": 1766581327,
       "type": 0,
-      "content": "我没上头,我认真的"
+      "content": "晚安，睡吧"
     },
     {
       "sender": "sutang",
-      "timestamp": 1777407375,
+      "timestamp": 1766665918,
       "type": 0,
-      "content": "认真更得清醒。你才22,姐看着你这股劲儿喜欢,可这事儿不是刷礼物刷出来的"
+      "content": "来了来了，我都看到了"
     },
     {
       "sender": "fan_stg_kai",
-      "timestamp": 1777407415,
+      "timestamp": 1766747303,
       "type": 0,
-      "content": "那我咋样你才能高看一眼"
+      "content": "哎呦，凯子来啦"
     },
     {
       "sender": "sutang",
-      "timestamp": 1777407495,
+      "timestamp": 1766817354,
       "type": 0,
-      "content": "把健身房开好,把钱攒住,别天天泡直播间。仨月后你还这想法,姐再听你白话"
+      "content": "我得去忙了"
     },
     {
       "sender": "fan_stg_kai",
-      "timestamp": 1777407540,
+      "timestamp": 1766887964,
       "type": 0,
-      "content": "行!姐你这是没把话说死啊,我记住了仨月"
+      "content": "身体最重要"
     },
     {
       "sender": "sutang",
-      "timestamp": 1777407590,
+      "timestamp": 1766970759,
       "type": 0,
-      "content": "得,我就知道你能给自己找台阶。去练你的肌肉去,少喝点酒"
+      "content": "姐好呀"
     },
     {
       "sender": "fan_stg_kai",
-      "timestamp": 1777407625,
+      "timestamp": 1767046100,
       "type": 0,
-      "content": "听姐的!那我先撤了,明天还来"
+      "content": "晚安，睡吧"
     },
     {
       "sender": "sutang",
-      "timestamp": 1777407650,
+      "timestamp": 1767136237,
       "type": 0,
-      "content": "来吧来吧,大门常开,礼物随缘啊别硬刷"
+      "content": "下次见啊"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1767243014,
+      "type": 0,
+      "content": "下次见啊"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1767318358,
+      "type": 0,
+      "content": "来了来了，我都看到了"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1767409126,
+      "type": 0,
+      "content": "哈哈你逗我呢"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1767495113,
+      "type": 0,
+      "content": "你这张嘴啊"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1767583985,
+      "type": 0,
+      "content": "你这体力真好"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1767656201,
+      "type": 0,
+      "content": "拜拜，好好照顾自己"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1767727432,
+      "type": 0,
+      "content": "苏糖好"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1767793006,
+      "type": 0,
+      "content": "怎么样，最近咋地啊"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1767878442,
+      "type": 0,
+      "content": "下次见啊"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1767972822,
+      "type": 0,
+      "content": "拜拜，好好照顾自己"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1768061643,
+      "type": 0,
+      "content": "给我来一个新舞蹈吧"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1768144556,
+      "type": 0,
+      "content": "我才不信你的"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1768216489,
+      "type": 0,
+      "content": "都跟你说过多少遍了"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1768290406,
+      "type": 0,
+      "content": "哎呦，凯子来啦"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1768361361,
+      "type": 0,
+      "content": "我得去忙了"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1768438875,
+      "type": 0,
+      "content": "姐好呀"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1768532353,
+      "type": 0,
+      "content": "哎呦，凯子来啦"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1768627002,
+      "type": 0,
+      "content": "又来蹭我直播呢"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1768728738,
+      "type": 0,
+      "content": "你这小子咋样啊"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1768830327,
+      "type": 0,
+      "content": "又来蹭我直播呢"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1768929144,
+      "type": 0,
+      "content": "拜拜，好好照顾自己"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1769021119,
+      "type": 0,
+      "content": "苏糖好"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1769093122,
+      "type": 0,
+      "content": "你这体力真好"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1769160077,
+      "type": 0,
+      "content": "都跟你说过多少遍了"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1769231184,
+      "type": 0,
+      "content": "别整天泡直播间"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1769319612,
+      "type": 0,
+      "content": "你今天状态不错"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1769421167,
+      "type": 0,
+      "content": "哈哈你逗我呢"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1769492500,
+      "type": 0,
+      "content": "给我来一个新舞蹈吧"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1769596854,
+      "type": 0,
+      "content": "好好生活你"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1769701281,
+      "type": 0,
+      "content": "来了来了，我都看到了"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1769787776,
+      "type": 0,
+      "content": "哈哈你逗我呢"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1769878256,
+      "type": 0,
+      "content": "下次见啊"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1769944298,
+      "type": 0,
+      "content": "怎么样，最近咋地啊"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1770028658,
+      "type": 0,
+      "content": "晚安，睡吧"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1770121011,
+      "type": 0,
+      "content": "下次见啊"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1770211659,
+      "type": 0,
+      "content": "你今天状态不错"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1770282443,
+      "type": 0,
+      "content": "拜拜，好好照顾自己"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1770384346,
+      "type": 0,
+      "content": "拜拜，好好照顾自己"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1770465488,
+      "type": 0,
+      "content": "你今天状态不错"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1770568205,
+      "type": 0,
+      "content": "给我来一个新舞蹈吧"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1770667590,
+      "type": 0,
+      "content": "来了来了，我都看到了"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1770743937,
+      "type": 0,
+      "content": "下次见啊"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1770834122,
+      "type": 0,
+      "content": "给我来一个新舞蹈吧"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1770910464,
+      "type": 0,
+      "content": "你今天状态不错"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1770984797,
+      "type": 0,
+      "content": "你今天状态不错"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1771067654,
+      "type": 0,
+      "content": "又来蹭我直播呢"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1771152622,
+      "type": 0,
+      "content": "你这张嘴啊"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1771235446,
+      "type": 0,
+      "content": "苏糖好"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1771332997,
+      "type": 0,
+      "content": "身体最重要"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1771407794,
+      "type": 0,
+      "content": "哎呦，凯子来啦"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1771477174,
+      "type": 0,
+      "content": "你这体力真好"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1771553366,
+      "type": 0,
+      "content": "给我来一个新舞蹈吧"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1771647086,
+      "type": 0,
+      "content": "你今天状态不错"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1771730405,
+      "type": 0,
+      "content": "你别调戏我"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1771823236,
+      "type": 0,
+      "content": "姐好呀"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1771908114,
+      "type": 0,
+      "content": "又来蹭我直播呢"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1772005082,
+      "type": 0,
+      "content": "哈哈你逗我呢"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1772075357,
+      "type": 0,
+      "content": "给我来一个新舞蹈吧"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1772164257,
+      "type": 0,
+      "content": "你这体力真好"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1772245986,
+      "type": 0,
+      "content": "好好生活你"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1772327380,
+      "type": 0,
+      "content": "下次见啊"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1772433576,
+      "type": 0,
+      "content": "好好生活你"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1772531302,
+      "type": 0,
+      "content": "别整天泡直播间"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1772635451,
+      "type": 0,
+      "content": "下次见啊"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1772741099,
+      "type": 0,
+      "content": "又来蹭我直播呢"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1772819148,
+      "type": 0,
+      "content": "都跟你说过多少遍了"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1772914388,
+      "type": 0,
+      "content": "别整天泡直播间"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1772986632,
+      "type": 0,
+      "content": "我得去忙了"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1773060745,
+      "type": 0,
+      "content": "哈哈你逗我呢"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1773145945,
+      "type": 0,
+      "content": "苏糖好"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1773211622,
+      "type": 0,
+      "content": "身体最重要"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1773302788,
+      "type": 0,
+      "content": "我才不信你的"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1773389794,
+      "type": 0,
+      "content": "你今天状态不错"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1773495672,
+      "type": 0,
+      "content": "给我来一个新舞蹈吧"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1773585802,
+      "type": 0,
+      "content": "给我来一个新舞蹈吧"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1773672632,
+      "type": 0,
+      "content": "好好生活你"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1773766716,
+      "type": 0,
+      "content": "下次见啊"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1773853887,
+      "type": 0,
+      "content": "拜拜，好好照顾自己"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1773947341,
+      "type": 0,
+      "content": "我才不信你的"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1774055241,
+      "type": 0,
+      "content": "哈哈你逗我呢"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1774159429,
+      "type": 0,
+      "content": "拜拜，好好照顾自己"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1774233584,
+      "type": 0,
+      "content": "来了来了，我都看到了"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1774318507,
+      "type": 0,
+      "content": "哎呦，凯子来啦"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1774404756,
+      "type": 0,
+      "content": "哎呦，凯子来啦"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1774509522,
+      "type": 0,
+      "content": "拜拜，好好照顾自己"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1774587919,
+      "type": 0,
+      "content": "苏糖好"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1774684545,
+      "type": 0,
+      "content": "苏糖好"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1774770369,
+      "type": 0,
+      "content": "你这体力真好"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1774847244,
+      "type": 0,
+      "content": "晚安，睡吧"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1774938577,
+      "type": 0,
+      "content": "来了来了，我都看到了"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1775024726,
+      "type": 0,
+      "content": "下次见啊"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1775109060,
+      "type": 0,
+      "content": "哎呦，凯子来啦"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1775215771,
+      "type": 0,
+      "content": "我得去忙了"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1775313183,
+      "type": 0,
+      "content": "来了来了，我都看到了"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1775416157,
+      "type": 0,
+      "content": "好好生活你"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1775497278,
+      "type": 0,
+      "content": "来了来了，我都看到了"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1775583869,
+      "type": 0,
+      "content": "拜拜，好好照顾自己"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1775673748,
+      "type": 0,
+      "content": "哎呦，凯子来啦"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1775757351,
+      "type": 0,
+      "content": "姐好呀"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1775848336,
+      "type": 0,
+      "content": "你这体力真好"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1775937491,
+      "type": 0,
+      "content": "别整天泡直播间"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1776010188,
+      "type": 0,
+      "content": "身体最重要"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1776112374,
+      "type": 0,
+      "content": "怎么样，最近咋地啊"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1776190702,
+      "type": 0,
+      "content": "下次见啊"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1776294748,
+      "type": 0,
+      "content": "哈哈你逗我呢"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1776395740,
+      "type": 0,
+      "content": "你今天状态不错"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1776472765,
+      "type": 0,
+      "content": "哎呦，凯子来啦"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1776574050,
+      "type": 0,
+      "content": "又来蹭我直播呢"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1776641047,
+      "type": 0,
+      "content": "下次见啊"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1776736533,
+      "type": 0,
+      "content": "我得去忙了"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1776815506,
+      "type": 0,
+      "content": "你这小子咋样啊"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1776909474,
+      "type": 0,
+      "content": "又来蹭我直播呢"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1776993800,
+      "type": 0,
+      "content": "晚安，睡吧"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1777063566,
+      "type": 0,
+      "content": "来了来了，我都看到了"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1777155613,
+      "type": 0,
+      "content": "你这小子咋样啊"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1777253569,
+      "type": 0,
+      "content": "哈哈你逗我呢"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1777327924,
+      "type": 0,
+      "content": "晚安，睡吧"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1777434664,
+      "type": 0,
+      "content": "哎呦，凯子来啦"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1777519744,
+      "type": 0,
+      "content": "你别调戏我"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1777600839,
+      "type": 0,
+      "content": "你今天状态不错"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1777682632,
+      "type": 0,
+      "content": "你这小子咋样啊"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1777791032,
+      "type": 0,
+      "content": "哈哈你逗我呢"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1777866367,
+      "type": 0,
+      "content": "我得去忙了"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1777959331,
+      "type": 0,
+      "content": "我才不信你的"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1778049271,
+      "type": 0,
+      "content": "你这体力真好"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778119352,
+      "type": 0,
+      "content": "晚安，睡吧"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1778214016,
+      "type": 0,
+      "content": "拜拜，好好照顾自己"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778318436,
+      "type": 0,
+      "content": "来了来了，我都看到了"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1778415077,
+      "type": 0,
+      "content": "你别调戏我"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778518468,
+      "type": 0,
+      "content": "又来蹭我直播呢"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1778609969,
+      "type": 0,
+      "content": "苏糖好"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778710223,
+      "type": 0,
+      "content": "身体最重要"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1778808658,
+      "type": 0,
+      "content": "你别调戏我"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1778901305,
+      "type": 0,
+      "content": "下次继续"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1779002167,
+      "type": 0,
+      "content": "拜拜，好好照顾自己"
+    },
+    {
+      "sender": "sutang",
+      "timestamp": 1779069810,
+      "type": 0,
+      "content": "身体最重要"
+    },
+    {
+      "sender": "fan_stg_kai",
+      "timestamp": 1779158606,
+      "type": 0,
+      "content": "拜拜，好好照顾自己"
     }
   ]
 }

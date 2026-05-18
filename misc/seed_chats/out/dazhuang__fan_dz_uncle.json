@@ -1,7 +1,7 @@
 {
   "chatlab": {
     "version": "1.0",
-    "exportedAt": 1778873400
+    "exportedAt": 1779062400
   },
   "meta": {
     "name": "老李五金（与大壮）",
@@ -25,88 +25,274 @@
   ],
   "messages": [
     {
-      "sender": "fan_dz_uncle",
-      "timestamp": 1778873400,
-      "type": 0,
-      "content": "主播你好。我闺女让我刷快手解闷,刷到你这了"
-    },
-    {
       "sender": "dazhuang",
-      "timestamp": 1778873460,
+      "timestamp": 1778198400,
       "type": 0,
-      "content": "李叔好啊!欢迎欢迎,咱直播间难得来位长辈,稀客"
+      "content": "陪我聊会儿"
     },
     {
       "sender": "fan_dz_uncle",
-      "timestamp": 1778873515,
+      "timestamp": 1778217232,
       "type": 0,
-      "content": "你们年轻人说的那个『典』是啥意思,我没看懂"
+      "content": "别走啊"
     },
     {
       "sender": "dazhuang",
-      "timestamp": 1778873575,
+      "timestamp": 1778239264,
       "type": 0,
-      "content": "哈哈这个……就是『太经典了』的意思,网上玩笑话,叔您别太较真"
+      "content": "再来一把"
     },
     {
       "sender": "fan_dz_uncle",
-      "timestamp": 1778873625,
+      "timestamp": 1778254298,
       "type": 0,
-      "content": "哦。那『哈人』呢,是哈尔滨人吗"
+      "content": "这把典不典"
     },
     {
       "sender": "dazhuang",
-      "timestamp": 1778873680,
+      "timestamp": 1778277179,
       "type": 0,
-      "content": "噗——不是不是,是『吓人』,吓一跳那个吓。叔您太可爱了"
+      "content": "继续打游戏去"
     },
     {
       "sender": "fan_dz_uncle",
-      "timestamp": 1778873730,
+      "timestamp": 1778294344,
       "type": 0,
-      "content": "原来如此。你们这词得有本字典啊,我记记"
+      "content": "你可真会吹"
     },
     {
       "sender": "dazhuang",
-      "timestamp": 1778873785,
+      "timestamp": 1778309085,
       "type": 0,
-      "content": "您还真记上了哈哈。叔您别学这些,听着乐呵就行,伤神"
+      "content": "典了典了"
     },
     {
       "sender": "fan_dz_uncle",
-      "timestamp": 1778873845,
+      "timestamp": 1778324431,
       "type": 0,
-      "content": "也是。我看你打游戏挺热闹,比我守店强,我店里一天没俩人"
+      "content": "爱你们啊"
     },
     {
       "sender": "dazhuang",
-      "timestamp": 1778873900,
+      "timestamp": 1778345555,
       "type": 0,
-      "content": "五金生意稳当,叔您那是闷声发财,比我这敲键盘的强多了"
+      "content": "逗你玩呢"
     },
     {
       "sender": "fan_dz_uncle",
-      "timestamp": 1778873950,
+      "timestamp": 1778364647,
       "type": 0,
-      "content": "你这孩子会说话。行,我不懂归不懂,以后没事来看看你"
+      "content": "哈哈哈哈"
     },
     {
       "sender": "dazhuang",
-      "timestamp": 1778873995,
+      "timestamp": 1778381857,
       "type": 0,
-      "content": "随时欢迎李叔!您来我给您讲明白了再玩,不收学费"
+      "content": "笑死我了"
     },
     {
       "sender": "fan_dz_uncle",
-      "timestamp": 1778874035,
+      "timestamp": 1778401987,
       "type": 0,
-      "content": "哈哈好,那我去关店门了,改天见"
+      "content": "你这也太逗了"
     },
     {
       "sender": "dazhuang",
-      "timestamp": 1778874060,
+      "timestamp": 1778423125,
       "type": 0,
-      "content": "您慢走,路上看着车!回头见李叔"
+      "content": "我们继续整活"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778447266,
+      "type": 0,
+      "content": "晚安各位"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778462053,
+      "type": 0,
+      "content": "你可真会吹"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778485224,
+      "type": 0,
+      "content": "再来一把"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778507990,
+      "type": 0,
+      "content": "壮哥"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778530550,
+      "type": 0,
+      "content": "你这也太逗了"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778552421,
+      "type": 0,
+      "content": "哈哈哈哈"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778573765,
+      "type": 0,
+      "content": "典了典了"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778589640,
+      "type": 0,
+      "content": "我们继续整活"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778613216,
+      "type": 0,
+      "content": "哈哈哈哈"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778631643,
+      "type": 0,
+      "content": "哈人哈人"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778646424,
+      "type": 0,
+      "content": "壮哥"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778667449,
+      "type": 0,
+      "content": "这谁啊"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778690074,
+      "type": 0,
+      "content": "感谢支持"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778706786,
+      "type": 0,
+      "content": "我们继续整活"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778730806,
+      "type": 0,
+      "content": "晚安各位"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778754303,
+      "type": 0,
+      "content": "晚安各位"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778774910,
+      "type": 0,
+      "content": "爱你们啊"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778795100,
+      "type": 0,
+      "content": "这把典不典"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778814788,
+      "type": 0,
+      "content": "笑死我了"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778836078,
+      "type": 0,
+      "content": "晚安各位"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778851709,
+      "type": 0,
+      "content": "这把典不典"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778867921,
+      "type": 0,
+      "content": "爱你们啊"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778888633,
+      "type": 0,
+      "content": "好了拜拜"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778912119,
+      "type": 0,
+      "content": "下次见哈"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778932417,
+      "type": 0,
+      "content": "下次见哈"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778948462,
+      "type": 0,
+      "content": "好了拜拜"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1778970719,
+      "type": 0,
+      "content": "典了典了"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1778990196,
+      "type": 0,
+      "content": "下次见哈"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1779008250,
+      "type": 0,
+      "content": "笑死我了"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1779025870,
+      "type": 0,
+      "content": "你就是我的小棉袄"
+    },
+    {
+      "sender": "fan_dz_uncle",
+      "timestamp": 1779049681,
+      "type": 0,
+      "content": "哈哈哈哈"
+    },
+    {
+      "sender": "dazhuang",
+      "timestamp": 1779065052,
+      "type": 0,
+      "content": "你这也太逗了"
     }
   ]
 }

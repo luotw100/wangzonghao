@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
-# Hot backup of all stateful data: Studio PG + Chat PG + MinIO buckets.
-# Safe to run while services are up (pg_dump is transaction-consistent;
-# mc mirror is object-level). pgadmin-data is intentionally NOT backed up.
+# Hot backup of one instance's stateful data: Studio PG + Chat PG +
+# MinIO buckets. Safe to run while services are up (pg_dump is
+# transaction-consistent; mc mirror is object-level).
 #
-#   scripts/backup.sh                          # -> ~/laborster-backups/<name>/
-#   BACKUP_DIR=/mnt/backups scripts/backup.sh  # custom root, outside the repo
-#   LABEL=before-seed-reset scripts/backup.sh  # tag why this snapshot exists
+# Takes the instance file (the same one as up-all.sh) so it targets
+# that instance's containers (compose project = COMPOSE_PROJECT_NAME):
+#
+#   scripts/backup.sh scripts/.env.release
+#   BACKUP_DIR=/mnt/backups scripts/backup.sh scripts/.env.release  # custom root
+#   LABEL=before-seed-reset scripts/backup.sh scripts/.env.release  # tag why
 #
 # This script NEVER deletes a backup. Pruning old backups is entirely
 # manual and up to you -- there is no retention/rotation logic.
@@ -19,14 +22,27 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 INFRA_DIR="$REPO_DIR/infra"
-COMPOSE=(docker compose -f "$INFRA_DIR/compose.yaml" --project-directory "$INFRA_DIR")
+
+INST="${1:-}"
+if [ -z "$INST" ]; then
+  echo "usage: scripts/backup.sh <instance-file>   (e.g. scripts/.env.release)" >&2
+  exit 1
+fi
+case "$INST" in /*) :;; *) INST="$REPO_DIR/$INST";; esac
+[ -f "$INST" ] || { echo "ERROR: instance file not found: $INST" >&2; exit 1; }
+[ -f "$INFRA_DIR/.env" ] || { echo "ERROR: $INFRA_DIR/.env not found" >&2; exit 1; }
+
+# infra/.env carries the PG/MinIO creds (seam); the instance file
+# carries COMPOSE_PROJECT_NAME so we target the right instance.
+set -a; . "$INFRA_DIR/.env"; . "$INST"; set +a
+: "${COMPOSE_PROJECT_NAME:?instance file must set COMPOSE_PROJECT_NAME}"
+
+COMPOSE=(docker compose -f "$INFRA_DIR/compose.yaml" --project-directory "$INFRA_DIR" \
+  -p "$COMPOSE_PROJECT_NAME" --env-file "$INFRA_DIR/.env")
 BACKUP_DIR="${BACKUP_DIR:-$HOME/laborster-backups}"
 # Run helper containers as the host user so output files are owned by
 # you, not root (no more mixed ownership in the backup dir).
 HOST_UGID="$(id -u):$(id -g)"
-
-[ -f "$INFRA_DIR/.env" ] || { echo "ERROR: $INFRA_DIR/.env not found" >&2; exit 1; }
-set -a; . "$INFRA_DIR/.env"; set +a
 
 # --- Provenance: tie this snapshot to an exact code state -------------------
 git_in_repo() { git -C "$REPO_DIR" "$@" 2>/dev/null; }
@@ -39,7 +55,7 @@ DIRTY=""
 SAFE_BRANCH="${BRANCH//\//-}"
 
 STAMP="$(date +%Y-%m-%d_%H%M%S)"
-NAME="${STAMP}__${SAFE_BRANCH}_${SHORT_HASH}${DIRTY}"
+NAME="${STAMP}__${COMPOSE_PROJECT_NAME}__${SAFE_BRANCH}_${SHORT_HASH}${DIRTY}"
 [ -n "${LABEL:-}" ] && NAME="${NAME}__${LABEL}"
 DEST="$BACKUP_DIR/$NAME"
 mkdir -p "$DEST/minio"
@@ -136,6 +152,7 @@ docker run --rm \
 
 {
   echo "created     : $STAMP"
+  echo "instance    : $COMPOSE_PROJECT_NAME"
   echo "label       : ${LABEL:-(none)}"
   echo "branch      : $BRANCH"
   echo "commit      : $FULL_HASH${DIRTY}"

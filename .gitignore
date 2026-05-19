@@ -4,8 +4,8 @@ __pycache__/
 # Editors
 .vscode/
 
-# Secrets / env
-.env
+.env*
+!.env.example
 
 # Bridge cli .venv
 bridge/cli/.venv/

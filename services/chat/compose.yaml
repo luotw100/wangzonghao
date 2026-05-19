@@ -3,8 +3,6 @@ services:
     build:
       context: ./web
       dockerfile: Dockerfile
-    ports:
-      - "127.0.0.1:23456:23456"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
@@ -23,6 +21,4 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET: ${S3_BUCKET}
       UPLOAD_MAX_SIZE_MB: ${UPLOAD_MAX_SIZE_MB}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     restart: unless-stopped

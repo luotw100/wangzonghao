@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """scripts/seed_dev.py — One-shot dev seed for internal testing.
 
-Run after `docker compose up -d --build` in services/chat and services/studio.
-Everything is driven by scripts/.env (copy scripts/.env.example). All values
-are required and explicit — nothing is defaulted, guessed, or skipped:
+Run after the instance is up (scripts/up-all.sh <instance-file>). Driven by
+that same instance file, passed as the argument:
+
+  python scripts/seed_dev.py scripts/.env.0519
+
+(copy scripts/.env.example for a new instance). All seed values are required
+and explicit — nothing is defaulted, guessed, or skipped:
 
   - CHAT_SEED_USERS     users created in Chat
   - STUDIO_SEED_USERS   users created in Studio
@@ -35,7 +39,16 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CHAT_DIR = REPO_ROOT / "services" / "chat"
 STUDIO_DIR = REPO_ROOT / "services" / "studio"
-ENV_PATH = Path(__file__).resolve().parent / ".env"
+
+
+def resolve_env_arg(argv: list[str]) -> Path:
+    """The instance/env file is argv[1]; resolve like up-all.sh does."""
+    if len(argv) < 2 or not argv[1].strip():
+        die("usage: scripts/seed_dev.py <instance-file>   (e.g. scripts/.env.0519)")
+    p = Path(argv[1])
+    if not p.is_file():
+        p = REPO_ROOT / argv[1]
+    return p
 
 
 # ---------- logging ----------
@@ -99,7 +112,7 @@ def load_env(path: Path) -> None:
 def env_required(key: str) -> str:
     value = os.environ.get(key, "").strip()
     if not value:
-        die(f"{key} is required (set it in scripts/.env)")
+        die(f"{key} is required (set it in the instance env file)")
     return value
 
 
@@ -223,7 +236,7 @@ def main() -> None:
     if subprocess.run(["which", "docker"], capture_output=True).returncode != 0:
         die("missing required command: docker")
 
-    load_env(ENV_PATH)
+    load_env(resolve_env_arg(sys.argv))
 
     chat_url = env_required("CHAT_URL")
     studio_url = env_required("STUDIO_URL")

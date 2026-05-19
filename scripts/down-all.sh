@@ -1,18 +1,55 @@
 #!/usr/bin/env bash
+# Stop one instance of the stack.
+#
+#   scripts/down-all.sh <instance-file>       stop, KEEP volumes
+#   scripts/down-all.sh <instance-file> -v    stop and DELETE this
+#                                             instance's volumes (data loss)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-for compose_file in "$PROJECT_ROOT"/services/chat/compose.yaml "$PROJECT_ROOT"/services/studio/compose.yaml "$PROJECT_ROOT"/infra/compose.yaml; do
-  compose_dir="$(dirname "$compose_file")"
-  service_name="$(basename "$compose_dir")"
-  echo ">>> Stopping $service_name"
-  docker compose -f "$compose_file" --project-directory "$compose_dir" down -v
-done
+INST="${1:-}"
+WIPE="${2:-}"
+if [[ -z "$INST" ]]; then
+  echo "usage: scripts/down-all.sh <instance-file> [-v]" >&2
+  exit 1
+fi
+[[ "$INST" = /* ]] || INST="$ROOT/$INST"
+if [[ ! -f "$INST" ]]; then
+  echo "instance file not found: $INST" >&2
+  exit 1
+fi
 
-echo ">>> All services stopped"
+set -a; source "$INST"; set +a
+: "${COMPOSE_PROJECT_NAME:?instance file must set COMPOSE_PROJECT_NAME}"
+P="$COMPOSE_PROJECT_NAME"
 
-docker ps -a
-docker volume ls
-docker network ls
+V=""
+if [[ "$WIPE" == "-v" ]]; then
+  read -r -p "DELETE all volumes (data) for instance '$P'? [y/N] " ans
+  [[ "$ans" == "y" || "$ans" == "Y" ]] || { echo "aborted"; exit 1; }
+  V="--volumes"
+fi
+
+echo ">>> [$P] down tunnel"
+cd "$ROOT/tunnel"
+docker compose -p "$P" --env-file "$INST" down $V
+
+echo ">>> [$P] down studio"
+cd "$ROOT/services/studio"
+docker compose -p "$P" --env-file .env --env-file "$INST" down $V
+
+echo ">>> [$P] down chat"
+cd "$ROOT/services/chat"
+docker compose -p "$P" --env-file .env --env-file "$INST" down $V
+
+echo ">>> [$P] down infra"
+cd "$ROOT/infra"
+docker compose -p "$P" --env-file .env --env-file "$INST" down $V
+
+if [[ "$WIPE" == "-v" ]]; then
+  echo ">>> [$P] stopped, volumes deleted"
+else
+  echo ">>> [$P] stopped (volumes kept; pass -v to delete)"
+fi

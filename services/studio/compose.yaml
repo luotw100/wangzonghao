@@ -2,8 +2,6 @@ services:
   studio-web:
     build:
       context: ./web
-    ports:
-      - "127.0.0.1:23457:23457"
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
@@ -21,8 +19,6 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET: ${S3_BUCKET}
       S3_PUBLIC_URL: ${S3_PUBLIC_URL}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     restart: unless-stopped
 
   studio-worker:
@@ -36,6 +32,4 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET: ${S3_BUCKET}
       S3_PUBLIC_URL: ${S3_PUBLIC_URL}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     restart: unless-stopped

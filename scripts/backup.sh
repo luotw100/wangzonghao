@@ -6,15 +6,21 @@
 #   scripts/backup.sh                          # -> ~/laborster-backups/<name>/
 #   BACKUP_DIR=/mnt/backups scripts/backup.sh  # custom root, outside the repo
 #   LABEL=before-seed-reset scripts/backup.sh  # tag why this snapshot exists
-#   KEEP=20 scripts/backup.sh                  # keep last 20 (default 10)
+#   KEEP=20 scripts/backup.sh                  # OPT-IN prune: keep newest 20
+#                                              # (unset = never delete anything)
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 INFRA_DIR="$REPO_DIR/infra"
 COMPOSE=(docker compose -f "$INFRA_DIR/compose.yaml" --project-directory "$INFRA_DIR")
-KEEP="${KEEP:-10}"
+# Retention is OPT-IN and OFF by default: this script never deletes a
+# backup unless you explicitly set KEEP=N (then it keeps the newest N).
+KEEP="${KEEP:-}"
 BACKUP_DIR="${BACKUP_DIR:-$HOME/laborster-backups}"
+# Run helper containers as the host user so output files are owned by
+# you, not root (no more mixed ownership in the backup dir).
+HOST_UGID="$(id -u):$(id -g)"
 
 [ -f "$INFRA_DIR/.env" ] || { echo "ERROR: $INFRA_DIR/.env not found" >&2; exit 1; }
 set -a; . "$INFRA_DIR/.env"; set +a
@@ -80,7 +86,7 @@ sqlite_pg() {
       </dev/null > "$tmp/$t.csv" 2>/dev/null || true
   done
 
-  docker run --rm -i -v "$tmp:/csv" -v "$DEST:/out" python:3.12-slim \
+  docker run --rm -i --user "$HOST_UGID" -v "$tmp:/csv" -v "$DEST:/out" python:3.12-slim \
     python - "/out/$out" <<'PY' || echo "    WARN: sqlite build had issues; .dump is the authoritative copy"
 import csv, glob, os, sqlite3, sys
 db = sqlite3.connect(sys.argv[1])
@@ -115,6 +121,8 @@ MINIO_CID="$("${COMPOSE[@]}" ps -q minio)"
 [ -n "$MINIO_CID" ] || { echo "ERROR: minio container not running" >&2; exit 1; }
 docker run --rm \
   --network "container:$MINIO_CID" \
+  --user "$HOST_UGID" \
+  -e MC_CONFIG_DIR=/tmp/mc \
   -v "$DEST/minio:/backup" \
   --entrypoint /bin/sh \
   minio/mc:RELEASE.2025-08-13T08-35-41Z -c "
@@ -186,11 +194,18 @@ See MANIFEST.txt for the exact commit, branch and schema version this
 data corresponds to before restoring.
 EOF
 
-# Rolling retention: keep newest $KEEP, drop the rest.
+# Retention: OFF unless KEEP is explicitly set to a number. Default
+# behaviour never deletes anything -- it only reports disk usage.
 cd "$BACKUP_DIR"
-ls -1d 20*/ 2>/dev/null | sort -r | tail -n +"$((KEEP + 1))" | while read -r old; do
-  echo ">>> Pruning old backup: $old"
-  rm -rf -- "$old"
-done
+if [[ "$KEEP" =~ ^[0-9]+$ ]]; then
+  echo ">>> KEEP=$KEEP set: pruning backups older than the newest $KEEP"
+  ls -1d 20*/ 2>/dev/null | sort -r | tail -n +"$((KEEP + 1))" | while read -r old; do
+    echo ">>> Pruning old backup: $old"
+    rm -rf -- "$old"
+  done
+else
+  echo ">>> Retention OFF (no KEEP set): keeping ALL backups. Total on disk:"
+  du -sh "$BACKUP_DIR" 2>/dev/null | sed 's/^/    /'
+fi
 
 echo ">>> Backup complete: $DEST"

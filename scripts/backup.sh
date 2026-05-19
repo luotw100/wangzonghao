@@ -9,6 +9,11 @@
 #
 # This script NEVER deletes a backup. Pruning old backups is entirely
 # manual and up to you -- there is no retention/rotation logic.
+#
+# At the end it LOCKS the new backup with `chattr +i` (needs sudo;
+# you'll be prompted for your password) so it cannot be deleted/changed.
+# To delete a backup later you must first unlock it:
+#   sudo chattr -R -i ~/laborster-backups/<the-one-you-chose>
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -198,3 +203,27 @@ echo ">>> Backups kept: $(ls -1d "$BACKUP_DIR"/20*/ 2>/dev/null | wc -l), total 
 du -sh "$BACKUP_DIR" 2>/dev/null | sed 's/^/    /'
 
 echo ">>> Backup complete: $DEST"
+
+# Make this backup immutable (chattr +i) so it cannot be deleted or
+# overwritten -- not even by you with `rm -rf` -- until you explicitly
+# `sudo chattr -R -i` it. Needs sudo; you will be asked for your
+# password below. Best-effort: the backup is already safely written,
+# locking failure does not lose data.
+echo
+echo "=================================================================="
+echo "  LOCKING BACKUP (chattr +i) -- making it delete-proof"
+echo "  >>> sudo may ask for your password now. Type it to lock. <<<"
+echo "=================================================================="
+if sudo chattr -R +i "$DEST"; then
+  echo "=================================================================="
+  echo "  OK -- backup LOCKED: $DEST"
+  echo "  To delete it later you must first unlock:"
+  echo "    sudo chattr -R -i \"$DEST\""
+  echo "=================================================================="
+else
+  echo "=================================================================="
+  echo "  WARN: lock FAILED (sudo declined / chattr unsupported)."
+  echo "  Backup data is fine and complete, just NOT delete-protected."
+  echo "  Lock it manually with: sudo chattr -R +i \"$DEST\""
+  echo "=================================================================="
+fi

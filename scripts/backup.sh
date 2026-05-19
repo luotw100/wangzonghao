@@ -103,13 +103,13 @@ Run these from inside this directory.
    docker run --rm -v "$PWD":/b postgres:16-alpine \
      pg_restore --list /b/studio.dump
 
-2) Convert a dump to readable SQL text:
+2) Convert a dump to readable SQL text (note: -f - is required):
    docker run --rm -v "$PWD":/b postgres:16-alpine \
-     pg_restore --no-owner --no-privileges /b/studio.dump > studio.sql
+     pg_restore --no-owner --no-privileges -f - /b/studio.dump > studio.sql
 
-3) Dump one table's data only:
+3) Dump one table's data only (note: -f - is required):
    docker run --rm -v "$PWD":/b postgres:16-alpine \
-     pg_restore --data-only --table=personas /b/studio.dump
+     pg_restore --data-only --table=personas -f - /b/studio.dump
 
 4) Restore into a live database:
    docker run --rm -v "$PWD":/b -e PGPASSWORD=<pw> postgres:16-alpine \

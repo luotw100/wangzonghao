@@ -51,8 +51,64 @@ schema_ver() {
     'SELECT version_num FROM alembic_version' 2>/dev/null | tr -d '[:space:]' || true
 }
 
+# Browse-friendly copy: a single .sqlite file you can open in the VSCode
+# SQLite extension / DB Browser / any SQLite tool and view like a
+# spreadsheet. The .dump stays the canonical/restorable artifact; this
+# is purely for eyeballing data. Uses only already-cached, maintained
+# official images (postgres + python stdlib sqlite3) -- no third-party
+# tool, works offline. Columns land as TEXT (SQLite is dynamically
+# typed; values display fine). Best-effort: never fails the backup.
+sqlite_pg() {
+  local svc="$1" user="$2" db="$3" out="$4"
+  echo ">>> Building $out (sqlite, browse copy)"
+  rm -f "$DEST/$out"
+  local tmp="$DEST/.csv-${out%.sqlite}"
+  mkdir -p "$tmp"
+  # Read table list into an array (a `while read` loop would have its
+  # stdin eaten by `docker compose exec`, truncating the iteration).
+  local tables=()
+  mapfile -t tables < <("${COMPOSE[@]}" exec -T "$svc" \
+    psql -U "$user" -d "$db" -tAc \
+    "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY 1" \
+    </dev/null 2>/dev/null || true)
+  [ "${#tables[@]}" -gt 0 ] || { echo "    WARN: no tables read; skipping $out"; rm -rf "$tmp"; return; }
+  local t
+  for t in "${tables[@]}"; do
+    [ -n "$t" ] || continue
+    "${COMPOSE[@]}" exec -T "$svc" psql -U "$user" -d "$db" \
+      -c "\copy (SELECT * FROM public.\"$t\") TO STDOUT WITH CSV HEADER" \
+      </dev/null > "$tmp/$t.csv" 2>/dev/null || true
+  done
+
+  docker run --rm -i -v "$tmp:/csv" -v "$DEST:/out" python:3.12-slim \
+    python - "/out/$out" <<'PY' || echo "    WARN: sqlite build had issues; .dump is the authoritative copy"
+import csv, glob, os, sqlite3, sys
+db = sqlite3.connect(sys.argv[1])
+for path in sorted(glob.glob("/csv/*.csv")):
+    name = os.path.splitext(os.path.basename(path))[0]
+    with open(path, newline="") as fh:
+        r = csv.reader(fh)
+        try:
+            header = next(r)
+        except StopIteration:
+            continue
+        q = lambda s: '"' + s.replace('"', '""') + '"'
+        cols = ", ".join(q(c) for c in header)
+        db.execute(f'CREATE TABLE {q(name)} ({", ".join(q(c)+" TEXT" for c in header)})')
+        ph = ", ".join("?" * len(header))
+        db.executemany(f'INSERT INTO {q(name)} ({cols}) VALUES ({ph})',
+                        (row for row in r if len(row) == len(header)))
+db.commit()
+db.close()
+PY
+  rm -rf "$tmp"
+}
+
 dump_pg studio-db "$STUDIO_POSTGRES_USER" "$STUDIO_POSTGRES_DB" studio.dump
 dump_pg chat-db   "$CHAT_POSTGRES_USER"   "$CHAT_POSTGRES_DB"   chat.dump
+
+sqlite_pg studio-db "$STUDIO_POSTGRES_USER" "$STUDIO_POSTGRES_DB" studio.sqlite
+sqlite_pg chat-db   "$CHAT_POSTGRES_USER"   "$CHAT_POSTGRES_DB"   chat.sqlite
 
 echo ">>> Mirroring MinIO buckets"
 MINIO_CID="$("${COMPOSE[@]}" ps -q minio)"
@@ -96,6 +152,13 @@ NOT ENCRYPTED. *.dump are plaintext-equivalent full data copies
 (pg_dump custom format). Treat this directory as sensitive: never
 put it in git, public cloud, or share it casually.
 
+EASIEST: just open studio.sqlite / chat.sqlite to browse data like a
+spreadsheet -- VSCode "SQLite" / "SQLite Viewer" extension, DB Browser
+for SQLite, or any SQLite tool. No password, no Docker, no commands.
+The .sqlite is a convenience copy; *.dump below is the authoritative
+restorable backup.
+
+The commands below are only for the *.dump files.
 You do NOT need a password. You only need Docker (or local pg tools).
 Run these from inside this directory.
 

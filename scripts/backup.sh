@@ -87,6 +87,42 @@ docker run --rm \
 } > "$DEST/MANIFEST.txt"
 cat "$DEST/MANIFEST.txt"
 
+# Self-documenting: read instructions travel with the data, no repo needed.
+cat > "$DEST/HOW_TO_READ.txt" <<'EOF'
+HOW TO READ THIS BACKUP
+=======================
+
+NOT ENCRYPTED. *.dump are plaintext-equivalent full data copies
+(pg_dump custom format). Treat this directory as sensitive: never
+put it in git, public cloud, or share it casually.
+
+You do NOT need a password. You only need Docker (or local pg tools).
+Run these from inside this directory.
+
+1) List tables/objects in a dump (no data extracted):
+   docker run --rm -v "$PWD":/b postgres:16-alpine \
+     pg_restore --list /b/studio.dump
+
+2) Convert a dump to readable SQL text:
+   docker run --rm -v "$PWD":/b postgres:16-alpine \
+     pg_restore --no-owner --no-privileges /b/studio.dump > studio.sql
+
+3) Dump one table's data only:
+   docker run --rm -v "$PWD":/b postgres:16-alpine \
+     pg_restore --data-only --table=personas /b/studio.dump
+
+4) Restore into a live database:
+   docker run --rm -v "$PWD":/b -e PGPASSWORD=<pw> postgres:16-alpine \
+     pg_restore --no-owner --clean --if-exists \
+     -h <host> -U <user> -d <db> /b/studio.dump
+
+5) MinIO objects: ./minio/studio and ./minio/chat hold raw object
+   files (empty if the bucket had no objects). Open directly, no tools.
+
+See MANIFEST.txt for the exact commit, branch and schema version this
+data corresponds to before restoring.
+EOF
+
 # Rolling retention: keep newest $KEEP, drop the rest.
 cd "$BACKUP_DIR"
 ls -1d 20*/ 2>/dev/null | sort -r | tail -n +"$((KEEP + 1))" | while read -r old; do

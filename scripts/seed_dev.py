@@ -59,7 +59,7 @@ def die(msg: str) -> "None":
 
 # ---------- parallel ----------
 
-def run_parallel(jobs: list, workers: int = 8) -> None:
+def run_parallel(jobs: list, workers: int = 32) -> None:
     """Run zero-arg callables concurrently; re-raise the first failure.
 
     die() raises SystemExit, which ThreadPoolExecutor captures per-future and

@@ -6,6 +6,11 @@
 #                                             instance's volumes (data loss)
 set -euo pipefail
 
+# Same project name across 4 compose files -> silence the bogus
+# "orphan containers" warning (and keep --remove-orphans from ever
+# nuking sibling services).
+export COMPOSE_IGNORE_ORPHANS=true
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 

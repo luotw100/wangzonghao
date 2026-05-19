@@ -9,6 +9,12 @@
 #   COMPOSE_PROJECT_NAME, CF_TUNNEL_TOKEN, S3_PUBLIC_URL (verN.*)
 set -euo pipefail
 
+# 4 compose files share one project name; each only sees its own
+# services, so the others look like "orphans". Silence that warning —
+# crucially this also avoids anyone wiring --remove-orphans and nuking
+# the sibling services.
+export COMPOSE_IGNORE_ORPHANS=true
+
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 

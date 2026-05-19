@@ -6,17 +6,15 @@
 #   scripts/backup.sh                          # -> ~/laborster-backups/<name>/
 #   BACKUP_DIR=/mnt/backups scripts/backup.sh  # custom root, outside the repo
 #   LABEL=before-seed-reset scripts/backup.sh  # tag why this snapshot exists
-#   KEEP=20 scripts/backup.sh                  # OPT-IN prune: keep newest 20
-#                                              # (unset = never delete anything)
+#
+# This script NEVER deletes a backup. Pruning old backups is entirely
+# manual and up to you -- there is no retention/rotation logic.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 INFRA_DIR="$REPO_DIR/infra"
 COMPOSE=(docker compose -f "$INFRA_DIR/compose.yaml" --project-directory "$INFRA_DIR")
-# Retention is OPT-IN and OFF by default: this script never deletes a
-# backup unless you explicitly set KEEP=N (then it keeps the newest N).
-KEEP="${KEEP:-}"
 BACKUP_DIR="${BACKUP_DIR:-$HOME/laborster-backups}"
 # Run helper containers as the host user so output files are owned by
 # you, not root (no more mixed ownership in the backup dir).
@@ -194,18 +192,9 @@ See MANIFEST.txt for the exact commit, branch and schema version this
 data corresponds to before restoring.
 EOF
 
-# Retention: OFF unless KEEP is explicitly set to a number. Default
-# behaviour never deletes anything -- it only reports disk usage.
-cd "$BACKUP_DIR"
-if [[ "$KEEP" =~ ^[0-9]+$ ]]; then
-  echo ">>> KEEP=$KEEP set: pruning backups older than the newest $KEEP"
-  ls -1d 20*/ 2>/dev/null | sort -r | tail -n +"$((KEEP + 1))" | while read -r old; do
-    echo ">>> Pruning old backup: $old"
-    rm -rf -- "$old"
-  done
-else
-  echo ">>> Retention OFF (no KEEP set): keeping ALL backups. Total on disk:"
-  du -sh "$BACKUP_DIR" 2>/dev/null | sed 's/^/    /'
-fi
+# No retention/rotation: this script never deletes a backup. Deleting
+# old backups is a manual decision. Just report disk usage as an FYI.
+echo ">>> Backups kept: $(ls -1d "$BACKUP_DIR"/20*/ 2>/dev/null | wc -l), total on disk:"
+du -sh "$BACKUP_DIR" 2>/dev/null | sed 's/^/    /'
 
 echo ">>> Backup complete: $DEST"

@@ -9,21 +9,13 @@ are required and explicit — nothing is defaulted, guessed, or skipped:
   - STUDIO_SEED_USERS   users created in Studio
   - PROVIDER_*          the single global Studio Provider (created via CLI)
 
-After accounts exist, every ChatLab JSON in misc/seed_chats/out/ is imported
-into Chat as historical conversations (login → create contact → bulk send).
-Each file's meta.ownerId is the streamer and MUST be a username in
-CHAT_SEED_USERS — any JSON whose owner is not a seeded chat user is a hard
-error (the .env user list and the seed chats must line up exactly).
-
 CHAT_SEED_USERS and STUDIO_SEED_USERS are independent lists. If you want the
 same credentials on both sides, write the same entries in both — the script
 does not couple them.
 
-Accounts + provider + imported seed chats. Re-run after wiping volumes
-(docker compose down -v) for a clean baseline. Accounts that already exist
-surface a warning and are left untouched; contacts that already exist cause
-the matching seed chat to be skipped (so a no-wipe re-run won't duplicate
-messages); re-running without a wipe creates an extra Provider row (the
+Accounts + provider. Re-run after wiping volumes (docker compose down -v)
+for a clean baseline. Accounts that already exist surface a warning and are
+left untouched; re-running without a wipe creates an extra Provider row (the
 newest becomes default).
 """
 
@@ -38,13 +30,11 @@ import urllib.error
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 CHAT_DIR = REPO_ROOT / "services" / "chat"
 STUDIO_DIR = REPO_ROOT / "services" / "studio"
-SEED_CHATS_DIR = REPO_ROOT / "misc" / "seed_chats" / "out"
 ENV_PATH = Path(__file__).resolve().parent / ".env"
 
 
@@ -227,142 +217,6 @@ def studio_seed_provider() -> None:
     )
 
 
-# ---------- seed chats (ChatLab JSON → Chat history) ----------
-
-def load_seed_chats() -> list[tuple[Path, dict]]:
-    """Read every misc/seed_chats/out/*.json. Hard-fail on any malformed file."""
-    if not SEED_CHATS_DIR.is_dir():
-        die(f"seed chats dir not found: {SEED_CHATS_DIR} "
-            f"(run: python3 misc/seed_chats/generate.py)")
-    files = sorted(SEED_CHATS_DIR.glob("*.json"))
-    if not files:
-        die(f"no seed chat JSON in {SEED_CHATS_DIR}")
-    out: list[tuple[Path, dict]] = []
-    for path in files:
-        try:
-            doc = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            die(f"{path.name}: invalid JSON ({exc})")
-        meta = doc.get("meta") or {}
-        members = doc.get("members") or []
-        if meta.get("type") != "private":
-            die(f"{path.name}: meta.type must be 'private'")
-        owner = meta.get("ownerId")
-        if not owner:
-            die(f"{path.name}: missing meta.ownerId")
-        if len(members) != 2:
-            die(f"{path.name}: private chat needs exactly 2 members")
-        if not any(m.get("platformId") == owner for m in members):
-            die(f"{path.name}: ownerId {owner!r} not among members")
-        out.append((path, doc))
-    return out
-
-
-def validate_chats_match_users(chats: list[tuple[Path, dict]],
-                               chat_users: list[UserSpec]) -> None:
-    """Every JSON owner must be a seeded Chat username — else hard error."""
-    known = {u.username for u in chat_users}
-    bad = sorted({
-        doc["meta"]["ownerId"]
-        for _, doc in chats
-        if doc["meta"]["ownerId"] not in known
-    })
-    if bad:
-        die(f"seed chats reference unknown chat user(s) {bad} — "
-            f"CHAT_SEED_USERS has {sorted(known)}. "
-            f"Fix scripts/.env or misc/seed_chats so they line up.")
-
-
-def chat_login(chat_url: str, u: UserSpec) -> str:
-    code, body = http_request(
-        "POST", f"{chat_url}/api/auth/login",
-        body={"username": u.username, "password": u.password},
-    )
-    if code != 200:
-        die(f"chat login failed for {u.username}: HTTP {code} {body}")
-    try:
-        return json.loads(body)["token"]
-    except (ValueError, KeyError):
-        die(f"chat login for {u.username}: no token in response: {body}")
-
-
-def iso_utc(epoch: int) -> str:
-    return datetime.fromtimestamp(epoch, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-
-
-def import_one_chat(chat_url: str, token: str, owner: str, doc: dict) -> None:
-    meta = doc["meta"]
-    other = next(m for m in doc["members"] if m.get("platformId") != owner)
-    fan_username = other.get("accountName") or other["platformId"]
-    fan_nick = other.get("groupNickname") or fan_username
-    remark = meta.get("name") or fan_nick
-
-    code, body = http_request(
-        "POST", f"{chat_url}/api/contacts", token=token,
-        body={"nickname": fan_nick, "username": fan_username, "remark_name": remark},
-    )
-    if code == 409:
-        warn(f"{owner} ← {remark}: contact exists, skipping (re-run after a wipe)")
-        return
-    if code not in (200, 201):
-        die(f"{owner} ← {remark}: create contact failed: HTTP {code} {body}")
-    contact_id = json.loads(body)["id"]
-
-    code, body = http_request("GET", f"{chat_url}/api/conversations", token=token)
-    if code != 200:
-        die(f"{owner}: list conversations failed: HTTP {code} {body}")
-    conv = next((c for c in json.loads(body) if c.get("contact_id") == contact_id), None)
-    if not conv:
-        die(f"{owner} ← {remark}: no conversation created for contact")
-
-    msgs = [
-        {
-            "sender_id": None if m.get("sender") == owner else contact_id,
-            "msg_type": "text",
-            "content": m["content"],
-            "created_at": iso_utc(int(m["timestamp"])),
-        }
-        for m in doc.get("messages", [])
-        if m.get("type") == 0 and m.get("content")
-    ]
-    if not msgs:
-        warn(f"{owner} ← {remark}: no text messages, skipping")
-        return
-    code, body = http_request(
-        "POST", f"{chat_url}/api/conversations/{conv['id']}/messages",
-        token=token, body={"messages": msgs},
-    )
-    if code != 200:
-        die(f"{owner} ← {remark}: bulk send failed: HTTP {code} {body}")
-    ok(f"{owner} ← {remark}: {len(msgs)} messages")
-
-
-def import_owner_chats(chat_url: str, user: UserSpec, docs: list[dict]) -> None:
-    """One owner's chats: single login, then sequential imports.
-
-    Kept sequential within an owner — the imports share one token and each
-    re-lists GET /api/conversations, so concurrent imports for the same owner
-    would race on that list. Different owners are fully independent.
-    """
-    token = chat_login(chat_url, user)
-    for doc in docs:
-        import_one_chat(chat_url, token, user.username, doc)
-
-
-def import_seed_chats(chat_url: str, chat_users: list[UserSpec]) -> None:
-    chats = load_seed_chats()
-    validate_chats_match_users(chats, chat_users)
-    by_name = {u.username: u for u in chat_users}
-    by_owner: dict[str, list[dict]] = {}
-    for _, doc in chats:
-        by_owner.setdefault(doc["meta"]["ownerId"], []).append(doc)
-    log(f"importing {len(chats)} seed conversations across {len(by_owner)} owners")
-    run_parallel([
-        lambda o=owner, d=docs: import_owner_chats(chat_url, by_name[o], d)
-        for owner, docs in by_owner.items()
-    ])
-
-
 # ---------- main ----------
 
 def main() -> None:
@@ -376,9 +230,6 @@ def main() -> None:
 
     chat_users = parse_users("CHAT_SEED_USERS")
     studio_users = parse_users("STUDIO_SEED_USERS")
-
-    # Fail fast: seed chats and CHAT_SEED_USERS must line up before any work.
-    validate_chats_match_users(load_seed_chats(), chat_users)
 
     log(f"studio: {studio_url}  chat: {chat_url}")
     log(f"chat users  : {', '.join(u.username for u in chat_users)}")
@@ -396,8 +247,6 @@ def main() -> None:
            for u in studio_users]
         + [studio_seed_provider]
     )
-
-    import_seed_chats(chat_url, chat_users)
 
     print()
     print("---")

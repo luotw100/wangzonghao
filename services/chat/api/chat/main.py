@@ -11,7 +11,6 @@ from chat.auth_utils import hash_token, new_session_token, verify_password
 from chat.db import SessionLocal, get_db, utc_now
 from chat.enums import AccountStatus, CommandStatus, MessageType
 from chat.ids import new_id
-from chat.migrate import run_migrations
 from chat.models import (
     Account,
     AuthSession,
@@ -74,7 +73,6 @@ DISALLOWED_UPLOAD_MIME_TYPES = {
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    run_migrations()
     _get_upload_max_size()
     yield
 

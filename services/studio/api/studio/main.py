@@ -4,12 +4,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
-from studio.migrate import run_migrations
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    run_migrations()
     yield
 
 

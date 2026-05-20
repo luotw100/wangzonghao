@@ -10,6 +10,14 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  chat-migrate:
+    build:
+      context: ./api
+    command: ["uv", "run", "python", "-m", "chat.migrate"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    restart: "no"
+
   chat-api:
     build:
       context: ./api
@@ -21,4 +29,7 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET: ${S3_BUCKET}
       UPLOAD_MAX_SIZE_MB: ${UPLOAD_MAX_SIZE_MB}
+    depends_on:
+      chat-migrate:
+        condition: service_completed_successfully
     restart: unless-stopped

@@ -7,7 +7,6 @@ from studio.clients import ALLOWED_BASE_URLS
 from studio.db import get_db, utc_now
 from studio.deps import new_id
 from studio.enums import AccountStatus
-from studio.migrate import run_migrations
 from studio.models import Account, ProviderConfig
 
 
@@ -29,7 +28,6 @@ def _mask_api_key(api_key: str | None) -> str:
 
 
 def create_account(args: argparse.Namespace) -> None:
-    run_migrations()
     db = next(get_db())
     try:
         existing = db.query(Account).filter(Account.username == args.username).first()
@@ -58,7 +56,6 @@ def create_account(args: argparse.Namespace) -> None:
 
 
 def list_accounts(_: argparse.Namespace) -> None:
-    run_migrations()
     db = next(get_db())
     try:
         rows = []
@@ -70,7 +67,6 @@ def list_accounts(_: argparse.Namespace) -> None:
 
 
 def reset_password(args: argparse.Namespace) -> None:
-    run_migrations()
     db = next(get_db())
     try:
         account = db.query(Account).filter(Account.username == args.username).first()
@@ -96,7 +92,6 @@ def create_provider(args: argparse.Namespace) -> None:
     system default by reply/distill until per-contact provider routing is
     wired through the UI.
     """
-    run_migrations()
     db = next(get_db())
     try:
         now = utc_now()
@@ -121,7 +116,6 @@ def create_provider(args: argparse.Namespace) -> None:
 
 
 def list_providers(_: argparse.Namespace) -> None:
-    run_migrations()
     db = next(get_db())
     try:
         rows = []
@@ -136,7 +130,6 @@ def list_providers(_: argparse.Namespace) -> None:
 
 
 def delete_provider(args: argparse.Namespace) -> None:
-    run_migrations()
     db = next(get_db())
     try:
         p = db.query(ProviderConfig).filter(ProviderConfig.id == args.id).first()

@@ -11,3 +11,7 @@ def run_migrations() -> None:
     alembic_cfg.set_main_option("script_location", "chat/alembic")
     alembic_cfg.set_main_option("sqlalchemy.url", os.environ["DATABASE_URL"])
     command.upgrade(alembic_cfg, "head")
+
+
+if __name__ == "__main__":
+    run_migrations()

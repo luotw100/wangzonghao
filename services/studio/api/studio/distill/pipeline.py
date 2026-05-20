@@ -28,7 +28,6 @@ from sqlalchemy.orm import Session as ORMSession
 
 from studio.clients import ProviderClient
 from studio.db import SessionLocal, utc_now
-from studio.migrate import run_migrations
 from studio.distill.packer import (
     TextMessage,
     Window,
@@ -388,8 +387,6 @@ def main() -> None:
     parser.add_argument("--provider-config-id", required=True)
     parser.add_argument("--request-timeout", type=float, required=True)
     args = parser.parse_args()
-
-    run_migrations()
 
     def progress_cb(state: Dict[str, int]) -> None:
         print(f"  progress: {state}")

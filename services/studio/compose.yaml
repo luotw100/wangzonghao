@@ -9,6 +9,14 @@ services:
         condition: service_started
     restart: unless-stopped
 
+  studio-migrate:
+    build:
+      context: ./api
+    command: ["uv", "run", "python", "-m", "studio.migrate"]
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+    restart: "no"
+
   studio-api:
     build:
       context: ./api
@@ -19,6 +27,9 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET: ${S3_BUCKET}
       S3_PUBLIC_URL: ${S3_PUBLIC_URL}
+    depends_on:
+      studio-migrate:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   studio-worker:
@@ -32,4 +43,7 @@ services:
       S3_SECRET_KEY: ${S3_SECRET_KEY}
       S3_BUCKET: ${S3_BUCKET}
       S3_PUBLIC_URL: ${S3_PUBLIC_URL}
+    depends_on:
+      studio-migrate:
+        condition: service_completed_successfully
     restart: unless-stopped

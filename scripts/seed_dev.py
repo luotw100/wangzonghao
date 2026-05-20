@@ -225,7 +225,7 @@ def studio_seed_provider() -> None:
     docker_cli(
         STUDIO_DIR, "studio-api", "studio.cli", "create-provider",
         ["--name", name, "--base-url", base_url,
-         "--api-key", api_key, "--default-model", model],
+         "--api-key", api_key, "--model", model],
         f"studio provider {name}",
     )
 

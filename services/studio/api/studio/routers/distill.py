@@ -68,7 +68,7 @@ def create_distill_job(payload: DistillJobCreate, db: Annotated[Session, Depends
         contact_ids=contact_ids,
         target_persona_id=payload.target_persona_id,
         provider_config_id=provider_config.id,
-        status=DistillJobStatus.PENDING, progress={}, error_message=None,
+        status=DistillJobStatus.PENDING, progress={}, error_message="",
         created_at=utc_now(), started_at=None, finished_at=None,
     )
     db.add(j); db.commit(); db.refresh(j)

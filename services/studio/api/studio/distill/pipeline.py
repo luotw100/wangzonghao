@@ -35,7 +35,7 @@ from studio.distill.packer import (
     pack_windows,
     split_sessions,
 )
-from studio.enums import LlmPurpose, MessageRole, ProviderStatus
+from studio.enums import LlmPurpose, MessageRole
 from studio.models import (
     Contact,
     Inbox,
@@ -93,7 +93,6 @@ def _load_ctx(
 
     pc = db.query(ProviderConfig).filter(
         ProviderConfig.id == provider_config_id,
-        ProviderConfig.status == ProviderStatus.ACTIVE,
     ).first()
     if not pc:
         raise ValueError(f"Provider Config {provider_config_id} 不存在")
@@ -105,7 +104,7 @@ def _load_ctx(
         persona_name=persona_name,
         base_url=pc.base_url,
         api_key=pc.api_key,
-        model=pc.default_model,
+        model=pc.model,
         display_tz=display_tz,
     )
 

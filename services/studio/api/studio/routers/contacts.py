@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from studio.db import get_db, utc_now
 from studio.deps import CurrentAccountDep, get_account_contact, get_account_persona
-from studio.models import Contact, Inbox, Message
+from studio.models import Contact, Inbox, Message, ProviderConfig
 from studio.schemas import ContactUpdate
 from studio.serializers import s_contact, s_inbox, s_message
 
@@ -92,10 +92,15 @@ def update_contact(contact_id: str, payload: ContactUpdate, db: Annotated[Sessio
     c = get_account_contact(db, account, contact_id)
     fields = payload.model_fields_set
     if "display_name" in fields and payload.display_name is not None: c.display_name = payload.display_name
-    if "card_md" in fields: c.card_md = payload.card_md
+    if "card_md" in fields and payload.card_md is not None: c.card_md = payload.card_md
     if "persona_id" in fields and payload.persona_id is not None:
         get_account_persona(db, account, payload.persona_id)
         c.persona_id = payload.persona_id
+    if "provider_id" in fields and payload.provider_id is not None:
+        pc = db.query(ProviderConfig).filter(ProviderConfig.id == payload.provider_id).first()
+        if not pc:
+            raise HTTPException(status_code=404, detail="Provider 不存在")
+        c.provider_id = payload.provider_id
     if "takeover" in fields and payload.takeover is not None:
         c.takeover = payload.takeover
     if "reply_policy" in fields and payload.reply_policy is not None:

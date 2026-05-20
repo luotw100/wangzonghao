@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from studio.auth_utils import hash_password, hash_token, new_session_token, verify_password
 from studio.db import get_db, utc_now
-from studio.enums import AccountStatus, BridgeStatus
+from studio.enums import AccountStatus
 from studio.models import Account, AuthSession, Bridge, Inbox, Persona
 
 
@@ -45,7 +45,7 @@ def create_account_record(
         id=new_id("acc"),
         username=username,
         password_hash=hash_password(password),
-        display_name=display_name,
+        display_name=display_name or username,
         status=AccountStatus.ACTIVE,
         created_at=now,
         updated_at=now,
@@ -138,7 +138,7 @@ def get_authed_bridge(
         .filter(Bridge.account_id == account.id, Bridge.machine_id == x_machine_id)
         .first()
     )
-    if not bridge or bridge.status == BridgeStatus.REVOKED:
+    if not bridge:
         raise HTTPException(status_code=401, detail="bridge 已被撤销")
     s.expires_at = now + timedelta(hours=24)
     db.commit()

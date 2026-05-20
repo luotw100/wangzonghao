@@ -7,8 +7,10 @@ Principles:
   (markdown). Inbox is a logical platform-side identity; Bridge is the
   daemon process that physically runs adapters. An Inbox is bound to one
   Bridge (Inbox.bridge_id) and a Bridge can serve N inboxes.
-- ProviderConfig is a single operator-maintained global config, managed via
-  the server-side CLI. Runtime always uses the default global Provider.
+- ProviderConfig is operator-maintained, managed via the server-side CLI.
+  Multiple providers may coexist (per-contact / per-distill provider in
+  the future). For now, the most recently updated active provider is the
+  one used for reply and distill defaults.
 """
 
 from sqlalchemy import (
@@ -43,22 +45,13 @@ class Account(Base):
     id            = Column(String(48), primary_key=True, index=True)
     username      = Column(String(64), nullable=False, unique=True, index=True)
     password_hash = Column(String(128), nullable=False)
-    display_name  = Column(String(128), nullable=True)
+    display_name  = Column(String(128), nullable=False)
     status        = Column(String(16), nullable=False)
     created_at    = Column(DateTime(timezone=True), nullable=False)
     updated_at    = Column(DateTime(timezone=True), nullable=False)
 
 
 class AuthSession(Base):
-    """Single token table for both web console and bridge daemons.
-
-    A session is purely (token -> account, expiry). It carries no client
-    discriminator: bridge identity is resolved separately from the
-    authenticated account + the X-Machine-Id the daemon sends. Revocation
-    is account-scoped (delete all rows for an account), which is the only
-    real security control under sliding expiry.
-    """
-
     __tablename__ = "auth_sessions"
 
     id           = Column(String(64), primary_key=True, index=True)
@@ -75,21 +68,14 @@ class AuthSession(Base):
 
 class ProviderConfig(Base):
     __tablename__ = "provider_configs"
-    __table_args__ = (
-        CheckConstraint("scope IN ('global')", name="ck_provider_scope"),
-        CheckConstraint("status IN ('active', 'disabled')", name="ck_provider_status"),
-    )
 
-    id               = Column(String(48), primary_key=True, index=True)
-    name             = Column(String(128), nullable=False)
-    base_url         = Column(String(512), nullable=False)
-    api_key          = Column(Text, nullable=True)
-    default_model    = Column(String(128), nullable=False)
-    scope            = Column(String(16), nullable=False)
-    status           = Column(String(16), nullable=False)
-    is_default       = Column(Boolean, nullable=False)
-    created_at       = Column(DateTime(timezone=True), nullable=False)
-    updated_at       = Column(DateTime(timezone=True), nullable=False)
+    id         = Column(String(48), primary_key=True, index=True)
+    name       = Column(String(128), nullable=False)
+    base_url   = Column(String(512), nullable=False)
+    api_key    = Column(Text, nullable=True)   # nullable: local providers (e.g. ollama) need no key
+    model      = Column(String(128), nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
+    updated_at = Column(DateTime(timezone=True), nullable=False)
 
 
 # ---------------------------------------------------------------------------
@@ -100,38 +86,37 @@ class Persona(Base):
     __tablename__ = "personas"
     __table_args__ = (
         UniqueConstraint("account_id", "name", name="uq_persona_account_name"),
-        CheckConstraint("status IN ('active', 'archived')", name="ck_persona_status"),
     )
 
     id         = Column(String(48), primary_key=True, index=True)
     account_id = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
     name       = Column(String(128), nullable=False)
-    persona_md = Column(Text, nullable=True)
-    timezone   = Column(String(64), nullable=False, server_default="UTC")
-    status     = Column(String(16), nullable=False)
+    persona_md = Column(Text, nullable=False)
+    timezone   = Column(String(64), nullable=False)
     created_at = Column(DateTime(timezone=True), nullable=False)
     updated_at = Column(DateTime(timezone=True), nullable=False)
 
 
 # ---------------------------------------------------------------------------
 # Bridge — a registered daemon. Auto-provisioned on first handshake, keyed by
-# (account_id, machine_id). Studio generates machine_id on first launch and
-# returns it to the bridge, which persists it locally so the same machine
-# gets the same Bridge row across restarts.
+# (account_id, machine_id). Studio generates a short machine_id on first
+# launch and returns it to the bridge, which persists it locally so the
+# same machine gets the same Bridge row across restarts.
+#
+# online/offline is derived from last_seen_at + heartbeat threshold; no
+# cached status column.
 # ---------------------------------------------------------------------------
 
 class Bridge(Base):
     __tablename__ = "bridges"
     __table_args__ = (
         UniqueConstraint("account_id", "machine_id", name="uq_bridge_account_machine_id"),
-        CheckConstraint("status IN ('online', 'offline', 'revoked')", name="ck_bridge_status"),
     )
 
     id           = Column(String(48), primary_key=True, index=True)
     account_id   = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
     machine_id   = Column(String(256), nullable=False)
-    status       = Column(String(16), nullable=False)
-    last_seen_at = Column(DateTime(timezone=True), nullable=True)
+    last_seen_at = Column(DateTime(timezone=True), nullable=False)
     created_at   = Column(DateTime(timezone=True), nullable=False)
     updated_at   = Column(DateTime(timezone=True), nullable=False)
 
@@ -144,17 +129,20 @@ class Bridge(Base):
 
 class Inbox(Base):
     __tablename__ = "inboxes"
+    __table_args__ = (
+        CheckConstraint(
+            "platform IN ('chat', 'wechat', 'feishu')", name="ck_inbox_platform"
+        ),
+    )
 
-    id                       = Column(String(48), primary_key=True, index=True)
-    account_id               = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
-    bridge_id                = Column(String(48), ForeignKey("bridges.id"), nullable=True, index=True)
-    platform                 = Column(String(32), nullable=False)
-    display_name             = Column(String(256), nullable=False)
-    default_persona_id       = Column(String(48), ForeignKey("personas.id"), nullable=True)
-    enabled                  = Column(Boolean, nullable=False)
-    platform_self_id         = Column(String(128), nullable=True)
-    created_at               = Column(DateTime(timezone=True), nullable=False)
-    updated_at               = Column(DateTime(timezone=True), nullable=False)
+    id                = Column(String(48), primary_key=True, index=True)
+    account_id        = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
+    bridge_id         = Column(String(48), ForeignKey("bridges.id"), nullable=True, index=True)
+    platform          = Column(String(32), nullable=False)
+    display_name      = Column(String(256), nullable=False)
+    platform_self_id  = Column(String(128), nullable=True)
+    created_at        = Column(DateTime(timezone=True), nullable=False)
+    updated_at        = Column(DateTime(timezone=True), nullable=False)
 
 
 # ---------------------------------------------------------------------------
@@ -169,26 +157,30 @@ class Contact(Base):
         CheckConstraint("reply_policy IN ('disabled', 'autoreply')", name="ck_contact_reply_policy"),
     )
 
-    id                          = Column(String(48), primary_key=True, index=True)
-    inbox_id                    = Column(String(48), ForeignKey("inboxes.id"), nullable=False, index=True)
-    peer_platform_id            = Column(String(256), nullable=False)
-    display_name                = Column(String(256), nullable=False)
-    card_md                     = Column(Text, nullable=True)
-    persona_id                  = Column(String(48), ForeignKey("personas.id"), nullable=True)
-    takeover                    = Column(Boolean, nullable=False)
-    reply_policy                = Column(String(16), nullable=False)
-    pending_reply               = Column(Boolean, nullable=False)
-    status                      = Column(String(16), nullable=False)
-    last_seen_platform_msg_id   = Column(String(256), nullable=True)
-    created_at                  = Column(DateTime(timezone=True), nullable=False)
-    updated_at                  = Column(DateTime(timezone=True), nullable=False)
+    id                    = Column(String(48), primary_key=True, index=True)
+    inbox_id              = Column(String(48), ForeignKey("inboxes.id"), nullable=False, index=True)
+    peer_platform_id      = Column(String(256), nullable=False)
+    display_name          = Column(String(256), nullable=False)
+    card_md               = Column(Text, nullable=False)
+    persona_id            = Column(String(48), ForeignKey("personas.id"), nullable=True)
+    # provider_id: future per-contact provider routing; NULL = use system default.
+    provider_id           = Column(String(48), ForeignKey("provider_configs.id"), nullable=True)
+    takeover              = Column(Boolean, nullable=False)
+    reply_policy          = Column(String(16), nullable=False)
+    status                = Column(String(16), nullable=False)
+    # last_reply_round_at: timestamp of the most recent reply-pipeline round
+    # (queued outbound, intentional silence, or hard skip). Used to derive
+    # "needs reply": latest message is counterpart with timestamp > this.
+    last_reply_round_at   = Column(DateTime(timezone=True), nullable=True)
+    created_at            = Column(DateTime(timezone=True), nullable=False)
+    updated_at            = Column(DateTime(timezone=True), nullable=False)
 
 
 class Message(Base):
     __tablename__ = "messages"
     __table_args__ = (
         Index("idx_msg_contact_ts", "contact_id", "timestamp"),
-        UniqueConstraint("contact_id", "external_id", name="uq_message_contact_external"),
+        UniqueConstraint("contact_id", "msg_hash", name="uq_message_contact_hash"),
         CheckConstraint("role IN ('self', 'counterpart')", name="ck_message_role"),
         CheckConstraint("msg_type IN ('text', 'image', 'audio', 'video', 'file')", name="ck_message_msg_type"),
         CheckConstraint("authored_by IN ('unknown')", name="ck_message_authored_by"),
@@ -196,13 +188,15 @@ class Message(Base):
 
     id              = Column(BigInteger, primary_key=True, autoincrement=True)
     contact_id      = Column(String(48), ForeignKey("contacts.id"), nullable=False, index=True)
-    external_id     = Column(String(256), nullable=False)
-    msg_hash        = Column(String(64), nullable=True)   # SHA256 content hash for cross-device dedup
+    # external_id: platform-side message id, debug only — no uniqueness, no
+    # ordering guarantee. Dedup runs on msg_hash.
+    external_id     = Column(String(256), nullable=True)
+    msg_hash        = Column(String(64), nullable=False)   # SHA256 content hash for cross-device dedup
     role            = Column(String(16), nullable=False)
     authored_by     = Column(String(16), nullable=False)  # reserved provenance flag; only 'unknown' for now
-    sender_id       = Column(String(256), nullable=True)  # platform id of the sender
+    sender_id       = Column(String(256), nullable=True)  # platform id of sender (group chat)
+    sender_name     = Column(String(256), nullable=True)  # display name of sender (group chat)
     msg_type        = Column(String(16), nullable=False)
-    sender_name     = Column(String(256), nullable=True)
     content         = Column(Text, nullable=False)
     timestamp       = Column(DateTime(timezone=True), nullable=False, index=True)
     created_at      = Column(DateTime(timezone=True), nullable=False)
@@ -223,6 +217,7 @@ class MediaHash(Base):
     account_id   = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
     content_hash = Column(String(71), nullable=False)   # "sha256:{64hexchars}"
     storage_key  = Column(String(256), nullable=False)
+    created_at   = Column(DateTime(timezone=True), nullable=False)
 
 
 class DistillJob(Base):
@@ -233,12 +228,15 @@ class DistillJob(Base):
 
     id                 = Column(String(48), primary_key=True, index=True)
     account_id         = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
+    # contact_ids: JSONB array of Contact.id strings to fold in this job.
     contact_ids        = Column(JSONB, nullable=False)
     target_persona_id  = Column(String(48), ForeignKey("personas.id"), nullable=True, index=True)
     provider_config_id = Column(String(48), ForeignKey("provider_configs.id"), nullable=False, index=True)
     status             = Column(String(16), nullable=False)
+    # progress: JSONB scratchpad written by the pipeline; e.g.
+    # {"contacts_total": N, "contacts_done": K, "windows_total": M, "windows_done": J}.
     progress           = Column(JSONB, nullable=False)
-    error_message      = Column(Text, nullable=True)
+    error_message      = Column(Text, nullable=False)
     created_at         = Column(DateTime(timezone=True), nullable=False)
     started_at         = Column(DateTime(timezone=True), nullable=True)
     finished_at        = Column(DateTime(timezone=True), nullable=True)
@@ -255,6 +253,7 @@ class OutboundMessage(Base):
     __table_args__ = (
         Index("idx_outbound_inbox_id", "inbox_id", "id"),
         Index("idx_outbound_send_after", "status", "send_after"),
+        Index("idx_outbound_contact_created", "contact_id", "created_at"),
         CheckConstraint("status IN ('pending', 'delivered', 'failed', 'canceled')", name="ck_outbound_status"),
         CheckConstraint("msg_type IN ('text', 'image', 'audio', 'video', 'file')", name="ck_outbound_msg_type"),
     )
@@ -267,11 +266,16 @@ class OutboundMessage(Base):
     send_after    = Column(DateTime(timezone=True), nullable=False)
     status        = Column(String(16), nullable=False)
     delivered_at  = Column(DateTime(timezone=True), nullable=True)
-    failed_reason = Column(Text, nullable=True)
+    failed_reason = Column(Text, nullable=False)
     created_at    = Column(DateTime(timezone=True), nullable=False)
 
 
 class LlmLog(Base):
+    """Audit log of LLM round-trips. Deliberately uses bare string FKs
+    (no ON DELETE cascade) so personas/inboxes can be deleted while the
+    historical audit trail is preserved.
+    """
+
     __tablename__ = "llm_logs"
     __table_args__ = (
         CheckConstraint("purpose IN ('distill', 'reply')", name="ck_llm_log_purpose"),

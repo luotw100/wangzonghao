@@ -1,19 +1,11 @@
 """LLM reply brain.
 
-Triggered by the ReplyScanner in the worker: for each Contact with
-pending_reply=True, builds prompt → calls LLM → writes outbound messages →
-clears pending_reply.
-
-Design:
-- All gating is recomputed at reply time inside one DB session, so a stale
-  pending_reply flag (e.g. left over after autoreply was disabled) is a no-op
-  rather than a leak.
-- A short quiet-period suppresses replies while the counterpart is still
-  typing: if the latest counterpart message arrived less than QUIET_SECONDS
-  ago, defer this round (the flag stays true; we'll be back).
-- Each LLM response chunk becomes a separate OutboundMessage with a
-  send_after timestamp. Studio controls pacing: Bridge simply forwards
-  messages as soon as they become eligible.
+The ReplyScanner derives "needs reply" each tick by joining Contact + the
+latest Message: a contact is pending iff its latest message is from the
+counterpart and that message's timestamp is newer than the contact's
+last_reply_round_at. A reply *round* — whether it queued outbound, emitted
+silence, errored, or was skipped by a gate — always bumps last_reply_round_at
+so the loop terminates.
 """
 
 from __future__ import annotations
@@ -29,6 +21,7 @@ from datetime import timedelta
 from typing import Dict, List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session as ORMSession
 
 from studio.clients import ProviderClient
@@ -48,6 +41,7 @@ from studio.models import (
     Message,
     OutboundMessage,
     Persona,
+    ProviderConfig,
 )
 from studio.provider_policy import get_default_provider
 from studio.s3 import s3_get, s3_put
@@ -55,15 +49,9 @@ from studio.s3 import s3_get, s3_put
 logger = logging.getLogger(__name__)
 
 
-# How long to wait after the latest counterpart message before replying.
-# Lets the counterpart finish typing without firing N parallel LLM calls.
 QUIET_SECONDS = 6
-# How many recent messages to include in the prompt history dump.
 HISTORY_TAIL = 60
 
-# Pacing: Studio schedules each chunk's send_after so Bridge just forwards
-# immediately when it becomes eligible. First chunk gets a "think" delay;
-# subsequent chunks are spaced by simulated typing speed.
 TYPING_CHARS_PER_SECOND = 6.0
 TYPING_MIN_DELAY = 1.0
 TYPING_MAX_DELAY = 12.0
@@ -126,6 +114,14 @@ class _ReplyDecision:
     history: List[Message]
 
 
+def _resolve_provider(db: ORMSession, contact: Contact) -> Optional[ProviderConfig]:
+    if contact.provider_id:
+        pc = db.query(ProviderConfig).filter(ProviderConfig.id == contact.provider_id).first()
+        if pc:
+            return pc
+    return get_default_provider(db)
+
+
 def _decide(db: ORMSession, contact_id: str) -> _ReplyDecision:
     """Re-validate every gate in one transaction; return a decision."""
     contact = db.query(Contact).filter(Contact.id == contact_id).first()
@@ -137,12 +133,14 @@ def _decide(db: ORMSession, contact_id: str) -> _ReplyDecision:
         return _ReplyDecision("reply_policy is not autoreply", None, [])
 
     inbox = db.query(Inbox).filter(Inbox.id == contact.inbox_id).first()
-    if not inbox or not inbox.enabled:
-        return _ReplyDecision("inbox disabled", None, [])
-    pc = get_default_provider(db)
+    if not inbox:
+        return _ReplyDecision("inbox 不存在", None, [])
+    pc = _resolve_provider(db, contact)
     if not pc or not pc.api_key:
-        return _ReplyDecision("provider 缺失或没 api_key（含全局默认 Provider）", None, [])
+        return _ReplyDecision("provider 缺失或没 api_key", None, [])
 
+    if not contact.persona_id:
+        return _ReplyDecision("contact 未配置 persona", None, [])
     persona = db.query(Persona).filter(Persona.id == contact.persona_id).first()
     if not persona:
         return _ReplyDecision("persona 不存在", None, [])
@@ -174,7 +172,7 @@ def _decide(db: ORMSession, contact_id: str) -> _ReplyDecision:
         card_md=contact.card_md or "",
         base_url=pc.base_url,
         api_key=pc.api_key,
-        model=pc.default_model,
+        model=pc.model,
         inbox_id=inbox.id,
         display_tz=persona.timezone or "UTC",
     )
@@ -219,7 +217,6 @@ def _build_user_message(ctx: _ReplyCtx, history: List[Message]) -> str:
 
 def _parse_chunks(raw: str) -> List[str]:
     text = raw.strip()
-    # Strip code fences like ```json ... ```
     if text.startswith("```"):
         first_nl = text.find("\n")
         if first_nl != -1:
@@ -239,6 +236,16 @@ def _parse_chunks(raw: str) -> List[str]:
         if s:
             out.append(s)
     return out
+
+
+def _mark_round_done(db: ORMSession, contact_id: str) -> None:
+    """Bump last_reply_round_at so the scanner won't pick this contact up
+    again until a *new* counterpart message arrives.
+    """
+    c = db.query(Contact).filter(Contact.id == contact_id).first()
+    if c:
+        c.last_reply_round_at = utc_now()
+        c.updated_at = c.last_reply_round_at
 
 
 _MEDIA_TYPE_LABELS = {
@@ -335,7 +342,7 @@ def _handle_media_reply(ctx: _ReplyCtx, history: List[Message]) -> str:
             send_after=now_ts + timedelta(seconds=THINK_DELAY),
             status=OutboundStatus.PENDING,
             delivered_at=None,
-            failed_reason=None,
+            failed_reason="",
             created_at=now_ts,
         ))
 
@@ -348,7 +355,7 @@ def _handle_media_reply(ctx: _ReplyCtx, history: List[Message]) -> str:
                 send_after=now_ts + timedelta(seconds=THINK_DELAY + 2),
                 status=OutboundStatus.PENDING,
                 delivered_at=None,
-                failed_reason=None,
+                failed_reason="",
                 created_at=now_ts,
             ))
 
@@ -362,11 +369,7 @@ def _handle_media_reply(ctx: _ReplyCtx, history: List[Message]) -> str:
             created_at=now_ts,
         ))
 
-        c = db.query(Contact).filter(Contact.id == ctx.contact_id).first()
-        if c:
-            c.pending_reply = False
-            c.updated_at = utc_now()
-
+        _mark_round_done(db, ctx.contact_id)
         db.commit()
         return f"media_reply: text='{text_content}' image={'sent' if img_storage_key else 'skipped'}"
 
@@ -380,7 +383,6 @@ def _handle_media_reply(ctx: _ReplyCtx, history: List[Message]) -> str:
 
 async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
     """Run one reply attempt for one contact. Returns a short status string for logging."""
-    # Phase 1: decide (read-only)
     db = SessionLocal()
     try:
         decision = _decide(db, contact_id)
@@ -389,15 +391,13 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
 
     if decision.skip_reason:
         if decision.skip_reason.startswith("等静默期"):
+            # Don't mark round done — re-check next tick when quiet expires.
             return decision.skip_reason
-        # Permanent skip — clear the flag so we stop polling forever
+        # Permanent skip (gate failed). Mark round done so we don't loop.
         db = SessionLocal()
         try:
-            c = db.query(Contact).filter(Contact.id == contact_id).first()
-            if c and c.pending_reply:
-                c.pending_reply = False
-                c.updated_at = utc_now()
-                db.commit()
+            _mark_round_done(db, contact_id)
+            db.commit()
         finally:
             db.close()
         return f"skip: {decision.skip_reason}"
@@ -405,7 +405,6 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
     ctx = decision.ctx
     assert ctx is not None
 
-    # Shortcut: if the latest message is media, reply with a test description + random image
     if decision.history and decision.history[-1].msg_type != "text":
         return _handle_media_reply(ctx, decision.history)
 
@@ -414,7 +413,6 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
         {"role": "user", "content": _build_user_message(ctx, decision.history)},
     ]
 
-    # Phase 2: LLM call (no db open while we wait)
     try:
         response_text, _usage = await provider.complete_chat(
             ctx.base_url, ctx.api_key, ctx.model, request_messages
@@ -428,12 +426,12 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
                 request_messages=json.dumps(request_messages, ensure_ascii=False),
                 response_raw=f"ERROR: {exc}", model=ctx.model, created_at=utc_now(),
             ))
+            _mark_round_done(db, contact_id)
             db.commit()
         finally:
             db.close()
         return f"llm_error: {exc}"
 
-    # Phase 3: parse + commit
     db = SessionLocal()
     try:
         db.add(LlmLog(
@@ -446,17 +444,9 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
         except Exception as exc:
             logger.warning("Reply parse failed for contact %s: %s; raw=%s",
                            contact_id, exc, response_text[:300].replace("\n", "\\n").replace("\r", "\\r"))
-            c = db.query(Contact).filter(Contact.id == contact_id).first()
-            if c:
-                c.pending_reply = False
-                c.updated_at = utc_now()
+            _mark_round_done(db, contact_id)
             db.commit()
             return f"parse_error: {exc}"
-
-        c = db.query(Contact).filter(Contact.id == contact_id).first()
-        if not c:
-            db.commit()
-            return "contact gone"
 
         if chunks:
             now_ts = utc_now()
@@ -475,7 +465,7 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
                     send_after=send_after,
                     status=OutboundStatus.PENDING,
                     delivered_at=None,
-                    failed_reason=None,
+                    failed_reason="",
                     created_at=now_ts,
                 )
                 db.add(ob)
@@ -483,8 +473,7 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
         else:
             status = "model returned empty (intentional silence)"
 
-        c.pending_reply = False
-        c.updated_at = utc_now()
+        _mark_round_done(db, contact_id)
         db.commit()
         return status
     finally:
@@ -492,13 +481,47 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
 
 
 def list_pending_contact_ids() -> List[str]:
+    """Derive "needs reply" contacts: status=active, reply_policy=autoreply,
+    persona configured, and latest message is from counterpart with
+    timestamp > last_reply_round_at (or NULL).
+    """
     db = SessionLocal()
     try:
+        latest_ts = (
+            db.query(
+                Message.contact_id.label("cid"),
+                func.max(Message.timestamp).label("ts"),
+            )
+            .group_by(Message.contact_id)
+            .subquery()
+        )
         rows = (
-            db.query(Contact.id)
-            .filter(Contact.pending_reply.is_(True), Contact.status == ContactStatus.ACTIVE)
+            db.query(Contact.id, latest_ts.c.ts, Message.role)
+            .join(latest_ts, latest_ts.c.cid == Contact.id)
+            .join(
+                Message,
+                (Message.contact_id == Contact.id)
+                & (Message.timestamp == latest_ts.c.ts),
+            )
+            .filter(
+                Contact.status == ContactStatus.ACTIVE,
+                Contact.reply_policy == ReplyPolicy.AUTOREPLY,
+                Contact.persona_id.is_not(None),
+            )
             .all()
         )
-        return [r[0] for r in rows]
+        out: List[str] = []
+        seen: set[str] = set()
+        for cid, ts, role in rows:
+            if cid in seen:
+                continue
+            seen.add(cid)
+            if role != MessageRole.COUNTERPART:
+                continue
+            c = db.query(Contact.last_reply_round_at).filter(Contact.id == cid).first()
+            last = c[0] if c else None
+            if last is None or last < ts:
+                out.append(cid)
+        return out
     finally:
         db.close()

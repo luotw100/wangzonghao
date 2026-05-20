@@ -6,7 +6,7 @@ from studio.auth_utils import hash_password
 from studio.clients import ALLOWED_BASE_URLS
 from studio.db import get_db, utc_now
 from studio.deps import new_id
-from studio.enums import AccountStatus, ProviderScope, ProviderStatus
+from studio.enums import AccountStatus
 from studio.migrate import run_migrations
 from studio.models import Account, ProviderConfig
 
@@ -92,37 +92,29 @@ def _validate_base_url(base_url: str) -> str:
 
 
 def create_provider(args: argparse.Namespace) -> None:
-    """Create a Provider and make it the single global default.
-
-    Provider is the only LLM config; reply brain and distill always use the
-    default global Provider. Creating a new one clears the previous default.
+    """Create a Provider. The most-recently-updated one is treated as the
+    system default by reply/distill until per-contact provider routing is
+    wired through the UI.
     """
     run_migrations()
     db = next(get_db())
     try:
         now = utc_now()
-        db.query(ProviderConfig).filter(ProviderConfig.is_default.is_(True)).update(
-            {ProviderConfig.is_default: False, ProviderConfig.updated_at: now},
-            synchronize_session=False,
-        )
         p = ProviderConfig(
             id=new_id("p"),
             name=args.name,
             base_url=_validate_base_url(args.base_url),
             api_key=args.api_key,
-            default_model=args.default_model,
-            scope=ProviderScope.GLOBAL,
-            status=ProviderStatus.ACTIVE,
-            is_default=True,
+            model=args.model,
             created_at=now,
             updated_at=now,
         )
         db.add(p)
         db.commit()
-        print(f"created studio provider {p.name} (now default)")
+        print(f"created studio provider {p.name}")
         print(_table(
-            ["id", "name", "base_url", "default_model", "api_key", "is_default"],
-            [[p.id, p.name, p.base_url, p.default_model, _mask_api_key(p.api_key), p.is_default]],
+            ["id", "name", "base_url", "model", "api_key"],
+            [[p.id, p.name, p.base_url, p.model, _mask_api_key(p.api_key)]],
         ))
     finally:
         db.close()
@@ -134,10 +126,9 @@ def list_providers(_: argparse.Namespace) -> None:
     try:
         rows = []
         for p in db.query(ProviderConfig).order_by(ProviderConfig.updated_at.desc()).all():
-            rows.append([p.id, p.name, p.base_url, p.default_model,
-                         _mask_api_key(p.api_key), p.status, p.is_default])
+            rows.append([p.id, p.name, p.base_url, p.model, _mask_api_key(p.api_key)])
         print(_table(
-            ["id", "name", "base_url", "default_model", "api_key", "status", "is_default"],
+            ["id", "name", "base_url", "model", "api_key"],
             rows,
         ))
     finally:
@@ -180,7 +171,7 @@ def main() -> None:
     pcreate_parser.add_argument("--name", required=True)
     pcreate_parser.add_argument("--base-url", required=True)
     pcreate_parser.add_argument("--api-key", default=None)
-    pcreate_parser.add_argument("--default-model", required=True)
+    pcreate_parser.add_argument("--model", required=True)
     pcreate_parser.set_defaults(func=create_provider)
 
     plist_parser = subparsers.add_parser("list-providers")

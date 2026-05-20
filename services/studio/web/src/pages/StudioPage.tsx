@@ -64,7 +64,7 @@ export function StudioPage() {
   };
 
   const onlineBridges = useMemo(() => bridges.filter(bridge => bridge.status === 'online').length, [bridges]);
-  const totalBridges = useMemo(() => bridges.filter(bridge => bridge.status !== 'revoked').length, [bridges]);
+  const totalBridges = bridges.length;
 
   if (!me) return null;
 
@@ -497,7 +497,7 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
   );
 }
 
-function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, personas, onChanged, onLocalRefresh, onSetTakeover, setError }: {
+function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, onSetTakeover }: {
   inbox: Inbox;
   bridge: Bridge | null;
   conversations: ConversationSummary[];
@@ -509,7 +509,6 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, person
   onSetTakeover: (contactId: string, value: boolean) => void;
   setError: (message: string) => void;
 }) {
-  const [showSettings, setShowSettings] = useState(false);
   const online = bridge?.status === 'online';
 
   return (
@@ -519,24 +518,8 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, person
           <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: online ? 'var(--live)' : 'var(--ink-3)' }} />
           <strong style={{ fontSize: 13 }}>{inbox.display_name}</strong>
           <span className="chip muted">{inbox.platform}</span>
-          {!inbox.enabled && <span className="chip warn">已停用</span>}
         </div>
-        <button className="btn btn-sm btn-ghost" onClick={() => setShowSettings(value => !value)}>
-          {showSettings ? '收起' : '默认设置'}
-        </button>
       </div>
-
-      {showSettings && (
-        <InboxDefaults
-          inbox={inbox}
-          personas={personas}
-          onChanged={async () => {
-            await Promise.resolve(onChanged());
-            await onLocalRefresh();
-          }}
-          setError={setError}
-        />
-      )}
 
       {conversations.length === 0 ? (
         <div className="ink-3" style={{ fontSize: 12, padding: '8px 4px' }}>
@@ -593,56 +576,6 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, person
   );
 }
 
-function InboxDefaults({ inbox, personas, onChanged, setError }: {
-  inbox: Inbox;
-  personas: Persona[];
-  onChanged: ChangeHandler;
-  setError: (message: string) => void;
-}) {
-  return (
-    <div style={{ display: 'grid', gap: 8, padding: '8px 10px', background: 'var(--bg-raised)', borderRadius: 8, border: '1px solid var(--line-subtle)' }}>
-      <div className="ink-3" style={{ fontSize: 11 }}>
-        新粉丝默认设置（已有的粉丝不受影响）
-      </div>
-      <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>
-        默认人设
-        <select
-          value={inbox.default_persona_id ?? ''}
-          className="select"
-          style={{ marginLeft: 6, marginTop: 2 }}
-          onChange={async event => {
-            if (!event.target.value) return;
-            try {
-              await api.updateInbox(inbox.id, { default_persona_id: event.target.value });
-              await Promise.resolve(onChanged());
-            } catch (err) {
-              setError(String(err));
-            }
-          }}
-        >
-          <option value="">（未选）</option>
-          {personas.map(persona => <option key={persona.id} value={persona.id}>{persona.name}</option>)}
-        </select>
-      </label>
-      <div>
-        <button
-          className="btn btn-sm btn-ghost"
-          onClick={async () => {
-            try {
-              await api.updateInbox(inbox.id, { enabled: !inbox.enabled });
-              await Promise.resolve(onChanged());
-            } catch (err) {
-              setError(String(err));
-            }
-          }}
-        >
-          {inbox.enabled ? '停用这个账号' : '启用这个账号'}
-        </button>
-      </div>
-    </div>
-  );
-}
-
 function ContactDetail({ contact, inbox, bridge, messages, personas, onPatch }: {
   contact: Contact;
   inbox: Inbox;
@@ -660,7 +593,7 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, onPatch }: 
     setDraftCard(contact.card_md ?? '');
   }, [contact.id, contact.card_md]);
 
-  const inboxLive = inbox.enabled && Boolean(bridge && bridge.status === 'online');
+  const inboxLive = Boolean(bridge && bridge.status === 'online');
   const canAutoreply = inboxLive && Boolean(contact.persona_id);
 
   return (
@@ -737,7 +670,6 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, onPatch }: 
           <div style={{ fontSize: 11, color: 'var(--warn)' }}>
             {!bridge && '— 这个账号没有在线的设备；'}
             {bridge && bridge.status !== 'online' && `— 设备「${bridge.machine_id}」当前离线；`}
-            {!inbox.enabled && '— 这个账号已停用；'}
             {!contact.persona_id && '— 还没选人设；'}
             目前无法自动回复。
           </div>
@@ -893,7 +825,7 @@ function DevicesView({ bridges, inboxes, meUsername, onChanged, setError }: {
                   <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--line-subtle)', display: 'grid', gap: 6 }}>
                     {(inboxesByBridge[bridge.id] || []).map(inbox => (
                       <div key={inbox.id} style={{ fontSize: 11, color: 'var(--ink-2)' }}>
-                        {inbox.display_name}（{inbox.platform}）· {inbox.enabled ? '使用中' : '已停用'}
+                        {inbox.display_name}（{inbox.platform}）
                       </div>
                     ))}
                   </div>
@@ -908,22 +840,16 @@ function DevicesView({ bridges, inboxes, meUsername, onChanged, setError }: {
 }
 
 function StatusDot({ status }: { status: Bridge['status'] }) {
-  const color =
-    status === 'online' ? 'var(--live)' :
-    status === 'revoked' ? 'var(--danger)' : 'var(--ink-3)';
+  const color = status === 'online' ? 'var(--live)' : 'var(--ink-3)';
   return <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 99, background: color }} />;
 }
 
 function statusText(status: Bridge['status']): string {
-  if (status === 'online') return '在线';
-  if (status === 'offline') return '离线';
-  return '已移除';
+  return status === 'online' ? '在线' : '离线';
 }
 
 function statusChipClass(status: Bridge['status']): string {
-  if (status === 'online') return 'live';
-  if (status === 'revoked') return 'danger';
-  return 'muted';
+  return status === 'online' ? 'live' : 'muted';
 }
 
 function PersonasView({ personas, onChanged, setError }: {
@@ -957,7 +883,7 @@ function PersonasView({ personas, onChanged, setError }: {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
                   <div>
                     <div style={{ fontWeight: 500 }}>
-                      {persona.name} <span className="chip muted">{persona.status === 'active' ? '使用中' : '已归档'}</span>
+                      {persona.name}
                     </div>
                     <div className="ink-3" style={{ fontSize: 11, marginTop: 4 }}>
                       {persona.persona_md ? `${persona.persona_md.slice(0, 80)}${persona.persona_md.length > 80 ? '…' : ''}` : '（空）'}
@@ -1209,7 +1135,7 @@ function EditPersonaModal({ persona, onClose, onSaved, setError }: {
   const handle = async () => {
     setBusy(true);
     try {
-      await api.updatePersona(persona.id, { name, persona_md: md || null, timezone: tz.trim() || 'UTC' });
+      await api.updatePersona(persona.id, { name, persona_md: md, timezone: tz.trim() || 'UTC' });
       await Promise.resolve(onSaved());
     } catch (err) {
       setError(String(err));

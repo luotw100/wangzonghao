@@ -1,7 +1,9 @@
 """Response serializer functions — pure data extraction, no business logic."""
 
+from datetime import timedelta
 from typing import Any, Dict, Optional
 
+from studio.db import utc_now
 from studio.models import (
     Account,
     Bridge,
@@ -12,6 +14,14 @@ from studio.models import (
     OutboundMessage,
     Persona,
 )
+
+
+# Heartbeat threshold used to derive Bridge online/offline from last_seen_at.
+BRIDGE_OFFLINE_AFTER = timedelta(seconds=45)
+
+
+def _bridge_status(b: Bridge) -> str:
+    return "online" if (utc_now() - b.last_seen_at) <= BRIDGE_OFFLINE_AFTER else "offline"
 
 
 def s_account(a: Account) -> Dict[str, Any]:
@@ -25,7 +35,7 @@ def s_account(a: Account) -> Dict[str, Any]:
 def s_persona(p: Persona) -> Dict[str, Any]:
     return {
         "id": p.id, "account_id": p.account_id, "name": p.name,
-        "persona_md": p.persona_md, "timezone": p.timezone, "status": p.status,
+        "persona_md": p.persona_md, "timezone": p.timezone,
         "created_at": p.created_at, "updated_at": p.updated_at,
     }
 
@@ -33,7 +43,7 @@ def s_persona(p: Persona) -> Dict[str, Any]:
 def s_bridge(b: Bridge) -> Dict[str, Any]:
     return {
         "id": b.id, "account_id": b.account_id, "machine_id": b.machine_id,
-        "status": b.status, "last_seen_at": b.last_seen_at,
+        "status": _bridge_status(b), "last_seen_at": b.last_seen_at,
         "created_at": b.created_at, "updated_at": b.updated_at,
     }
 
@@ -42,8 +52,7 @@ def s_inbox(i: Inbox) -> Dict[str, Any]:
     return {
         "id": i.id, "account_id": i.account_id, "bridge_id": i.bridge_id,
         "platform": i.platform, "display_name": i.display_name,
-        "default_persona_id": i.default_persona_id,
-        "enabled": i.enabled, "platform_self_id": i.platform_self_id,
+        "platform_self_id": i.platform_self_id,
         "created_at": i.created_at, "updated_at": i.updated_at,
     }
 
@@ -52,11 +61,11 @@ def s_contact(c: Contact) -> Dict[str, Any]:
     return {
         "id": c.id, "inbox_id": c.inbox_id, "peer_platform_id": c.peer_platform_id,
         "display_name": c.display_name, "card_md": c.card_md,
-        "persona_id": c.persona_id,
+        "persona_id": c.persona_id, "provider_id": c.provider_id,
         "takeover": c.takeover,
         "reply_policy": c.reply_policy,
-        "pending_reply": c.pending_reply,
-        "status": c.status, "last_seen_platform_msg_id": c.last_seen_platform_msg_id,
+        "status": c.status,
+        "last_reply_round_at": c.last_reply_round_at,
         "created_at": c.created_at, "updated_at": c.updated_at,
     }
 
@@ -95,6 +104,4 @@ def s_bridge_inbox_view(i: Inbox) -> Dict[str, Any]:
         "platform": i.platform,
         "platform_self_id": i.platform_self_id,
         "display_name": i.display_name,
-        "enabled": i.enabled,
-        "default_persona_id": i.default_persona_id,
     }

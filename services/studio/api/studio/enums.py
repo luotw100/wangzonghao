@@ -6,26 +6,6 @@ class AccountStatus(StrEnum):
     DISABLED = "disabled"
 
 
-class ProviderScope(StrEnum):
-    GLOBAL = "global"
-
-
-class ProviderStatus(StrEnum):
-    ACTIVE = "active"
-    DISABLED = "disabled"
-
-
-class PersonaStatus(StrEnum):
-    ACTIVE = "active"
-    ARCHIVED = "archived"
-
-
-class BridgeStatus(StrEnum):
-    ONLINE = "online"
-    OFFLINE = "offline"
-    REVOKED = "revoked"
-
-
 class InboxPlatform(StrEnum):
     CHAT = "chat"
     WECHAT = "wechat"

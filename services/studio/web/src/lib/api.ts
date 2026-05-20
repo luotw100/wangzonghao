@@ -85,21 +85,20 @@ export interface Persona {
   id: string;
   account_id: string;
   name: string;
-  persona_md: string | null;
+  persona_md: string;
   timezone: string;
-  status: 'active' | 'archived';
   created_at: string;
   updated_at: string;
 }
 
-export type BridgeStatus = 'online' | 'offline' | 'revoked';
+export type BridgeStatus = 'online' | 'offline';
 
 export interface Bridge {
   id: string;
   account_id: string;
   machine_id: string;
   status: BridgeStatus;
-  last_seen_at: string | null;
+  last_seen_at: string;
   created_at: string;
   updated_at: string;
 }
@@ -110,8 +109,6 @@ export interface Inbox {
   bridge_id: string | null;
   platform: string;
   display_name: string;
-  default_persona_id: string | null;
-  enabled: boolean;
   platform_self_id: string | null;
   created_at: string;
   updated_at: string;
@@ -122,13 +119,13 @@ export interface Contact {
   inbox_id: string;
   peer_platform_id: string;
   display_name: string;
-  card_md: string | null;
+  card_md: string;
   persona_id: string | null;
+  provider_id: string | null;
   takeover: boolean;
   reply_policy: 'disabled' | 'autoreply';
-  pending_reply: boolean;
   status: 'active' | 'archived';
-  last_seen_platform_msg_id: string | null;
+  last_reply_round_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -211,7 +208,7 @@ export function createPersona(data: { name: string; persona_md: string | null; t
 }
 export function updatePersona(
   id: string,
-  data: { name?: string; persona_md?: string | null; timezone?: string; status?: 'active' | 'archived' },
+  data: { name?: string; persona_md?: string; timezone?: string },
 ) {
   return request<Persona>(`/personas/${id}`, {
     method: 'PUT',
@@ -237,8 +234,8 @@ export function updateInbox(
   id: string,
   data: {
     display_name?: string;
-    default_persona_id?: string;
-    enabled?: boolean;
+    bridge_id?: string;
+    clear_bridge?: boolean;
   },
 ) {
   return request<Inbox>(`/inboxes/${id}`, {
@@ -260,8 +257,9 @@ export function updateContact(
   contactId: string,
   data: {
     display_name?: string;
-    card_md?: string | null;
+    card_md?: string;
     persona_id?: string;
+    provider_id?: string;
     takeover?: boolean;
     reply_policy?: 'disabled' | 'autoreply';
     status?: 'active' | 'archived';

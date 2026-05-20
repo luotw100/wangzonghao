@@ -3,14 +3,14 @@
 from typing import Annotated
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from studio.db import get_db, utc_now
 from studio.deps import CurrentAccountDep, get_account_persona, new_id
 from studio.models import Contact, Persona
-from studio.schemas import PersonaCreate, PersonaUpdate
-from studio.serializers import s_persona
+from studio.schemas import PersonaCreate, PersonaRead, PersonaSummary, PersonaUpdate
 
 router = APIRouter()
 
@@ -23,15 +23,21 @@ def _validate_timezone(tz: str) -> str:
     return tz
 
 
-@router.get("/api/personas")
+@router.get("/api/personas", response_model=list[PersonaSummary])
 def list_personas(db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
-    """获取当前账号的人设列表，按创建时间降序排列。"""
-    query = db.query(Persona).filter(Persona.account_id == account.id)
-    items = query.order_by(Persona.created_at.desc()).all()
-    return [s_persona(p) for p in items]
+    """获取当前账号的人设列表（瘦版，不含 persona_md），按创建时间降序排列。
+
+    需要 markdown 正文时调用 GET /api/personas/{id}。
+    """
+    return (
+        db.query(Persona)
+        .filter(Persona.account_id == account.id)
+        .order_by(Persona.created_at.desc())
+        .all()
+    )
 
 
-@router.post("/api/personas")
+@router.post("/api/personas", response_model=PersonaRead, status_code=status.HTTP_201_CREATED)
 def create_persona(payload: PersonaCreate, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
     """创建人设。同一账号下名称不可重复。"""
     tz = _validate_timezone(payload.timezone)
@@ -41,17 +47,23 @@ def create_persona(payload: PersonaCreate, db: Annotated[Session, Depends(get_db
         name=payload.name, persona_md=payload.persona_md or "",
         timezone=tz, created_at=now, updated_at=now,
     )
-    db.add(p); db.commit(); db.refresh(p)
-    return s_persona(p)
+    db.add(p)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="同名人设已存在")
+    db.refresh(p)
+    return p
 
 
-@router.get("/api/personas/{persona_id}")
+@router.get("/api/personas/{persona_id}", response_model=PersonaRead)
 def get_persona(persona_id: str, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
-    """获取单个人设详情。"""
-    return s_persona(get_account_persona(db, account, persona_id))
+    """获取单个人设详情（含 persona_md）。"""
+    return get_account_persona(db, account, persona_id)
 
 
-@router.put("/api/personas/{persona_id}")
+@router.patch("/api/personas/{persona_id}", response_model=PersonaRead)
 def update_persona(persona_id: str, payload: PersonaUpdate, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
     """更新人设。只传需要修改的字段。"""
     p = get_account_persona(db, account, persona_id)
@@ -63,16 +75,22 @@ def update_persona(persona_id: str, payload: PersonaUpdate, db: Annotated[Sessio
     if "timezone" in fields and payload.timezone is not None:
         p.timezone = _validate_timezone(payload.timezone)
     p.updated_at = utc_now()
-    db.commit(); db.refresh(p)
-    return s_persona(p)
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="同名人设已存在")
+    db.refresh(p)
+    return p
 
 
-@router.delete("/api/personas/{persona_id}")
+@router.delete("/api/personas/{persona_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_persona(persona_id: str, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
-    """删除人设。若该人设仍被某个 Contact 引用，返回 409。"""
+    """删除人设。若该人设仍被任一 Contact 引用，返回 409。"""
     p = get_account_persona(db, account, persona_id)
-    in_use_contact = db.query(Contact).filter(Contact.persona_id == p.id).first()
-    if in_use_contact:
-        raise HTTPException(status_code=409, detail=f"Persona 仍被 contact {in_use_contact.id} 引用")
-    db.delete(p); db.commit()
-    return {"status": "deleted", "id": persona_id}
+    in_use_count = db.query(Contact).filter(Contact.persona_id == p.id).count()
+    if in_use_count:
+        raise HTTPException(status_code=409, detail=f"Persona 仍被 {in_use_count} 个联系人引用")
+    db.delete(p)
+    db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

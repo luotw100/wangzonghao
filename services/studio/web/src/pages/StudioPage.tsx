@@ -4,10 +4,12 @@ import * as api from '../lib/api';
 import type {
   Bridge,
   Contact,
+  ContactSummary,
   ConversationSummary,
   Inbox,
   Message,
   Persona,
+  PersonaSummary,
 } from '../lib/api';
 import { useAuth } from '../lib/auth';
 
@@ -31,7 +33,7 @@ export function StudioPage() {
   const { account: me, logout } = useAuth();
   const [tab, setTab] = useState<Tab>('takeover');
   const [bridges, setBridges] = useState<Bridge[]>([]);
-  const [personas, setPersonas] = useState<Persona[]>([]);
+  const [personas, setPersonas] = useState<PersonaSummary[]>([]);
   const [inboxes, setInboxes] = useState<Inbox[]>([]);
   const [error, setError] = useState('');
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
@@ -283,7 +285,7 @@ function PageHead({ title, kicker, right }: { title: string; kicker?: string; ri
 function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
   inboxes: Inbox[];
   bridges: Bridge[];
-  personas: Persona[];
+  personas: PersonaSummary[];
   onChanged: ChangeHandler;
   setError: (message: string) => void;
 }) {
@@ -503,7 +505,7 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, onSetT
   conversations: ConversationSummary[];
   selectedId: string | null;
   onSelect: (id: string) => void;
-  personas: Persona[];
+  personas: PersonaSummary[];
   onChanged: ChangeHandler;
   onLocalRefresh: () => Promise<void>;
   onSetTakeover: (contactId: string, value: boolean) => void;
@@ -577,21 +579,42 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, onSetT
 }
 
 function ContactDetail({ contact, inbox, bridge, messages, personas, onPatch }: {
-  contact: Contact;
+  contact: ContactSummary;
   inbox: Inbox;
   bridge: Bridge | null;
   messages: Message[];
-  personas: Persona[];
+  personas: PersonaSummary[];
   onPatch: (contactId: string, patch: Parameters<typeof api.updateContact>[1]) => Promise<void>;
 }) {
-  const [draftCard, setDraftCard] = useState(contact.card_md ?? '');
+  // card_md 不在列表里，需要按 id 单独拉
+  const [full, setFull] = useState<Contact | null>(null);
+  const [draftCard, setDraftCard] = useState('');
   const [savingCard, setSavingCard] = useState(false);
   const [cardJobBusy, setCardJobBusy] = useState(false);
   const [cardJobNote, setCardJobNote] = useState('');
 
   useEffect(() => {
-    setDraftCard(contact.card_md ?? '');
-  }, [contact.id, contact.card_md]);
+    let alive = true;
+    setFull(null);
+    setDraftCard('');
+    api.getContact(contact.id).then(c => {
+      if (!alive) return;
+      setFull(c);
+      setDraftCard(c.card_md ?? '');
+    }).catch(() => { /* ignore */ });
+    return () => { alive = false; };
+  }, [contact.id, contact.updated_at]);
+
+  // 同样按需拉当前 contact 绑定的 persona 详情（用于自动回复缺料检查）
+  const [selectedPersona, setSelectedPersona] = useState<Persona | null>(null);
+  useEffect(() => {
+    if (!contact.persona_id) { setSelectedPersona(null); return; }
+    let alive = true;
+    api.getPersona(contact.persona_id).then(p => { if (alive) setSelectedPersona(p); }).catch(() => { /* ignore */ });
+    return () => { alive = false; };
+  }, [contact.persona_id]);
+
+  const currentCard = full?.card_md ?? '';
 
   const inboxLive = Boolean(bridge && bridge.status === 'online');
   const canAutoreply = inboxLive && Boolean(contact.persona_id);
@@ -649,9 +672,8 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, onPatch }: 
               onChange={event => {
                 const next = event.target.value as 'disabled' | 'autoreply';
                 if (next === 'autoreply') {
-                  const persona = personas.find(p => p.id === contact.persona_id);
-                  const hasPersona = Boolean(contact.persona_id && persona?.persona_md && persona.persona_md.trim());
-                  const hasCard = Boolean(contact.card_md && contact.card_md.trim());
+                  const hasPersona = Boolean(contact.persona_id && selectedPersona?.persona_md && selectedPersona.persona_md.trim());
+                  const hasCard = Boolean(currentCard && currentCard.trim());
                   if (!hasPersona || !hasCard) {
                     const missing = [hasPersona ? null : '人设', hasCard ? null : '关系备注'].filter(Boolean).join(' 和 ');
                     if (!confirm(`还缺${missing}（两样都要有才能自动回复）。可以去「人设」页自动生成。仍要开启自动回复吗？`)) return;
@@ -681,7 +703,8 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, onPatch }: 
           style={{ minHeight: 90, fontSize: 12 }}
           value={draftCard}
           onChange={event => setDraftCard(event.target.value)}
-          placeholder="例如：北京大学生，喜欢户外，去年送过我一袋茶叶，叫我 alice 姐"
+          placeholder={full ? '例如：北京大学生，喜欢户外，去年送过我一袋茶叶，叫我 alice 姐' : '加载中…'}
+          disabled={!full}
         />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
           <button
@@ -704,18 +727,19 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, onPatch }: 
             {cardJobBusy ? '处理中…' : '✶ 自动整理关系备注'}
           </button>
           <div style={{ display: 'flex', gap: 6 }}>
-            {draftCard !== (contact.card_md ?? '') && (
-              <button className="btn btn-sm btn-ghost" onClick={() => setDraftCard(contact.card_md ?? '')}>
+            {full && draftCard !== currentCard && (
+              <button className="btn btn-sm btn-ghost" onClick={() => setDraftCard(currentCard)}>
                 放弃修改
               </button>
             )}
             <button
               className="btn btn-sm btn-primary"
-              disabled={savingCard || draftCard === (contact.card_md ?? '')}
+              disabled={!full || savingCard || draftCard === currentCard}
               onClick={async () => {
                 setSavingCard(true);
                 try {
                   await onPatch(contact.id, { card_md: draftCard });
+                  setFull(prev => prev ? { ...prev, card_md: draftCard } : prev);
                 } finally {
                   setSavingCard(false);
                 }
@@ -853,13 +877,13 @@ function statusChipClass(status: Bridge['status']): string {
 }
 
 function PersonasView({ personas, onChanged, setError }: {
-  personas: Persona[];
+  personas: PersonaSummary[];
   onChanged: ChangeHandler;
   setError: (message: string) => void;
 }) {
   const [showCreate, setShowCreate] = useState(false);
   const [showAuto, setShowAuto] = useState(false);
-  const [editing, setEditing] = useState<Persona | null>(null);
+  const [editing, setEditing] = useState<PersonaSummary | null>(null);
 
   return (
     <div>
@@ -886,7 +910,7 @@ function PersonasView({ personas, onChanged, setError }: {
                       {persona.name}
                     </div>
                     <div className="ink-3" style={{ fontSize: 11, marginTop: 4 }}>
-                      {persona.persona_md ? `${persona.persona_md.slice(0, 80)}${persona.persona_md.length > 80 ? '…' : ''}` : '（空）'}
+                      {persona.timezone}
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 6 }}>
@@ -1122,15 +1146,28 @@ function AutoCreatePersonaModal({ onClose, onSubmitted, setError }: {
 }
 
 function EditPersonaModal({ persona, onClose, onSaved, setError }: {
-  persona: Persona;
+  persona: PersonaSummary;
   onClose: () => void;
   onSaved: () => void | Promise<void>;
   setError: (message: string) => void;
 }) {
   const [name, setName] = useState(persona.name);
-  const [md, setMd] = useState(persona.persona_md ?? '');
+  const [md, setMd] = useState('');
   const [tz, setTz] = useState(persona.timezone ?? 'UTC');
+  const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    api.getPersona(persona.id)
+      .then(full => {
+        if (!alive) return;
+        setMd(full.persona_md ?? '');
+        setLoaded(true);
+      })
+      .catch(err => { if (alive) setError(String(err)); });
+    return () => { alive = false; };
+  }, [persona.id, setError]);
 
   const handle = async () => {
     setBusy(true);
@@ -1149,9 +1186,16 @@ function EditPersonaModal({ persona, onClose, onSaved, setError }: {
       <FormField label="名称"><input className="input" value={name} onChange={event => setName(event.target.value)} /></FormField>
       <FormField label="时区"><input className="input" value={tz} onChange={event => setTz(event.target.value)} placeholder="Asia/Shanghai" /></FormField>
       <FormField label="人设描述">
-        <textarea className="textarea mono" style={{ minHeight: 320 }} value={md} onChange={event => setMd(event.target.value)} />
+        <textarea
+          className="textarea mono"
+          style={{ minHeight: 320 }}
+          value={md}
+          onChange={event => setMd(event.target.value)}
+          placeholder={loaded ? '' : '加载中…'}
+          disabled={!loaded}
+        />
       </FormField>
-      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '保存中...' : '保存'} disabled={busy} />
+      <ModalActions onCancel={onClose} onConfirm={handle} confirmLabel={busy ? '保存中...' : '保存'} disabled={busy || !loaded} />
     </ModalShell>
   );
 }

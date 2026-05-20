@@ -2,31 +2,30 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy.orm import Session
 
 from studio.db import get_db
 from studio.deps import CurrentAccountDep, get_account_bridge
 from studio.enums import OutboundStatus
 from studio.models import Bridge, Inbox, OutboundMessage
-from studio.serializers import s_bridge
+from studio.schemas import BridgeRead
 
 router = APIRouter()
 
 
-@router.get("/api/bridges")
+@router.get("/api/bridges", response_model=list[BridgeRead])
 def list_bridges(db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
     """获取当前账号的 Bridge 列表，按创建时间降序排列。"""
-    items = (
+    return (
         db.query(Bridge)
         .filter(Bridge.account_id == account.id)
         .order_by(Bridge.created_at.desc())
         .all()
     )
-    return [s_bridge(b) for b in items]
 
 
-@router.delete("/api/bridges/{bridge_id}")
+@router.delete("/api/bridges/{bridge_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_bridge(bridge_id: str, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
     """撤销 Bridge（即删除该记录）。
 
@@ -47,4 +46,4 @@ def delete_bridge(bridge_id: str, db: Annotated[Session, Depends(get_db)], accou
         )
     db.delete(b)
     db.commit()
-    return {"status": "deleted", "id": bridge_id}
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

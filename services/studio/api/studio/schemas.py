@@ -1,18 +1,29 @@
-from datetime import datetime
-from typing import List, Optional
+from datetime import datetime, timedelta, timezone as _tz
+from typing import Any, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 from studio.enums import (
+    AccountStatus,
     ContactStatus,
     OutboundAckResult,
     OutboundMessageType,
+    OutboundStatus,
     ReplyPolicy,
 )
 
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+class _ReadModel(BaseModel):
+    """ORM → JSON 投影基类。声明字段后 FastAPI 用 from_attributes 自动转换。"""
+    model_config = ConfigDict(from_attributes=True)
+
+
+# Bridge online/offline 派生阈值
+_BRIDGE_OFFLINE_AFTER = timedelta(seconds=45)
 
 
 # --- Auth ---
@@ -22,6 +33,12 @@ class LoginRequest(StrictModel):
 
     username: str = Field(description="用户名")
     password: str = Field(description="明文密码（传输层走 HTTPS 加密）")
+
+
+class LoginResponse(BaseModel):
+    """登录响应：token + 账号信息。"""
+    token: str
+    account: "AccountRead"  # forward ref, defined below
 
 
 class OwnPasswordChange(StrictModel):
@@ -58,22 +75,26 @@ class PersonaUpdate(StrictModel):
 # --- Inboxes ---
 
 class InboxUpdate(StrictModel):
-    """更新 Inbox 配置请求体。只传需要修改的字段。"""
+    """更新 Inbox 配置请求体。只传需要修改的字段。
+
+    - `bridge_id`：传 string 重新绑定到指定 Bridge；传 null 解除绑定。
+      字段缺省时保持当前值不变（语义靠 PATCH + model_fields_set 区分）。
+    """
 
     display_name: Optional[str] = Field(default=None, description="新显示名称")
     bridge_id: Optional[str] = Field(
         default=None,
-        description="重新绑定到指定 Bridge。通常无需手动操作，Bridge 握手时会自动更新。",
-    )
-    clear_bridge: Optional[bool] = Field(
-        default=None, description="传 true 可解除与当前 Bridge 的绑定，使 Inbox 进入未绑定状态。"
+        description="重新绑定到指定 Bridge；传 null 解除绑定。缺省时保持原值。",
     )
 
 
 # --- Contacts ---
 
 class ContactUpdate(StrictModel):
-    """更新 Contact 配置请求体。只传需要修改的字段。"""
+    """更新 Contact 配置请求体（PATCH 语义）。只传需要修改的字段。
+
+    对 `persona_id` / `provider_id`：缺省 = 保持原值；显式传 null = 清空。
+    """
 
     display_name: Optional[str] = Field(default=None, description="新显示名称")
     card_md: Optional[str] = Field(
@@ -108,7 +129,8 @@ class DistillJobCreate(StrictModel):
     """创建蒸馏任务请求体。"""
 
     contact_ids: List[str] = Field(
-        description="参与蒸馏的联系人 ID 列表（去重后处理）。不能为空，否则返回 422。"
+        min_length=1,
+        description="参与蒸馏的联系人 ID 列表（去重后处理）。至少 1 个。",
     )
     target_persona_id: Optional[str] = Field(
         default=None,
@@ -119,9 +141,8 @@ class DistillJobCreate(StrictModel):
 # --- Manual outbound seed (debug / pre-LLM-brain) ---
 
 class OutboundCreate(StrictModel):
-    """手动创建待发消息请求体（调试 / 预设回复用）。"""
+    """手动创建待发消息请求体（调试 / 预设回复用）。目标 contact 由路径决定。"""
 
-    contact_id: str = Field(description="目标联系人 ID，必须属于当前 Inbox")
     msg_type: OutboundMessageType = Field(
         default=OutboundMessageType.TEXT,
         description="消息类型：text / image / audio / video / file",
@@ -234,3 +255,138 @@ class BridgeReportPeers(StrictModel):
 
     inbox_id: str = Field(description="对话方所属的 Inbox ID")
     peers: list[BridgePeer] = Field(description="对话方列表")
+
+
+# ===========================================================================
+# Read schemas — ORM → JSON 投影
+# 列表用 *Summary（瘦版，去掉大字段）；详情用完整版。
+# 路由用 response_model=... 让 FastAPI 自动按 schema 投影。
+# ===========================================================================
+
+
+class AccountRead(_ReadModel):
+    id: str
+    username: str
+    display_name: Optional[str]
+    status: AccountStatus
+    created_at: datetime
+    updated_at: datetime
+
+
+class PersonaSummary(_ReadModel):
+    id: str
+    account_id: str
+    name: str
+    timezone: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class PersonaRead(PersonaSummary):
+    persona_md: str
+
+
+class InboxRead(_ReadModel):
+    id: str
+    account_id: str
+    bridge_id: Optional[str]
+    platform: str
+    display_name: str
+    platform_self_id: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+
+
+class ContactSummary(_ReadModel):
+    id: str
+    inbox_id: str
+    peer_platform_id: str
+    display_name: str
+    persona_id: Optional[str]
+    provider_id: Optional[str]
+    takeover: bool
+    reply_policy: ReplyPolicy
+    status: ContactStatus
+    last_reply_round_at: Optional[datetime]
+    created_at: datetime
+    updated_at: datetime
+
+
+class ContactRead(ContactSummary):
+    card_md: str
+
+
+class MessageRead(_ReadModel):
+    id: int
+    contact_id: str
+    external_id: Optional[str]
+    role: str
+    msg_type: str
+    sender_name: Optional[str]
+    content: str
+    timestamp: datetime
+    created_at: datetime
+
+
+class DistillJobSummary(_ReadModel):
+    id: str
+    account_id: str
+    contact_ids: List[str]
+    target_persona_id: Optional[str]
+    provider_config_id: str
+    status: str
+    created_at: datetime
+    started_at: Optional[datetime]
+    finished_at: Optional[datetime]
+
+
+class DistillJobRead(DistillJobSummary):
+    progress: dict
+    error_message: str
+
+
+class BridgeRead(_ReadModel):
+    id: str
+    account_id: str
+    machine_id: str
+    last_seen_at: datetime
+    created_at: datetime
+    updated_at: datetime
+
+    @computed_field
+    @property
+    def status(self) -> str:
+        ts = self.last_seen_at
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=_tz.utc)
+        return "online" if (datetime.now(_tz.utc) - ts) <= _BRIDGE_OFFLINE_AFTER else "offline"
+
+
+class BridgeInboxView(_ReadModel):
+    """握手/心跳给 Bridge 看到的 Inbox 视图（不含 account_id / bridge_id 等内部字段）。"""
+    id: str
+    platform: str
+    platform_self_id: Optional[str]
+    display_name: str
+
+
+class OutboundRead(_ReadModel):
+    """OutboundMessage 的对外投影。peer_platform_id 由路由层注入（不在表里）。"""
+    id: int
+    inbox_id: str
+    contact_id: str
+    peer_platform_id: Optional[str] = None
+    msg_type: str
+    content: str
+    status: OutboundStatus
+    created_at: datetime
+    delivered_at: Optional[datetime]
+    failed_reason: str
+
+
+class ConversationItem(BaseModel):
+    """list_conversations 的单条聚合结果。"""
+    contact: ContactSummary
+    inbox: InboxRead
+    latest_message: Optional[MessageRead]
+    message_count: int

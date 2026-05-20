@@ -81,14 +81,17 @@ export interface LoginResponse {
   account: Account;
 }
 
-export interface Persona {
+export interface PersonaSummary {
   id: string;
   account_id: string;
   name: string;
-  persona_md: string;
   timezone: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface Persona extends PersonaSummary {
+  persona_md: string;
 }
 
 export type BridgeStatus = 'online' | 'offline';
@@ -114,12 +117,11 @@ export interface Inbox {
   updated_at: string;
 }
 
-export interface Contact {
+export interface ContactSummary {
   id: string;
   inbox_id: string;
   peer_platform_id: string;
   display_name: string;
-  card_md: string;
   persona_id: string | null;
   provider_id: string | null;
   takeover: boolean;
@@ -128,6 +130,10 @@ export interface Contact {
   last_reply_round_at: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface Contact extends ContactSummary {
+  card_md: string;
 }
 
 export interface Message {
@@ -142,7 +148,7 @@ export interface Message {
 }
 
 export interface ConversationSummary {
-  contact: Contact;
+  contact: ContactSummary;
   inbox: Inbox;
   latest_message: Message | null;
   message_count: number;
@@ -155,18 +161,21 @@ export interface DistillJobProgress {
   windows_done?: number;
 }
 
-export interface DistillJob {
+export interface DistillJobSummary {
   id: string;
   account_id: string;
   contact_ids: string[];
   target_persona_id: string | null;
   provider_config_id: string;
   status: 'pending' | 'running' | 'done' | 'failed';
-  progress: DistillJobProgress;
-  error_message: string | null;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
+}
+
+export interface DistillJob extends DistillJobSummary {
+  progress: DistillJobProgress;
+  error_message: string | null;
 }
 
 // --- Auth ---
@@ -180,7 +189,7 @@ export function login(username: string, password: string): Promise<LoginResponse
 }
 
 export function authLogout() {
-  return request<{ status: string }>('/auth/logout', { method: 'POST' });
+  return request<null>('/auth/logout', { method: 'POST' });
 }
 
 export function authMe() {
@@ -188,7 +197,7 @@ export function authMe() {
 }
 
 export function changeOwnPassword(data: { current_password: string; new_password: string }) {
-  return request<{ status: string }>('/auth/password', {
+  return request<null>('/auth/password', {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -197,7 +206,7 @@ export function changeOwnPassword(data: { current_password: string; new_password
 
 // --- Personas ---
 
-export function getPersonas() { return request<Persona[]>('/personas'); }
+export function getPersonas() { return request<PersonaSummary[]>('/personas'); }
 export function getPersona(id: string) { return request<Persona>(`/personas/${id}`); }
 export function createPersona(data: { name: string; persona_md: string | null; timezone?: string }) {
   return request<Persona>('/personas', {
@@ -211,35 +220,35 @@ export function updatePersona(
   data: { name?: string; persona_md?: string; timezone?: string },
 ) {
   return request<Persona>(`/personas/${id}`, {
-    method: 'PUT',
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 }
 export function deletePersona(id: string) {
-  return request<{ status: string; id: string }>(`/personas/${id}`, { method: 'DELETE' });
+  return request<null>(`/personas/${id}`, { method: 'DELETE' });
 }
 
 // --- Bridges (read-only + revoke; auto-provisioned by daemon handshake) ---
 
 export function getBridges() { return request<Bridge[]>('/bridges'); }
 export function deleteBridge(id: string) {
-  return request<{ status: string; id: string }>(`/bridges/${id}`, { method: 'DELETE' });
+  return request<null>(`/bridges/${id}`, { method: 'DELETE' });
 }
 
 // --- Inboxes (read + edit defaults; never created/deleted from UI) ---
 
 export function getInboxes() { return request<Inbox[]>('/inboxes'); }
+export function getInbox(id: string) { return request<Inbox>(`/inboxes/${id}`); }
 export function updateInbox(
   id: string,
   data: {
     display_name?: string;
-    bridge_id?: string;
-    clear_bridge?: boolean;
+    bridge_id?: string | null;  // null = 解除绑定
   },
 ) {
   return request<Inbox>(`/inboxes/${id}`, {
-    method: 'PUT',
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
@@ -247,8 +256,12 @@ export function updateInbox(
 
 // --- Contacts ---
 
-export function getConversations() {
-  return request<ConversationSummary[]>('/conversations');
+export function getConversations(inboxId?: string) {
+  const qs = inboxId ? `?inbox_id=${encodeURIComponent(inboxId)}` : '';
+  return request<ConversationSummary[]>(`/conversations${qs}`);
+}
+export function getContact(contactId: string) {
+  return request<Contact>(`/contacts/${contactId}`);
 }
 export function getContactMessages(contactId: string, limit = 200) {
   return request<Message[]>(`/contacts/${contactId}/messages?limit=${limit}`);
@@ -258,15 +271,15 @@ export function updateContact(
   data: {
     display_name?: string;
     card_md?: string;
-    persona_id?: string;
-    provider_id?: string;
+    persona_id?: string | null;
+    provider_id?: string | null;
     takeover?: boolean;
     reply_policy?: 'disabled' | 'autoreply';
     status?: 'active' | 'archived';
   },
 ) {
   return request<Contact>(`/contacts/${contactId}`, {
-    method: 'PUT',
+    method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
@@ -274,7 +287,7 @@ export function updateContact(
 
 // --- Distill ---
 
-export function getDistillJobs() { return request<DistillJob[]>('/distill-jobs'); }
+export function getDistillJobs() { return request<DistillJobSummary[]>('/distill-jobs'); }
 export function getDistillJob(jobId: string) {
   return request<DistillJob>(`/distill-jobs/${jobId}`);
 }

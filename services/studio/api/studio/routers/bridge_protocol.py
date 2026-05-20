@@ -43,7 +43,7 @@ from studio.schemas import (
     BridgeOutboundAck,
     BridgeReportPeers,
 )
-from studio.serializers import s_bridge_inbox_view
+from studio.schemas import BridgeInboxView, OutboundRead
 
 router = APIRouter()
 
@@ -187,7 +187,7 @@ def bridge_register_inboxes(
     db.commit()
 
     return {
-        "inboxes": [s_bridge_inbox_view(i) for i in served],
+        "inboxes": [BridgeInboxView.model_validate(i) for i in served],
         "cursor": cursor,
     }
 
@@ -198,7 +198,7 @@ def bridge_heartbeat(db: Annotated[Session, Depends(get_db)], bridge: BridgeDep)
     bridge.last_seen_at = utc_now()
     db.commit()
     inboxes = db.query(Inbox).filter(Inbox.bridge_id == bridge.id).all()
-    return {"inboxes": [s_bridge_inbox_view(i) for i in inboxes]}
+    return {"inboxes": [BridgeInboxView.model_validate(i) for i in inboxes]}
 
 
 def _canonical_sent_at(dt: Any) -> str:
@@ -366,8 +366,10 @@ async def bridge_outbound(
                         Contact.id.in_(contact_ids)
                     ).all()
                     peer_map = {cid: peer for cid, peer in peers}
-                from studio.serializers import s_outbound
-                payload = [s_outbound(o, peer_platform_id=peer_map.get(o.contact_id)) for o in rows]
+                payload = []
+                for o in rows:
+                    o.peer_platform_id = peer_map.get(o.contact_id)  # type: ignore[attr-defined]
+                    payload.append(OutboundRead.model_validate(o).model_dump(mode="json"))
         finally:
             db.close()
         if payload:

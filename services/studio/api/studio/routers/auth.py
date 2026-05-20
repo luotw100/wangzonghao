@@ -2,7 +2,7 @@
 
 from typing import Annotated, Optional
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Response, status
 from sqlalchemy.orm import Session
 
 from studio.auth_utils import hash_password, verify_password
@@ -16,8 +16,7 @@ from studio.deps import (
 )
 from studio.enums import AccountStatus
 from studio.models import Account, AuthSession
-from studio.schemas import LoginRequest, OwnPasswordChange
-from studio.serializers import s_account
+from studio.schemas import AccountRead, LoginRequest, LoginResponse, OwnPasswordChange
 
 router = APIRouter()
 
@@ -28,7 +27,7 @@ def health():
     return {"status": "ok"}
 
 
-@router.post("/api/auth/login")
+@router.post("/api/auth/login", response_model=LoginResponse)
 def login(login_in: LoginRequest, db: Annotated[Session, Depends(get_db)]):
     """登录。
 
@@ -42,25 +41,25 @@ def login(login_in: LoginRequest, db: Annotated[Session, Depends(get_db)]):
     token = create_auth_session(db, a)
     db.commit()
     db.refresh(a)
-    return {"token": token, "account": s_account(a)}
+    return {"token": token, "account": a}
 
 
-@router.post("/api/auth/logout")
+@router.post("/api/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout(account: CurrentAccountDep, db: Annotated[Session, Depends(get_db)], authorization: Annotated[Optional[str], Header()] = None):
     """退出登录。销毁当前 token 对应的 session，立即失效。其他设备的 session 不受影响。"""
     token = extract_bearer(authorization)
     db.query(AuthSession).filter(AuthSession.id == hash_token(token)).delete(synchronize_session=False)
     db.commit()
-    return {"status": "ok"}
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-@router.get("/api/auth/me")
+@router.get("/api/auth/me", response_model=AccountRead)
 def me(account: CurrentAccountDep):
     """获取当前登录账号的信息。"""
-    return s_account(account)
+    return account
 
 
-@router.put("/api/auth/password")
+@router.put("/api/auth/password", status_code=status.HTTP_204_NO_CONTENT)
 def change_own_password(payload: OwnPasswordChange, account: CurrentAccountDep, db: Annotated[Session, Depends(get_db)]):
     """修改自己的密码。需要验证当前密码。修改成功后，当前账号所有设备的 session 全部立即失效，需重新登录。"""
     if not verify_password(payload.current_password, account.password_hash):
@@ -69,4 +68,4 @@ def change_own_password(payload: OwnPasswordChange, account: CurrentAccountDep, 
     account.updated_at = utc_now()
     revoke_account_sessions(db, account.id)
     db.commit()
-    return {"status": "updated"}
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

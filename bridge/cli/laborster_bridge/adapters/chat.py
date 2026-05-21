@@ -1,20 +1,20 @@
-"""Chat sandbox HTTP polling adapter. Port of adapters/chat.ts.
+"""Chat sandbox HTTP polling adapter.
 
-Token-only: the chat password is used exactly once at `/channel add`
-time to obtain a session token (``obtain_token``); the daemon then runs
-purely off the stored token, recovering its own account id via
-``GET /api/auth/me``.
+Token-only: the chat password is used exactly once at ``/channel add``
+time to obtain a session token (:meth:`ChatAdapter.obtain_token`); the
+daemon then runs purely off the stored token, recovering its own
+account id via ``GET /api/auth/me``.
 """
 
 from __future__ import annotations
 
-import threading
 import time
 from datetime import datetime, timezone
 from typing import Iterator
 
-from . import config
-from .http import request_json
+from .. import config
+from ..http import request_json
+from . import AdapterFactory, register
 
 _SCAN_BATCH = 200
 
@@ -150,3 +150,10 @@ class ChatAdapter:
 
     def stop(self) -> None:
         self._stopped = True
+
+
+register(AdapterFactory(
+    platform="chat",
+    build=lambda token, label: ChatAdapter(token, label),
+    obtain_token=ChatAdapter.obtain_token,
+))

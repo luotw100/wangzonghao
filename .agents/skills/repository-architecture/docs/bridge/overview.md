@@ -22,8 +22,10 @@ bridge/
       store.py                     # sqlite local_messages 去重表（单连接 + Lock，WAL）
       http.py                      # urllib JSON helper；Unauthorized/HttpError；自定义 UA
       studio_client.py             # Studio /api/bridge/* 全部端点
-      chat_adapter.py              # Chat sandbox HTTP 轮询适配器（token 登录/scan/send）
-      runtime.py                   # BridgeRuntime：6 个循环线程 + 状态聚合
+      adapters/                    # 平台适配器（Protocol + REGISTRY）
+        __init__.py                # Adapter Protocol、AdapterFactory、REGISTRY、register/get
+        chat.py                    # Chat sandbox HTTP 轮询适配器（token 登录/scan/send），自注册 platform="chat"
+      runtime.py                   # BridgeRuntime：6 个循环线程 + 状态聚合（按 ch["platform"] 查 REGISTRY）
       events.py                    # 线程安全：日志环形缓冲 + DaemonState 快照
 ```
 
@@ -60,7 +62,7 @@ bridge/
 
 状态目录下：
 
-- `laborster.json`（0600，原子写：临时文件 + `os.replace`）：`username`、`machine_id`、`bridge_id`、`studio_token`、`channels:[{username, chat_token}]`。**磁盘上一个密码都不存**——Studio 与 Chat 两侧都只存 session token。`studio_token` 在 401 或 `/logout` 时清除。
+- `laborster.json`（0600，原子写：临时文件 + `os.replace`）：`username`、`machine_id`、`bridge_id`、`studio_token`、`channels:[{platform, username, token}]`。**磁盘上一个密码都不存**——Studio 与平台两侧都只存 session token。`studio_token` 在 401 或 `/logout` 时清除。
 - `messages.db`：SQLite 去重消息表。
 
 Chat/Studio 地址在 `config.py` 硬编码为 `https://chat.laborster.com` / `https://studio.laborster.com`，没有任何 base-URL 输入。
@@ -75,12 +77,12 @@ laborster-bridge [--state DIR]
        循环：读一行 → 去掉前导 '/' → 按 DISPATCH 分发
        无状态模式下非 NO_STATE_OK 命令被拒
   /login    → StudioClient.handshake(pwd) → 写 token/machine_id/bridge_id → _ensure()
-  /channel add → ChatAdapter.obtain_token(pwd) → 存 chat_token → _ensure()
+  /channel add → adapters.get(platform).obtain_token(pwd) → 存 {platform, username, token} → _ensure()
   _ensure() ready 时 → 构造 StudioClient(token getter=读 laborster.json)
             → LocalStore(messages.db) → BridgeRuntime.start()（后台 bootstrap 线程）
 ```
 
-`BridgeRuntime.start()` 不阻塞 REPL：bootstrap 在后台线程对每个 channel 用持久化 chat_token 调 `/api/auth/me` 恢复 selfId，token 鉴权注册 inbox，然后并行启动 6 个循环线程。401 时回调 `on_auth_error` 清 Studio token 并提示重新 `/login`。
+`BridgeRuntime.start()` 不阻塞 REPL：bootstrap 在后台线程对每个 channel 按 `ch["platform"]` 在 REGISTRY 中查 factory，用持久化 token 调 `adapter.resolve_self()` 恢复 selfId，token 鉴权注册 inbox（按 `(platform, self_id)` 匹配 Studio 返回的 inbox 列表），然后并行启动 6 个循环线程。401 时回调 `on_auth_error` 清 Studio token 并提示重新 `/login`。
 
 ## Bridge 当前不做的事
 

@@ -6,13 +6,14 @@ Return shape: {"lines": [str, ...]} for normal output, or
 
 from __future__ import annotations
 
-from . import config, state
-from .chat_adapter import ChatAdapter
+from . import adapters, config, state
 from .events import Events
 from .http import HttpError, Unauthorized
 from .runtime import BridgeRuntime
 from .store import LocalStore
 from .studio_client import StudioClient
+
+DEFAULT_CHANNEL_PLATFORM = "chat"
 
 HELP = """\
 Laborster Bridge — 命令
@@ -201,21 +202,28 @@ def cmd_channel(ctx: Context, args: list[str]) -> dict:
     if sub == "add":
         # GUI: /channel add <username> <password> (explicit args).
         # CLI: /channel add → interactive prompts.
+        # Platform is fixed to the default for now; when a 2nd platform
+        # ships, extend args parsing to accept `/channel add <platform> ...`.
+        platform = DEFAULT_CHANNEL_PLATFORM
+        try:
+            factory = adapters.get(platform)
+        except KeyError as exc:
+            return {"error": str(exc)}
         if len(args) >= 3:
             username, password = args[1].strip(), args[2]
         else:
-            username = ctx.ask_line("Chat 用户名: ").strip()
-            password = ctx.ask_secret("Chat 密码: ")
+            username = ctx.ask_line(f"{platform} 用户名: ").strip()
+            password = ctx.ask_secret(f"{platform} 密码: ")
         if not username or not password:
             return {"error": "用户名和密码不能为空"}
         try:
-            token, self_id = ChatAdapter.obtain_token(username, password)
+            token, self_id = factory.obtain_token(username, password)
         except Unauthorized:
-            return {"error": "Chat 账号或密码错误"}
+            return {"error": f"{platform} 账号或密码错误"}
         except HttpError as exc:
-            return {"error": f"Chat 登录失败: {exc}"}
+            return {"error": f"{platform} 登录失败: {exc}"}
         channels = [c for c in channels if c["username"] != username]
-        channels.append({"username": username, "chat_token": token})
+        channels.append({"platform": platform, "username": username, "token": token})
         data["channels"] = channels
         state.save(data)
         lines = [f"已添加 channel: {username} ({self_id})"]

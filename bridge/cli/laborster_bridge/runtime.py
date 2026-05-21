@@ -16,7 +16,7 @@ import time
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
-from .chat_adapter import ChatAdapter
+from . import adapters
 from .events import Events
 from .http import Unauthorized
 from .store import LocalStore
@@ -100,7 +100,7 @@ class BridgeRuntime:
             {
                 "inbox_id": e["inbox"]["id"],
                 "handle": e["label"],
-                "platform_self_id": e["adapter"]._self_id,
+                "platform_self_id": e["adapter"].platform_self_id,
                 "online": True,
                 "peers_count": len(e["cursors"]),
             }
@@ -139,18 +139,27 @@ class BridgeRuntime:
         errors = []
         for ch in self._channels:
             label = ch["username"]
-            adapter = ChatAdapter(ch["chat_token"], label)
+            platform = ch["platform"]
+            token = ch["token"]
+            try:
+                factory = adapters.get(platform)
+            except KeyError as exc:
+                m = f"{label}: {exc}"
+                self._log("adapter", "err", f"unknown platform · {m}")
+                errors.append(m)
+                continue
+            adapter = factory.build(token, label)
             try:
                 self_id = adapter.resolve_self()
-                self._log("adapter", "ok", f"chat token ok · {label}")
-                logged_in.append((adapter, self_id, label))
+                self._log("adapter", "ok", f"{platform} token ok · {label}")
+                logged_in.append((adapter, self_id, label, platform))
             except Unauthorized:
-                m = f"{label}: chat token 失效"
-                self._log("adapter", "err", f"chat auth failed · {m}")
+                m = f"{label}: {platform} token 失效"
+                self._log("adapter", "err", f"{platform} auth failed · {m}")
                 errors.append(m)
             except Exception as exc:
                 m = f"{label}: {exc}"
-                self._log("adapter", "err", f"chat resolve failed · {m}")
+                self._log("adapter", "err", f"{platform} resolve failed · {m}")
                 errors.append(m)
 
         if not logged_in:
@@ -161,7 +170,7 @@ class BridgeRuntime:
 
         try:
             r = self._studio.register_inboxes(
-                [("chat", sid) for _, sid, _ in logged_in]
+                [(platform, sid) for _, sid, _, platform in logged_in]
             )
         except Unauthorized:
             self._last_error = "Studio session 失效，请重新登录"
@@ -184,9 +193,13 @@ class BridgeRuntime:
         if r["no_persona"]:
             self._log("studio", "warn", "Studio 账号还没有 Persona，自动回复不会触发")
 
-        for adapter, self_id, label in logged_in:
+        for adapter, self_id, label, platform in logged_in:
             inbox = next(
-                (ib for ib in inboxes if ib["platform_self_id"] == self_id), None
+                (
+                    ib for ib in inboxes
+                    if ib["platform"] == platform and ib["platform_self_id"] == self_id
+                ),
+                None,
             )
             if not inbox:
                 self._log("adapter", "warn", f"no inbox for {label}")

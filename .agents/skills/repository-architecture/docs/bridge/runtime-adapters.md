@@ -24,9 +24,26 @@
 
 构造接受 `get_token` callable（懒读 token，401 清除后无需重建）。base url = `config.STUDIO_BASE_URL`。方法与 `/api/bridge/*` 协议一一对应：`handshake`（唯一带密码，不带 token）、`register_inboxes`、`heartbeat`、`push_incoming`、`get_outbound`、`ack_outbound`、`announce_peers`、`get_active_peers`。请求/响应字段做 snake_case 映射。
 
-## ChatAdapter（chat_adapter.py）
+## Adapter Protocol & Registry（adapters/）
 
-Chat sandbox HTTP 轮询适配器。base url = `config.CHAT_BASE_URL`。
+`adapters/__init__.py` 定义 `Adapter` Protocol、`AdapterFactory(platform, build, obtain_token)` dataclass 与全局 `REGISTRY: dict[str, AdapterFactory]`。Runtime/commands 只通过 `adapters.get(platform)` 拿 factory，从不直接 import 任何具体 adapter。新增平台 = 在 `adapters/` 下加一个模块，在模块底部调 `register(AdapterFactory(...))`。
+
+Adapter 合约（5 方法）：
+
+- `resolve_self() -> str`：一次性，用 token 恢复平台 self id。
+- `list_peers() -> [{peer_platform_id, display_name}]`：当前会话目录。
+- `scan(cursors) -> Iterator[dict]`：无限生成消息；**必须可重入**——runtime 在 supervised restart 时会用同一个 `cursors` dict 再次调用；必须单调推进 `cursors[peer_id]`。yield 的 dict 形：`peer_id, peer_display_name, platform_msg_id, sender_id, msg_type, content, sent_at`（`sent_at` 是字符串，对 bridge 不透明，由 Studio 重新 canonicalize）。
+- `send(peer_id, content) -> str`：发文本，返回 platform msg id（或空串）。
+- `stop()`：置停止标志让 scan 退出。
+
+`AdapterFactory` 还提供：
+
+- `obtain_token(username, password) -> (token, self_id)`：一次性凭据交换，`/channel add` 用，可能抛 `Unauthorized`/`HttpError`。
+- `build(token, label) -> Adapter`：从持久化 token 构造一个运行中的 adapter。
+
+## ChatAdapter（adapters/chat.py）
+
+Chat sandbox HTTP 轮询适配器，模块底部 `register(AdapterFactory(platform="chat", ...))` 自注册。base url = `config.CHAT_BASE_URL`。
 
 - `obtain_token(username, password)`（staticmethod）→ `POST /api/auth/login`，返回 `(token, account.id)`。**仅 `/channel add` 调用一次**，密码用完即弃。
 - `resolve_self()` → `GET /api/auth/me`，用持久化 token 恢复 `self_id`（`acct_…`）。daemon 启动时调用，无需密码。
@@ -63,9 +80,9 @@ CONSUMER_S = 1     CONSUMER_BATCH = 50   OUTBOUND_TIMEOUT_S = 30
 `start()` 起一个 `bootstrap` 守护线程后立即返回（不阻塞 REPL）。bootstrap：
 
 1. `_push_state('connecting')`
-2. 对每个 channel：`ChatAdapter(chat_token).resolve_self()` 收集 selfId（全失败 → `offline` 返回）
-3. `studio.register_inboxes([('chat', selfId)…])`（token 鉴权）；401 → `on_auth_error` + `error401`
-4. 按 selfId 匹配 inbox，绑定 adapter，`get_cursors` 初始化游标
+2. 对每个 channel：按 `ch["platform"]` 在 REGISTRY 中查 factory → `factory.build(token, label).resolve_self()` 收集 (adapter, selfId, label, platform)；未知 platform 或 token 失效计入 errors；全失败 → `offline` 返回
+3. `studio.register_inboxes([(platform, selfId)…])`（token 鉴权）；401 → `on_auth_error` + `error401`
+4. 按 `(platform, selfId)` 匹配 inbox，绑定 adapter，`get_cursors` 初始化游标
 5. `_push_state('online')`
 6. 并行启动循环线程
 

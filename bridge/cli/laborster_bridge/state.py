@@ -8,12 +8,14 @@ Schema::
       "bridge_id":    "br_xxxx",
       "studio_token": "<bridge session token>",   # cleared on 401 / logout
       "channels": [
-        { "username": "<chat account>", "chat_token": "<chat session token>" }
+        { "platform": "chat",
+          "username": "<platform account>",
+          "token":    "<platform session token>" }
       ]
     }
 
 No password is ever stored — only tokens, mirroring the browser session
-model on both the Studio and the Chat side.
+model on both the Studio and the platform side.
 """
 
 from __future__ import annotations

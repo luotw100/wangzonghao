@@ -3,7 +3,7 @@ import argparse
 from prettytable import PrettyTable, SINGLE_BORDER
 
 from chat.auth_utils import hash_password
-from chat.db import get_db, utc_now
+from chat.db import SessionLocal, utc_now
 from chat.enums import AccountStatus
 from chat.ids import new_id
 from chat.models import Account
@@ -19,8 +19,7 @@ def _table(headers: list[str], rows: list[list]) -> str:
 
 
 def create_account(args: argparse.Namespace) -> None:
-    db = next(get_db())
-    try:
+    with SessionLocal() as db:
         existing = db.query(Account).filter(Account.username == args.username).first()
         if existing:
             raise SystemExit(f"account already exists: {args.username}")
@@ -41,25 +40,19 @@ def create_account(args: argparse.Namespace) -> None:
             ["id", "username", "nickname", "status"],
             [[account.id, account.username, account.nickname, account.status]],
         ))
-    finally:
-        db.close()
 
 
 def list_accounts(_: argparse.Namespace) -> None:
-    db = next(get_db())
-    try:
+    with SessionLocal() as db:
         rows = [
             [account.id, account.username, account.nickname, account.status]
             for account in db.query(Account).order_by(Account.created_at.asc()).all()
         ]
         print(_table(["id", "username", "nickname", "status"], rows))
-    finally:
-        db.close()
 
 
 def reset_password(args: argparse.Namespace) -> None:
-    db = next(get_db())
-    try:
+    with SessionLocal() as db:
         account = db.query(Account).filter(Account.username == args.username).first()
         if not account:
             raise SystemExit(f"account not found: {args.username}")
@@ -67,8 +60,6 @@ def reset_password(args: argparse.Namespace) -> None:
         account.updated_at = utc_now()
         db.commit()
         print(f"updated password for {account.username}")
-    finally:
-        db.close()
 
 
 def main() -> None:

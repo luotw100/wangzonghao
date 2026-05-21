@@ -12,7 +12,7 @@ class StrictModel(BaseModel):
 class AccountRead(StrictModel):
     """账号信息（返回给客户端，不含密码）。"""
 
-    id: str = Field(description="账号唯一 ID，前缀 'a'")
+    id: str = Field(description="账号唯一 ID，前缀 'acct'")
     username: str = Field(description="登录用用户名，全局唯一，不可修改")
     nickname: str = Field(description="显示昵称，可通过 PATCH /api/auth/me 修改")
     status: AccountStatus = Field(description="账号状态：active（正常可用）/ disabled（已禁用，无法登录）")

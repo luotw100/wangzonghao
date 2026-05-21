@@ -19,6 +19,20 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # provider_configs must precede accounts: accounts.distill_provider_id FKs it.
+    op.create_table(
+        "provider_configs",
+        sa.Column("id", sa.String(48), primary_key=True),
+        sa.Column("name", sa.String(128), nullable=False),
+        sa.Column("base_url", sa.String(512), nullable=False),
+        sa.Column("api_key", sa.Text, nullable=True),
+        sa.Column("model", sa.String(128), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+        sa.UniqueConstraint("name", name="uq_provider_name"),
+    )
+    op.create_index("ix_provider_configs_id", "provider_configs", ["id"])
+
     op.create_table(
         "accounts",
         sa.Column("id", sa.String(48), primary_key=True),
@@ -26,12 +40,14 @@ def upgrade() -> None:
         sa.Column("password_hash", sa.String(128), nullable=False),
         sa.Column("display_name", sa.String(128), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
+        sa.Column("distill_provider_id", sa.String(48), sa.ForeignKey("provider_configs.id"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint("status IN ('active', 'disabled')", name="ck_account_status"),
     )
     op.create_index("ix_accounts_id", "accounts", ["id"])
     op.create_index("ix_accounts_username", "accounts", ["username"])
+    op.create_index("ix_accounts_distill_provider_id", "accounts", ["distill_provider_id"])
 
     op.create_table(
         "auth_sessions",
@@ -42,18 +58,6 @@ def upgrade() -> None:
     )
     op.create_index("ix_auth_sessions_id", "auth_sessions", ["id"])
     op.create_index("ix_auth_sessions_account_id", "auth_sessions", ["account_id"])
-
-    op.create_table(
-        "provider_configs",
-        sa.Column("id", sa.String(48), primary_key=True),
-        sa.Column("name", sa.String(128), nullable=False),
-        sa.Column("base_url", sa.String(512), nullable=False),
-        sa.Column("api_key", sa.Text, nullable=True),
-        sa.Column("model", sa.String(128), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-    )
-    op.create_index("ix_provider_configs_id", "provider_configs", ["id"])
 
     op.create_table(
         "personas",
@@ -108,7 +112,7 @@ def upgrade() -> None:
         sa.Column("display_name", sa.String(256), nullable=False),
         sa.Column("card_md", sa.Text, nullable=False),
         sa.Column("persona_id", sa.String(48), sa.ForeignKey("personas.id"), nullable=True),
-        sa.Column("provider_id", sa.String(48), sa.ForeignKey("provider_configs.id"), nullable=True),
+        sa.Column("provider_id", sa.String(48), sa.ForeignKey("provider_configs.id"), nullable=False),
         sa.Column("takeover", sa.Boolean, nullable=False),
         sa.Column("reply_policy", sa.String(16), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
@@ -223,6 +227,6 @@ def downgrade() -> None:
     op.drop_table("inboxes")
     op.drop_table("bridges")
     op.drop_table("personas")
-    op.drop_table("provider_configs")
     op.drop_table("auth_sessions")
     op.drop_table("accounts")
+    op.drop_table("provider_configs")

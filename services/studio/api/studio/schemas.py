@@ -93,7 +93,7 @@ class InboxUpdate(StrictModel):
 class ContactUpdate(StrictModel):
     """更新 Contact 配置请求体（PATCH 语义）。只传需要修改的字段。
 
-    对 `persona_id` / `provider_id`：缺省 = 保持原值；显式传 null = 清空。
+    对 `persona_id`：缺省 = 保持原值；显式传 null = 清空。Provider 不开放前端配置，由后台 CLI 维护。
     """
 
     display_name: Optional[str] = Field(default=None, description="新显示名称")
@@ -104,10 +104,6 @@ class ContactUpdate(StrictModel):
     persona_id: Optional[str] = Field(
         default=None,
         description="为此联系人指定使用的人设 ID。",
-    )
-    provider_id: Optional[str] = Field(
-        default=None,
-        description="为此联系人指定使用的 Provider ID。NULL 表示使用系统默认。",
     )
     takeover: Optional[bool] = Field(
         default=None,
@@ -297,13 +293,18 @@ class InboxRead(_ReadModel):
     updated_at: datetime
 
 
+class ProviderBrief(_ReadModel):
+    """对外展示当前在用的 Provider — 只有名字，不暴露 base_url / api_key / id。"""
+    name: str
+
+
 class ContactSummary(_ReadModel):
     id: str
     inbox_id: str
     peer_platform_id: str
     display_name: str
     persona_id: Optional[str]
-    provider_id: Optional[str]
+    provider: ProviderBrief
     takeover: bool
     reply_policy: ReplyPolicy
     status: ContactStatus
@@ -333,7 +334,7 @@ class DistillJobSummary(_ReadModel):
     account_id: str
     contact_ids: List[str]
     target_persona_id: Optional[str]
-    provider_config_id: str
+    provider: ProviderBrief
     status: str
     created_at: datetime
     started_at: Optional[datetime]

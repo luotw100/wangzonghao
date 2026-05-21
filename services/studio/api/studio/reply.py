@@ -43,7 +43,6 @@ from studio.models import (
     Persona,
     ProviderConfig,
 )
-from studio.provider_policy import get_default_provider
 from studio.s3 import s3_get, s3_put
 
 logger = logging.getLogger(__name__)
@@ -114,14 +113,6 @@ class _ReplyDecision:
     history: List[Message]
 
 
-def _resolve_provider(db: ORMSession, contact: Contact) -> Optional[ProviderConfig]:
-    if contact.provider_id:
-        pc = db.query(ProviderConfig).filter(ProviderConfig.id == contact.provider_id).first()
-        if pc:
-            return pc
-    return get_default_provider(db)
-
-
 def _decide(db: ORMSession, contact_id: str) -> _ReplyDecision:
     """Re-validate every gate in one transaction; return a decision."""
     contact = db.query(Contact).filter(Contact.id == contact_id).first()
@@ -135,7 +126,7 @@ def _decide(db: ORMSession, contact_id: str) -> _ReplyDecision:
     inbox = db.query(Inbox).filter(Inbox.id == contact.inbox_id).first()
     if not inbox:
         return _ReplyDecision("inbox 不存在", None, [])
-    pc = _resolve_provider(db, contact)
+    pc = db.query(ProviderConfig).filter(ProviderConfig.id == contact.provider_id).first()
     if not pc or not pc.api_key:
         return _ReplyDecision("provider 缺失或没 api_key", None, [])
 

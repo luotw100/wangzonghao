@@ -8,9 +8,10 @@ Principles:
   daemon process that physically runs adapters. An Inbox is bound to one
   Bridge (Inbox.bridge_id) and a Bridge can serve N inboxes.
 - ProviderConfig is operator-maintained, managed via the server-side CLI.
-  Multiple providers may coexist (per-contact / per-distill provider in
-  the future). For now, the most recently updated active provider is the
-  one used for reply and distill defaults.
+  Routing is explicit: each Contact owns a provider_id (used by reply),
+  each Account owns a distill_provider_id (used by distill). No system
+  default / fallback. New contacts and new accounts are seeded with the
+  earliest-created provider; if no provider exists, creation fails.
 """
 
 from sqlalchemy import (
@@ -42,13 +43,16 @@ class Account(Base):
         CheckConstraint("status IN ('active', 'disabled')", name="ck_account_status"),
     )
 
-    id            = Column(String(48), primary_key=True, index=True)
-    username      = Column(String(64), nullable=False, unique=True, index=True)
-    password_hash = Column(String(128), nullable=False)
-    display_name  = Column(String(128), nullable=False)
-    status        = Column(String(16), nullable=False)
-    created_at    = Column(DateTime(timezone=True), nullable=False)
-    updated_at    = Column(DateTime(timezone=True), nullable=False)
+    id                  = Column(String(48), primary_key=True, index=True)
+    username            = Column(String(64), nullable=False, unique=True, index=True)
+    password_hash       = Column(String(128), nullable=False)
+    display_name        = Column(String(128), nullable=False)
+    status              = Column(String(16), nullable=False)
+    distill_provider_id = Column(String(48), ForeignKey("provider_configs.id"), nullable=False, index=True)
+    created_at          = Column(DateTime(timezone=True), nullable=False)
+    updated_at          = Column(DateTime(timezone=True), nullable=False)
+
+    distill_provider    = relationship("ProviderConfig", foreign_keys=[distill_provider_id])
 
 
 class AuthSession(Base):
@@ -68,6 +72,9 @@ class AuthSession(Base):
 
 class ProviderConfig(Base):
     __tablename__ = "provider_configs"
+    __table_args__ = (
+        UniqueConstraint("name", name="uq_provider_name"),
+    )
 
     id         = Column(String(48), primary_key=True, index=True)
     name       = Column(String(128), nullable=False)
@@ -163,8 +170,7 @@ class Contact(Base):
     display_name          = Column(String(256), nullable=False)
     card_md               = Column(Text, nullable=False)
     persona_id            = Column(String(48), ForeignKey("personas.id"), nullable=True)
-    # provider_id: future per-contact provider routing; NULL = use system default.
-    provider_id           = Column(String(48), ForeignKey("provider_configs.id"), nullable=True)
+    provider_id           = Column(String(48), ForeignKey("provider_configs.id"), nullable=False)
     takeover              = Column(Boolean, nullable=False)
     reply_policy          = Column(String(16), nullable=False)
     status                = Column(String(16), nullable=False)
@@ -174,6 +180,8 @@ class Contact(Base):
     last_reply_round_at   = Column(DateTime(timezone=True), nullable=True)
     created_at            = Column(DateTime(timezone=True), nullable=False)
     updated_at            = Column(DateTime(timezone=True), nullable=False)
+
+    provider              = relationship("ProviderConfig", foreign_keys=[provider_id])
 
 
 class Message(Base):
@@ -240,6 +248,8 @@ class DistillJob(Base):
     created_at         = Column(DateTime(timezone=True), nullable=False)
     started_at         = Column(DateTime(timezone=True), nullable=True)
     finished_at        = Column(DateTime(timezone=True), nullable=True)
+
+    provider           = relationship("ProviderConfig", foreign_keys=[provider_config_id])
 
 
 # ---------------------------------------------------------------------------

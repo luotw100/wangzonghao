@@ -10,11 +10,21 @@ from sqlalchemy.orm import Session
 from studio.auth_utils import hash_password, hash_token, new_session_token, verify_password
 from studio.db import get_db, utc_now
 from studio.enums import AccountStatus
-from studio.models import Account, AuthSession, Bridge, Inbox, Persona
+from studio.models import Account, AuthSession, Bridge, Inbox, Persona, ProviderConfig
 
 
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex}"
+
+
+def pick_first_provider(db: Session) -> Optional[ProviderConfig]:
+    """The seed provider used when a new account / contact needs a provider id.
+
+    Returns the earliest-created ProviderConfig, or None if the pool is empty.
+    Callers decide how to surface "no provider configured" (CLI: SystemExit,
+    HTTP routers: HTTPException, bridge auto-create: 409).
+    """
+    return db.query(ProviderConfig).order_by(ProviderConfig.created_at.asc()).first()
 
 
 def extract_bearer(authorization: Optional[str]) -> str:
@@ -40,6 +50,9 @@ def create_account_record(
     existing = db.query(Account).filter(Account.username == username).first()
     if existing:
         raise HTTPException(status_code=409, detail="用户名已存在")
+    provider = pick_first_provider(db)
+    if not provider:
+        raise HTTPException(status_code=409, detail="尚未配置任何 Provider，无法创建账号")
     now = utc_now()
     created = Account(
         id=new_id("acc"),
@@ -47,6 +60,7 @@ def create_account_record(
         password_hash=hash_password(password),
         display_name=display_name or username,
         status=AccountStatus.ACTIVE,
+        distill_provider_id=provider.id,
         created_at=now,
         updated_at=now,
     )

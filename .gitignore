@@ -6,6 +6,7 @@ __pycache__/
 
 .env*
 !.env.example
+!.env.example.json
 
 # Bridge cli .venv
 bridge/cli/.venv/

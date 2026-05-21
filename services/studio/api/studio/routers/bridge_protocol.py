@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from studio.auth_utils import verify_password
 from studio.db import get_db, utc_now
-from studio.deps import BridgeDep, create_auth_session, new_id
+from studio.deps import BridgeDep, create_auth_session, new_id, pick_first_provider
 from studio.enums import (
     AccountStatus,
     ContactStatus,
@@ -238,6 +238,7 @@ def bridge_incoming(
     rejected = 0
     now = utc_now()
     inbox_cache: Dict[str, Inbox] = {}
+    seed_provider = None   # lazy: only loaded the first time a new Contact is built
 
     for m in payload.messages:
         inbox = inbox_cache.get(m.inbox_id)
@@ -260,11 +261,15 @@ def bridge_incoming(
             .first()
         )
         if not contact:
+            if seed_provider is None:
+                seed_provider = pick_first_provider(db)
+                if not seed_provider:
+                    raise HTTPException(status_code=409, detail="尚未配置任何 Provider，无法登记新联系人")
             contact = Contact(
                 id=new_id("ct"), inbox_id=inbox.id,
                 peer_platform_id=m.peer_platform_id,
                 display_name=m.peer_display_name or m.peer_platform_id,
-                card_md="", persona_id=None, provider_id=None,
+                card_md="", persona_id=None, provider_id=seed_provider.id,
                 takeover=False, reply_policy=ReplyPolicy.DISABLED,
                 status=ContactStatus.ACTIVE, last_reply_round_at=None,
                 created_at=now, updated_at=now,
@@ -456,6 +461,7 @@ def bridge_report_peers(
 
     now = utc_now()
     upserted = 0
+    seed_provider = None
     for peer in payload.peers:
         contact = (
             db.query(Contact)
@@ -469,6 +475,10 @@ def bridge_report_peers(
             contact.display_name = peer.display_name
             contact.updated_at = now
         else:
+            if seed_provider is None:
+                seed_provider = pick_first_provider(db)
+                if not seed_provider:
+                    raise HTTPException(status_code=409, detail="尚未配置任何 Provider，无法登记新联系人")
             db.add(Contact(
                 id=new_id("ct"),
                 inbox_id=inbox.id,
@@ -476,7 +486,7 @@ def bridge_report_peers(
                 display_name=peer.display_name,
                 card_md="",
                 persona_id=None,
-                provider_id=None,
+                provider_id=seed_provider.id,
                 takeover=False,
                 reply_policy=ReplyPolicy.DISABLED,
                 status=ContactStatus.ACTIVE,

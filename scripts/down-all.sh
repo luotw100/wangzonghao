@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Stop one instance of the stack.
 #
-#   scripts/down-all.sh <instance-file>       stop, KEEP volumes
-#   scripts/down-all.sh <instance-file> -v    stop and DELETE this
-#                                             instance's volumes (data loss)
+#   scripts/down-all.sh <config.json>       stop, KEEP volumes
+#   scripts/down-all.sh <config.json> -v    stop and DELETE this
+#                                           instance's volumes (data loss)
 set -euo pipefail
 
 # Same project name across 4 compose files -> silence the bogus
@@ -17,17 +17,20 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 INST="${1:-}"
 WIPE="${2:-}"
 if [[ -z "$INST" ]]; then
-  echo "usage: scripts/down-all.sh <instance-file> [-v]" >&2
+  echo "usage: scripts/down-all.sh <config.json> [-v]" >&2
   exit 1
 fi
 [[ "$INST" = /* ]] || INST="$ROOT/$INST"
 if [[ ! -f "$INST" ]]; then
-  echo "instance file not found: $INST" >&2
+  echo "config not found: $INST" >&2
   exit 1
 fi
+jq empty "$INST" 2>/dev/null || { echo "invalid JSON: $INST" >&2; exit 1; }
 
-set -a; source "$INST"; set +a
-: "${COMPOSE_PROJECT_NAME:?instance file must set COMPOSE_PROJECT_NAME}"
+TMP_ENV=$(mktemp); trap "rm -f $TMP_ENV" EXIT
+jq -r '.compose | to_entries[] | "\(.key)=\(.value)"' "$INST" > "$TMP_ENV"
+set -a; source "$TMP_ENV"; set +a
+: "${COMPOSE_PROJECT_NAME:?config.compose must set COMPOSE_PROJECT_NAME}"
 P="$COMPOSE_PROJECT_NAME"
 
 V=""
@@ -39,19 +42,19 @@ fi
 
 echo ">>> [$P] down tunnel"
 cd "$ROOT/tunnel"
-docker compose -p "$P" --env-file "$INST" down $V
+docker compose -p "$P" --env-file "$TMP_ENV" down $V
 
 echo ">>> [$P] down studio"
 cd "$ROOT/services/studio"
-docker compose -p "$P" --env-file .env --env-file "$INST" down $V
+docker compose -p "$P" --env-file .env --env-file "$TMP_ENV" down $V
 
 echo ">>> [$P] down chat"
 cd "$ROOT/services/chat"
-docker compose -p "$P" --env-file .env --env-file "$INST" down $V
+docker compose -p "$P" --env-file .env --env-file "$TMP_ENV" down $V
 
 echo ">>> [$P] down infra"
 cd "$ROOT/infra"
-docker compose -p "$P" --env-file .env --env-file "$INST" down $V
+docker compose -p "$P" --env-file .env --env-file "$TMP_ENV" down $V
 
 if [[ "$WIPE" == "-v" ]]; then
   echo ">>> [$P] stopped, volumes deleted"

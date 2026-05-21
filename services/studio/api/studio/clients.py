@@ -3,7 +3,26 @@ from typing import Dict, List
 import httpx
 
 ALLOWED_BASE_URLS = {
+    # 国外
+    "https://api.openai.com/v1",
+    "https://generativelanguage.googleapis.com/v1beta/openai",
+    "https://api.x.ai/v1",
+    "https://api.mistral.ai/v1",
+    "https://api.groq.com/openai/v1",
+    "https://openrouter.ai/api/v1",
+    "https://api.together.xyz/v1",
+    # 国内
     "https://api.deepseek.com",
+    "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "https://open.bigmodel.cn/api/paas/v4",
+    "https://api.moonshot.cn/v1",
+    "https://api.lingyiwanwu.com/v1",
+    "https://api.baichuan-ai.com/v1",
+    "https://ark.cn-beijing.volces.com/api/v3",
+    "https://api.stepfun.com/v1",
+    "https://api.siliconflow.cn/v1",
+    # 聚合
+    "https://aixuny.com/v1",
 }
 
 

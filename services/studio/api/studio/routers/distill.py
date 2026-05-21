@@ -10,7 +10,6 @@ from studio.deps import CurrentAccountDep, get_account_contact, get_account_pers
 from studio.db import utc_now
 from studio.enums import DistillJobStatus
 from studio.models import DistillJob, Inbox
-from studio.provider_policy import get_default_provider
 from studio.schemas import DistillJobCreate, DistillJobRead, DistillJobSummary
 
 router = APIRouter()
@@ -39,8 +38,9 @@ def create_distill_job(payload: DistillJobCreate, db: Annotated[Session, Depends
 
     冲突检测（返回 409 的情况）：
     - 选中的某个联系人已在另一个 pending/running 任务中；
-    - 指定的目标人设已在另一个 pending/running 任务中；
-    - 没有可用的全局默认 Provider（未配置任何 Provider 时）。
+    - 指定的目标人设已在另一个 pending/running 任务中。
+
+    使用的 Provider 来自 account.distill_provider_id（账号级配置，CLI 管理）。
     """
     contact_ids = list(dict.fromkeys(payload.contact_ids))  # dedup, keep order
     contacts = [get_account_contact(db, account, cid) for cid in contact_ids]
@@ -49,9 +49,6 @@ def create_distill_job(payload: DistillJobCreate, db: Annotated[Session, Depends
 
     if payload.target_persona_id is not None:
         get_account_persona(db, account, payload.target_persona_id)
-    provider_config = get_default_provider(db)
-    if not provider_config:
-        raise HTTPException(status_code=409, detail="没有可用的全局默认 Provider")
 
     in_flight = (
         db.query(DistillJob).filter(
@@ -70,7 +67,7 @@ def create_distill_job(payload: DistillJobCreate, db: Annotated[Session, Depends
         id=new_id("dj"), account_id=account_id,
         contact_ids=contact_ids,
         target_persona_id=payload.target_persona_id,
-        provider_config_id=provider_config.id,
+        provider_config_id=account.distill_provider_id,
         status=DistillJobStatus.PENDING, progress={}, error_message="",
         created_at=utc_now(), started_at=None, finished_at=None,
     )

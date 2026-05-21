@@ -2,7 +2,7 @@
 
 from typing import Annotated, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -14,7 +14,7 @@ from studio.deps import (
     get_account_persona,
 )
 from studio.enums import OutboundStatus
-from studio.models import Contact, Inbox, Message, OutboundMessage, ProviderConfig
+from studio.models import Contact, Inbox, Message, OutboundMessage
 from studio.schemas import (
     ContactRead,
     ContactUpdate,
@@ -131,7 +131,7 @@ def list_contact_messages(
 
 @router.patch("/api/contacts/{contact_id}", response_model=ContactRead)
 def update_contact(contact_id: str, payload: ContactUpdate, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
-    """更新联系人配置。只传需要修改的字段；persona_id/provider_id 显式传 null 即清空。"""
+    """更新联系人配置。只传需要修改的字段；persona_id 显式传 null 即清空。Provider 由后台 CLI 维护。"""
     c = get_account_contact(db, account, contact_id)
     fields = payload.model_fields_set
     if "display_name" in fields and payload.display_name is not None:
@@ -142,12 +142,6 @@ def update_contact(contact_id: str, payload: ContactUpdate, db: Annotated[Sessio
         if payload.persona_id is not None:
             get_account_persona(db, account, payload.persona_id)
         c.persona_id = payload.persona_id
-    if "provider_id" in fields:
-        if payload.provider_id is not None:
-            pc = db.query(ProviderConfig).filter(ProviderConfig.id == payload.provider_id).first()
-            if not pc:
-                raise HTTPException(status_code=404, detail="Provider 不存在")
-        c.provider_id = payload.provider_id
     if "takeover" in fields and payload.takeover is not None:
         c.takeover = payload.takeover
     if "reply_policy" in fields and payload.reply_policy is not None:

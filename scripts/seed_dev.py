@@ -1,32 +1,39 @@
 #!/usr/bin/env python3
 """scripts/seed_dev.py — One-shot dev seed for internal testing.
 
-Run after the instance is up (scripts/up-all.sh <instance-file>). Driven by
-that same instance file, passed as the argument:
+Run after the instance is up (scripts/up-all.sh <config.json>). Driven by
+that same JSON config, passed as the argument:
 
-  python scripts/seed_dev.py scripts/.env.0519
+  python scripts/seed_dev.py scripts/.env.debug.json
 
-(copy scripts/.env.example for a new instance). All seed values are required
-and explicit — nothing is defaulted, guessed, or skipped:
+Schema (see scripts/.env.example.json):
 
-  - CHAT_SEED_USERS     users created in Chat
-  - STUDIO_SEED_USERS   users created in Studio
-  - PROVIDER_*          the single global Studio Provider (created via CLI)
+  {
+    "seed": {
+      "chat_url": "...",         # base URL of chat-api
+      "studio_url": "...",       # base URL of studio-api
+      "chat_users":   [{username, password, display}, ...],
+      "studio_users": [{username, password, display}, ...],
+      "providers":    [{name, base_url, model, api_key}, ...]
+    }
+  }
 
-CHAT_SEED_USERS and STUDIO_SEED_USERS are independent lists. If you want the
-same credentials on both sides, write the same entries in both — the script
-does not couple them.
+chat_users / studio_users are independent — if you want the same credentials
+on both sides, duplicate the entries. Accounts that already exist surface
+a warning and are left untouched.
 
-Accounts + provider. Re-run after wiping volumes (docker compose down -v)
-for a clean baseline. Accounts that already exist surface a warning and are
-left untouched; re-running without a wipe creates an extra Provider row (the
-newest becomes default).
+Phasing matters: the studio Providers must exist before any studio account
+is created, because `studio create-account` reads accounts.distill_provider_id
+from the earliest-created Provider. So this script runs three serial phases:
+
+  1. wait for chat-api + studio-api health (parallel)
+  2. create the studio Providers in declared order (serial)  (must precede #3)
+  3. create chat accounts + studio accounts                  (parallel)
 """
 
 from __future__ import annotations
 
 import json
-import os
 import subprocess
 import sys
 import time
@@ -41,13 +48,14 @@ CHAT_DIR = REPO_ROOT / "services" / "chat"
 STUDIO_DIR = REPO_ROOT / "services" / "studio"
 
 
-def resolve_env_arg(argv: list[str]) -> Path:
-    """The instance/env file is argv[1]; resolve like up-all.sh does."""
+def resolve_config_arg(argv: list[str]) -> Path:
     if len(argv) < 2 or not argv[1].strip():
-        die("usage: scripts/seed_dev.py <instance-file>   (e.g. scripts/.env.0519)")
+        die("usage: scripts/seed_dev.py <config.json>   (e.g. scripts/.env.debug.json)")
     p = Path(argv[1])
     if not p.is_file():
         p = REPO_ROOT / argv[1]
+    if not p.is_file():
+        die(f"config not found: {argv[1]}")
     return p
 
 
@@ -89,34 +97,7 @@ def run_parallel(jobs: list, workers: int = 32) -> None:
             fut.result()
 
 
-# ---------- env ----------
-
-def load_env(path: Path) -> None:
-    """Minimal .env loader: KEY=VALUE per line, # comments, optional quotes.
-
-    Does not override variables already set in the real environment.
-    """
-    if not path.is_file():
-        die(f"env file not found: {path}")
-    for raw in path.read_text(encoding="utf-8").splitlines():
-        line = raw.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, _, value = line.partition("=")
-        key = key.strip()
-        value = value.strip().strip('"').strip("'")
-        if key and key not in os.environ:
-            os.environ[key] = value
-
-
-def env_required(key: str) -> str:
-    value = os.environ.get(key, "").strip()
-    if not value:
-        die(f"{key} is required (set it in the instance env file)")
-    return value
-
-
-# ---------- user spec ----------
+# ---------- config dataclasses ----------
 
 @dataclass
 class UserSpec:
@@ -125,29 +106,94 @@ class UserSpec:
     display: str
 
 
-def parse_users(var_name: str) -> list[UserSpec]:
-    """Parse a comma-separated list of strict `username:password:display`.
+@dataclass
+class ProviderSpec:
+    name: str
+    base_url: str
+    model: str
+    api_key: str
 
-    Strict: the variable must be set; every comma item must contain exactly
-    three non-empty colon-separated fields. No empty items, no defaults, no
-    skipping — any deviation is a hard error.
-    """
-    raw = env_required(var_name)
-    users: list[UserSpec] = []
+
+@dataclass
+class SeedConfig:
+    project_name: str   # COMPOSE_PROJECT_NAME — must match what up-all.sh used
+    chat_url: str
+    studio_url: str
+    chat_users: list[UserSpec]
+    studio_users: list[UserSpec]
+    providers: list[ProviderSpec]
+
+
+def _require_str(obj: dict, key: str, ctx: str) -> str:
+    v = obj.get(key)
+    if not isinstance(v, str) or not v.strip():
+        die(f"{ctx}: missing or empty string field {key!r}")
+    return v.strip()
+
+
+def _parse_users(items: object, ctx: str) -> list[UserSpec]:
+    if not isinstance(items, list) or not items:
+        die(f"{ctx}: must be a non-empty list")
+    out: list[UserSpec] = []
     seen: set[str] = set()
-    for index, chunk in enumerate(raw.split(","), start=1):
-        item = chunk.strip()
-        if not item:
-            die(f"{var_name}: item #{index} is empty (no blank entries / trailing commas)")
-        parts = [p.strip() for p in item.split(":")]
-        if len(parts) != 3 or not all(parts):
-            die(f"{var_name}: item #{index} must be exactly username:password:display, got {item!r}")
-        username, password, display = parts
-        if username in seen:
-            die(f"{var_name}: duplicate username {username!r}")
-        seen.add(username)
-        users.append(UserSpec(username, password, display))
-    return users
+    for i, entry in enumerate(items, start=1):
+        if not isinstance(entry, dict):
+            die(f"{ctx}[{i}]: must be an object")
+        u = UserSpec(
+            username=_require_str(entry, "username", f"{ctx}[{i}]"),
+            password=_require_str(entry, "password", f"{ctx}[{i}]"),
+            display=_require_str(entry, "display", f"{ctx}[{i}]"),
+        )
+        if u.username in seen:
+            die(f"{ctx}: duplicate username {u.username!r}")
+        seen.add(u.username)
+        out.append(u)
+    return out
+
+
+def _parse_providers(items: object, ctx: str) -> list[ProviderSpec]:
+    if not isinstance(items, list) or not items:
+        die(f"{ctx}: must be a non-empty list")
+    out: list[ProviderSpec] = []
+    seen: set[str] = set()
+    for i, entry in enumerate(items, start=1):
+        if not isinstance(entry, dict):
+            die(f"{ctx}[{i}]: must be an object")
+        p = ProviderSpec(
+            name=_require_str(entry, "name", f"{ctx}[{i}]"),
+            base_url=_require_str(entry, "base_url", f"{ctx}[{i}]"),
+            model=_require_str(entry, "model", f"{ctx}[{i}]"),
+            api_key=_require_str(entry, "api_key", f"{ctx}[{i}]"),
+        )
+        if p.name in seen:
+            die(f"{ctx}: duplicate provider name {p.name!r}")
+        seen.add(p.name)
+        out.append(p)
+    return out
+
+
+def load_seed_config(path: Path) -> SeedConfig:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        die(f"invalid JSON in {path}: {exc}")
+    seed = raw.get("seed")
+    if not isinstance(seed, dict):
+        die(f"{path}: top-level `seed` object is required")
+    compose = raw.get("compose")
+    if not isinstance(compose, dict):
+        die(f"{path}: top-level `compose` object is required")
+    project = compose.get("COMPOSE_PROJECT_NAME")
+    if not isinstance(project, str) or not project.strip():
+        die(f"{path}: compose.COMPOSE_PROJECT_NAME is required")
+    return SeedConfig(
+        project_name=project.strip(),
+        chat_url=_require_str(seed, "chat_url", "seed"),
+        studio_url=_require_str(seed, "studio_url", "seed"),
+        chat_users=_parse_users(seed.get("chat_users"), "seed.chat_users"),
+        studio_users=_parse_users(seed.get("studio_users"), "seed.studio_users"),
+        providers=_parse_providers(seed.get("providers"), "seed.providers"),
+    )
 
 
 # ---------- http ----------
@@ -182,10 +228,12 @@ def wait_health(url: str, name: str, tries: int = 30) -> None:
 
 # ---------- CLI account creation (via docker compose exec) ----------
 
-def docker_cli(service_dir: Path, service: str, module: str, subcommand: str,
+def docker_cli(project: str, service_dir: Path, service: str, module: str, subcommand: str,
                cli_args: list[str], label: str) -> None:
+    # Explicit -p: seed_dev.py does not source the instance config into its
+    # own env, so docker compose can't infer the project name from there.
     cmd = [
-        "docker", "compose", "exec", "-T", service,
+        "docker", "compose", "-p", project, "exec", "-T", service,
         "uv", "run", "python", "-m", module, subcommand, *cli_args,
     ]
     result = subprocess.run(cmd, cwd=service_dir, capture_output=True, text=True)
@@ -197,36 +245,31 @@ def docker_cli(service_dir: Path, service: str, module: str, subcommand: str,
         warn(f"{label}: non-zero (likely already exists) — continuing: {hint}")
 
 
-def create_chat_account(u: UserSpec) -> None:
+def create_chat_account(project: str, u: UserSpec) -> None:
     log(f"creating chat account: {u.username}")
     docker_cli(
-        CHAT_DIR, "chat-api", "chat.cli", "create-account",
+        project, CHAT_DIR, "chat-api", "chat.cli", "create-account",
         ["--username", u.username, "--password", u.password, "--nickname", u.display],
         f"chat account {u.username}",
     )
 
 
-def create_studio_account(username: str, password: str, display: str) -> None:
-    log(f"creating studio account: {username}")
+def create_studio_account(project: str, u: UserSpec) -> None:
+    log(f"creating studio account: {u.username}")
     docker_cli(
-        STUDIO_DIR, "studio-api", "studio.cli", "create-account",
-        ["--username", username, "--password", password, "--display-name", display],
-        f"studio account {username}",
+        project, STUDIO_DIR, "studio-api", "studio.cli", "create-account",
+        ["--username", u.username, "--password", u.password, "--display-name", u.display],
+        f"studio account {u.username}",
     )
 
 
-def studio_seed_provider() -> None:
-    name = env_required("PROVIDER_NAME")
-    base_url = env_required("PROVIDER_BASE_URL")
-    model = env_required("PROVIDER_MODEL")
-    api_key = env_required("PROVIDER_API_KEY")
-
-    log(f"creating studio provider: {name}")
+def create_studio_provider(project: str, p: ProviderSpec) -> None:
+    log(f"creating studio provider: {p.name}")
     docker_cli(
-        STUDIO_DIR, "studio-api", "studio.cli", "create-provider",
-        ["--name", name, "--base-url", base_url,
-         "--api-key", api_key, "--model", model],
-        f"studio provider {name}",
+        project, STUDIO_DIR, "studio-api", "studio.cli", "create-provider",
+        ["--name", p.name, "--base-url", p.base_url,
+         "--api-key", p.api_key, "--model", p.model],
+        f"studio provider {p.name}",
     )
 
 
@@ -236,38 +279,38 @@ def main() -> None:
     if subprocess.run(["which", "docker"], capture_output=True).returncode != 0:
         die("missing required command: docker")
 
-    load_env(resolve_env_arg(sys.argv))
+    cfg = load_seed_config(resolve_config_arg(sys.argv))
 
-    chat_url = env_required("CHAT_URL")
-    studio_url = env_required("STUDIO_URL")
+    log(f"studio: {cfg.studio_url}  chat: {cfg.chat_url}")
+    log(f"chat users  : {', '.join(u.username for u in cfg.chat_users)}")
+    log(f"studio users: {', '.join(u.username for u in cfg.studio_users)}")
+    log(f"providers   : {', '.join(p.name for p in cfg.providers)}  (first is default)")
 
-    chat_users = parse_users("CHAT_SEED_USERS")
-    studio_users = parse_users("STUDIO_SEED_USERS")
-
-    log(f"studio: {studio_url}  chat: {chat_url}")
-    log(f"chat users  : {', '.join(u.username for u in chat_users)}")
-    log(f"studio users: {', '.join(u.username for u in studio_users)}")
+    # phase 1: wait for both services
     run_parallel([
-        lambda: wait_health(chat_url, "chat-api"),
-        lambda: wait_health(studio_url, "studio-api"),
+        lambda: wait_health(cfg.chat_url, "chat-api"),
+        lambda: wait_health(cfg.studio_url, "studio-api"),
     ])
 
-    # chat accounts, studio accounts and the provider are mutually independent;
-    # each is a slow `docker compose exec`, so this phase gains the most.
+    # phase 2: studio providers, in declared order (serial so created_at
+    # ordering is deterministic — the first entry becomes the default that
+    # studio create-account binds new accounts to).
+    for p in cfg.providers:
+        create_studio_provider(cfg.project_name, p)
+
+    # phase 3: accounts (chat + studio in parallel).
     run_parallel(
-        [lambda u=u: create_chat_account(u) for u in chat_users]
-        + [lambda u=u: create_studio_account(u.username, u.password, u.display)
-           for u in studio_users]
-        + [studio_seed_provider]
+        [lambda u=u: create_chat_account(cfg.project_name, u) for u in cfg.chat_users]
+        + [lambda u=u: create_studio_account(cfg.project_name, u) for u in cfg.studio_users]
     )
 
     print()
     print("---")
     print("seed done. credentials:")
-    for u in chat_users:
-        print(f"  chat user   : {u.username} / {u.password}   ({chat_url})")
-    for u in studio_users:
-        print(f"  studio user : {u.username} / {u.password}   ({studio_url})")
+    for u in cfg.chat_users:
+        print(f"  chat user   : {u.username} / {u.password}   ({cfg.chat_url})")
+    for u in cfg.studio_users:
+        print(f"  studio user : {u.username} / {u.password}   ({cfg.studio_url})")
     print()
     print("next: start bridge with the snippet shown on Studio → 设备 → 快速生成命令.")
 

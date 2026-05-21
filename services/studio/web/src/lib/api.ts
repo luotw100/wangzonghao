@@ -117,13 +117,17 @@ export interface Inbox {
   updated_at: string;
 }
 
+export interface ProviderBrief {
+  name: string;
+}
+
 export interface ContactSummary {
   id: string;
   inbox_id: string;
   peer_platform_id: string;
   display_name: string;
   persona_id: string | null;
-  provider_id: string | null;
+  provider: ProviderBrief;
   takeover: boolean;
   reply_policy: 'disabled' | 'autoreply';
   status: 'active' | 'archived';
@@ -166,7 +170,7 @@ export interface DistillJobSummary {
   account_id: string;
   contact_ids: string[];
   target_persona_id: string | null;
-  provider_config_id: string;
+  provider: ProviderBrief;
   status: 'pending' | 'running' | 'done' | 'failed';
   created_at: string;
   started_at: string | null;
@@ -272,7 +276,6 @@ export function updateContact(
     display_name?: string;
     card_md?: string;
     persona_id?: string | null;
-    provider_id?: string | null;
     takeover?: boolean;
     reply_policy?: 'disabled' | 'autoreply';
     status?: 'active' | 'archived';

@@ -1,24 +1,24 @@
-"""BridgeRuntime — port of runtime.ts using threads instead of async.
+"""BridgeRuntime — loop owner for one logged-in account.
 
 Loops (one thread each unless noted):
-  producer × N   per-inbox scan -> dedup store
+  producer × N   per-inbox: list_conversations + fetch_new per DM conv,
+                 ingested atomically with cursor advance.
   consumer  1s   unsent -> Studio /incoming   (only for active/takeover peers)
   heartbeat 15s  drop inboxes Studio no longer serves
-  announce  60s  report peer directory
+  announce  60s  report DM peer directory (from list_conversations)
   active    10s  refresh takeover peer set
-  outbound  LP   long-poll Studio queue -> chat send -> ack
+  outbound  LP   long-poll Studio queue -> adapter.send -> ack
 """
 
 from __future__ import annotations
 
 import threading
-import time
 from datetime import datetime, timedelta, timezone
 from typing import Callable
 
 from . import adapters
 from .events import Events
-from .http import Unauthorized
+from .http import Unauthorized as HttpUnauthorized
 from .store import LocalStore
 from .studio_client import StudioClient
 
@@ -28,6 +28,7 @@ ACTIVE_PEERS_S = 10
 CONSUMER_S = 1
 CONSUMER_BATCH = 50
 OUTBOUND_TIMEOUT_S = 30
+PRODUCER_INTERVAL_S = 2
 
 
 class BridgeRuntime:
@@ -48,7 +49,9 @@ class BridgeRuntime:
         self._on_auth_error = on_auth_error
 
         self._lock = threading.Lock()  # guards _adapters
-        self._adapters: dict[str, dict] = {}  # inbox_id -> {adapter, inbox, cursors, label}
+        # inbox_id -> {adapter, inbox, conv_map (peer_id→conv_id),
+        #              peer_names (conv_id→(peer_id, display)), conv_count}
+        self._adapters: dict[str, dict] = {}
         self._active_peers: set[str] = set()
         self._outbound_cursor = 0
         self._last_error: str | None = None
@@ -73,10 +76,6 @@ class BridgeRuntime:
         if self._stop.is_set():
             return
         self._stop.set()
-        with self._lock:
-            adapters = list(self._adapters.values())
-        for e in adapters:
-            e["adapter"].stop()
         for t in self._threads:
             if t is not threading.current_thread():
                 t.join(timeout=2)
@@ -99,10 +98,10 @@ class BridgeRuntime:
         channels = [
             {
                 "inbox_id": e["inbox"]["id"],
-                "handle": e["label"],
-                "platform_self_id": e["adapter"].platform_self_id,
+                "platform": e["inbox"]["platform"],
+                "platform_self_id": e["inbox"]["platform_self_id"],
                 "online": True,
-                "peers_count": len(e["cursors"]),
+                "conv_count": e.get("conv_count", 0),
             }
             for e in entries
         ]
@@ -135,44 +134,50 @@ class BridgeRuntime:
         self._push_state("connecting")
         self._log("core", "info", f"starting · channels={len(self._channels)}")
 
-        logged_in = []
-        errors = []
+        # Build adapters from credentials; resolve self_id (one HTTP each).
+        logged_in: list[tuple[adapters.Adapter, str, str]] = []  # (adapter, platform, self_id)
+        errors: list[str] = []
         for ch in self._channels:
-            label = ch["username"]
-            platform = ch["platform"]
-            token = ch["token"]
+            platform = ch.get("platform")
             try:
                 factory = adapters.get(platform)
             except KeyError as exc:
-                m = f"{label}: {exc}"
+                m = f"{platform}: {exc}"
+                errors.append(m)
                 self._log("adapter", "err", f"unknown platform · {m}")
-                errors.append(m)
                 continue
-            adapter = factory.build(token, label)
             try:
-                self_id = adapter.resolve_self()
-                self._log("adapter", "ok", f"{platform} token ok · {label}")
-                logged_in.append((adapter, self_id, label, platform))
-            except Unauthorized:
-                m = f"{label}: {platform} token 失效"
-                self._log("adapter", "err", f"{platform} auth failed · {m}")
+                adapter = factory.build(ch["credential"])
+                self_id = adapter.platform_self_id   # may raise
+            except adapters.Unauthorized:
+                m = f"{platform}: credential 失效，请重新 /channel add"
                 errors.append(m)
+                self._log("adapter", "err", f"channel auth failed · {m}")
+                continue
+            except adapters.TransientError as exc:
+                m = f"{platform}: {exc}"
+                errors.append(m)
+                self._log("adapter", "warn", f"channel transient · {m}")
+                continue
             except Exception as exc:
-                m = f"{label}: {exc}"
-                self._log("adapter", "err", f"{platform} resolve failed · {m}")
+                m = f"{platform}: {exc}"
                 errors.append(m)
+                self._log("adapter", "err", f"channel build failed · {m}")
+                continue
+            self._log("adapter", "ok", f"{platform} self_id ok · {self_id}")
+            logged_in.append((adapter, platform, self_id))
 
         if not logged_in:
-            self._last_error = "无法连接聊天平台: " + " / ".join(errors)
+            self._last_error = "无法连接任何 channel: " + " / ".join(errors)
             self._log("core", "err", "no channels logged in — stopping")
             self._push_state("offline")
             return
 
         try:
             r = self._studio.register_inboxes(
-                [(platform, sid) for _, sid, _, platform in logged_in]
+                [(platform, sid) for _, platform, sid in logged_in]
             )
-        except Unauthorized:
+        except HttpUnauthorized:
             self._last_error = "Studio session 失效，请重新登录"
             self._auth_error()
             self._push_state("error401")
@@ -190,25 +195,25 @@ class BridgeRuntime:
             "ok",
             f"inboxes registered · {len(inboxes)} inbox · cursor={r['cursor']}",
         )
-        if r["no_persona"]:
-            self._log("studio", "warn", "Studio 账号还没有 Persona，自动回复不会触发")
-
-        for adapter, self_id, label, platform in logged_in:
+        for adapter, platform, self_id in logged_in:
             inbox = next(
                 (
-                    ib for ib in inboxes
-                    if ib["platform"] == platform and ib["platform_self_id"] == self_id
+                    ib
+                    for ib in inboxes
+                    if ib["platform"] == platform
+                    and ib["platform_self_id"] == self_id
                 ),
                 None,
             )
             if not inbox:
-                self._log("adapter", "warn", f"no inbox for {label}")
+                self._log("adapter", "warn", f"no inbox for {platform}/{self_id}")
                 continue
             entry = {
                 "adapter": adapter,
                 "inbox": inbox,
-                "cursors": self._store.get_cursors(inbox["id"]),
-                "label": label,
+                "conv_map": {},      # peer_platform_id -> conversation_id
+                "peer_names": {},    # conversation_id -> (peer_id, display)
+                "conv_count": 0,
             }
             with self._lock:
                 self._adapters[inbox["id"]] = entry
@@ -227,55 +232,97 @@ class BridgeRuntime:
         self._spawn(self._loop_active_peers, "active-peers")
         self._spawn(self._outbound, "outbound")
 
-    # --- loops ---
+    # --- producer (bounded fetch_new per conversation) ---
+
     def _producer(self, inbox_id: str) -> None:
-        # Supervised: if scan() raises, restart it (same cursors) unless the
-        # daemon is stopping or Studio has dropped this inbox (heartbeat
-        # removes it from _adapters, which ends the loop).
         while not self._stop.is_set():
-            with self._lock:
-                entry = self._adapters.get(inbox_id)
-            if entry is None:
-                return
             try:
-                self._run_producer(inbox_id, entry)
+                self._poll_inbox(inbox_id)
+            except adapters.Unauthorized:
+                self._log(
+                    "producer",
+                    "err",
+                    f"inbox={inbox_id}: channel credential 失效，停止本 channel",
+                )
+                with self._lock:
+                    self._adapters.pop(inbox_id, None)
+                self._push_state("degraded")
+                return
+            except adapters.TransientError as exc:
+                if self._stop.is_set():
+                    return
+                self._log("producer", "warn", f"inbox={inbox_id}: {exc} — retry 3s")
+                if self._sleep(3):
+                    return
+                continue
             except Exception as exc:
                 if self._stop.is_set():
                     return
-                self._log("producer", "err", f"inbox={inbox_id}: {exc} — restart in 3s")
-                if self._sleep(3):
+                self._log(
+                    "producer",
+                    "err",
+                    f"inbox={inbox_id}: unexpected {type(exc).__name__}: {exc} — retry 5s",
+                )
+                if self._sleep(5):
                     return
+                continue
+            if self._sleep(PRODUCER_INTERVAL_S):
+                return
 
-    def _run_producer(self, inbox_id: str, entry: dict) -> None:
-        for msg in entry["adapter"].scan(entry["cursors"]):
+    def _poll_inbox(self, inbox_id: str) -> None:
+        with self._lock:
+            entry = self._adapters.get(inbox_id)
+        if entry is None:
+            return
+        adapter = entry["adapter"]
+
+        convs = adapter.list_conversations()
+
+        conv_map: dict[str, str] = {}
+        peer_names: dict[str, tuple[str, str]] = {}
+        for c in convs:
+            if c.kind == "dm" and c.peers:
+                peer = c.peers[0]
+                conv_map[peer["platform_id"]] = c.id
+                peer_names[c.id] = (peer["platform_id"], peer["display_name"])
+        with self._lock:
+            entry["conv_map"] = conv_map
+            entry["peer_names"] = peer_names
+            entry["conv_count"] = len(convs)
+
+        for c in convs:
             if self._stop.is_set():
-                break
-            lh = LocalStore.local_hash(
-                inbox_id,
-                msg["peer_id"],
-                msg["sender_id"],
-                msg["sent_at"],
-                msg["msg_type"],
-                msg["content"],
-            )
-            self._store.insert_message(
+                return
+            if c.kind != "dm" or not c.peers:
+                continue
+            peer = c.peers[0]
+            since = self._store.get_cursor(inbox_id, c.id)
+            events = adapter.fetch_new(c.id, since)
+            if not events:
+                continue
+            new_cursor = events[-1].cursor
+            event_dicts = [
                 {
-                    "inbox_id": inbox_id,
-                    "peer_id": msg["peer_id"],
-                    "peer_display_name": msg["peer_display_name"],
-                    "platform_msg_id": msg["platform_msg_id"],
-                    "sender_id": msg["sender_id"],
-                    "sent_at": msg["sent_at"],
-                    "msg_type": msg["msg_type"],
-                    "content": msg["content"],
-                    "mime_type": None,
-                    "local_hash": lh,
+                    "sender_id": e.sender_id,
+                    "sent_at": e.sent_at,
+                    "msg_type": e.msg_type,
+                    "content": e.content,
                 }
+                for e in events
+            ]
+            self._store.ingest(
+                inbox_id,
+                c.id,
+                peer["platform_id"],
+                peer["display_name"],
+                event_dicts,
+                new_cursor,
             )
+
+    # --- consumer (unchanged shape; pushes unsent to Studio) ---
 
     def _consumer(self) -> None:
         while not self._sleep(CONSUMER_S):
-            # The takeover set is the only gate (empty => forward nothing).
             rows = self._store.get_unsent(CONSUMER_BATCH, self._active_peers)
             if not rows:
                 continue
@@ -294,7 +341,7 @@ class BridgeRuntime:
                             "inbox_id": r.inbox_id,
                             "peer_id": r.peer_id,
                             "peer_display_name": r.peer_display_name,
-                            "platform_msg_id": r.platform_msg_id,
+                            "platform_msg_id": None,
                             "sender_id": r.sender_id,
                             "msg_type": r.msg_type,
                             "content": r.content,
@@ -304,10 +351,12 @@ class BridgeRuntime:
                     ]
                 )
                 self._store.mark_sent([r.id for r in batch])
-            except Unauthorized:
+            except HttpUnauthorized:
                 return  # heartbeat handles 401
             except Exception as exc:
                 self._log("consumer", "warn", f"push failed: {exc}")
+
+    # --- heartbeat ---
 
     def _heartbeat(self) -> None:
         self._beat()
@@ -324,11 +373,10 @@ class BridgeRuntime:
                     for i in list(self._adapters)
                     if i not in active_ids
                 ]
-            for inbox_id, entry in removed:
+            for inbox_id, _entry in removed:
                 self._log("heart", "warn", f"inbox {inbox_id} removed by Studio")
-                entry["adapter"].stop()
             self._push_state("online")
-        except Unauthorized:
+        except HttpUnauthorized:
             self._log("heart", "err", "401 · session revoked")
             self._last_error = "Studio session 失效，请重新登录"
             self._auth_error()
@@ -337,18 +385,36 @@ class BridgeRuntime:
         except Exception as exc:
             self._log("heart", "warn", f"heartbeat failed: {exc}")
 
+    # --- announce ---
+
     def _announce(self) -> None:
         while True:
             with self._lock:
                 items = list(self._adapters.items())
             for inbox_id, entry in items:
                 try:
-                    peers = entry["adapter"].list_peers()
+                    convs = entry["adapter"].list_conversations()
+                    peers = [
+                        {
+                            "peer_platform_id": c.peers[0]["platform_id"],
+                            "display_name": c.peers[0]["display_name"],
+                        }
+                        for c in convs
+                        if c.kind == "dm" and c.peers
+                    ]
                     self._studio.announce_peers(inbox_id, peers)
+                except adapters.Unauthorized:
+                    self._log(
+                        "announce",
+                        "warn",
+                        f"inbox={inbox_id}: channel credential 失效，跳过 announce",
+                    )
                 except Exception as exc:
                     self._log("announce", "warn", f"inbox={inbox_id}: {exc}")
             if self._sleep(ANNOUNCE_S):
                 return
+
+    # --- active peers ---
 
     def _loop_active_peers(self) -> None:
         while True:
@@ -362,6 +428,8 @@ class BridgeRuntime:
             if self._sleep(ACTIVE_PEERS_S):
                 return
 
+    # --- outbound ---
+
     def _outbound(self) -> None:
         while not self._stop.is_set():
             try:
@@ -373,7 +441,7 @@ class BridgeRuntime:
                         break
                     self._outbound_cursor = max(self._outbound_cursor, item["id"])
                     self._dispatch_outbound(item)
-            except Unauthorized:
+            except HttpUnauthorized:
                 self._last_error = "Studio session 失效，请重新登录"
                 self._auth_error()
                 self._push_state("error401")
@@ -390,16 +458,52 @@ class BridgeRuntime:
         if not entry:
             self._studio.ack_outbound(item["id"], "failed", "inbox not found")
             return
-        try:
-            if item["msg_type"] == "text":
-                pid = entry["adapter"].send(item["peer_platform_id"], item["content"])
-                self._studio.ack_outbound(item["id"], "sent", pid)
-                self._log("outbound", "ok", f"sent text to {item['peer_platform_id']}")
-            else:
-                self._log(
-                    "outbound", "warn", "media outbound not supported for chat adapter"
+        adapter = entry["adapter"]
+        conv_id = entry.get("conv_map", {}).get(item["peer_platform_id"])
+        if conv_id is None:
+            # Cache miss — refresh directory once.
+            try:
+                convs = adapter.list_conversations()
+            except adapters.Unauthorized:
+                self._studio.ack_outbound(
+                    item["id"], "failed", "channel credential 失效"
                 )
-                self._studio.ack_outbound(item["id"], "failed", "media not supported")
+                return
+            except Exception as exc:
+                self._studio.ack_outbound(
+                    item["id"], "failed", f"conv lookup failed: {exc}"
+                )
+                return
+            conv_map = {
+                c.peers[0]["platform_id"]: c.id
+                for c in convs
+                if c.kind == "dm" and c.peers
+            }
+            with self._lock:
+                entry["conv_map"] = conv_map
+            conv_id = conv_map.get(item["peer_platform_id"])
+        if conv_id is None:
+            self._studio.ack_outbound(item["id"], "failed", "conversation not found")
+            return
+
+        payload = adapters.OutboundPayload(
+            msg_type=item["msg_type"], content=item["content"]
+        )
+        try:
+            adapter.send(conv_id, payload)
+            self._studio.ack_outbound(item["id"], "sent", "")
+            self._log(
+                "outbound",
+                "ok",
+                f"sent {payload.msg_type} to {item['peer_platform_id']}",
+            )
+        except adapters.PermanentError as exc:
+            self._log("outbound", "warn", f"permanent failure: {exc}")
+            self._studio.ack_outbound(item["id"], "failed", str(exc))
+        except adapters.Unauthorized:
+            self._studio.ack_outbound(
+                item["id"], "failed", "channel credential 失效"
+            )
         except Exception as exc:
             self._log("outbound", "err", f"dispatch failed: {exc}")
             self._studio.ack_outbound(item["id"], "failed", str(exc))

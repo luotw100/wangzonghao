@@ -1,8 +1,17 @@
-"""SQLite dedup store. 1:1 port of the former local-store.ts.
+"""SQLite local store: incoming dedup queue + per-conversation cursors.
 
-A single connection guarded by a lock (WAL mode) — the TS side used a
-synchronous single-instance better-sqlite3; this preserves that
-semantics across the daemon's worker threads.
+Single connection guarded by a lock (WAL mode) to serialize writes from
+the daemon's worker threads.
+
+Two tables:
+
+* ``local_messages`` — Bridge's inbox-side staging queue. Rows are
+  inserted on ``ingest`` (incoming from adapter), drained on
+  ``mark_sent`` (after a successful push to Studio). Dedup is by
+  ``(inbox_id, local_hash)``.
+* ``conv_cursors`` — per ``(inbox_id, conversation_id)`` opaque cursor
+  string; the resume point the adapter handed us with the last ingested
+  event. Updated atomically with the message insert.
 """
 
 from __future__ import annotations
@@ -16,20 +25,27 @@ _SCHEMA = """
 CREATE TABLE IF NOT EXISTS local_messages (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   inbox_id          TEXT NOT NULL,
+  conversation_id   TEXT NOT NULL,
   peer_id           TEXT NOT NULL,
   peer_display_name TEXT NOT NULL,
-  platform_msg_id   TEXT,
   sender_id         TEXT NOT NULL,
   sent_at           TEXT NOT NULL,
   msg_type          TEXT NOT NULL,
   content           TEXT NOT NULL,
-  mime_type         TEXT,
   local_hash        TEXT NOT NULL,
   sent              INTEGER NOT NULL DEFAULT 0,
   UNIQUE(inbox_id, local_hash)
 );
 CREATE INDEX IF NOT EXISTS idx_unsent ON local_messages(sent, id);
-CREATE INDEX IF NOT EXISTS idx_cursor ON local_messages(inbox_id, peer_id, id);
+CREATE INDEX IF NOT EXISTS idx_conv ON local_messages(inbox_id, conversation_id, id);
+
+CREATE TABLE IF NOT EXISTS conv_cursors (
+  inbox_id        TEXT NOT NULL,
+  conversation_id TEXT NOT NULL,
+  cursor          TEXT,
+  updated_at      TEXT,
+  PRIMARY KEY (inbox_id, conversation_id)
+);
 """
 
 
@@ -37,14 +53,13 @@ CREATE INDEX IF NOT EXISTS idx_cursor ON local_messages(inbox_id, peer_id, id);
 class LocalMessage:
     id: int
     inbox_id: str
+    conversation_id: str
     peer_id: str
     peer_display_name: str
-    platform_msg_id: str | None
     sender_id: str
     sent_at: str
     msg_type: str
     content: str
-    mime_type: str | None
     local_hash: str
     sent: int
 
@@ -62,52 +77,99 @@ class LocalStore:
     @staticmethod
     def local_hash(
         inbox_id: str,
-        peer_id: str,
+        conversation_id: str,
         sender_id: str,
         sent_at: str,
         msg_type: str,
         content: str,
     ) -> str:
-        joined = "\x00".join([inbox_id, peer_id, sender_id, sent_at, msg_type, content])
+        joined = "\x00".join(
+            [inbox_id, conversation_id, sender_id, sent_at, msg_type, content]
+        )
         return hashlib.sha256(joined.encode("utf-8")).hexdigest()
 
-    def get_cursors(self, inbox_id: str) -> dict[str, str | None]:
-        with self._lock:
-            if self._closed:
-                return {}
-            rows = self._db.execute(
-                """SELECT peer_id, MAX(CAST(platform_msg_id AS INTEGER)) AS last_id
-                   FROM local_messages
-                   WHERE inbox_id = ? AND platform_msg_id IS NOT NULL
-                   GROUP BY peer_id""",
-                (inbox_id,),
-            ).fetchall()
-        return {r["peer_id"]: r["last_id"] for r in rows}
+    # ---- cursors ----------------------------------------------------
 
-    def insert_message(self, m: dict) -> bool:
+    def get_cursor(self, inbox_id: str, conversation_id: str) -> str | None:
         with self._lock:
             if self._closed:
-                return False
-            cur = self._db.execute(
-                """INSERT OR IGNORE INTO local_messages
-                   (inbox_id, peer_id, peer_display_name, platform_msg_id, sender_id,
-                    sent_at, msg_type, content, mime_type, local_hash)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    m["inbox_id"],
-                    m["peer_id"],
-                    m["peer_display_name"],
-                    m["platform_msg_id"],
-                    m["sender_id"],
-                    m["sent_at"],
-                    m["msg_type"],
-                    m["content"],
-                    m["mime_type"],
-                    m["local_hash"],
-                ),
-            )
-            self._db.commit()
-            return cur.rowcount > 0
+                return None
+            row = self._db.execute(
+                "SELECT cursor FROM conv_cursors "
+                "WHERE inbox_id = ? AND conversation_id = ?",
+                (inbox_id, conversation_id),
+            ).fetchone()
+        return row["cursor"] if row else None
+
+    # ---- ingest -----------------------------------------------------
+
+    def ingest(
+        self,
+        inbox_id: str,
+        conversation_id: str,
+        peer_id: str,
+        peer_display_name: str,
+        events: list[dict],
+        new_cursor: str | None,
+    ) -> int:
+        """Atomically insert events and advance the conversation cursor.
+
+        Returns the number of newly-inserted rows. Dups (same
+        local_hash) are silently skipped.
+        """
+        if not events and new_cursor is None:
+            return 0
+        inserted = 0
+        with self._lock:
+            if self._closed:
+                return 0
+            try:
+                self._db.execute("BEGIN IMMEDIATE")
+                for e in events:
+                    lh = self.local_hash(
+                        inbox_id,
+                        conversation_id,
+                        e["sender_id"],
+                        e["sent_at"],
+                        e["msg_type"],
+                        e["content"],
+                    )
+                    cur = self._db.execute(
+                        """INSERT OR IGNORE INTO local_messages
+                           (inbox_id, conversation_id, peer_id, peer_display_name,
+                            sender_id, sent_at, msg_type, content, local_hash)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (
+                            inbox_id,
+                            conversation_id,
+                            peer_id,
+                            peer_display_name,
+                            e["sender_id"],
+                            e["sent_at"],
+                            e["msg_type"],
+                            e["content"],
+                            lh,
+                        ),
+                    )
+                    if cur.rowcount > 0:
+                        inserted += 1
+                if new_cursor is not None:
+                    self._db.execute(
+                        """INSERT INTO conv_cursors
+                             (inbox_id, conversation_id, cursor, updated_at)
+                           VALUES (?, ?, ?, datetime('now'))
+                           ON CONFLICT(inbox_id, conversation_id) DO UPDATE
+                             SET cursor = excluded.cursor,
+                                 updated_at = excluded.updated_at""",
+                        (inbox_id, conversation_id, new_cursor),
+                    )
+                self._db.execute("COMMIT")
+            except BaseException:
+                self._db.execute("ROLLBACK")
+                raise
+        return inserted
+
+    # ---- outbound staging ------------------------------------------
 
     def get_unsent(self, limit: int, active_peers: set[str]) -> list[LocalMessage]:
         """Unsent messages whose (inbox, peer) is in the takeover set.

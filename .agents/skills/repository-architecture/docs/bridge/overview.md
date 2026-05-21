@@ -43,9 +43,9 @@ bridge/
 | `/login` | 提示输入 Studio 账号密码 → handshake 换 token 落盘（之后自动连接） |
 | `/logout` | 清除 Studio token（自动断开 daemon） |
 | `/status` | daemon 与各 channel 状态快照 |
-| `/channel add` | 提示输入 Chat 账号密码 → 换 Chat token 存入（自动重连注册） |
+| `/channel add [platform]` | 启动 adapter 的 LoginFlow，按需提示输入 → 存 credential（默认 `platform=chat`） |
 | `/channel rm <n>` | 删除第 n 个 channel（自动重连） |
-| `/channel list` | 列出已保存 channel（不含任何凭据） |
+| `/channel list` | 列出已绑定 channel（按 `platform / platform_self_id`，不含任何凭据） |
 | `/log [-f]` | 看日志；`-f` 跟随（仅交互终端） |
 | `/studio` | 打印 Studio 地址 |
 | `/quit` | 停 daemon 并退出 |
@@ -62,8 +62,8 @@ bridge/
 
 状态目录下：
 
-- `laborster.json`（0600，原子写：临时文件 + `os.replace`）：`username`、`machine_id`、`bridge_id`、`studio_token`、`channels:[{platform, username, token}]`。**磁盘上一个密码都不存**——Studio 与平台两侧都只存 session token。`studio_token` 在 401 或 `/logout` 时清除。
-- `messages.db`：SQLite 去重消息表。
+- `laborster.json`（0600，原子写：临时文件 + `os.replace`）：`username`、`machine_id`、`bridge_id`、`studio_token`、`channels:[{platform, credential}]`。**磁盘上一个密码都不存**——`credential` 是 adapter 自定义的 JSON 不透明 blob（chat 当前形如 `{"token": "..."}`）；Bridge 永不解析。`studio_token` 在 401 或 `/logout` 时清除。
+- `messages.db`：SQLite 本地存储（`local_messages` 去重队列 + `conv_cursors` 每会话续传锚点）。
 
 Chat/Studio 地址在 `config.py` 硬编码为 `https://chat.laborster.com` / `https://studio.laborster.com`，没有任何 base-URL 输入。
 
@@ -77,12 +77,13 @@ laborster-bridge [--state DIR]
        循环：读一行 → 去掉前导 '/' → 按 DISPATCH 分发
        无状态模式下非 NO_STATE_OK 命令被拒
   /login    → StudioClient.handshake(pwd) → 写 token/machine_id/bridge_id → _ensure()
-  /channel add → adapters.get(platform).obtain_token(pwd) → 存 {platform, username, token} → _ensure()
+  /channel add [platform] → adapters.get(platform).begin_login() → 按 Step 驱动登录流
+                          → Done(credential) → 存 {platform, credential}（按 platform_self_id 去重）→ _ensure()
   _ensure() ready 时 → 构造 StudioClient(token getter=读 laborster.json)
             → LocalStore(messages.db) → BridgeRuntime.start()（后台 bootstrap 线程）
 ```
 
-`BridgeRuntime.start()` 不阻塞 REPL：bootstrap 在后台线程对每个 channel 按 `ch["platform"]` 在 REGISTRY 中查 factory，用持久化 token 调 `adapter.resolve_self()` 恢复 selfId，token 鉴权注册 inbox（按 `(platform, self_id)` 匹配 Studio 返回的 inbox 列表），然后并行启动 6 个循环线程。401 时回调 `on_auth_error` 清 Studio token 并提示重新 `/login`。
+`BridgeRuntime.start()` 不阻塞 REPL：bootstrap 在后台线程对每个 channel 按 `ch["platform"]` 在 REGISTRY 中查 factory，`factory.build(ch["credential"])` 构造 adapter，读 `adapter.platform_self_id`（property 懒加载）拿 selfId，token 鉴权 `register_inboxes` 注册 inbox（按 `(platform, self_id)` 匹配 Studio 返回的 inbox 列表），然后并行启动 6 个循环线程。**self_id 不持久化**——每次启动从 credential 实时解析，避免派生事实飘移。Studio 401 时回调 `on_auth_error` 清 Studio token 并提示重新 `/login`；某个 channel 的 credential 失效（adapter 抛 `Unauthorized`）只摘除该 channel，daemon 与其他 channel 继续。
 
 ## Bridge 当前不做的事
 

@@ -1,9 +1,9 @@
-"""js_api bridge: structured methods over commands.DISPATCH + a log stream.
+"""js_api bridge: structured methods over commands.* + a log stream.
 
-Mutations (login/logout/channel add/rm) go through the existing command
-handlers so daemon reconcile logic is reused verbatim. Display data
-(status, account, channel list) is read straight from Events/state so
-the frontend gets JSON instead of pre-rendered terminal lines.
+Mutations (login/logout/channel add/rm) go through the command handlers
+so daemon reconcile logic is reused verbatim. Display data (status,
+account, channel list) is read straight from Events/state so the
+frontend gets JSON instead of pre-rendered terminal lines.
 """
 
 from __future__ import annotations
@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import threading
 
-from .. import commands, config, state
+from .. import adapters, commands, config, state
 from ..events import Events
 
 
@@ -97,13 +97,78 @@ class Api:
         return commands.cmd_logout(self._ctx, [])
 
     def channel_list(self) -> list:
-        return [
-            {"index": i + 1, "username": c["username"]}
-            for i, c in enumerate(state.load().get("channels", []))
-        ]
+        """List bound channels with resolved platform_self_id for display.
+
+        Each item: {index, platform, self_id, label}. ``self_id`` is None
+        if the credential is currently unreachable (network or auth).
+        """
+        out: list[dict] = []
+        for i, c in enumerate(state.load().get("channels", [])):
+            platform = c.get("platform", "?")
+            self_id = None
+            try:
+                self_id = (
+                    adapters.get(platform).build(c["credential"]).platform_self_id
+                )
+            except Exception:
+                self_id = None
+            label = f"{platform}/{self_id}" if self_id else f"{platform}/-"
+            out.append(
+                {
+                    "index": i + 1,
+                    "platform": platform,
+                    "self_id": self_id,
+                    "label": label,
+                }
+            )
+        return out
 
     def channel_add(self, username: str, password: str) -> dict:
-        return commands.cmd_channel(self._ctx, ["add", username, password])
+        """Chat shortcut: single-shot username+password login flow.
+
+        Kept as a thin wrapper so the existing GUI form keeps working.
+        For non-chat platforms, prefer the generic begin/submit/poll API
+        (to be added when the second platform lands).
+        """
+        return self.channel_add_generic(
+            "chat", {"username": username, "password": password}
+        )
+
+    def channel_add_generic(self, platform: str, answers: dict) -> dict:
+        """Run a single-step LoginFlow synchronously.
+
+        Returns a normal {lines|error} dict. Only supports flows whose
+        first step is a PromptInput that goes straight to Done after one
+        submit (chat, and any future platform with a single-form login).
+        Multi-step flows (QR / OAuth / OTP) need a stateful begin/submit
+        API; that's the next iteration.
+        """
+        try:
+            factory = adapters.get(platform)
+        except KeyError as exc:
+            return {"error": str(exc)}
+        try:
+            flow = factory.begin_login()
+        except adapters.TransientError as exc:
+            return {"error": f"启动登录失败: {exc}"}
+
+        step = flow.current()
+        if not isinstance(step, adapters.PromptInput):
+            return {
+                "error": f"{platform} 登录不是单步流，GUI 暂未支持多步登录"
+            }
+        try:
+            step = flow.submit(answers)
+        except adapters.TransientError as exc:
+            return {"error": f"网络错误: {exc}"}
+
+        if isinstance(step, adapters.PromptInput):
+            return {"error": step.error or "登录失败"}
+        if isinstance(step, adapters.Failed):
+            return {"error": step.reason}
+        if isinstance(step, adapters.Done):
+            return commands._persist_channel(self._ctx, platform, step.credential)
+        return {"error": f"未知 step 类型: {type(step).__name__}"}
 
     def channel_rm(self, index: int) -> dict:
         return commands.cmd_channel(self._ctx, ["rm", str(int(index))])

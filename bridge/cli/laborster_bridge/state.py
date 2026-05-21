@@ -9,13 +9,14 @@ Schema::
       "studio_token": "<bridge session token>",   # cleared on 401 / logout
       "channels": [
         { "platform": "chat",
-          "username": "<platform account>",
-          "token":    "<platform session token>" }
+          "credential": { ...adapter-defined opaque blob... } }
       ]
     }
 
-No password is ever stored — only tokens, mirroring the browser session
-model on both the Studio and the platform side.
+No password is ever stored — only tokens (in ``studio_token``) and
+adapter-defined ``credential`` blobs (which themselves only hold
+tokens / cookies / session keys, never raw passwords). Mirrors the
+browser session model on both the Studio and the platform side.
 """
 
 from __future__ import annotations

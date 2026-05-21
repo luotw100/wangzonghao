@@ -52,13 +52,14 @@ class StudioClient:
 
     @staticmethod
     def _inbox(i: dict) -> dict:
+        # Mirrors Studio's BridgeInboxView (schemas.py): the wire format
+        # intentionally hides account_id/bridge_id/enabled/default_persona_id;
+        # we only need what the runtime actually consumes.
         return {
             "id": i["id"],
             "platform": i["platform"],
             "platform_self_id": i["platform_self_id"],
             "display_name": i["display_name"],
-            "enabled": i["enabled"],
-            "default_persona_id": i["default_persona_id"],
         }
 
     def register_inboxes(self, self_ids: list[tuple[str, str]]) -> dict:
@@ -75,7 +76,6 @@ class StudioClient:
         return {
             "inboxes": [self._inbox(i) for i in r["inboxes"]],
             "cursor": r["cursor"],
-            "no_persona": r["no_persona"],
         }
 
     def heartbeat(self) -> dict:

@@ -50,8 +50,8 @@ function appendLog(ln) {
 window.pushLog = appendLog;
 
 // ---- state shared across renders ----
-let savedChannels = [];      // [{index, username}]
-let liveByName = {};         // username -> {online, platform_self_id, peers_count}
+let savedChannels = [];      // [{index, platform, self_id, label}]
+let liveByKey = {};          // "platform/self_id" -> {online, conv_count}
 
 function renderChannels() {
   const wrap = $("ch-list");
@@ -60,23 +60,23 @@ function renderChannels() {
   $("ch-empty").hidden = savedChannels.length > 0;
 
   for (const c of savedChannels) {
-    const live = liveByName[c.username] || {};
+    const key = `${c.platform}/${c.self_id || "-"}`;
+    const live = liveByKey[key] || {};
     const online = !!live.online;
     const card = document.createElement("div");
     card.className = "chan";
     card.innerHTML =
       `<span class="dot ${online ? "on" : "off"}"></span>` +
       `<div class="info">` +
-        `<div class="name">${esc(c.username)}</div>` +
-        `<div class="meta">self ${esc(live.platform_self_id || "-")}` +
-        `<span class="sep">·</span>peers ${live.peers_count || 0}</div>` +
+        `<div class="name">${esc(c.label)}</div>` +
+        `<div class="meta">convs ${live.conv_count || 0}</div>` +
       `</div>` +
       `<span class="badge ${online ? "on" : ""}">${online ? "online" : "offline"}</span>`;
     const del = document.createElement("button");
     del.className = "danger sm";
     del.textContent = "删除";
     del.onclick = async () => {
-      if (!confirm(`删除 channel：${c.username}？`)) return;
+      if (!confirm(`删除 channel：${c.label}？`)) return;
       del.disabled = true;
       renderResult(await api().channel_rm(c.index));
       await refreshAll();
@@ -124,8 +124,10 @@ async function pollStatus() {
   if (snap.last_error) { errRow.hidden = false; $("st-err").textContent = snap.last_error; }
   else errRow.hidden = true;
 
-  liveByName = {};
-  for (const c of snap.channels || []) liveByName[c.handle] = c;
+  liveByKey = {};
+  for (const c of snap.channels || []) {
+    liveByKey[`${c.platform}/${c.platform_self_id || "-"}`] = c;
+  }
   renderChannels();
 }
 

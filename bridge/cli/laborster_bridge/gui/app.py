@@ -82,7 +82,7 @@ def _web_dir() -> Path:
 def main() -> int:
     data_dir = _default_data_dir()
     try:
-        config.set_state_dir(str(data_dir))
+        config.set_state_root(str(data_dir))
     except Exception as exc:
         print(f"无法创建数据目录 {data_dir}: {exc}", file=sys.stderr)
         return 2

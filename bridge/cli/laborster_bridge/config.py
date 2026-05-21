@@ -1,51 +1,57 @@
-"""Hardcoded endpoints and per-session state-directory resolution.
+"""Hardcoded endpoints + state-root resolution.
 
-No defaults, no environment variables. The state directory comes from
-exactly one of: the ``--state`` launch argument, or the in-REPL
-``/state <path>`` command. Until one is provided, the CLI runs in
-no-state mode and refuses every command that touches disk.
+State root is a directory holding one sub-directory per Studio account::
+
+    <state_root>/<account_id>/state.db
+
+This module only knows the root and the path layout. Choosing which
+account is active is a runtime decision (see ``commands._open_account``).
+No defaults, no environment variables: the root comes from ``--state``
+or in-REPL ``/state <path>``. The GUI binary supplies its own per-OS
+default (see ``gui/app.py``) without breaking this invariant.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-# The two service endpoints are fixed. There is no base-URL input anywhere.
 CHAT_BASE_URL = "https://chat.laborster.com"
 STUDIO_BASE_URL = "https://studio.laborster.com"
 
-_state_dir: Path | None = None
+_state_root: Path | None = None
 
 
 class NoStateError(RuntimeError):
-    """Raised when a command needs the state directory but none is set."""
+    """Raised when a command needs the state root but none is set."""
 
 
-def set_state_dir(path: str) -> Path:
+def set_state_root(path: str) -> Path:
     p = Path(path).expanduser()
     p.mkdir(parents=True, exist_ok=True)
     if not p.is_dir():
         raise NoStateError(f"{p} is not a directory")
-    global _state_dir
-    _state_dir = p.resolve()
-    return _state_dir
+    global _state_root
+    _state_root = p.resolve()
+    return _state_root
 
 
-def has_state_dir() -> bool:
-    return _state_dir is not None
+def has_state_root() -> bool:
+    return _state_root is not None
 
 
-def state_dir() -> Path:
-    if _state_dir is None:
+def state_root() -> Path:
+    if _state_root is None:
         raise NoStateError(
             "no state directory — relaunch with --state <path> or run /state <path>"
         )
-    return _state_dir
+    return _state_root
 
 
-def state_file() -> Path:
-    return state_dir() / "laborster.json"
+def account_dir(account_id: str) -> Path:
+    d = state_root() / account_id
+    d.mkdir(parents=True, exist_ok=True)
+    return d
 
 
-def db_file() -> Path:
-    return state_dir() / "messages.db"
+def db_path(account_id: str) -> Path:
+    return account_dir(account_id) / "state.db"

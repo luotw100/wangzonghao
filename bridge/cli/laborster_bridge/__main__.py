@@ -19,7 +19,7 @@ def main() -> int:
     args = parser.parse_args()
     if args.state:
         try:
-            config.set_state_dir(args.state)
+            config.set_state_root(args.state)
         except Exception as exc:
             print(f"--state 无效: {exc}", file=sys.stderr)
             return 2

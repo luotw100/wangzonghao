@@ -19,7 +19,7 @@ from typing import Callable
 from . import adapters
 from .events import Events
 from .http import Unauthorized as HttpUnauthorized
-from .store import LocalStore
+from .store import Store
 from .studio_client import StudioClient
 
 HEARTBEAT_S = 15
@@ -35,14 +35,12 @@ class BridgeRuntime:
     def __init__(
         self,
         studio: StudioClient,
-        channels: list[dict],
-        store: LocalStore,
+        store: Store,
         events: Events,
         base_info: Callable[[], dict],
         on_auth_error: Callable[[], None],
     ) -> None:
         self._studio = studio
-        self._channels = channels
         self._store = store
         self._events = events
         self._base_info = base_info
@@ -82,7 +80,6 @@ class BridgeRuntime:
         with self._lock:
             self._adapters.clear()
         self._push_state("idle")
-        self._store.close()
         self._log("core", "info", "daemon stopped")
 
     def is_running(self) -> bool:
@@ -132,40 +129,40 @@ class BridgeRuntime:
     def _bootstrap(self) -> None:
         self._last_error = None
         self._push_state("connecting")
-        self._log("core", "info", f"starting · channels={len(self._channels)}")
+        channels = self._store.channels()
+        self._log("core", "info", f"starting · channels={len(channels)}")
 
         # Build adapters from credentials; resolve self_id (one HTTP each).
-        logged_in: list[tuple[adapters.Adapter, str, str]] = []  # (adapter, platform, self_id)
+        logged_in: list[tuple[int, adapters.Adapter, str, str]] = []
         errors: list[str] = []
-        for ch in self._channels:
-            platform = ch.get("platform")
+        for ch in channels:
             try:
-                factory = adapters.get(platform)
+                factory = adapters.get(ch.platform)
             except KeyError as exc:
-                m = f"{platform}: {exc}"
+                m = f"{ch.platform}: {exc}"
                 errors.append(m)
                 self._log("adapter", "err", f"unknown platform · {m}")
                 continue
             try:
-                adapter = factory.build(ch["credential"])
+                adapter = factory.build(ch.credential)
                 self_id = adapter.platform_self_id   # may raise
             except adapters.Unauthorized:
-                m = f"{platform}: credential 失效，请重新 /channel add"
+                m = f"{ch.platform}: credential 失效，请重新 /channel add"
                 errors.append(m)
                 self._log("adapter", "err", f"channel auth failed · {m}")
                 continue
             except adapters.TransientError as exc:
-                m = f"{platform}: {exc}"
+                m = f"{ch.platform}: {exc}"
                 errors.append(m)
                 self._log("adapter", "warn", f"channel transient · {m}")
                 continue
             except Exception as exc:
-                m = f"{platform}: {exc}"
+                m = f"{ch.platform}: {exc}"
                 errors.append(m)
                 self._log("adapter", "err", f"channel build failed · {m}")
                 continue
-            self._log("adapter", "ok", f"{platform} self_id ok · {self_id}")
-            logged_in.append((adapter, platform, self_id))
+            self._log("adapter", "ok", f"{ch.platform} self_id ok · {self_id}")
+            logged_in.append((ch.id, adapter, ch.platform, self_id))
 
         if not logged_in:
             self._last_error = "无法连接任何 channel: " + " / ".join(errors)
@@ -175,7 +172,7 @@ class BridgeRuntime:
 
         try:
             r = self._studio.register_inboxes(
-                [(platform, sid) for _, platform, sid in logged_in]
+                [(platform, sid) for _, _, platform, sid in logged_in]
             )
         except HttpUnauthorized:
             self._last_error = "Studio session 失效，请重新登录"
@@ -195,7 +192,7 @@ class BridgeRuntime:
             "ok",
             f"inboxes registered · {len(inboxes)} inbox · cursor={r['cursor']}",
         )
-        for adapter, platform, self_id in logged_in:
+        for channel_id, adapter, platform, self_id in logged_in:
             inbox = next(
                 (
                     ib
@@ -207,12 +204,16 @@ class BridgeRuntime:
             )
             if not inbox:
                 self._log("adapter", "warn", f"no inbox for {platform}/{self_id}")
+                self._store.set_channel_inbox(channel_id, None)
                 continue
+            # Cache the Studio-issued inbox_id on the channel row so cursors
+            # and local_messages keyed by it survive restarts.
+            self._store.set_channel_inbox(channel_id, inbox["id"])
             entry = {
                 "adapter": adapter,
                 "inbox": inbox,
-                "conv_map": {},      # peer_platform_id -> conversation_id
-                "peer_names": {},    # conversation_id -> (peer_id, display)
+                "conv_map": {},
+                "peer_names": {},
                 "conv_count": 0,
             }
             with self._lock:

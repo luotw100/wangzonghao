@@ -1,9 +1,9 @@
 """js_api bridge: structured methods over commands.* + a log stream.
 
-Mutations (login/logout/channel add/rm) go through the command handlers
-so daemon reconcile logic is reused verbatim. Display data (status,
-account, channel list) is read straight from Events/state so the
-frontend gets JSON instead of pre-rendered terminal lines.
+Mutations (login/logout/channel add/rm/account use) go through the
+command handlers so the daemon reconcile logic is reused verbatim.
+Display data (status, account, channel list) is read straight from the
+active Store / Events so the frontend gets JSON.
 """
 
 from __future__ import annotations
@@ -11,13 +11,12 @@ from __future__ import annotations
 import json
 import threading
 
-from .. import adapters, commands, config, state
+from .. import adapters, commands, config
+from .. import store as store_mod
 from ..events import Events
 
 
 def _noprompt(_: str) -> str:
-    # GUI never prompts; credentials always arrive as explicit args.
-    # This placeholder exists only so Context is well-formed.
     return ""
 
 
@@ -29,16 +28,16 @@ class Api:
         self._log_stop = threading.Event()
         self._log_thread: threading.Thread | None = None
 
-    # --- lifecycle wiring (called from app.py) ---
+    # --- lifecycle wiring -------------------------------------------------
 
     def attach_window(self, window) -> None:
         self._window = window
 
     def autostart(self) -> None:
-        """Best-effort daemon start once the (fixed) state dir is set."""
+        """Open the most-recent account (if any) and start its daemon."""
         try:
             commands.autostart(self._ctx)
-        except Exception as exc:  # never let a bad state file kill the UI
+        except Exception as exc:
             self._events.log("core", "err", f"autostart 失败: {exc}")
         self._start_log_stream()
 
@@ -62,25 +61,49 @@ class Api:
         self._log_thread.start()
 
     def shutdown(self) -> None:
-        """Stop daemon + log stream. Idempotent; safe on crash paths."""
         self._log_stop.set()
         try:
             commands.cmd_quit(self._ctx, [])
         except Exception:
             pass
 
-    # --- methods exposed to JS ---
+    # --- methods exposed to JS ------------------------------------------
 
     def account(self) -> dict:
-        d = state.load()
+        store = self._ctx.store
+        if store is None:
+            return {
+                "logged_in": False,
+                "account_id": None,
+                "username": None,
+                "machine_id": None,
+                "studio_url": config.STUDIO_BASE_URL,
+                "has_channels": False,
+            }
         return {
-            "logged_in": bool(d.get("studio_token")),
-            "username": d.get("username"),
-            "bridge_id": d.get("bridge_id"),
-            "machine_id": d.get("machine_id"),
+            "logged_in": store.kv_get("studio_token") is not None,
+            "account_id": self._ctx.account_id,
+            "username": store.kv_get("display_name"),
+            "machine_id": store.kv_get("machine_id"),
             "studio_url": config.STUDIO_BASE_URL,
-            "has_channels": bool(d.get("channels")),
+            "has_channels": bool(store.channels()),
         }
+
+    def accounts(self) -> list:
+        """List every account stored under state_root (for the picker)."""
+        if not config.has_state_root():
+            return []
+        out = store_mod.list_accounts(config.state_root())
+        active = self._ctx.account_id
+        for a in out:
+            a["active"] = a["account_id"] == active
+        return out
+
+    def use_account(self, account_id: str) -> dict:
+        return commands.cmd_account(self._ctx, ["use", account_id])
+
+    def remove_account(self, account_id: str) -> dict:
+        return commands.cmd_account(self._ctx, ["remove", account_id])
 
     def status(self) -> dict:
         snap = self._events.snapshot()
@@ -97,26 +120,24 @@ class Api:
         return commands.cmd_logout(self._ctx, [])
 
     def channel_list(self) -> list:
-        """List bound channels with resolved platform_self_id for display.
-
-        Each item: {index, platform, self_id, label}. ``self_id`` is None
-        if the credential is currently unreachable (network or auth).
-        """
+        """List bound channels with resolved platform_self_id for display."""
         out: list[dict] = []
-        for i, c in enumerate(state.load().get("channels", [])):
-            platform = c.get("platform", "?")
+        store = self._ctx.store
+        if store is None:
+            return out
+        for i, c in enumerate(store.channels()):
             self_id = None
             try:
                 self_id = (
-                    adapters.get(platform).build(c["credential"]).platform_self_id
+                    adapters.get(c.platform).build(c.credential).platform_self_id
                 )
             except Exception:
                 self_id = None
-            label = f"{platform}/{self_id}" if self_id else f"{platform}/-"
+            label = f"{c.platform}/{self_id}" if self_id else f"{c.platform}/-"
             out.append(
                 {
                     "index": i + 1,
-                    "platform": platform,
+                    "platform": c.platform,
                     "self_id": self_id,
                     "label": label,
                 }
@@ -124,25 +145,13 @@ class Api:
         return out
 
     def channel_add(self, username: str, password: str) -> dict:
-        """Chat shortcut: single-shot username+password login flow.
-
-        Kept as a thin wrapper so the existing GUI form keeps working.
-        For non-chat platforms, prefer the generic begin/submit/poll API
-        (to be added when the second platform lands).
-        """
+        """Chat shortcut: single-shot username+password login flow."""
         return self.channel_add_generic(
             "chat", {"username": username, "password": password}
         )
 
     def channel_add_generic(self, platform: str, answers: dict) -> dict:
-        """Run a single-step LoginFlow synchronously.
-
-        Returns a normal {lines|error} dict. Only supports flows whose
-        first step is a PromptInput that goes straight to Done after one
-        submit (chat, and any future platform with a single-form login).
-        Multi-step flows (QR / OAuth / OTP) need a stateful begin/submit
-        API; that's the next iteration.
-        """
+        """Run a single-step LoginFlow synchronously."""
         try:
             factory = adapters.get(platform)
         except KeyError as exc:
@@ -177,7 +186,11 @@ class Api:
         import subprocess
         import sys
 
-        path = str(config.state_dir())
+        # Open the current account's dir if one is active, otherwise the root.
+        if self._ctx.account_id:
+            path = str(config.account_dir(self._ctx.account_id))
+        else:
+            path = str(config.state_root())
         try:
             if sys.platform == "darwin":
                 subprocess.Popen(["open", path])

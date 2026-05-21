@@ -18,9 +18,13 @@ BANNER = "Laborster Bridge · 输入 /help 查看命令，/quit 退出"
 
 _TOP = [
     "help", "state", "login", "logout", "status",
-    "channel", "log", "studio", "quit",
+    "account", "channel", "log", "studio", "quit",
 ]
-_SUB = {"channel": ["add", "rm", "list"], "log": ["-f"]}
+_SUB = {
+    "channel": ["add", "rm", "list"],
+    "account": ["list", "use", "remove"],
+    "log": ["-f"],
+}
 
 
 def _make_completer():
@@ -130,9 +134,9 @@ def _run_interactive(events: Events) -> int:
 
     def sync_history() -> None:
         nonlocal history_path, session
-        if not config.has_state_dir():
+        if not config.has_state_root():
             return
-        want = str(config.state_dir() / ".history")
+        want = str(config.state_root() / ".history")
         if want != history_path:
             history_path = want
             session = PromptSession(
@@ -156,7 +160,7 @@ def _run_interactive(events: Events) -> int:
 
     ctx = commands.Context(events, ask_line, ask_secret)
     pr([("class:head", BANNER + "\n")])
-    if not config.has_state_dir():
+    if not config.has_state_root():
         pr([("class:warn", "  无状态目录 — 用 /state <path> 设置（或重启带 --state）\n")])
     elif commands.autostart(ctx):
         pr([("class:ok", "  daemon 已自动连接（/status 查看）\n")])
@@ -180,7 +184,7 @@ def _run_interactive(events: Events) -> int:
             if not handler:
                 pr([("class:err", f"  ✗ 未知命令: {name}（/help 查看）\n")])
                 continue
-            if not config.has_state_dir() and name not in commands.NO_STATE_OK:
+            if not config.has_state_root() and name not in commands.NO_STATE_OK:
                 pr([("class:err", "  ✗ 需要先设置状态目录: /state <path>\n")])
                 continue
 
@@ -195,8 +199,6 @@ def _run_interactive(events: Events) -> int:
 
             if result.get("quit"):
                 pr([("class:dim", "bye\n")])
-                if ctx.runtime and ctx.runtime.is_running():
-                    ctx.runtime.stop()
                 return 0
             for ln in result.get("logs", []):
                 pr(_fmt_log(ln))
@@ -219,7 +221,7 @@ def _run_plain(events: Events) -> int:
 
     ctx = commands.Context(events, ask_line, ask_line)
     print(BANNER)
-    if not config.has_state_dir():
+    if not config.has_state_root():
         print("  ! 无状态目录 — 用 /state <path> 设置（或重启时带 --state）")
     elif commands.autostart(ctx):
         print("  daemon 已自动连接（/status 查看）")
@@ -240,7 +242,7 @@ def _run_plain(events: Events) -> int:
         if not handler:
             print(f"  ! 未知命令: {name}（/help 查看）")
             continue
-        if not config.has_state_dir() and name not in commands.NO_STATE_OK:
+        if not config.has_state_root() and name not in commands.NO_STATE_OK:
             print("  ! 需要先设置状态目录: /state <path>")
             continue
         try:
@@ -254,8 +256,6 @@ def _run_plain(events: Events) -> int:
 
         if result.get("quit"):
             print("bye")
-            if ctx.runtime and ctx.runtime.is_running():
-                ctx.runtime.stop()
             return 0
         for ln in result.get("logs", []):
             print(f"  {ln['t']} [{ln['src']}/{ln['level']}] {ln['msg']}")
@@ -264,8 +264,7 @@ def _run_plain(events: Events) -> int:
         for line in result.get("lines", []):
             print(line)
 
-    if ctx.runtime and ctx.runtime.is_running():
-        ctx.runtime.stop()
+    commands.cmd_quit(ctx, [])
     return 0
 
 

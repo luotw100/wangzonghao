@@ -7,7 +7,7 @@ from studio.clients import ALLOWED_BASE_URLS
 from studio.db import get_db, utc_now
 from studio.deps import new_id, pick_first_provider
 from studio.enums import AccountStatus
-from studio.models import Account, Contact, ProviderConfig
+from studio.models import Account, Contact, Inbox, Persona, ProviderConfig
 
 
 def _table(headers: list[str], rows: list[list]) -> str:
@@ -188,6 +188,41 @@ def delete_provider(args: argparse.Namespace) -> None:
         db.close()
 
 
+def list_contacts(args: argparse.Namespace) -> None:
+    db = next(get_db())
+    try:
+        q = (
+            db.query(
+                Contact, Account.username, Inbox.platform, Inbox.display_name,
+                Persona.name, ProviderConfig.name,
+            )
+            .join(Inbox, Inbox.id == Contact.inbox_id)
+            .join(Account, Account.id == Inbox.account_id)
+            .join(ProviderConfig, ProviderConfig.id == Contact.provider_id)
+            .outerjoin(Persona, Persona.id == Contact.persona_id)
+        )
+        if args.account:
+            account = db.query(Account).filter(Account.username == args.account).first()
+            if not account:
+                raise SystemExit(f"account not found: {args.account}")
+            q = q.filter(Inbox.account_id == account.id)
+        q = q.order_by(Account.username.asc(), Inbox.display_name.asc(), Contact.created_at.asc(), Contact.id.asc())
+
+        rows = []
+        for c, username, platform, inbox_name, persona_name, provider_name in q.all():
+            rows.append([
+                c.id, username, f"{platform}:{inbox_name}", c.display_name,
+                persona_name or "", provider_name,
+                c.reply_policy, "Y" if c.takeover else "", c.status,
+            ])
+        print(_table(
+            ["id", "account", "inbox", "peer", "persona", "provider", "reply_policy", "takeover", "status"],
+            rows,
+        ))
+    finally:
+        db.close()
+
+
 def set_contact_provider(args: argparse.Namespace) -> None:
     db = next(get_db())
     try:
@@ -261,6 +296,10 @@ def main() -> None:
     pdelete_parser = subparsers.add_parser("delete-provider")
     pdelete_parser.add_argument("--id", required=True)
     pdelete_parser.set_defaults(func=delete_provider)
+
+    lcontacts_parser = subparsers.add_parser("list-contacts")
+    lcontacts_parser.add_argument("--account", default=None, help="只列出该账号名下的 contact（按 username）；省略则列全部")
+    lcontacts_parser.set_defaults(func=list_contacts)
 
     setcp_parser = subparsers.add_parser("set-contact-provider")
     setcp_parser.add_argument("--contact", required=True, help="Contact ID")

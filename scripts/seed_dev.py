@@ -27,8 +27,13 @@ is created, because `studio create-account` reads accounts.distill_provider_id
 from the earliest-created Provider. So this script runs three serial phases:
 
   1. wait for chat-api + studio-api health (parallel)
-  2. create the studio Providers in declared order (serial)  (must precede #3)
-  3. create chat accounts + studio accounts                  (parallel)
+  2. create the studio Providers — first one serial, rest parallel
+  3. create chat accounts + studio accounts (parallel)
+
+The first provider goes serial so its created_at is guaranteed to be the
+earliest: that one becomes the default `pick_first_provider` returns for new
+accounts / contacts. The remaining providers race in parallel — their
+relative order doesn't matter because nothing depends on it.
 """
 
 from __future__ import annotations
@@ -292,11 +297,12 @@ def main() -> None:
         lambda: wait_health(cfg.studio_url, "studio-api"),
     ])
 
-    # phase 2: studio providers, in declared order (serial so created_at
-    # ordering is deterministic — the first entry becomes the default that
-    # studio create-account binds new accounts to).
-    for p in cfg.providers:
-        create_studio_provider(cfg.project_name, p)
+    # phase 2: studio providers. First one serial so it's guaranteed to be the
+    # earliest-created (and therefore the default); the rest race in parallel.
+    create_studio_provider(cfg.project_name, cfg.providers[0])
+    run_parallel(
+        [lambda p=p: create_studio_provider(cfg.project_name, p) for p in cfg.providers[1:]]
+    )
 
     # phase 3: accounts (chat + studio in parallel).
     run_parallel(

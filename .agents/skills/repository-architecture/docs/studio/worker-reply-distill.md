@@ -36,14 +36,14 @@
 
 每 5 秒：
 
-1. 查询所有 `status == RUNNING` 的 job，聚合出 `busy_contacts`（所有 running job 的 `contact_ids` 并集）和 `busy_personas`（非空 `target_persona_id` 集合）。
+1. 查询所有 `status == RUNNING` 的 job，聚合出 `busy_conversations`（所有 running job 的 `conversation_ids` 并集）和 `busy_personas`（非空 `target_persona_id` 集合）。
 2. 查询 `status == PENDING` 的 job，按 created_at 升序。
 3. 清理已完成 in-flight tasks。
-4. 逐个 pending job：已 in-flight 跳过；`contact_ids` 与 `busy_contacts` 有交集则跳过（等下一轮）；`target_persona_id` 命中 `busy_personas` 则跳过。通过后把它的 contacts/persona 也加进 busy 集合（防止同一轮里两个冲突 pending job 都启动），创建 `_run_distill_job()` task。
+4. 逐个 pending job：已 in-flight 跳过；`conversation_ids` 与 `busy_conversations` 有交集则跳过（等下一轮）；`target_persona_id` 命中 `busy_personas` 则跳过。通过后把它的 contacts/persona 也加进 busy 集合（防止同一轮里两个冲突 pending job 都启动），创建 `_run_distill_job()` task。
 
 冲突控制目的：串行化会重复写同一张 card 或同一个 persona 的 job；不冲突的 job 仍可并发。
 
-`_run_distill_job(job_id, contact_ids, target_persona_id, provider_config_id)`：
+`_run_distill_job(job_id, conversation_ids, target_persona_id, provider_config_id)`：
 
 1. 重新查询 job，确认仍是 pending。
 2. 标记 `running`，设置 `started_at`。
@@ -56,9 +56,9 @@
 
 每 2 秒：
 
-1. 调 `list_pending_contact_ids()`。
+1. 调 `list_pending_conversation_ids()`。
 2. 清理已完成 tasks。
-3. 对未 in-flight 的 Contact 创建 `_run_reply(contact_id)` task。
+3. 对未 in-flight 的 Conversation 创建 `_run_reply(conversation_id)` task。
 
 `_run_reply()` 调 `maybe_reply()` 并记录 status log。
 
@@ -99,8 +99,8 @@
 
 `_ReplyCtx` 包含：
 
-- `contact_id`
-- `contact_display_name`
+- `conversation_id`
+- `conversation_display_name`
 - `persona_name`
 - `persona_md`
 - `card_md`
@@ -110,13 +110,13 @@
 
 `_ReplyDecision` 包含 skip reason、ctx、history。
 
-### `_decide(db, contact_id)` 当前 gates
+### `_decide(db, conversation_id)` 当前 gates
 
 任何 gate 不通过都会返回 skip reason：
 
-1. Contact 存在。
-2. Contact status 是 active。
-3. Contact `reply_policy == 'autoreply'`（`disabled` 时跳过）。
+1. Conversation 存在。
+2. Conversation status 是 active。
+3. Conversation `reply_policy == 'autoreply'`（`disabled` 时跳过）。
 4. Inbox 存在且 enabled。
 5. Provider 由 `get_default_provider(db)` 返回全局默认（`scope=global`、`status=active`、`is_default=True`）。
 6. Provider 存在且有 API key。
@@ -134,7 +134,7 @@
 `_build_user_message()` 当前拼接：
 
 1. `## 你的人设` + Persona markdown。
-2. `## 关于对方（display_name）` + Contact card。
+2. `## 关于对方（display_name）` + Conversation card。
 3. `## 最近的对话` + `_format_history_lines(history, ctx.display_tz)`。
 4. “现在轮到你回复了，按要求输出 JSON。”
 
@@ -189,25 +189,25 @@ Bridge 收到即发，不做延迟。
 
 文件：`studio/distill/pipeline.py`。
 
-模型：一个 job = `contact_ids`（1..N）+ 可选 `target_persona_id`。**只有一条代码路径，没有 scope 枚举、没有按粒度分叉。** 唯一的条件是"是否设置了 target persona"：
+模型：一个 job = `conversation_ids`（1..N）+ 可选 `target_persona_id`。**只有一条代码路径，没有 scope 枚举、没有按粒度分叉。** 唯一的条件是"是否设置了 target persona"：
 
 - 设置了 → 同一组 fold 同时累积写入该 persona 的 `persona_md`。
 - 为 None（单粉丝关系卡刷新）→ fold 输出的 Persona 段被丢弃，persona 不动。
 
-`contact_ids` 长度 1 = 单粉丝刷新；长度 N = 建人设。两者走完全相同的迭代。
+`conversation_ids` 长度 1 = 单粉丝刷新；长度 N = 建人设。两者走完全相同的迭代。
 
 当前流程：
 
 1. `_load_ctx(target_persona_id, provider_config_id)`：persona 可选——设置了才查 Persona 拿 `persona_name` 和 `display_tz`，否则 `persona_id=None`、`persona_name=""`、`display_tz="UTC"`。始终校验 Provider active 且有 API key。**不再加载 Inbox**（character_wxid 按每个 contact 的 inbox 查）。
-2. `run_distill(contact_ids, target_persona_id, provider_config_id, ...)` 遍历传入的 `contact_ids`（过滤掉不存在 / 无消息 / 无 window 的）。
-3. 每个 runnable Contact：
+2. `run_distill(conversation_ids, target_persona_id, provider_config_id, ...)` 遍历传入的 `conversation_ids`（过滤掉不存在 / 无消息 / 无 window 的）。
+3. 每个 runnable Conversation：
    - 读取消息，按 timestamp/id 升序；
-   - `_fold_contact()` 内查 contact 所属 Inbox 的 `platform_self_id` 作为 `character_wxid`；
+   - `_fold_conversation()` 内查 contact 所属 Inbox 的 `platform_self_id` 作为 `character_wxid`；
    - `_messages_to_text_messages(msgs, ctx.display_tz)`；
    - split sessions；pack windows；顺序 fold 每个 window。
-4. `_fold_contact()` 每个 window 调一次 LLM。
+4. `_fold_conversation()` 每个 window 调一次 LLM。
 5. `_parse_fold_output()` 提取 `Character Persona` 和 `Contact Card` 两段。
-6. 解析到内容时：始终覆盖 `Contact.card_md`；仅当 `ctx.persona_id` 非空时才覆盖 `Persona.persona_md`。
+6. 解析到内容时：始终覆盖 `Conversation.card_md`；仅当 `ctx.persona_id` 非空时才覆盖 `Persona.persona_md`。
 7. 每次 LLM 调用写 `LlmLog(purpose='distill')`，`persona_id` 可为 null，`inbox_id` 取该 contact 的 inbox。
 8. progress callback 更新 contacts/windows 计数（`contacts_total` 为 runnable contact 数）。
 

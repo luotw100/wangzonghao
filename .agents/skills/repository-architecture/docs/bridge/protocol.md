@@ -1,337 +1,197 @@
-# Bridge ↔ Studio Protocol / Bridge 协议
+# Bridge ↔ Studio Protocol
 
-所有 endpoint 都在 Studio 的 `/api/bridge/*` 下。
+所有 endpoint 都在 Studio 的 `/api/bridge/*` 下。**协议 v2，共 8 个端点。**
 
 ## 认证模型
 
-handshake 只做一件事：用 Studio 账号密码换 **account session token**，与浏览器登录共用同一张 `auth_sessions` 表。session 只是 `(token → account, expires_at)`，不携带任何客户端判别字段。Bridge 身份不在 token 里——由认证出的 account + daemon 每次请求带的 `X-Machine-Id` 头在服务端解析出 Bridge 行。`handshake` 是唯一接受密码的端点，其余 `/api/bridge/*` 全部 Bearer token 鉴权（含 channel 注册）。
+handshake 用 Studio 账号密码换 account session token，与浏览器登录共用同一张 `auth_sessions` 表。Bridge 身份由 token 解出的 account + 请求头 `X-Machine-Id` 在 Studio 端解析出 Bridge 行（`(account_id, machine_id)` 唯一）。
 
-1. Bridge 登录时用户输入 Studio username/password；可带本地持久化 `machine_id`。
-2. Bridge 调 handshake。
-3. Studio 校验账号密码与 active 状态。
-4. 带 `machine_id` 则按 `(account_id, machine_id)` 查已有 Bridge；没带（首次）则生成 `machine_id` 并创建新 Bridge。
-5. Studio 创建并返回新 account session token + `bridge_id` + `machine_id` + `account_id`。handshake 不注册任何 Inbox。
-6. Bridge 把 token 持久化到本地 0600 文件；Studio 密码用完即弃，绝不落盘。
-7. 后续所有请求带 `Authorization: Bearer {token}` 和 `X-Machine-Id: {machine_id}`，包括 `POST /api/bridge/inboxes` 注册 channel 集合。
-8. 重启直接复用持久化的 token，无需密码、无需重新 handshake。仅当 token 被撤销/失效（401）才重新 `/login` 输密码。
+token 24h 滑动续期；改密码删除该 account 的所有 session（web + 所有 Bridge）。
 
-token 过期为 24h 滑动续期（每次请求碰到即续），与浏览器一致。session 撤销是 account 粒度的唯一安全控制：改密码会删除该 account 的全部 session（web 与所有 Bridge 一并失效）。撤销单个 Bridge 时只把该 Bridge 状态置为 `revoked`（不动 session），鉴权按 `(account, machine_id)` 解析到该行后因 `revoked` 拒绝，账号其他 session 不受影响；Bridge 下次调用收到 401。
+**machine_id 严格协议**：
+- 客户端首次启动不带 → Studio 生成 4 位短码并返回（`secrets.choice` 在 a-zA-Z0-9 范围抽，per-account 唯一）
+- 客户端带值且匹配现有 `(account, machine_id)` → 复用
+- 客户端带值但不识别 → **400 `machine_id_invalid`**，不再静默换发。Bridge 收到 400 应清本地 state.db 重试。
 
-## 消息类型
+## 端点全集
 
-Bridge 协议支持多种消息类型。`msg_type` 字段值：`text | image | audio | video | file`。
+| # | Method | Path | 鉴权 |
+|---|---|---|---|
+| 1 | POST | `/api/bridge/handshake` | 账密 |
+| 2 | POST | `/api/bridge/inboxes` | Bearer + Machine-Id |
+| 3 | GET  | `/api/bridge/inboxes` | Bearer + Machine-Id |
+| 4 | POST | `/api/bridge/heartbeat` | Bearer + Machine-Id |
+| 5 | POST | `/api/bridge/incoming` | Bearer + Machine-Id |
+| 6 | GET  | `/api/bridge/outbound` | Bearer + Machine-Id |
+| 7 | POST | `/api/bridge/conversations` | Bearer + Machine-Id |
+| 8 | GET  | `/api/bridge/takeovers` | Bearer + Machine-Id |
 
-- **text**：`content` 为纯文本。
-- **image / audio / video / file**：`content` 为 Studio S3 的 storage key（格式 `media/{bridge_id}/{uuid}`），媒体二进制数据通过 Studio S3 流转。
+---
 
-媒体数据流向：Inbound 时 Bridge 从平台 S3 下载 → 上传到 Studio S3 → 用 Studio storage key 替换 content；Outbound 时 Bridge 从 Studio S3 下载 → 上传到平台 S3 → 发送。
+## 1. `POST /api/bridge/handshake`
 
-## `POST /api/bridge/handshake`
-
-登录端点：密码进，token 出。不注册任何 Inbox。
-
-### Request
+密码换 token。不注册任何 inbox。
 
 ```json
-{
-  "username": "demo",
-  "password": "demo123",
-  "machine_id": "m_xxxxxxxxxxxx"
-}
+// in
+{ "username": "linxiaoman", "password": "...", "machine_id": "RU9d" }
+// out
+{ "token": "...", "account_id": "acc_...", "username": "linxiaoman", "machine_id": "RU9d" }
 ```
 
-`machine_id` 可选；首次启动不带。
+- `machine_id` 可空（首次启动）。Studio 生成新值。
+- `machine_id` 不空但不识别 → `400 {"detail": "machine_id_invalid"}`。
+- 响应**不含 `bridge_id`**——客户端不需要这字段，去掉以避免内部 id 渗透。
+- 账密错 → 401。
 
-### Studio 当前行为
-
-1. 校验 Studio account username/password，且 account status 必须是 active。
-2. 带 `machine_id` 则按 `(account_id, machine_id)` 查已有 Bridge；没带（首次）生成新 `machine_id`（`m_` + uuid hex 前 12 字符）并创建新 Bridge。
-3. 标记 Bridge online，更新 `last_seen_at`。
-4. 调 `create_auth_session(db, account)` 生成 account session token，插入 `auth_sessions`，commit。
-
-### Response
+## 2. `POST /api/bridge/inboxes` — 注册当前 channel 集合
 
 ```json
-{
-  "token": "opaque-session-token",
-  "bridge_id": "br_xxxxxxxx",
-  "machine_id": "m_xxxxxxxxxxxx",
-  "account_id": "acc_xxxxxxxx"
-}
-```
-
-## `POST /api/bridge/inboxes`
-
-Token 鉴权（Bearer Bridge session token）。注册/刷新本 Bridge 服务的 channel 集合。Daemon 每次启动都调一次，用户加/删 channel 时也调。无密码——token 即证明账号。
-
-### Request
-
-```json
+// in
 {
   "inboxes": [
-    { "platform": "chat", "platform_self_id": "acct_alice" }
+    { "platform": "chat", "platform_self_id": "acct_xxx", "display_name": "林小漫" }
+  ]
+}
+// out
+{
+  "inboxes": [
+    { "id": "ib_...", "platform": "chat", "platform_self_id": "acct_xxx", "display_name": "林小漫" }
   ]
 }
 ```
 
-### Studio 当前行为
+按 `(account_id, platform, platform_self_id)` upsert Inbox；存在则绑当前 `bridge_id` 并刷新 `display_name`。**`display_name` 由 Bridge 上报**（chat 上即用户昵称），Studio 不再编 `f"{self_id}@{platform}"`。
 
-1. 从 token 解出 `bridge`，取 `bridge.account_id`。
-2. 选当前账号下第一个 active Persona 作为新 Inbox 默认 Persona。
-3. 对每个上报的平台身份：
-   - 按 `(account_id, platform, platform_self_id)` 查 Inbox；
-   - 存在则绑定当前 `bridge_id`；
-   - 不存在则创建 Inbox，display name `{platform_self_id}@{platform}`，enabled=true，provider=null，default persona 为上一步选到的或 null。
-4. 对 served inboxes 计算 outbound cursor：最新非 pending outbound id。
-5. commit 并返回 served inboxes + cursor。
+响应无 `cursor`——outbound 模型已无游标。
 
-### Response
+## 3. `GET /api/bridge/inboxes` — 查当前 channel 集合
 
 ```json
-{
-  "inboxes": [
-    {
-      "id": "ib_xxxxxxxx",
-      "platform": "chat",
-      "platform_self_id": "acct_alice",
-      "display_name": "acct_alice@chat",
-      "enabled": true,
-      "default_persona_id": "ps_xxxxxxxx"
-    }
-  ],
-  "cursor": 0,
-  "no_persona": false
-}
+// out
+{ "inboxes": [ /* 同 #2 响应中的 InboxView */ ] }
 ```
 
-## `POST /api/bridge/heartbeat`
+Bridge 想在不重新 register 的情况下检测 Studio 侧变化（如管理员手动解绑 inbox），就调这个。
 
-### Auth
-
-Bearer account session token + `X-Machine-Id` 头。
-
-### 当前行为
-
-- 用 token hash 查 `auth_sessions`；不存在、已过期或 account 非 active 时拒绝。
-- 无 `X-Machine-Id` 时拒绝；按 `(account_id, X-Machine-Id)` 查 Bridge。
-- Bridge 不存在或 revoked 时拒绝。
-- 续期 session `expires_at`（now + 24h）。
-- 如果 Bridge status 不是 online，则置为 online。
-- 更新 Bridge `last_seen_at`。
-- 返回当前 `Inbox.bridge_id == bridge.id` 的 Inbox 列表。
-
-### Response
+## 4. `POST /api/bridge/heartbeat` — 纯心跳
 
 ```json
-{
-  "inboxes": [
-    {
-      "id": "ib_xxxxxxxx",
-      "platform": "chat",
-      "platform_self_id": "acct_alice",
-      "display_name": "acct_alice@chat",
-      "enabled": true,
-      "default_persona_id": "ps_xxxxxxxx"
-    }
-  ]
-}
+// in
+{}
+// out
+{}
 ```
 
-Bridge 会停止本地存在但不在 response 中的 adapter。
+只更新 `bridge.last_seen_at`。所有派生信息（inbox 列表等）请走专用端点。
 
-## `POST /api/bridge/incoming`
-
-### Request
+## 5. `POST /api/bridge/incoming`
 
 ```json
+// in
 {
   "messages": [
     {
-      "inbox_id": "ib_xxxxxxxx",
-      "peer_platform_id": "peer-id",
-      "peer_display_name": "粉丝名",
-      "platform_msg_id": "123",
-      "sender_id": "ct_xxxxxxxx",
-      "msg_type": "audio",
-      "content": "media/br_xxx/abc123.mp3",
-      "sent_at": "2026-05-09T12:00:00"
+      "inbox_id": "ib_...",
+      "platform_conversation_id": "c_xxx",
+      "client_id": "12345",
+      "sender_id": null,
+      "msg_type": "text",
+      "content": "你好",
+      "sent_at": "2026-05-22T05:50:00.000Z"
     }
   ]
 }
-```
-
-### 当前行为
-
-逐条处理：
-
-1. 校验 Inbox 存在、属于 Bridge account、且绑定到当前 Bridge。
-2. 不合法则 `rejected += 1`。
-3. 按 `(inbox_id, peer_platform_id)` upsert Contact。
-4. 新 Contact 字段：`persona_id = inbox.default_persona_id`；`takeover = False`；`reply_policy = disabled`；`pending_reply = False`；`status = active`。
-5. 主去重：计算 `msg_hash = sha256(contact_id \x00 sender_id \x00 sent_at_canonical \x00 msg_type \x00 content_for_hash)`，`content_for_hash` 对媒体消息使用 `content_hash` 字段；已有相同 `msg_hash` 则 `deduped += 1`。
-6. 次级去重（后向兼容）：若 `platform_msg_id` 存在，检查 `external_id = live:{platform_msg_id}` 是否已存在。
-7. 计算 `role = 'self'`（sender_id == inbox.platform_self_id）或 `'counterpart'`。
-8. 插入 `Message`（含 `msg_hash`、`msg_type`）。
-9. 媒体消息写入 `MediaHash(account_id, content_hash, storage_key)`（已有则跳过）。
-10. 更新 Contact last seen 和 updated_at。
-11. 如果 role 是 counterpart 且 inbox enabled 且 contact `reply_policy == 'autoreply'`，则置 `pending_reply=True`。
-12. `accepted += 1`。
-
-### Response
-
-```json
+// out
 { "accepted": 1, "deduped": 0, "rejected": 0 }
 ```
 
-## `GET /api/bridge/outbound?cursor=N&timeout=T`
+**关键设计**：
+- 仅引用 `(inbox_id, platform_conversation_id)`，**不携带 conversation 元信息**（kind、display_name、members 都归 #7 管）。
+- 找不到 Conversation 行 → Studio 当场创建**占位行**：`kind="unknown"`、`display_name=platform_conversation_id`、members 空、provider=种子。占位行被 #7 来时**原地更新**——消息从一开始就锚定在正确的 row，从不"挪窝"。
+- 去重键 `(conversation_id, client_id)`，UNIQUE 索引。client_id 由 adapter 决定形态：chat 用 platform `msg.id`；wechat 用官方 msg_id；fallback 让 adapter 自己 hash。Bridge 本地 `local_messages.client_id` 与 wire 同事实，不再各算各的 hash。
+- `sender_id IS NULL` 时 Studio 尝试匹配 `(conversation_id, content)` 的某条 PENDING outbound → 自动 `DELIVERED + delivered_at=now`。这是 outbound 状态推进的唯一通道（替代 ack endpoint）。
 
-### Auth
+`rejected`：找不到 inbox（inbox_id 不属于本 bridge）。
 
-Bearer Bridge session token。
-
-### 当前行为
-
-- 最多 long-poll `timeout` 秒，参数上限 60。
-- 每轮重新打开 DB session。
-- 计算当前 Bridge 绑定的 Inbox ids。
-- 查询 `OutboundMessage`：
-  - `inbox_id` 属于这些 Inbox；
-  - `id > cursor`；
-  - `status == pending`；
-  - `send_after <= now`。
-- 按 id 升序，limit 50。
-- 从 Contact 附加 `peer_platform_id`。
-- 有 payload 立即返回，否则 sleep 后重试。
-
-### Response
+## 6. `GET /api/bridge/outbound?timeout=T`
 
 ```json
+// out
 [
   {
-    "id": 123,
-    "inbox_id": "ib_xxxxxxxx",
-    "contact_id": "ct_xxxxxxxx",
-    "peer_platform_id": "peer-id",
-    "msg_type": "audio",
-    "content": "media/br_xxx/abc123.mp3",
-    "status": "pending",
-    "created_at": "...",
-    "delivered_at": null,
-    "failed_reason": null
+    "id": 7,
+    "inbox_id": "ib_...",
+    "platform_conversation_id": "c_xxx",
+    "msg_type": "text",
+    "content": "AI 回复"
   }
 ]
 ```
 
-## `POST /api/bridge/outbound/{outbound_id}/ack`
+长轮询。过滤：`inbox.bridge_id == self AND status=PENDING AND send_after <= now`，最多 50 条。超时返回 `[]`。
 
-### Request: sent
+**无 cursor，无 lease，无 ack**。
+- 每次拉全集（PENDING）→ Bridge 进程内维护 in-flight set 防同一轮重发。
+- 重启会重发；平台 dedup 兜底（不依赖 lease）。
+- 永久失败没有专用 endpoint；Studio 等 from_self 入站消息匹配掉就标 DELIVERED，匹配不上就一直 PENDING 直到操作员手动清理。
 
-```json
-{ "result": "sent", "platform_msg_id": "456" }
-```
+OutboundForBridge 字段刻意精简——Studio 内部状态（`status`/`created_at`/`delivered_at`/`failed_reason`）不外泄给 Bridge。
 
-### Request: failed
-
-```json
-{ "result": "failed", "reason": "platform send error" }
-```
-
-### 当前行为
-
-- 通过 OutboundMessage join Inbox，确认 outbound 属于当前 Bridge 绑定的 Inbox。
-- 找不到时 404。
-- 如果 status 已不是 pending，幂等返回当前 status。
-- `sent`：status 置 `delivered`，写 `delivered_at`。
-- `failed`：status 置 `failed`，写 `failed_reason`。
-
-### Response
+## 7. `POST /api/bridge/conversations` — conversation 元信息唯一源
 
 ```json
-{ "status": "delivered" }
+// in
+{
+  "inbox_id": "ib_...",
+  "conversations": [
+    {
+      "platform_conversation_id": "c_xxx",
+      "kind": "dm",
+      "display_name": "苏糖",
+      "members": [
+        { "peer_platform_id": "ct_zzz", "display_name": "苏糖" }
+      ]
+    }
+  ]
+}
+// out
+{ "upserted": 1 }
 ```
 
-## `POST /api/bridge/peers`
+Bridge 启动时调一次，之后**diff 触发**——`list_conversations()` 跟上次缓存的签名比对，有变化才调。**纯 upsert，不删**：payload 缺失的 conversation 留下不动（平台分页/限流可能让一次拉取不完整）。
 
-Bridge 上报登录 inbox 后发现的 peer 列表（会话目录），Studio 据此 upsert Contact 行，供前端展示全量会话列表而不依赖消息到达。
+ConversationMember 集是**全量覆盖**该 conversation 的成员（payload 里没出现的 member 被删）。
 
-### Request
+**与 #5 的边界**：
+- `/incoming` 只能创建占位行；占位 kind=`unknown`、members 空
+- `/conversations` 是 kind/display_name/members 的唯一可信源
+- 顺序无关：协议层接受任意顺序；Bridge 实现层"先 #7 再 #5"减小 placeholder 窗口
+
+## 8. `GET /api/bridge/takeovers`
 
 ```json
-{ "inbox_id": "ib_xxx", "peers": [{ "peer_platform_id": "peer-id", "display_name": "粉丝名" }] }
+// out
+{
+  "takeovers": [
+    { "inbox_id": "ib_...", "platform_conversation_id": "c_xxx" }
+  ]
+}
 ```
 
-### 当前行为
+返回 `bridge.id == self AND conv.takeover == true AND conv.status == active` 的所有 `(inbox_id, platform_conversation_id)`。**单位是 conversation 不是 peer**——DM 和群无差别。
 
-- 校验 inbox 属于当前 Bridge。
-- 对每个 peer：已有 Contact 时只更新 `display_name`；不存在时创建（`takeover=False`，`reply_policy=disabled`）。
-- 不覆盖已有 Contact 的 `takeover`/`reply_policy`。
+Bridge 用这个来过滤 `_consumer`：只把这些 conversation 的入站消息往 Studio 推（其它对话即使 Bridge 看到了也不送）。
 
-### Response
+---
 
-```json
-{ "upserted": 2 }
-```
+## 砍掉的 v1 端点
 
-## `GET /api/bridge/active-peers`
+- `POST /api/bridge/outbound/{id}/ack` — 不再需要，靠 #5 from_self 自动 DELIVERED
+- `POST /api/bridge/peers` — 合并进 #7 `/conversations`
+- `GET /api/bridge/active-peers` — 改名 #8 `/takeovers`（且单位升到 conversation）
+- `POST /api/bridge/media/presign-upload`
+- `POST /api/bridge/media/check-or-presign`
+- `GET /api/bridge/media/{key}` — 不属于 bridge daemon 协议
 
-查询当前 Bridge 绑定 inbox 下所有 `takeover=True` 的 Contact，Bridge runtime 用此结果决定哪些 peer 的消息要上传到 Studio。
-
-### Response
-
-```json
-{ "peers": [{ "inbox_id": "ib_xxx", "peer_platform_id": "peer-id" }] }
-```
-
-## `POST /api/bridge/media/check-or-presign`
-
-Bridge 上传媒体前调用。按 `content_hash` 查 `MediaHash` 表，若已存在直接返回 storage key（skip upload），否则生成新 storage key 和 presigned PUT URL。
-
-### Request
-
-```json
-{ "content_hash": "sha256:abcdef...", "filename": "voice.ogg", "mime_type": "audio/ogg" }
-```
-
-### Response（已存在）
-
-```json
-{ "status": "exists", "storage_key": "media/br_xxx/abc" }
-```
-
-### Response（新文件）
-
-```json
-{ "status": "new", "storage_key": "media/br_xxx/abc", "upload_url": "https://s3.../" }
-```
-
-## `POST /api/bridge/media/presign-upload`
-
-### Auth
-
-Bearer Bridge session token。
-
-### Request
-
-```json
-{ "filename": "voice.mp3", "mime_type": "audio/mp3" }
-```
-
-### Response
-
-```json
-{ "storage_key": "media/br_xxx/abc123", "upload_url": "https://s3.../" }
-```
-
-Bridge 拿到 `upload_url` 后 PUT 二进制数据，然后用 `storage_key` 作为 incoming message 的 `content`。
-
-## `GET /api/bridge/media/{storage_key}`
-
-### Auth
-
-Bearer Bridge session token。
-
-### 当前行为
-
-校验 `storage_key` 以 `media/{bridge.id}/` 开头（Bridge 只能访问自己上传的媒体），返回 302 重定向到 Studio S3 的 presigned GET URL。
-
-Bridge 用此端点下载媒体二进制数据以发送 outbound media message。
+媒体管线整体下线：当前 Bridge `send` 对非 text 抛 `PermanentError`，wire `msg_type` 字段保留但只允许 `text`，给未来留口。

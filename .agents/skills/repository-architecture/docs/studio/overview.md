@@ -41,7 +41,7 @@ services/studio/
         personas.py            ← Persona CRUD
         bridges.py             ← Bridge list + revoke
         inboxes.py             ← Inbox 操作（Inbox 创建仅通过 bridge handshake）
-        contacts.py            ← Contact + conversation endpoints
+        conversations.py        ← Conversation endpoints
         distill.py             ← Distill job endpoints
         bridge_protocol.py     ← Bridge daemon ↔ Studio protocol
   web/
@@ -104,7 +104,7 @@ services/studio/
 当前职责：
 
 - DistillScanner 扫 pending DistillJob。
-- ReplyScanner 扫 `pending_reply=True` Contact。
+- ReplyScanner 扫 takeover=true 且最近消息为对方的 Conversation。
 - 通过 ProviderClient 执行 LLM 调用。
 
 两个进程共享同一个 PostgreSQL 数据库。
@@ -113,7 +113,7 @@ services/studio/
 
 tab 导航：接管（默认） · 人设 · 设备
 
-- **接管**：Contact 级接管配置和消息预览。
+- **接管**：Conversation 级接管配置和消息预览。
 - **人设**：create/edit/delete Persona。
 - **设备**：Bridge 状态、快速启动命令和 revoke。
 - 改自己密码走左下角头像菜单的弹窗，没有独立设置 tab，也没有任何账号 / Provider 管理界面。

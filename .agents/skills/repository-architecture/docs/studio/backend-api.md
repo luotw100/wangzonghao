@@ -12,7 +12,7 @@
 - Serializers：`studio/serializers.py`。
 - 依赖：`studio/deps.py`。
 - Migration：`studio/migrate.py`（封装 Alembic `upgrade head`）。
-- Routers：`studio/routers/`（auth, accounts, providers, personas, bridges, inboxes, contacts, distill, bridge_protocol）。
+- Routers：`studio/routers/`（auth, accounts, providers, personas, bridges, inboxes, conversations, distill, bridge_protocol）。
 
 ## DB 初始化
 
@@ -56,7 +56,7 @@
 - `s_persona()`
 - `s_bridge()`
 - `s_inbox()`
-- `s_contact()`
+- `s_conversation()`
 - `s_message()`：包含 `msg_type` 字段。
 - `s_distill_job()`
 - `s_outbound()`：包含 `msg_type` 字段，可附加 `peer_platform_id`。
@@ -68,7 +68,7 @@
 - `get_account_persona()`。
 - `get_account_bridge()`。
 - `get_account_inbox()`。
-- `get_account_contact()`：Contact 通过 join Inbox 校验 account。
+- `get_account_conversation()`：Contact 通过 join Inbox 校验 account。
 
 ## Schemas
 
@@ -80,10 +80,10 @@
 - `OwnPasswordChange`。
 - `PersonaCreate`、`PersonaUpdate`。
 - `InboxUpdate`——Inbox 仅由 bridge handshake 自动创建，没有独立创建 schema。
-- `ContactUpdate`。
+- `ConversationUpdate`。
 - `DistillJobCreate`。
 - `OutboundCreate`：包含 `msg_type` 和 `content`。
-- Bridge protocol：`BridgeHandshakeInbox`、`BridgeHandshake`、`BridgeIncomingMessage`（含 `msg_type`）、`BridgeIncomingBatch`、`BridgeOutboundAck`、`BridgeMediaPresignRequest`。
+- Bridge protocol v2：`BridgeHandshake`、`BridgeInboxClaim`、`BridgeRegisterInboxes`、`BridgeIncomingMessage`、`BridgeIncomingBatch`、`BridgeConversationItem`、`BridgeConversationsUpsert`。无 ack / 媒体 schema。
 
 ## Web API endpoints
 
@@ -107,7 +107,7 @@ Studio 没有 admin 概念，没有任何账号管理 / Provider 管理的 Web A
 - `PUT /api/personas/{persona_id}`
 - `DELETE /api/personas/{persona_id}`
 
-Delete 当前在 Persona 被 Inbox default 或 Contact 引用时返回 409。
+Delete 当前在 Persona 被任一 Conversation 引用时返回 409。
 
 ### Bridges
 
@@ -127,21 +127,17 @@ Delete 当前在 Persona 被 Inbox default 或 Contact 引用时返回 409。
 - `GET /api/inboxes/{inbox_id}`
 - `PUT /api/inboxes/{inbox_id}`
 - `DELETE /api/inboxes/{inbox_id}`
-- `GET /api/inboxes/{inbox_id}/contacts`
-- `POST /api/inboxes/{inbox_id}/outbound`
-
 Inbox 仅由 Bridge handshake 自动 upsert 创建，没有 `POST /api/inboxes` 端点。UI 主要编辑默认值。
 
-`POST /api/inboxes/{inbox_id}/outbound` 是手工 seed outbound 的 debug endpoint。
+### Conversations
 
-### Contacts / Conversations
+- `GET /api/conversations[?inbox_id=...]` — 列表（带 latest_message、message_count、member_count）
+- `GET /api/conversations/{conversation_id}` — 详情（含 card_md + members）
+- `GET /api/conversations/{conversation_id}/messages?limit=N`
+- `PATCH /api/conversations/{conversation_id}` — 编辑 takeover/reply_policy/persona/display_name/card_md/status
+- `POST /api/conversations/{conversation_id}/outbound` — 手工 seed outbound (debug)
 
-- `GET /api/contacts/{contact_id}`
-- `GET /api/conversations`
-- `GET /api/contacts/{contact_id}/messages?limit=N`
-- `PUT /api/contacts/{contact_id}`
-
-`GET /api/conversations` 当前返回 Contact + Inbox + latest_message + message_count，并按 latest timestamp 或 contact updated_at 排序。
+`MessageRead` 含 computed `from_self = (sender_id IS NULL)`。
 
 ### Distill
 
@@ -149,19 +145,21 @@ Inbox 仅由 Bridge handshake 自动 upsert 创建，没有 `POST /api/inboxes` 
 - `POST /api/distill-jobs`
 - `GET /api/distill-jobs/{job_id}`
 
-`DistillJobCreate`：`contact_ids: list[str]`（非空）、`target_persona_id: str | None`、`provider_config_id: str | None`。Create 逻辑：dedup `contact_ids` 并逐个 `get_account_contact` 校验归属；job `account_id` 取首个 contact 所属 Inbox 的 account；设置了 `target_persona_id` 才校验 Persona 归属；拒绝与已有 pending/running job 的 `contact_ids` 有交集，或（指定了 persona 时）该 persona 已有 in-flight job。`provider_config_id` 可空；为空时解析全局默认 Provider。普通 user 不能显式指定 Provider。
+`DistillJobCreate`：`conversation_ids: list[str]`（非空）、`target_persona_id: str | None`。Create 逻辑：dedup `conversation_ids` 并逐个 `get_account_conversation` 校验归属；job `account_id` 取首个 conversation 所属 Inbox 的 account；设置了 `target_persona_id` 才校验 Persona 归属；拒绝与已有 pending/running job 的 `conversation_ids` 有交集，或（指定了 persona 时）该 persona 已有 in-flight job。Provider 取 `account.distill_provider_id`，无法在创建时指定。
 
 ## Bridge API
 
-Bridge protocol endpoints 见 `docs/bridge/protocol.md`。当前包含：
+详见 `docs/bridge/protocol.md`。v2 共 8 个端点：
 
 - `POST /api/bridge/handshake`
+- `POST/GET /api/bridge/inboxes`
 - `POST /api/bridge/heartbeat`
 - `POST /api/bridge/incoming`
 - `GET /api/bridge/outbound`
-- `POST /api/bridge/outbound/{outbound_id}/ack`
-- `POST /api/bridge/media/presign-upload` — Bridge 获取 Studio S3 上传 presigned URL
-- `GET /api/bridge/media/{storage_key}` — Bridge 获取 Studio S3 下载 presigned URL（302 redirect）
+- `POST /api/bridge/conversations`
+- `GET /api/bridge/takeovers`
+
+砍掉：`/peers`、`/active-peers`、`/outbound/{id}/ack`、`/media/*`。
 
 ## ProviderClient
 

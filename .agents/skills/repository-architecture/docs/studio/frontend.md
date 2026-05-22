@@ -25,7 +25,7 @@
 - `Persona`（含 `timezone: string`）
 - `Bridge`
 - `Inbox`
-- `Contact`（含 `takeover: boolean`、`reply_policy: 'disabled' | 'autoreply'`）
+- `Conversation`（含 `takeover: boolean`、`reply_policy: 'disabled' | 'autoreply'`）
 - `Message`
 - `ConversationSummary`
 - `DistillJob`
@@ -36,7 +36,7 @@
 - Personas：`getPersonas`、`getPersona`、`createPersona`（含 `timezone?`）、`updatePersona`（含 `timezone?`）、`deletePersona`。
 - Bridges：`getBridges`、`deleteBridge`。
 - Inboxes：`getInboxes`、`updateInbox`。
-- Contacts：`getConversations`、`getContactMessages`、`updateContact`。
+- Conversations：`getConversations`、`getConversation`、`getConversationMessages`、`updateConversation`。
 - Distill：`getDistillJobs`、`getDistillJob`、`createDistillJob`。
 
 ## Auth context 和 routes
@@ -98,9 +98,9 @@ State：
 3. selected contact 变化时拉 messages；messages 同样每 3 秒静默轮询。
 4. 按 `contact.takeover` 分为两组：`takenItems`（已接管）和 `availableItems`（未接管）。
 5. 左侧两个分区：
-   - **已接管**：`InboxGroup` 组件，富卡片（含消息预览、reply_policy chip），可选中进入 ContactDetail。
-   - **未接管**：简化行，每行有"接管"按钮（调 `updateContact(id, { takeover: true })`）；点击行也可以在右侧展示 ContactDetail 以便编辑。
-6. 右侧显示 ContactDetail（接管和未接管的 contact 均可选中展示）。
+   - **已接管**：`InboxGroup` 组件，富卡片（含消息预览、reply_policy chip），可选中进入 ConversationDetail。
+   - **未接管**：简化行，每行有"接管"按钮（调 `updateConversation(id, { takeover: true })`）；点击行也可以在右侧展示 ConversationDetail 以便编辑。
+6. 右侧显示 ConversationDetail（接管和未接管的 contact 均可选中展示）。
 
 分组：
 
@@ -115,7 +115,7 @@ Chip 三态：`takeover=false` → `未接管`；`takeover=true && reply_policy=
 
 - Inbox display name 和 platform。
 - Bridge status。
-- Contact list。
+- Conversation list。
 - 可展开 settings。
 
 本地 state：`showSettings`。
@@ -129,15 +129,15 @@ Chip 三态：`takeover=false` → `未接管`；`takeover=true && reply_policy=
 
 保存时调用 `api.updateInbox()`。
 
-## ContactDetail
+## ConversationDetail
 
-显示和编辑 Contact 接管配置：
+显示和编辑 Conversation 接管配置：
 
 - display name。
 - peer platform id。
 - Persona select。
 - autoreply switch。切换到 `autoreply` 前的 warning gate：若该 contact 没有 persona（或 persona `persona_md` 为空）或 `card_md` 为空，`confirm()` 警告"人设和关系卡缺一不可，自动回复不会真正生效"，取消则不 patch。
-- card markdown editor。下方一个「✶ 自动创建关系卡」按钮：调 `api.createDistillJob({ contact_ids: [contact.id], target_persona_id: null })`，后台从该粉丝全部聊天记录提取关系卡、不动人设；提交后显示 note，靠 3s 轮询自动刷新出新 `card_md`。
+- card markdown editor。下方一个「✶ 自动创建关系卡」按钮：调 `api.createDistillJob({ conversation_ids: [contact.id], target_persona_id: null })`，后台从该粉丝全部聊天记录提取关系卡、不动人设；提交后显示 note，靠 3s 轮询自动刷新出新 `card_md`。
 - recent messages。
 
 Provider 运行时恒为 CLI 维护的全局默认 Provider（前端不涉及 Provider 选择）。
@@ -148,7 +148,7 @@ Provider 运行时恒为 CLI 维护的全局默认 Provider（前端不涉及 Pr
 - Bridge online。
 - Persona 存在。
 
-保存通过 `onPatch()`，最终调用 `api.updateContact()`。
+保存通过 `onPatch()`，最终调用 `api.updateConversation()`。
 
 ## BridgesView (DevicesView)
 
@@ -162,7 +162,7 @@ Provider 运行时恒为 CLI 维护的全局默认 Provider（前端不涉及 Pr
 - 列出 Persona。
 - 页头两个入口：「✶ 自动创建」（主按钮）和「+ 手动新建」。
 - `CreatePersonaModal`（手动）：顶部有醒目提示卡片，引导改用自动创建（按钮回调 `onSwitchToAuto` 切到自动创建 modal）；其余 `name`、`persona_md`、`timezone` 字段调 `api.createPersona()`。
-- `AutoCreatePersonaModal`（自动创建即蒸馏入口）：输入人设 `name` + `timezone`；`api.getConversations()` 拉接管列表（`takeover` 的 contact），按 inbox 分组多选，默认全选，可整组全选/取消；提交时先 `api.createPersona({ persona_md: null })` 建空人设，再 `api.createDistillJob({ contact_ids, target_persona_id: persona.id })`。无进度条，后台执行。
+- `AutoCreatePersonaModal`（自动创建即蒸馏入口）：输入人设 `name` + `timezone`；`api.getConversations()` 拉接管列表（`takeover` 的 contact），按 inbox 分组多选，默认全选，可整组全选/取消；提交时先 `api.createPersona({ persona_md: null })` 建空人设，再 `api.createDistillJob({ conversation_ids, target_persona_id: persona.id })`。无进度条，后台执行。
 - Edit modal 调 `api.updatePersona()`，同样暴露 `timezone` 字段。
 - Delete 调 `api.deletePersona()`。
 - 设计取舍：persona 不做版本历史（用户建多个 persona 即可），card 单张直接覆盖——二者均可从 source-of-truth 消息重新蒸出，无需快照。

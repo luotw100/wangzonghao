@@ -1,15 +1,16 @@
-"""Distill pipeline: per-conversation rolling fold.
+"""蒸馏 Pipeline：逐会话滚动 fold，将对话历史提炼为 card_md / persona_md。
 
-A distill job is a list of conversations plus an optional target persona:
+流程：
+  run_distill(conversation_ids, target_persona_id, provider_config_id)
+    └─ 对每个 conversation 调用 _fold_conversation()
+         └─ 消息按 timestamp asc 排序（⚠ 不用 id，id 是插入顺序不代表时间）
+         └─ 拆分为 session → 打包为 window（token 上限 40k）
+         └─ 对每个 window 调用 LLM（fold prompt）→ 解析输出
+         └─ 写回 Conversation.card_md（对方画像）
+         └─ 若 target_persona_id 非空，同步写回 Persona.persona_md（人设）
 
-- Each conversation's messages are folded into that conversation's ``card_md``.
-- If ``target_persona_id`` is set, the same folds also accumulate into the
-  persona's ``persona_md``. If it is ``None`` the persona section of the fold
-  output is discarded — single-conversation card refresh must not redefine the
-  streamer's persona.
-
-There is exactly one code path. The only conditional is "is a persona target
-set". No scope enum, no per-granularity branching.
+一条代码路径，唯一条件分支是"是否指定了目标人设"。
+每次 fold 后立即写回 DB，下一个 window 基于最新的 card_md / persona_md 继续。
 """
 
 from __future__ import annotations
@@ -108,6 +109,8 @@ def _load_ctx(
 
 
 def _load_conversation_messages(db: ORMSession, conversation_id: str) -> List[Message]:
+    # 按真实发送时间升序排列（timestamp asc），id 仅作同 timestamp 时的稳定次序，
+    # 不参与时间语义判断。
     return (
         db.query(Message)
         .filter(Message.conversation_id == conversation_id)
@@ -204,6 +207,15 @@ async def _fold_conversation(
     progress_state: Dict[str, int],
     progress_cb: Optional[ProgressCb],
 ) -> None:
+    """对单个会话执行滚动 fold（多 window 串行处理）。
+
+    吃：该会话的全部消息（按 timestamp asc）→ 拆 session → 打包成 windows
+    吐（副作用）：
+      - 每处理完一个 window，立即写回 Conversation.card_md
+      - 若 ctx.persona_id 非空，同步更新 Persona.persona_md
+      - 每个 window 写一条 LlmLog 审计记录
+      - 调用 progress_cb 更新进度（供 DistillJob.progress 前端轮询）
+    """
     db = SessionLocal()
     try:
         conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
@@ -318,7 +330,15 @@ async def run_distill(
     request_timeout: float,
     progress_cb: Optional[ProgressCb] = None,
 ) -> None:
-    """Fold the given conversations into their cards; optionally into a persona."""
+    """蒸馏任务入口，由 DistillScanner 的 asyncio Task 调用。
+
+    吃：conversation_ids（去重后的列表）+ 可选 target_persona_id + provider_config_id
+    吐（副作用）：
+      - 对每个有消息的会话调用 _fold_conversation()
+      - 最终写回各会话的 card_md，以及（若有目标人设）persona_md
+      - 通过 progress_cb 回传 {conversations_total, conversations_done,
+        windows_total, windows_done}，供 DistillJob.progress 前端轮询
+    """
     db = SessionLocal()
     try:
         ctx = _load_ctx(

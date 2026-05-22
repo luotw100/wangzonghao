@@ -1,15 +1,18 @@
-"""LLM reply brain.
+"""LLM 自动回复脑（Reply Brain）。
 
-The ReplyScanner derives "needs reply" each tick by joining Conversation +
-the latest Message: a conversation is pending iff its latest message is
-from the counterpart (sender_id IS NOT NULL) and that message's timestamp
-is newer than the conversation's last_reply_round_at. A reply round —
-whether it queued outbound, emitted silence, errored, or was skipped by a
-gate — always bumps last_reply_round_at so the loop terminates.
+整体流程：
+  ReplyScanner（runtime.py）每 2s 调用 list_pending_conversation_ids() 获取待回复会话，
+  对每个会话并发运行 maybe_reply()：
+    _decide()       → 多重门限检查，通过后构建 LLM 请求上下文
+    ProviderClient  → 调 LLM，得到 JSON 格式回复
+    OutboundMessage → 按打字节奏写入发送队列，Bridge 长轮询后发出
 
-Per the v2 schema: "self vs counterpart" is derived from
-``Message.sender_id IS NULL`` (NULL = self). There is no separate role
-column anymore.
+"是否需要回复"的判断依据（均按 Message.timestamp 比较，不用 id）：
+  latest message 来自对方（sender_id IS NOT NULL）
+  且 latest.timestamp > conversation.last_reply_round_at（或 last_reply_round_at 为 NULL）
+每一轮无论结果如何，结束时都会更新 last_reply_round_at 防止死循环。
+
+安静期（QUIET_SECONDS）：对方刚发完消息时不立即回，等待对方可能继续输入。
 """
 
 from __future__ import annotations
@@ -46,13 +49,16 @@ from studio.models import (
 logger = logging.getLogger(__name__)
 
 
+# 安静期：对方最后一条消息后等待此秒数，避免对方连续输入时打断
 QUIET_SECONDS = 6
+# 传入 LLM 的历史消息条数上限（按 timestamp desc 取最近 N 条，再翻转为升序）
 HISTORY_TAIL = 60
 
-TYPING_CHARS_PER_SECOND = 6.0
-TYPING_MIN_DELAY = 1.0
-TYPING_MAX_DELAY = 12.0
-THINK_DELAY = 1.5
+# 打字节奏模拟参数——决定各条 OutboundMessage 的 send_after 间隔
+TYPING_CHARS_PER_SECOND = 6.0   # 打字速度（字符/秒），用于估算每条消息的打字时长
+TYPING_MIN_DELAY = 1.0           # 每条消息打字延迟最小值（秒）
+TYPING_MAX_DELAY = 12.0          # 每条消息打字延迟最大值（秒）
+THINK_DELAY = 1.5                # 第一条消息前的"思考"延迟（秒）
 
 
 SYSTEM_INSTRUCTION = """\
@@ -112,6 +118,23 @@ class _ReplyDecision:
 
 
 def _decide(db: ORMSession, conversation_id: str) -> _ReplyDecision:
+    """多重门限检查，决定是否触发本轮 LLM 回复。
+
+    吃：conversation_id
+    吐：_ReplyDecision
+      - skip_reason 非空 → 跳过，调用方仍会 bump last_reply_round_at（安静期除外）
+      - ctx 非空         → 通过所有门限，可以调 LLM
+
+    门限依次为：
+      1. conversation status=active
+      2. reply_policy=autoreply
+      3. inbox 存在
+      4. provider 存在且有 api_key
+      5. persona_id 非空且 persona 存在
+      6. 历史消息非空
+      7. 最新消息（按 timestamp）来自对方（sender_id IS NOT NULL）
+      8. 最新消息时间距现在 >= QUIET_SECONDS（安静期）
+    """
     conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if not conv:
         return _ReplyDecision("conversation 不存在", None, [])
@@ -237,7 +260,18 @@ def _mark_round_done(db: ORMSession, conversation_id: str) -> None:
 
 
 async def maybe_reply(provider: ProviderClient, conversation_id: str) -> str:
-    """Run one reply attempt for one conversation."""
+    """对单个会话执行一次回复尝试。由 ReplyScanner 的 asyncio Task 调用。
+
+    吃：ProviderClient（共享 HTTP 连接池）+ conversation_id
+    吐：str 状态描述（供日志）；副作用：
+        - 向 outbound_messages 写入若干条 OutboundMessage（打字节奏模拟）
+        - 写入 LlmLog 审计记录
+        - 更新 Conversation.last_reply_round_at（结束本轮，防止 scanner 重复触发）
+
+    打字节奏：第一条加 THINK_DELAY，后续每条按上一条字数 / TYPING_CHARS_PER_SECOND 估算，
+    并裁剪到 [TYPING_MIN_DELAY, TYPING_MAX_DELAY]。
+    每条 OutboundMessage.send_after 递增，Bridge 到时才会拉取到该行。
+    """
     db = SessionLocal()
     try:
         decision = _decide(db, conversation_id)
@@ -356,9 +390,15 @@ async def maybe_reply(provider: ProviderClient, conversation_id: str) -> str:
 
 
 def list_pending_conversation_ids() -> List[str]:
-    """Conversations that need a reply: status=active, reply_policy=autoreply,
-    persona configured, and latest message is from counterpart (sender_id IS
-    NOT NULL) with timestamp > last_reply_round_at (or NULL).
+    """查询当前需要触发 LLM 回复的会话 ID 列表。由 ReplyScanner 每轮调用。
+
+    筛选条件：
+      status=active + reply_policy=autoreply + persona_id IS NOT NULL
+      + 最新消息（按 timestamp MAX）来自对方（sender_id IS NOT NULL）
+      + 最新消息 timestamp > last_reply_round_at（或 last_reply_round_at 为 NULL）
+
+    ⚠ "最新消息"用 MAX(timestamp) 确定，不用 MAX(id)，因为 id 是插入顺序，
+      不代表真实发送时间。历史导入等场景下 id 最大的消息未必是时间最新的。
     """
     db = SessionLocal()
     try:

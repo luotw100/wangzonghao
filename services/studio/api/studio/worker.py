@@ -1,3 +1,10 @@
+"""Studio worker 进程入口。
+
+独立运行的异步进程，与 API 进程分开部署。
+启动 StudioRuntime，内含 DistillScanner 和 ReplyScanner 两个 asyncio 协程扫描器。
+通过 --request-timeout 传入 LLM 请求超时时间（秒）。
+"""
+
 import argparse
 import asyncio
 import logging

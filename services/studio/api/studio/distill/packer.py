@@ -1,31 +1,45 @@
-"""Split plain text messages into sessions and pack into windows."""
+"""将消息列表拆分为 session，再打包成 LLM 处理窗口（Window）。
+
+两步处理：
+  1. split_sessions：按时间间隔（SESSION_GAP_SECONDS）将消息序列切割成多个 session
+     （同一 session 内消息间隔 ≤ 30 分钟，不同 session 之间有较长间隔）
+  2. pack_windows：将 session 顺序填入 Window，每个 Window 不超过 WINDOW_TOKEN_LIMIT 个 token
+     不跨 Window 分割 session（session 是最小打包单元）
+
+⚠ 输入消息必须按 timestamp 排好序后再传入，packer 本身不排序。
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
-SESSION_GAP_SECONDS = 30 * 60  # 30 minutes
+# 超过此时间间隔（秒）的相邻消息视为两个不同 session
+SESSION_GAP_SECONDS = 30 * 60  # 30 分钟
+
+# 每个 Window 的 token 上限（粗估），超出则新开一个 Window
 WINDOW_TOKEN_LIMIT = 40_000
 
-# Rough token estimate: 1 Chinese char ≈ 0.6 tokens, 1 ASCII char ≈ 0.25 tokens
-# For mixed Chinese text, ~2 chars per token is a safe approximation
+# Token 估算：中英文混合取 2 字符/token（中文约 0.6 token/字，ASCII 约 0.25 token/字）
 CHARS_PER_TOKEN = 2
 
 
 @dataclass
 class TextMessage:
-    """A single parsed text message."""
+    """单条已解析的文本消息，timestamp 是真实发送时间（不是 DB id 顺序）。"""
 
     timestamp: datetime
-    sender: str
+    sender: str     # "我" 或 "对方"
     content: str
-    raw_line: str
+    raw_line: str   # 原始格式化行，用于 token 估算和 Window 渲染
 
 
 @dataclass
 class Window:
-    """A window of messages for L1 processing."""
+    """一个发送给 LLM fold 的消息窗口，包含若干完整 session。
+
+    window_id 从 1 起，顺序递增（不代表时间顺序以外的任何语义）。
+    """
 
     window_id: int
     sessions: list[list[TextMessage]] = field(default_factory=list)
@@ -102,7 +116,10 @@ def parse_text_lines(lines: list[str]) -> list[TextMessage]:
 
 
 def split_sessions(messages: list[TextMessage]) -> list[list[TextMessage]]:
-    """Split messages into sessions by time gap."""
+    """按时间间隔（SESSION_GAP_SECONDS）将消息序列切割成 session 列表。
+
+    输入必须已按 timestamp 升序排列。相邻消息间隔 > SESSION_GAP_SECONDS 时产生新 session。
+    """
     if not messages:
         return []
     sessions: list[list[TextMessage]] = []
@@ -125,7 +142,11 @@ def _estimate_tokens(messages: list[TextMessage]) -> int:
 
 
 def pack_windows(sessions: list[list[TextMessage]]) -> list[Window]:
-    """Pack sessions into windows, no overlap."""
+    """将 session 列表顺序打包成 Window 列表，每个 Window 不超过 WINDOW_TOKEN_LIMIT token。
+
+    不跨 Window 分割 session（session 是最小单元）。
+    若单个 session 本身就超过 token 限制，仍单独成一个 Window（不截断内容）。
+    """
     if not sessions:
         return []
 

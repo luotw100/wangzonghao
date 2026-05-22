@@ -1,4 +1,12 @@
-"""FastAPI dependencies, auth helpers, ownership checks, and ID generation."""
+"""FastAPI 依赖注入、鉴权辅助、资源归属校验、ID 生成。
+
+核心依赖：
+  CurrentAccountDep — 从 Authorization: Bearer <token> 解析当前 Web 用户，滑动续期 24h
+  BridgeDep         — 从 Authorization + X-Machine-Id 解析当前 Bridge daemon，同一 session 表
+
+所有 get_account_* 辅助函数在校验 account_id 归属的同时做 404 处理，
+路由层直接调用，不需要额外的权限检查。
+"""
 
 from datetime import timedelta
 from typing import Annotated, Optional

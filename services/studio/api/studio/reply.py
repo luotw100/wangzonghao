@@ -51,8 +51,6 @@ logger = logging.getLogger(__name__)
 
 # 安静期：对方最后一条消息后等待此秒数，避免对方连续输入时打断
 QUIET_SECONDS = 6
-# 传入 LLM 的历史消息条数上限（按 timestamp desc 取最近 N 条，再翻转为升序）
-HISTORY_TAIL = 60
 
 # 打字节奏模拟参数——决定各条 OutboundMessage 的 send_after 间隔
 TYPING_CHARS_PER_SECOND = 6.0   # 打字速度（字符/秒），用于估算每条消息的打字时长
@@ -84,8 +82,14 @@ SYSTEM_INSTRUCTION = """\
 - 可以反问、岔开、主动分享自己的事。
 - 不要每轮都试图推进议程。
 
+## 历史格式
+对话历史里每条消息都是 JSON：{"t": "MM-DD HH:MM", "messages": ["...", "..."]}
+- t 是这一轮的发送时间（对方所在时区），用来感知节奏和时间。
+- messages 是该轮按顺序拆出的多条聊天内容。
+- 图片/音频/视频/文件等非文本消息会以 [图片] / [音频] / [视频] / [文件] 占位出现在 messages 里。
+
 ## 输出
-你的回复必须是合法 JSON 对象，不要输出任何其他内容：
+你的回复必须是合法 JSON 对象，不要输出任何其他内容，也不要输出 t 字段：
 
 {"messages": ["第一条", "第二条"]}
 
@@ -159,11 +163,9 @@ def _decide(db: ORMSession, conversation_id: str) -> _ReplyDecision:
     history = (
         db.query(Message)
         .filter(Message.conversation_id == conv.id)
-        .order_by(Message.timestamp.desc(), Message.id.desc())
-        .limit(HISTORY_TAIL)
+        .order_by(Message.timestamp.asc(), Message.id.asc())
         .all()
     )
-    history.reverse()
     if not history:
         return _ReplyDecision("没有可用历史", None, [])
 
@@ -193,40 +195,73 @@ def _decide(db: ORMSession, conversation_id: str) -> _ReplyDecision:
     return _ReplyDecision(None, ctx, history)
 
 
-def _format_history_lines(history: List[Message], display_tz: str) -> str:
-    try:
-        tz = ZoneInfo(display_tz)
-    except (ZoneInfoNotFoundError, KeyError):
-        tz = ZoneInfo("UTC")
-    _MEDIA_LABELS = {
-        "image": "[图片]",
-        "audio": "[音频]",
-        "video": "[视频]",
-        "file": "[文件]",
-    }
-    lines: List[str] = []
-    for m in history:
-        speaker = "我" if m.sender_id is None else "对方"
-        ts = m.timestamp.astimezone(tz).strftime("%m-%d %H:%M")
-        msg_type = getattr(m, "msg_type", "text") or "text"
-        if msg_type == "text":
-            content = m.content.replace("\n", " ").strip()
-        else:
-            label = _MEDIA_LABELS.get(msg_type, f"[{msg_type}]")
-            content = label
-        lines.append(f"[{ts}] {speaker}: {content}")
-    return "\n".join(lines)
+_MEDIA_LABELS = {
+    "image": "[图片]",
+    "audio": "[音频]",
+    "video": "[视频]",
+    "file": "[文件]",
+}
 
 
-def _build_user_message(ctx: _ReplyCtx, history: List[Message]) -> str:
-    parts: List[str] = []
+def _msg_content(m: Message) -> str:
+    msg_type = getattr(m, "msg_type", "text") or "text"
+    if msg_type == "text":
+        return (m.content or "").replace("\n", " ").strip()
+    return _MEDIA_LABELS.get(msg_type, f"[{msg_type}]")
+
+
+def _build_system_message(ctx: _ReplyCtx) -> str:
+    """system = 行为守则 + 你是谁 + 对方是谁。"""
+    parts: List[str] = [SYSTEM_INSTRUCTION]
     if ctx.persona_md.strip():
         parts.append(f"## 你的人设\n{ctx.persona_md.strip()}")
     if ctx.card_md.strip():
         parts.append(f"## 关于对方（{ctx.conversation_display_name}）\n{ctx.card_md.strip()}")
-    parts.append(f"## 最近的对话\n{_format_history_lines(history, ctx.display_tz)}")
-    parts.append("现在轮到你回复了，按要求输出 JSON。")
     return "\n\n".join(parts)
+
+
+def _build_history_turns(history: List[Message], display_tz: str) -> List[dict]:
+    """把消息流拼成 user/assistant 交替的 turn 列表。
+
+    - 同一 sender 连续的消息合并成一个 turn。
+    - 每个 turn 的 content 是 JSON: {"t": "MM-DD HH:MM", "messages": [...]}。
+      t 取该 turn 第一条消息的时间，按 persona 所在时区格式化。
+    - sender_id IS NULL = 主播本人 → assistant；否则 → user。
+    - 若历史第一个 turn 是 assistant，前面补一个空 user turn `{"messages": []}`
+      把对齐拉到 user 开头（OpenAI/Anthropic 都期望 system 后第一个非 system turn 是 user）。
+    """
+    try:
+        tz = ZoneInfo(display_tz)
+    except (ZoneInfoNotFoundError, KeyError):
+        tz = ZoneInfo("UTC")
+
+    groups: List[tuple[str, str, List[str]]] = []  # (role, t, msgs)
+    for m in history:
+        content = _msg_content(m)
+        if not content:
+            continue
+        role = "assistant" if m.sender_id is None else "user"
+        if groups and groups[-1][0] == role:
+            groups[-1][2].append(content)
+        else:
+            t = m.timestamp.astimezone(tz).strftime("%m-%d %H:%M")
+            groups.append((role, t, [content]))
+
+    turns: List[dict] = [
+        {
+            "role": role,
+            "content": json.dumps({"t": t, "messages": msgs}, ensure_ascii=False),
+        }
+        for role, t, msgs in groups
+    ]
+
+    if turns and turns[0]["role"] == "assistant":
+        turns.insert(
+            0,
+            {"role": "user", "content": json.dumps({"messages": []}, ensure_ascii=False)},
+        )
+
+    return turns
 
 
 def _parse_chunks(raw: str) -> List[str]:
@@ -303,8 +338,8 @@ async def maybe_reply(provider: ProviderClient, conversation_id: str) -> str:
         return "skip: latest message is not text (media unsupported)"
 
     request_messages = [
-        {"role": "system", "content": SYSTEM_INSTRUCTION},
-        {"role": "user", "content": _build_user_message(ctx, decision.history)},
+        {"role": "system", "content": _build_system_message(ctx)},
+        *_build_history_turns(decision.history, ctx.display_tz),
     ]
 
     try:

@@ -3,8 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import * as api from '../lib/api';
 import type {
   Bridge,
-  Contact,
-  ContactSummary,
+  Conversation,
   ConversationSummary,
   Inbox,
   Message,
@@ -291,7 +290,7 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
 }) {
   const [showTaken, setShowTaken] = useState(true);
   const [showAvailable, setShowAvailable] = useState(true);
-  const [items, setItems] = useState<ConversationSummary[]>([]);
+  const [items, setItems] = useState<api.ConversationListItem[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
@@ -302,9 +301,9 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
       const next = await api.getConversations();
       setItems(next);
       setSelectedId(previous => (
-        previous && next.some(item => item.contact.id === previous)
+        previous && next.some(item => item.conversation.id === previous)
           ? previous
-          : next[0]?.contact.id ?? null
+          : next[0]?.conversation.id ?? null
       ));
     } catch (err) {
       setError(String(err));
@@ -319,7 +318,7 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
     return () => clearInterval(id);
   }, [reload]);
 
-  const selected = items.find(item => item.contact.id === selectedId) ?? null;
+  const selected = items.find(item => item.conversation.id === selectedId) ?? null;
   const selectedInbox = useMemo(() => {
     if (!selected) return null;
     return inboxes.find(inbox => inbox.id === selected.inbox.id) ?? selected.inbox;
@@ -334,7 +333,7 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
       return;
     }
     try {
-      setMessages(await api.getContactMessages(selectedId));
+      setMessages(await api.getConversationMessages(selectedId));
     } catch (err) {
       setError(String(err));
     }
@@ -346,11 +345,11 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
     return () => clearInterval(id);
   }, [reloadMessages]);
 
-  const takenItems = useMemo(() => items.filter(item => item.contact.takeover), [items]);
-  const availableItems = useMemo(() => items.filter(item => !item.contact.takeover), [items]);
+  const takenItems = useMemo(() => items.filter(item => item.conversation.takeover), [items]);
+  const availableItems = useMemo(() => items.filter(item => !item.conversation.takeover), [items]);
 
-  const groupByInbox = (list: ConversationSummary[]) => {
-    const result: Record<string, ConversationSummary[]> = {};
+  const groupByInbox = (list: api.ConversationListItem[]) => {
+    const result: Record<string, api.ConversationListItem[]> = {};
     for (const item of list) {
       if (!result[item.inbox.id]) result[item.inbox.id] = [];
       result[item.inbox.id].push(item);
@@ -377,9 +376,9 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
     return ordered;
   }, [items, inboxes]);
 
-  const patchContact = async (contactId: string, patch: Parameters<typeof api.updateContact>[1]) => {
+  const patchConversation = async (conversationId: string, patch: Parameters<typeof api.updateConversation>[1]) => {
     try {
-      await api.updateContact(contactId, patch);
+      await api.updateConversation(conversationId, patch);
       await reload();
       await reloadMessages();
       await Promise.resolve(onChanged());
@@ -429,7 +428,7 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
                       personas={personas}
                       onChanged={onChanged}
                       onLocalRefresh={reload}
-                      onSetTakeover={(id, value) => patchContact(id, { takeover: value })}
+                      onSetTakeover={(id, value) => patchConversation(id, { takeover: value })}
                       setError={setError}
                     />
                   );
@@ -454,19 +453,19 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
                       <span className="ink-3" style={{ fontSize: 11 }}>{inbox.display_name}</span>
                       {convs.map((item, index) => (
                         <div
-                          key={item.contact.id}
+                          key={item.conversation.id}
                           style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '6px 0', borderBottom: index < convs.length - 1 ? '1px solid var(--line-subtle)' : 'none' }}
                         >
                           <button
                             className="card"
-                            style={{ flex: 1, textAlign: 'left', padding: '6px 8px', background: selectedId === item.contact.id ? 'var(--brass-soft)' : undefined, borderColor: selectedId === item.contact.id ? 'var(--brass-line)' : 'var(--line-subtle)' }}
-                            onClick={() => setSelectedId(item.contact.id)}
+                            style={{ flex: 1, textAlign: 'left', padding: '6px 8px', background: selectedId === item.conversation.id ? 'var(--brass-soft)' : undefined, borderColor: selectedId === item.conversation.id ? 'var(--brass-line)' : 'var(--line-subtle)' }}
+                            onClick={() => setSelectedId(item.conversation.id)}
                           >
-                            <span style={{ fontSize: 13 }}>{item.contact.display_name}</span>
+                            <span style={{ fontSize: 13 }}>{item.conversation.display_name}</span>
                           </button>
                           <button
                             className="btn btn-sm btn-primary"
-                            onClick={() => patchContact(item.contact.id, { takeover: true })}
+                            onClick={() => patchConversation(item.conversation.id, { takeover: true })}
                           >
                             + 接管
                           </button>
@@ -483,13 +482,13 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
             {!selected || !selectedInbox ? (
               <Empty>请从左侧选一个粉丝。</Empty>
             ) : (
-              <ContactDetail
-                contact={selected.contact}
+              <ConversationDetail
+                conversation={selected.conversation}
                 inbox={selectedInbox}
                 bridge={selectedBridge}
                 messages={messages}
                 personas={personas}
-                onPatch={patchContact}
+                onPatch={patchConversation}
               />
             )}
           </div>
@@ -502,13 +501,13 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
 function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, onSetTakeover }: {
   inbox: Inbox;
   bridge: Bridge | null;
-  conversations: ConversationSummary[];
+  conversations: api.ConversationListItem[];
   selectedId: string | null;
   onSelect: (id: string) => void;
   personas: PersonaSummary[];
   onChanged: ChangeHandler;
   onLocalRefresh: () => Promise<void>;
-  onSetTakeover: (contactId: string, value: boolean) => void;
+  onSetTakeover: (conversationId: string, value: boolean) => void;
   setError: (message: string) => void;
 }) {
   const online = bridge?.status === 'online';
@@ -531,32 +530,32 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, onSetT
         <div style={{ display: 'grid', gap: 6 }}>
           {conversations.map(item => (
             <div
-              key={item.contact.id}
+              key={item.conversation.id}
               className="card"
               style={{
                 padding: '8px 10px',
                 display: 'flex',
                 alignItems: 'center',
                 gap: 8,
-                borderColor: selectedId === item.contact.id ? 'var(--brass-line)' : 'var(--line-subtle)',
-                background: selectedId === item.contact.id ? 'var(--brass-soft)' : 'var(--bg-base)',
+                borderColor: selectedId === item.conversation.id ? 'var(--brass-line)' : 'var(--line-subtle)',
+                background: selectedId === item.conversation.id ? 'var(--brass-soft)' : 'var(--bg-base)',
               }}
             >
               <button
-                onClick={() => onSelect(item.contact.id)}
+                onClick={() => onSelect(item.conversation.id)}
                 style={{ flex: 1, minWidth: 0, textAlign: 'left', background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, color: 'inherit' }}
               >
                 <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'center' }}>
-                  <strong style={{ fontSize: 13 }}>{item.contact.display_name}</strong>
-                  {item.contact.reply_policy === 'autoreply'
+                  <strong style={{ fontSize: 13 }}>{item.conversation.display_name}</strong>
+                  {item.conversation.reply_policy === 'autoreply'
                     ? <span className="chip live">自动回复</span>
                     : <span className="chip muted">{item.message_count}</span>}
                 </div>
                 <div className="ink-2" style={{ fontSize: 12, marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {item.latest_message ? `${item.latest_message.role === 'self' ? '我' : '对方'}：${item.latest_message.content}` : '暂无消息'}
+                  {item.latest_message ? `${item.latest_message.from_self ? '我' : '对方'}：${item.latest_message.content}` : '暂无消息'}
                 </div>
                 <div className="ink-3" style={{ fontSize: 10, marginTop: 4 }}>
-                  {item.latest_message ? formatDateTime(item.latest_message.timestamp) : formatDateTime(item.contact.updated_at)}
+                  {item.latest_message ? formatDateTime(item.latest_message.timestamp) : formatDateTime(item.conversation.updated_at)}
                 </div>
               </button>
               <button
@@ -564,8 +563,8 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, onSetT
                 style={{ flex: '0 0 auto', color: 'var(--danger)' }}
                 title="不再由你接管这个粉丝"
                 onClick={() => {
-                  if (!confirm(`取消接管「${item.contact.display_name}」？取消后将停止自动回复。`)) return;
-                  onSetTakeover(item.contact.id, false);
+                  if (!confirm(`取消接管「${item.conversation.display_name}」？取消后将停止自动回复。`)) return;
+                  onSetTakeover(item.conversation.id, false);
                 }}
               >
                 取消接管
@@ -578,16 +577,16 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, onSetT
   );
 }
 
-function ContactDetail({ contact, inbox, bridge, messages, personas, onPatch }: {
-  contact: ContactSummary;
+function ConversationDetail({ conversation, inbox, bridge, messages, personas, onPatch }: {
+  conversation: ConversationSummary;
   inbox: Inbox;
   bridge: Bridge | null;
   messages: Message[];
   personas: PersonaSummary[];
-  onPatch: (contactId: string, patch: Parameters<typeof api.updateContact>[1]) => Promise<void>;
+  onPatch: (conversationId: string, patch: Parameters<typeof api.updateConversation>[1]) => Promise<void>;
 }) {
   // card_md 不在列表里，需要按 id 单独拉
-  const [full, setFull] = useState<Contact | null>(null);
+  const [full, setFull] = useState<Conversation | null>(null);
   const [draftCard, setDraftCard] = useState('');
   const [savingCard, setSavingCard] = useState(false);
   const [cardJobBusy, setCardJobBusy] = useState(false);
@@ -597,67 +596,67 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, onPatch }: 
     let alive = true;
     setFull(null);
     setDraftCard('');
-    api.getContact(contact.id).then(c => {
+    api.getConversation(conversation.id).then(c => {
       if (!alive) return;
       setFull(c);
       setDraftCard(c.card_md ?? '');
     }).catch(() => { /* ignore */ });
     return () => { alive = false; };
-  }, [contact.id, contact.updated_at]);
+  }, [conversation.id, conversation.updated_at]);
 
   // 同样按需拉当前 contact 绑定的 persona 详情（用于自动回复缺料检查）
   const [selectedPersona, setSelectedPersona] = useState<Persona | null>(null);
   useEffect(() => {
-    if (!contact.persona_id) { setSelectedPersona(null); return; }
+    if (!conversation.persona_id) { setSelectedPersona(null); return; }
     let alive = true;
-    api.getPersona(contact.persona_id).then(p => { if (alive) setSelectedPersona(p); }).catch(() => { /* ignore */ });
+    api.getPersona(conversation.persona_id).then(p => { if (alive) setSelectedPersona(p); }).catch(() => { /* ignore */ });
     return () => { alive = false; };
-  }, [contact.persona_id]);
+  }, [conversation.persona_id]);
 
   const currentCard = full?.card_md ?? '';
 
   const inboxLive = Boolean(bridge && bridge.status === 'online');
-  const canAutoreply = inboxLive && Boolean(contact.persona_id);
+  const canAutoreply = inboxLive && Boolean(conversation.persona_id);
 
   return (
     <div style={{ display: 'grid', gap: 14 }}>
       <div style={{ borderBottom: '1px solid var(--line-subtle)', paddingBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontWeight: 600, fontSize: 16 }}>{contact.display_name}</div>
+          <div style={{ fontWeight: 600, fontSize: 16 }}>{conversation.display_name}</div>
           <div className="ink-3" style={{ fontSize: 11, marginTop: 4 }}>
             来自 {inbox.display_name}（{inbox.platform}）
           </div>
         </div>
-        {contact.takeover ? (
+        {conversation.takeover ? (
           <button
             className="btn btn-sm btn-ghost"
             style={{ color: 'var(--danger)' }}
             onClick={() => {
-              if (!confirm(`取消接管「${contact.display_name}」？取消后将停止自动回复。`)) return;
-              onPatch(contact.id, { takeover: false });
+              if (!confirm(`取消接管「${conversation.display_name}」？取消后将停止自动回复。`)) return;
+              onPatch(conversation.id, { takeover: false });
             }}
           >
             取消接管
           </button>
         ) : (
-          <button className="btn btn-sm btn-primary" onClick={() => onPatch(contact.id, { takeover: true })}>
+          <button className="btn btn-sm btn-primary" onClick={() => onPatch(conversation.id, { takeover: true })}>
             + 接管
           </button>
         )}
       </div>
 
-      {contact.takeover && (
+      {conversation.takeover && (
       <div style={{ display: 'grid', gap: 8, padding: 12, background: 'var(--bg-raised)', borderRadius: 8, border: '1px solid var(--line-subtle)' }}>
         <div className="ink-3" style={{ fontSize: 11 }}>这个粉丝的接管设置</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
           <label style={{ fontSize: 11, color: 'var(--ink-3)' }}>
             人设
             <select
-              value={contact.persona_id ?? ''}
+              value={conversation.persona_id ?? ''}
               className="select"
               style={{ marginLeft: 6 }}
               onChange={event => {
-                if (event.target.value) onPatch(contact.id, { persona_id: event.target.value });
+                if (event.target.value) onPatch(conversation.id, { persona_id: event.target.value });
               }}
             >
               <option value="">（未选）</option>
@@ -667,19 +666,19 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, onPatch }: 
           <label style={{ fontSize: 11, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 6 }}>
             回复方式
             <select
-              value={contact.reply_policy}
-              disabled={!canAutoreply && contact.reply_policy !== 'autoreply'}
+              value={conversation.reply_policy}
+              disabled={!canAutoreply && conversation.reply_policy !== 'autoreply'}
               onChange={event => {
                 const next = event.target.value as 'disabled' | 'autoreply';
                 if (next === 'autoreply') {
-                  const hasPersona = Boolean(contact.persona_id && selectedPersona?.persona_md && selectedPersona.persona_md.trim());
+                  const hasPersona = Boolean(conversation.persona_id && selectedPersona?.persona_md && selectedPersona.persona_md.trim());
                   const hasCard = Boolean(currentCard && currentCard.trim());
                   if (!hasPersona || !hasCard) {
                     const missing = [hasPersona ? null : '人设', hasCard ? null : '关系备注'].filter(Boolean).join(' 和 ');
                     if (!confirm(`还缺${missing}（两样都要有才能自动回复）。可以去「人设」页自动生成。仍要开启自动回复吗？`)) return;
                   }
                 }
-                onPatch(contact.id, { reply_policy: next });
+                onPatch(conversation.id, { reply_policy: next });
               }}
               style={{ fontSize: 11 }}
             >
@@ -692,7 +691,7 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, onPatch }: 
           <div style={{ fontSize: 11, color: 'var(--warn)' }}>
             {!bridge && '— 这个账号没有在线的设备；'}
             {bridge && bridge.status !== 'online' && `— 设备「${bridge.machine_id}」当前离线；`}
-            {!contact.persona_id && '— 还没选人设；'}
+            {!conversation.persona_id && '— 还没选人设；'}
             目前无法自动回复。
           </div>
         )}
@@ -715,7 +714,7 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, onPatch }: 
               setCardJobBusy(true);
               setCardJobNote('');
               try {
-                await api.createDistillJob({ contact_ids: [contact.id], target_persona_id: null });
+                await api.createDistillJob({ conversation_ids: [conversation.id], target_persona_id: null });
                 setCardJobNote('已开始，正在后台读聊天记录整理关系备注，稍后会自动刷新。');
               } catch (err) {
                 setCardJobNote(String(err));
@@ -738,7 +737,7 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, onPatch }: 
               onClick={async () => {
                 setSavingCard(true);
                 try {
-                  await onPatch(contact.id, { card_md: draftCard });
+                  await onPatch(conversation.id, { card_md: draftCard });
                   setFull(prev => prev ? { ...prev, card_md: draftCard } : prev);
                 } finally {
                   setSavingCard(false);
@@ -760,16 +759,16 @@ function ContactDetail({ contact, inbox, bridge, messages, personas, onPatch }: 
       ) : (
         <div style={{ display: 'grid', gap: 8, maxHeight: '52dvh', overflow: 'auto', paddingRight: 4 }}>
           {messages.map(message => (
-            <div key={message.id} style={{ display: 'flex', justifyContent: message.role === 'self' ? 'flex-end' : 'flex-start' }}>
+            <div key={message.id} style={{ display: 'flex', justifyContent: message.from_self ? 'flex-end' : 'flex-start' }}>
               <div style={{ maxWidth: '76%' }}>
-                <div className="mono ink-3" style={{ fontSize: 10, textAlign: message.role === 'self' ? 'right' : 'left', marginBottom: 3 }}>
-                  {message.role === 'self' ? '我' : contact.display_name} · {formatDateTime(message.timestamp)}
+                <div className="mono ink-3" style={{ fontSize: 10, textAlign: message.from_self ? 'right' : 'left', marginBottom: 3 }}>
+                  {message.from_self ? '我' : conversation.display_name} · {formatDateTime(message.timestamp)}
                 </div>
                 <div
                   style={{
                     padding: '8px 10px',
                     borderRadius: 12,
-                    background: message.role === 'self' ? 'var(--brass-soft)' : 'var(--bg-raised)',
+                    background: message.from_self ? 'var(--brass-soft)' : 'var(--bg-raised)',
                     border: '1px solid var(--line-subtle)',
                     whiteSpace: 'pre-wrap',
                     overflowWrap: 'anywhere',
@@ -1026,7 +1025,7 @@ function AutoCreatePersonaModal({ onClose, onSubmitted, setError }: {
 }) {
   const [name, setName] = useState('');
   const [tz, setTz] = useState('Asia/Shanghai');
-  const [items, setItems] = useState<ConversationSummary[]>([]);
+  const [items, setItems] = useState<api.ConversationListItem[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -1035,9 +1034,9 @@ function AutoCreatePersonaModal({ onClose, onSubmitted, setError }: {
     (async () => {
       try {
         const next = await api.getConversations();
-        const taken = next.filter(item => item.contact.takeover);
+        const taken = next.filter(item => item.conversation.takeover);
         setItems(taken);
-        setSelected(new Set(taken.map(item => item.contact.id)));
+        setSelected(new Set(taken.map(item => item.conversation.id)));
       } catch (err) {
         setError(String(err));
       } finally {
@@ -1047,7 +1046,7 @@ function AutoCreatePersonaModal({ onClose, onSubmitted, setError }: {
   }, [setError]);
 
   const grouped = useMemo(() => {
-    const result: Record<string, { inbox: ConversationSummary['inbox']; rows: ConversationSummary[] }> = {};
+    const result: Record<string, { inbox: api.ConversationListItem['inbox']; rows: api.ConversationListItem[] }> = {};
     for (const item of items) {
       if (!result[item.inbox.id]) result[item.inbox.id] = { inbox: item.inbox, rows: [] };
       result[item.inbox.id].rows.push(item);
@@ -1071,7 +1070,7 @@ function AutoCreatePersonaModal({ onClose, onSubmitted, setError }: {
         name: name.trim(), persona_md: null, timezone: tz.trim() || 'UTC',
       });
       await api.createDistillJob({
-        contact_ids: Array.from(selected),
+        conversation_ids: Array.from(selected),
         target_persona_id: persona.id,
       });
       await Promise.resolve(onSubmitted());
@@ -1105,7 +1104,7 @@ function AutoCreatePersonaModal({ onClose, onSubmitted, setError }: {
                 <button
                   className="btn btn-sm btn-ghost"
                   onClick={() => {
-                    const ids = group.rows.map(r => r.contact.id);
+                    const ids = group.rows.map(r => r.conversation.id);
                     const allOn = ids.every(id => selected.has(id));
                     setSelected(prev => {
                       const next = new Set(prev);
@@ -1114,20 +1113,20 @@ function AutoCreatePersonaModal({ onClose, onSubmitted, setError }: {
                     });
                   }}
                 >
-                  {group.rows.every(r => selected.has(r.contact.id)) ? '取消整组' : '全选整组'}
+                  {group.rows.every(r => selected.has(r.conversation.id)) ? '取消整组' : '全选整组'}
                 </button>
               </div>
               {group.rows.map(item => (
                 <label
-                  key={item.contact.id}
+                  key={item.conversation.id}
                   style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, padding: '3px 0', cursor: 'pointer' }}
                 >
                   <input
                     type="checkbox"
-                    checked={selected.has(item.contact.id)}
-                    onChange={() => toggle(item.contact.id)}
+                    checked={selected.has(item.conversation.id)}
+                    onChange={() => toggle(item.conversation.id)}
                   />
-                  <span style={{ flex: 1 }}>{item.contact.display_name}</span>
+                  <span style={{ flex: 1 }}>{item.conversation.display_name}</span>
                   <span className="mono ink-3" style={{ fontSize: 11 }}>{item.message_count} 条</span>
                 </label>
               ))}

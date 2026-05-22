@@ -22,7 +22,7 @@ from studio.routers import (  # noqa: E402
     auth,
     bridge_protocol,
     bridges,
-    contacts,
+    conversations,
     distill,
     inboxes,
     personas,
@@ -32,6 +32,6 @@ app.include_router(auth.router)
 app.include_router(personas.router)
 app.include_router(bridges.router)
 app.include_router(inboxes.router)
-app.include_router(contacts.router)
+app.include_router(conversations.router)
 app.include_router(distill.router)
 app.include_router(bridge_protocol.router)

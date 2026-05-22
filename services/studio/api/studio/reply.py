@@ -1,24 +1,24 @@
 """LLM reply brain.
 
-The ReplyScanner derives "needs reply" each tick by joining Contact + the
-latest Message: a contact is pending iff its latest message is from the
-counterpart and that message's timestamp is newer than the contact's
-last_reply_round_at. A reply *round* — whether it queued outbound, emitted
-silence, errored, or was skipped by a gate — always bumps last_reply_round_at
-so the loop terminates.
+The ReplyScanner derives "needs reply" each tick by joining Conversation +
+the latest Message: a conversation is pending iff its latest message is
+from the counterpart (sender_id IS NOT NULL) and that message's timestamp
+is newer than the conversation's last_reply_round_at. A reply round —
+whether it queued outbound, emitted silence, errored, or was skipped by a
+gate — always bumps last_reply_round_at so the loop terminates.
+
+Per the v2 schema: "self vs counterpart" is derived from
+``Message.sender_id IS NULL`` (NULL = self). There is no separate role
+column anymore.
 """
 
 from __future__ import annotations
 
 import json
 import logging
-import random
-import struct
-import uuid
-import zlib
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Dict, List, Optional
+from typing import List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from sqlalchemy import func
@@ -27,15 +27,14 @@ from sqlalchemy.orm import Session as ORMSession
 from studio.clients import ProviderClient
 from studio.db import SessionLocal, utc_now
 from studio.enums import (
-    ContactStatus,
+    ConversationStatus,
     LlmPurpose,
-    MessageRole,
     OutboundMessageType,
     OutboundStatus,
     ReplyPolicy,
 )
 from studio.models import (
-    Contact,
+    Conversation,
     Inbox,
     LlmLog,
     Message,
@@ -43,7 +42,6 @@ from studio.models import (
     Persona,
     ProviderConfig,
 )
-from studio.s3 import s3_get, s3_put
 
 logger = logging.getLogger(__name__)
 
@@ -94,8 +92,8 @@ SYSTEM_INSTRUCTION = """\
 
 @dataclass(frozen=True)
 class _ReplyCtx:
-    contact_id: str
-    contact_display_name: str
+    conversation_id: str
+    conversation_display_name: str
     persona_name: str
     persona_md: str
     card_md: str
@@ -108,37 +106,36 @@ class _ReplyCtx:
 
 @dataclass(frozen=True)
 class _ReplyDecision:
-    skip_reason: Optional[str]   # None => proceed
+    skip_reason: Optional[str]
     ctx: Optional[_ReplyCtx]
     history: List[Message]
 
 
-def _decide(db: ORMSession, contact_id: str) -> _ReplyDecision:
-    """Re-validate every gate in one transaction; return a decision."""
-    contact = db.query(Contact).filter(Contact.id == contact_id).first()
-    if not contact:
-        return _ReplyDecision("contact 不存在", None, [])
-    if contact.status != ContactStatus.ACTIVE:
-        return _ReplyDecision("contact archived", None, [])
-    if contact.reply_policy != ReplyPolicy.AUTOREPLY:
+def _decide(db: ORMSession, conversation_id: str) -> _ReplyDecision:
+    conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+    if not conv:
+        return _ReplyDecision("conversation 不存在", None, [])
+    if conv.status != ConversationStatus.ACTIVE:
+        return _ReplyDecision("conversation archived", None, [])
+    if conv.reply_policy != ReplyPolicy.AUTOREPLY:
         return _ReplyDecision("reply_policy is not autoreply", None, [])
 
-    inbox = db.query(Inbox).filter(Inbox.id == contact.inbox_id).first()
+    inbox = db.query(Inbox).filter(Inbox.id == conv.inbox_id).first()
     if not inbox:
         return _ReplyDecision("inbox 不存在", None, [])
-    pc = db.query(ProviderConfig).filter(ProviderConfig.id == contact.provider_id).first()
+    pc = db.query(ProviderConfig).filter(ProviderConfig.id == conv.provider_id).first()
     if not pc or not pc.api_key:
         return _ReplyDecision("provider 缺失或没 api_key", None, [])
 
-    if not contact.persona_id:
-        return _ReplyDecision("contact 未配置 persona", None, [])
-    persona = db.query(Persona).filter(Persona.id == contact.persona_id).first()
+    if not conv.persona_id:
+        return _ReplyDecision("conversation 未配置 persona", None, [])
+    persona = db.query(Persona).filter(Persona.id == conv.persona_id).first()
     if not persona:
         return _ReplyDecision("persona 不存在", None, [])
 
     history = (
         db.query(Message)
-        .filter(Message.contact_id == contact.id)
+        .filter(Message.conversation_id == conv.id)
         .order_by(Message.timestamp.desc(), Message.id.desc())
         .limit(HISTORY_TAIL)
         .all()
@@ -148,19 +145,22 @@ def _decide(db: ORMSession, contact_id: str) -> _ReplyDecision:
         return _ReplyDecision("没有可用历史", None, [])
 
     latest = max(history, key=lambda m: m.timestamp)
-    if latest.role != MessageRole.COUNTERPART:
-        return _ReplyDecision("最近一条不是对方", None, history)
+    if latest.sender_id is None:
+        # NULL sender_id = self. We don't reply to ourselves.
+        return _ReplyDecision("最近一条是自己发的", None, history)
 
     seconds_since = (utc_now() - latest.timestamp).total_seconds()
     if seconds_since < QUIET_SECONDS:
-        return _ReplyDecision(f"等静默期（{seconds_since:.0f}/{QUIET_SECONDS}s）", None, history)
+        return _ReplyDecision(
+            f"等静默期（{seconds_since:.0f}/{QUIET_SECONDS}s）", None, history
+        )
 
     ctx = _ReplyCtx(
-        contact_id=contact.id,
-        contact_display_name=contact.display_name,
+        conversation_id=conv.id,
+        conversation_display_name=conv.display_name,
         persona_name=persona.name,
         persona_md=persona.persona_md or "",
-        card_md=contact.card_md or "",
+        card_md=conv.card_md or "",
         base_url=pc.base_url,
         api_key=pc.api_key,
         model=pc.model,
@@ -183,7 +183,7 @@ def _format_history_lines(history: List[Message], display_tz: str) -> str:
     }
     lines: List[str] = []
     for m in history:
-        speaker = "我" if m.role == MessageRole.SELF else "对方"
+        speaker = "我" if m.sender_id is None else "对方"
         ts = m.timestamp.astimezone(tz).strftime("%m-%d %H:%M")
         msg_type = getattr(m, "msg_type", "text") or "text"
         if msg_type == "text":
@@ -200,7 +200,7 @@ def _build_user_message(ctx: _ReplyCtx, history: List[Message]) -> str:
     if ctx.persona_md.strip():
         parts.append(f"## 你的人设\n{ctx.persona_md.strip()}")
     if ctx.card_md.strip():
-        parts.append(f"## 关于对方（{ctx.contact_display_name}）\n{ctx.card_md.strip()}")
+        parts.append(f"## 关于对方（{ctx.conversation_display_name}）\n{ctx.card_md.strip()}")
     parts.append(f"## 最近的对话\n{_format_history_lines(history, ctx.display_tz)}")
     parts.append("现在轮到你回复了，按要求输出 JSON。")
     return "\n\n".join(parts)
@@ -229,165 +229,27 @@ def _parse_chunks(raw: str) -> List[str]:
     return out
 
 
-def _mark_round_done(db: ORMSession, contact_id: str) -> None:
-    """Bump last_reply_round_at so the scanner won't pick this contact up
-    again until a *new* counterpart message arrives.
-    """
-    c = db.query(Contact).filter(Contact.id == contact_id).first()
+def _mark_round_done(db: ORMSession, conversation_id: str) -> None:
+    c = db.query(Conversation).filter(Conversation.id == conversation_id).first()
     if c:
         c.last_reply_round_at = utc_now()
         c.updated_at = c.last_reply_round_at
 
 
-_MEDIA_TYPE_LABELS = {
-    "image": "图片",
-    "audio": "音频",
-    "video": "视频",
-    "file": "文件",
-}
-
-
-def _detect_media_format(data: bytes) -> str:
-    if data[:4] == b'\x89PNG':
-        return "png"
-    if data[:3] == b'\xff\xd8\xff':
-        return "jpg"
-    if data[:4] == b'GIF8':
-        return "gif"
-    if data[:4] == b'RIFF' and len(data) >= 12 and data[8:12] == b'WEBP':
-        return "webp"
-    if data[:2] == b'\xff\xfb' or data[:3] == b'ID3':
-        return "mp3"
-    if len(data) >= 12 and data[4:8] == b'ftyp':
-        return "mp4"
-    if data[:4] == b'%PDF':
-        return "pdf"
-    return "unknown"
-
-
-def _format_file_size(size_bytes: int) -> str:
-    if size_bytes < 1024:
-        return f"{size_bytes:,} Bytes"
-    elif size_bytes < 1024 * 1024:
-        return f"{size_bytes / 1024:.1f} KB"
-    else:
-        return f"{size_bytes / (1024 * 1024):.1f} MB"
-
-
-def _make_solid_png(width: int, height: int, r: int, g: int, b: int) -> bytes:
-    sig = b'\x89PNG\r\n\x1a\n'
-    ihdr_data = struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)
-    ihdr_crc = zlib.crc32(b'IHDR' + ihdr_data) & 0xffffffff
-    ihdr = struct.pack('>I', 13) + b'IHDR' + ihdr_data + struct.pack('>I', ihdr_crc)
-    raw_rows = b''.join(b'\x00' + bytes([r, g, b]) * width for _ in range(height))
-    compressed = zlib.compress(raw_rows)
-    idat_crc = zlib.crc32(b'IDAT' + compressed) & 0xffffffff
-    idat = struct.pack('>I', len(compressed)) + b'IDAT' + compressed + struct.pack('>I', idat_crc)
-    iend_crc = zlib.crc32(b'IEND') & 0xffffffff
-    iend = struct.pack('>I', 0) + b'IEND' + struct.pack('>I', iend_crc)
-    return sig + ihdr + idat + iend
-
-
-def _handle_media_reply(ctx: _ReplyCtx, history: List[Message]) -> str:
-    latest = history[-1]
-    storage_key = latest.content
-    msg_type = latest.msg_type or "file"
-    type_label = _MEDIA_TYPE_LABELS.get(msg_type, msg_type)
-
-    data: Optional[bytes] = None
-    file_size = 0
-    file_ext = "unknown"
-    try:
-        data = s3_get(storage_key)
-        file_size = len(data)
-        file_ext = _detect_media_format(data)
-    except Exception as exc:
-        logger.warning("media reply: failed to download %s: %s", storage_key, exc)
-
-    size_str = _format_file_size(file_size)
-    text_content = f"收到一条{type_label}消息，文件大小{size_str}，文件类型为{file_ext}"
-
-    r, g, b = random.randint(0, 255), random.randint(0, 255), random.randint(0, 255)
-    png_data = _make_solid_png(128, 128, r, g, b)
-
-    now_ts = utc_now()
+async def maybe_reply(provider: ProviderClient, conversation_id: str) -> str:
+    """Run one reply attempt for one conversation."""
     db = SessionLocal()
     try:
-        inbox = db.query(Inbox).filter(Inbox.id == ctx.inbox_id).first()
-        bridge_id = inbox.bridge_id if inbox else None
-
-        img_storage_key: Optional[str] = None
-        if bridge_id:
-            img_storage_key = f"media/{bridge_id}/{uuid.uuid4().hex}.png"
-            try:
-                s3_put(img_storage_key, png_data, "image/png")
-            except Exception as exc:
-                logger.warning("media reply: failed to upload test image: %s", exc)
-                img_storage_key = None
-
-        db.add(OutboundMessage(
-            inbox_id=ctx.inbox_id,
-            contact_id=ctx.contact_id,
-            msg_type=OutboundMessageType.TEXT,
-            content=text_content,
-            send_after=now_ts + timedelta(seconds=THINK_DELAY),
-            status=OutboundStatus.PENDING,
-            delivered_at=None,
-            failed_reason="",
-            created_at=now_ts,
-        ))
-
-        if img_storage_key:
-            db.add(OutboundMessage(
-                inbox_id=ctx.inbox_id,
-                contact_id=ctx.contact_id,
-                msg_type=OutboundMessageType.IMAGE,
-                content=img_storage_key,
-                send_after=now_ts + timedelta(seconds=THINK_DELAY + 2),
-                status=OutboundStatus.PENDING,
-                delivered_at=None,
-                failed_reason="",
-                created_at=now_ts,
-            ))
-
-        db.add(LlmLog(
-            purpose=LlmPurpose.REPLY,
-            persona_id=None,
-            inbox_id=ctx.inbox_id,
-            request_messages=json.dumps({"type": "media_test_reply", "storage_key": storage_key, "msg_type": msg_type}),
-            response_raw=json.dumps({"text": text_content, "image_key": img_storage_key, "color": [r, g, b], "file_size": file_size, "file_ext": file_ext}),
-            model="media_test",
-            created_at=now_ts,
-        ))
-
-        _mark_round_done(db, ctx.contact_id)
-        db.commit()
-        return f"media_reply: text='{text_content}' image={'sent' if img_storage_key else 'skipped'}"
-
-    except Exception as exc:
-        db.rollback()
-        logger.error("media reply db commit failed for contact %s: %s", ctx.contact_id, exc)
-        return f"media_reply_error: {exc}"
-    finally:
-        db.close()
-
-
-async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
-    """Run one reply attempt for one contact. Returns a short status string for logging."""
-    db = SessionLocal()
-    try:
-        decision = _decide(db, contact_id)
+        decision = _decide(db, conversation_id)
     finally:
         db.close()
 
     if decision.skip_reason:
         if decision.skip_reason.startswith("等静默期"):
-            # Don't mark round done — re-check next tick when quiet expires.
             return decision.skip_reason
-        # Permanent skip (gate failed). Mark round done so we don't loop.
         db = SessionLocal()
         try:
-            _mark_round_done(db, contact_id)
+            _mark_round_done(db, conversation_id)
             db.commit()
         finally:
             db.close()
@@ -397,7 +259,14 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
     assert ctx is not None
 
     if decision.history and decision.history[-1].msg_type != "text":
-        return _handle_media_reply(ctx, decision.history)
+        # Media reply path removed in v2 — bridge can't dispatch media yet.
+        db = SessionLocal()
+        try:
+            _mark_round_done(db, conversation_id)
+            db.commit()
+        finally:
+            db.close()
+        return "skip: latest message is not text (media unsupported)"
 
     request_messages = [
         {"role": "system", "content": SYSTEM_INSTRUCTION},
@@ -409,15 +278,21 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
             ctx.base_url, ctx.api_key, ctx.model, request_messages
         )
     except Exception as exc:
-        logger.error("Reply LLM call failed for contact %s: %s", contact_id, exc)
+        logger.error("Reply LLM call failed for conversation %s: %s", conversation_id, exc)
         db = SessionLocal()
         try:
-            db.add(LlmLog(
-                purpose=LlmPurpose.REPLY, persona_id=None, inbox_id=ctx.inbox_id,
-                request_messages=json.dumps(request_messages, ensure_ascii=False),
-                response_raw=f"ERROR: {exc}", model=ctx.model, created_at=utc_now(),
-            ))
-            _mark_round_done(db, contact_id)
+            db.add(
+                LlmLog(
+                    purpose=LlmPurpose.REPLY,
+                    persona_id=None,
+                    inbox_id=ctx.inbox_id,
+                    request_messages=json.dumps(request_messages, ensure_ascii=False),
+                    response_raw=f"ERROR: {exc}",
+                    model=ctx.model,
+                    created_at=utc_now(),
+                )
+            )
+            _mark_round_done(db, conversation_id)
             db.commit()
         finally:
             db.close()
@@ -425,17 +300,26 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
 
     db = SessionLocal()
     try:
-        db.add(LlmLog(
-            purpose=LlmPurpose.REPLY, persona_id=None, inbox_id=ctx.inbox_id,
-            request_messages=json.dumps(request_messages, ensure_ascii=False),
-            response_raw=response_text, model=ctx.model, created_at=utc_now(),
-        ))
+        db.add(
+            LlmLog(
+                purpose=LlmPurpose.REPLY,
+                persona_id=None,
+                inbox_id=ctx.inbox_id,
+                request_messages=json.dumps(request_messages, ensure_ascii=False),
+                response_raw=response_text,
+                model=ctx.model,
+                created_at=utc_now(),
+            )
+        )
         try:
             chunks = _parse_chunks(response_text)
         except Exception as exc:
-            logger.warning("Reply parse failed for contact %s: %s; raw=%s",
-                           contact_id, exc, response_text[:300].replace("\n", "\\n").replace("\r", "\\r"))
-            _mark_round_done(db, contact_id)
+            logger.warning(
+                "Reply parse failed for conversation %s: %s; raw=%s",
+                conversation_id, exc,
+                response_text[:300].replace("\n", "\\n").replace("\r", "\\r"),
+            )
+            _mark_round_done(db, conversation_id)
             db.commit()
             return f"parse_error: {exc}"
 
@@ -450,7 +334,7 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
                     send_after = send_after + timedelta(seconds=delay)
                 ob = OutboundMessage(
                     inbox_id=ctx.inbox_id,
-                    contact_id=ctx.contact_id,
+                    conversation_id=ctx.conversation_id,
                     msg_type=OutboundMessageType.TEXT,
                     content=ch,
                     send_after=send_after,
@@ -464,52 +348,57 @@ async def maybe_reply(provider: ProviderClient, contact_id: str) -> str:
         else:
             status = "model returned empty (intentional silence)"
 
-        _mark_round_done(db, contact_id)
+        _mark_round_done(db, conversation_id)
         db.commit()
         return status
     finally:
         db.close()
 
 
-def list_pending_contact_ids() -> List[str]:
-    """Derive "needs reply" contacts: status=active, reply_policy=autoreply,
-    persona configured, and latest message is from counterpart with
-    timestamp > last_reply_round_at (or NULL).
+def list_pending_conversation_ids() -> List[str]:
+    """Conversations that need a reply: status=active, reply_policy=autoreply,
+    persona configured, and latest message is from counterpart (sender_id IS
+    NOT NULL) with timestamp > last_reply_round_at (or NULL).
     """
     db = SessionLocal()
     try:
         latest_ts = (
             db.query(
-                Message.contact_id.label("cid"),
+                Message.conversation_id.label("cid"),
                 func.max(Message.timestamp).label("ts"),
             )
-            .group_by(Message.contact_id)
+            .group_by(Message.conversation_id)
             .subquery()
         )
         rows = (
-            db.query(Contact.id, latest_ts.c.ts, Message.role)
-            .join(latest_ts, latest_ts.c.cid == Contact.id)
+            db.query(Conversation.id, latest_ts.c.ts, Message.sender_id)
+            .join(latest_ts, latest_ts.c.cid == Conversation.id)
             .join(
                 Message,
-                (Message.contact_id == Contact.id)
+                (Message.conversation_id == Conversation.id)
                 & (Message.timestamp == latest_ts.c.ts),
             )
             .filter(
-                Contact.status == ContactStatus.ACTIVE,
-                Contact.reply_policy == ReplyPolicy.AUTOREPLY,
-                Contact.persona_id.is_not(None),
+                Conversation.status == ConversationStatus.ACTIVE,
+                Conversation.reply_policy == ReplyPolicy.AUTOREPLY,
+                Conversation.persona_id.is_not(None),
             )
             .all()
         )
         out: List[str] = []
         seen: set[str] = set()
-        for cid, ts, role in rows:
+        for cid, ts, sender_id in rows:
             if cid in seen:
                 continue
             seen.add(cid)
-            if role != MessageRole.COUNTERPART:
+            if sender_id is None:
+                # Latest is self — not waiting on us.
                 continue
-            c = db.query(Contact.last_reply_round_at).filter(Contact.id == cid).first()
+            c = (
+                db.query(Conversation.last_reply_round_at)
+                .filter(Conversation.id == cid)
+                .first()
+            )
             last = c[0] if c else None
             if last is None or last < ts:
                 out.append(cid)

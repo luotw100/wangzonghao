@@ -7,7 +7,7 @@ from studio.clients import ALLOWED_BASE_URLS
 from studio.db import get_db, utc_now
 from studio.deps import new_id, pick_first_provider
 from studio.enums import AccountStatus
-from studio.models import Account, Contact, Inbox, Persona, ProviderConfig
+from studio.models import Account, Conversation, Inbox, Persona, ProviderConfig
 
 
 def _table(headers: list[str], rows: list[list]) -> str:
@@ -173,12 +173,12 @@ def delete_provider(args: argparse.Namespace) -> None:
         p = db.query(ProviderConfig).filter(ProviderConfig.id == args.id).first()
         if not p:
             raise SystemExit(f"provider not found: {args.id}")
-        contact_refs = db.query(Contact).filter(Contact.provider_id == p.id).count()
+        conv_refs = db.query(Conversation).filter(Conversation.provider_id == p.id).count()
         account_refs = db.query(Account).filter(Account.distill_provider_id == p.id).count()
-        if contact_refs or account_refs:
+        if conv_refs or account_refs:
             raise SystemExit(
-                f"provider {p.id} is referenced by {contact_refs} contact(s) and "
-                f"{account_refs} account(s); reassign via set-contact-provider / "
+                f"provider {p.id} is referenced by {conv_refs} conversation(s) and "
+                f"{account_refs} account(s); reassign via set-conversation-provider / "
                 "set-distill-provider before deleting"
             )
         db.delete(p)
@@ -188,54 +188,57 @@ def delete_provider(args: argparse.Namespace) -> None:
         db.close()
 
 
-def list_contacts(args: argparse.Namespace) -> None:
+def list_conversations(args: argparse.Namespace) -> None:
     db = next(get_db())
     try:
         q = (
             db.query(
-                Contact, Account.username, Inbox.platform, Inbox.display_name,
+                Conversation, Account.username, Inbox.platform, Inbox.display_name,
                 Persona.name, ProviderConfig.name,
             )
-            .join(Inbox, Inbox.id == Contact.inbox_id)
+            .join(Inbox, Inbox.id == Conversation.inbox_id)
             .join(Account, Account.id == Inbox.account_id)
-            .join(ProviderConfig, ProviderConfig.id == Contact.provider_id)
-            .outerjoin(Persona, Persona.id == Contact.persona_id)
+            .join(ProviderConfig, ProviderConfig.id == Conversation.provider_id)
+            .outerjoin(Persona, Persona.id == Conversation.persona_id)
         )
         if args.account:
             account = db.query(Account).filter(Account.username == args.account).first()
             if not account:
                 raise SystemExit(f"account not found: {args.account}")
             q = q.filter(Inbox.account_id == account.id)
-        q = q.order_by(Account.username.asc(), Inbox.display_name.asc(), Contact.created_at.asc(), Contact.id.asc())
+        q = q.order_by(
+            Account.username.asc(), Inbox.display_name.asc(),
+            Conversation.created_at.asc(), Conversation.id.asc(),
+        )
 
         rows = []
         for c, username, platform, inbox_name, persona_name, provider_name in q.all():
             rows.append([
-                c.id, username, f"{platform}:{inbox_name}", c.display_name,
+                c.id, username, f"{platform}:{inbox_name}", c.kind, c.display_name,
                 persona_name or "", provider_name,
                 c.reply_policy, "Y" if c.takeover else "", c.status,
             ])
         print(_table(
-            ["id", "account", "inbox", "peer", "persona", "provider", "reply_policy", "takeover", "status"],
+            ["id", "account", "inbox", "kind", "name", "persona", "provider", "reply_policy", "takeover", "status"],
             rows,
         ))
     finally:
         db.close()
 
 
-def set_contact_provider(args: argparse.Namespace) -> None:
+def set_conversation_provider(args: argparse.Namespace) -> None:
     db = next(get_db())
     try:
-        c = db.query(Contact).filter(Contact.id == args.contact).first()
+        c = db.query(Conversation).filter(Conversation.id == args.conversation).first()
         if not c:
-            raise SystemExit(f"contact not found: {args.contact}")
+            raise SystemExit(f"conversation not found: {args.conversation}")
         p = db.query(ProviderConfig).filter(ProviderConfig.id == args.provider).first()
         if not p:
             raise SystemExit(f"provider not found: {args.provider}")
         c.provider_id = p.id
         c.updated_at = utc_now()
         db.commit()
-        print(f"contact {c.id} now uses provider {p.name}")
+        print(f"conversation {c.id} now uses provider {p.name}")
     finally:
         db.close()
 
@@ -297,14 +300,14 @@ def main() -> None:
     pdelete_parser.add_argument("--id", required=True)
     pdelete_parser.set_defaults(func=delete_provider)
 
-    lcontacts_parser = subparsers.add_parser("list-contacts")
-    lcontacts_parser.add_argument("--account", default=None, help="只列出该账号名下的 contact（按 username）；省略则列全部")
-    lcontacts_parser.set_defaults(func=list_contacts)
+    lconvs_parser = subparsers.add_parser("list-conversations")
+    lconvs_parser.add_argument("--account", default=None, help="只列出该账号名下的 conversation（按 username）；省略则列全部")
+    lconvs_parser.set_defaults(func=list_conversations)
 
-    setcp_parser = subparsers.add_parser("set-contact-provider")
-    setcp_parser.add_argument("--contact", required=True, help="Contact ID")
+    setcp_parser = subparsers.add_parser("set-conversation-provider")
+    setcp_parser.add_argument("--conversation", required=True, help="Conversation ID")
     setcp_parser.add_argument("--provider", required=True, help="Provider ID")
-    setcp_parser.set_defaults(func=set_contact_provider)
+    setcp_parser.set_defaults(func=set_conversation_provider)
 
     setdp_parser = subparsers.add_parser("set-distill-provider")
     setdp_parser.add_argument("--account", required=True, help="Account username")

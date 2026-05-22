@@ -12,20 +12,15 @@ class InboxPlatform(StrEnum):
     FEISHU = "feishu"
 
 
-class ContactStatus(StrEnum):
+class ConversationKind(StrEnum):
+    DM = "dm"
+    GROUP = "group"
+    UNKNOWN = "unknown"   # placeholder, set when /incoming creates a row before /conversations fills it in
+
+
+class ConversationStatus(StrEnum):
     ACTIVE = "active"
     ARCHIVED = "archived"
-
-
-class MessageRole(StrEnum):
-    SELF = "self"
-    COUNTERPART = "counterpart"
-
-
-class MessageAuthoredBy(StrEnum):
-    # Reserved provenance flag. Only 'unknown' exists for now; 'ai' / 'human'
-    # may be added later once a reliable signal exists.
-    UNKNOWN = "unknown"
 
 
 class DistillJobStatus(StrEnum):
@@ -58,8 +53,3 @@ class OutboundMessageType(StrEnum):
 class ReplyPolicy(StrEnum):
     DISABLED = "disabled"
     AUTOREPLY = "autoreply"
-
-
-class OutboundAckResult(StrEnum):
-    SENT = "sent"
-    FAILED = "failed"

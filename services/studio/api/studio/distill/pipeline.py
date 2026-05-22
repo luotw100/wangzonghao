@@ -1,11 +1,11 @@
-"""Distill pipeline: per-contact rolling fold.
+"""Distill pipeline: per-conversation rolling fold.
 
-A distill job is a list of contacts plus an optional target persona:
+A distill job is a list of conversations plus an optional target persona:
 
-- Each contact's messages are folded into that contact's ``card_md``.
+- Each conversation's messages are folded into that conversation's ``card_md``.
 - If ``target_persona_id`` is set, the same folds also accumulate into the
   persona's ``persona_md``. If it is ``None`` the persona section of the fold
-  output is discarded — single-contact card refresh must not redefine the
+  output is discarded — single-conversation card refresh must not redefine the
   streamer's persona.
 
 There is exactly one code path. The only conditional is "is a persona target
@@ -34,9 +34,9 @@ from studio.distill.packer import (
     pack_windows,
     split_sessions,
 )
-from studio.enums import LlmPurpose, MessageRole
+from studio.enums import LlmPurpose
 from studio.models import (
-    Contact,
+    Conversation,
     Inbox,
     LlmLog,
     Message,
@@ -49,7 +49,6 @@ logger = logging.getLogger(__name__)
 PROMPTS_DIR = Path(__file__).parent / "prompts"
 FOLD_PROMPT = (PROMPTS_DIR / "fold.md").read_text(encoding="utf-8")
 
-# Parser for the two-section fold output (existing prompt still uses "Character Persona" header)
 _PERSONA_RE = re.compile(
     r"={3,}\s*Character Persona\s*={3,}\s*(.*?)(?=\n={3,}\s*Contact Card\s*={3,})",
     re.DOTALL,
@@ -108,10 +107,10 @@ def _load_ctx(
     )
 
 
-def _load_contact_messages(db: ORMSession, contact_id: str) -> List[Message]:
+def _load_conversation_messages(db: ORMSession, conversation_id: str) -> List[Message]:
     return (
         db.query(Message)
-        .filter(Message.contact_id == contact_id)
+        .filter(Message.conversation_id == conversation_id)
         .order_by(Message.timestamp.asc(), Message.id.asc())
         .all()
     )
@@ -124,7 +123,7 @@ def _messages_to_text_messages(msgs: List[Message], display_tz: str) -> List[Tex
         tz = ZoneInfo("UTC")
     out: List[TextMessage] = []
     for m in msgs:
-        sender = m.sender_name or ("我" if m.role == MessageRole.SELF else "对方")
+        sender = "我" if m.sender_id is None else "对方"
         ts_local = m.timestamp.astimezone(tz)
         line = f"[{ts_local.strftime('%Y-%m-%d %H:%M:%S')}] {sender}: {m.content}"
         out.append(
@@ -141,7 +140,7 @@ def _messages_to_text_messages(msgs: List[Message], display_tz: str) -> List[Tex
 def _build_user_message(
     *,
     ctx: _DistillCtx,
-    contact: Contact,
+    conversation: Conversation,
     inbox_platform_self_id: Optional[str],
     window: Window,
     total_windows: int,
@@ -153,8 +152,8 @@ def _build_user_message(
         f"```yaml\n"
         f"character_name: {json.dumps(ctx.persona_name, ensure_ascii=False)}\n"
         f"character_wxid: {json.dumps(inbox_platform_self_id or '', ensure_ascii=False)}\n"
-        f"contact_name: {json.dumps(contact.display_name, ensure_ascii=False)}\n"
-        f"contact_wxid: {json.dumps(contact.peer_platform_id or '', ensure_ascii=False)}\n"
+        f"contact_name: {json.dumps(conversation.display_name, ensure_ascii=False)}\n"
+        f"contact_wxid: {json.dumps(conversation.platform_conversation_id or '', ensure_ascii=False)}\n"
         f"window: {window.window_id}/{total_windows}\n"
         f"time_range: \"{window.time_range}\"\n"
         f"sessions_in_window: {window.session_count}\n"
@@ -197,28 +196,28 @@ def _log_llm_call(
     db.commit()
 
 
-async def _fold_contact(
+async def _fold_conversation(
     *,
     client: ProviderClient,
     ctx: _DistillCtx,
-    contact_id: str,
+    conversation_id: str,
     progress_state: Dict[str, int],
     progress_cb: Optional[ProgressCb],
 ) -> None:
     db = SessionLocal()
     try:
-        contact = db.query(Contact).filter(Contact.id == contact_id).first()
-        if not contact:
+        conv = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+        if not conv:
             return
-        inbox = db.query(Inbox).filter(Inbox.id == contact.inbox_id).first()
-        inbox_id = contact.inbox_id
+        inbox = db.query(Inbox).filter(Inbox.id == conv.inbox_id).first()
+        inbox_id = conv.inbox_id
         inbox_platform_self_id = inbox.platform_self_id if inbox else None
-        messages = _load_contact_messages(db, contact_id)
+        messages = _load_conversation_messages(db, conversation_id)
     finally:
         db.close()
 
     if not messages:
-        logger.info("Contact %s 没有消息，跳过", contact_id)
+        logger.info("Conversation %s 没有消息，跳过", conversation_id)
         return
 
     text_msgs = _messages_to_text_messages(messages, ctx.display_tz)
@@ -237,13 +236,14 @@ async def _fold_contact(
             if ctx.persona_id is not None:
                 persona = db.query(Persona).filter(Persona.id == ctx.persona_id).first()
                 persona_md = (persona.persona_md or "") if persona else ""
-            ct = db.query(Contact).filter(Contact.id == contact_id).first()
-            card_md = ct.card_md or ""
+            conv_row = db.query(Conversation).filter(Conversation.id == conversation_id).first()
+            card_md = conv_row.card_md or ""
         finally:
             db.close()
 
         user_msg = _build_user_message(
-            ctx=ctx, contact=ct, inbox_platform_self_id=inbox_platform_self_id,
+            ctx=ctx, conversation=conv_row,
+            inbox_platform_self_id=inbox_platform_self_id,
             window=window, total_windows=len(windows),
             sessions_so_far=sessions_so_far,
             persona_md=persona_md, card_md=card_md,
@@ -258,8 +258,10 @@ async def _fold_contact(
                 ctx.base_url, ctx.api_key, ctx.model, request_messages
             )
         except Exception as exc:
-            logger.error("Fold LLM call failed for contact %s window %d: %s",
-                         contact_id, window.window_id, exc)
+            logger.error(
+                "Fold LLM call failed for conversation %s window %d: %s",
+                conversation_id, window.window_id, exc,
+            )
             db = SessionLocal()
             try:
                 _log_llm_call(
@@ -284,16 +286,16 @@ async def _fold_contact(
         new_persona, new_card = _parse_fold_output(response_text)
         if new_persona is None and new_card is None:
             logger.warning(
-                "Fold output 无法解析，保留原状（contact=%s window=%d）",
-                contact_id, window.window_id,
+                "Fold output 无法解析，保留原状（conversation=%s window=%d）",
+                conversation_id, window.window_id,
             )
         else:
             db = SessionLocal()
             try:
-                ct = db.query(Contact).filter(Contact.id == contact_id).first()
+                conv_row = db.query(Conversation).filter(Conversation.id == conversation_id).first()
                 if new_card is not None:
-                    ct.card_md = new_card
-                    ct.updated_at = utc_now()
+                    conv_row.card_md = new_card
+                    conv_row.updated_at = utc_now()
                 if ctx.persona_id is not None and new_persona is not None:
                     persona = db.query(Persona).filter(Persona.id == ctx.persona_id).first()
                     if persona:
@@ -310,18 +312,13 @@ async def _fold_contact(
 
 async def run_distill(
     *,
-    contact_ids: List[str],
+    conversation_ids: List[str],
     target_persona_id: Optional[str],
     provider_config_id: str,
     request_timeout: float,
     progress_cb: Optional[ProgressCb] = None,
 ) -> None:
-    """Fold the given contacts into their cards; optionally into a persona.
-
-    ``contact_ids``: contacts to process (1..N). Length 1 = single-contact
-    card refresh. ``target_persona_id``: when set, persona_md is also updated
-    from the same folds; when None, persona is left untouched.
-    """
+    """Fold the given conversations into their cards; optionally into a persona."""
     db = SessionLocal()
     try:
         ctx = _load_ctx(
@@ -334,13 +331,13 @@ async def run_distill(
 
     total_windows = 0
     runnable_ids: List[str] = []
-    for cid in contact_ids:
+    for cid in conversation_ids:
         db = SessionLocal()
         try:
-            ct = db.query(Contact).filter(Contact.id == cid).first()
-            if not ct:
+            cv = db.query(Conversation).filter(Conversation.id == cid).first()
+            if not cv:
                 continue
-            msgs = _load_contact_messages(db, cid)
+            msgs = _load_conversation_messages(db, cid)
         finally:
             db.close()
         if not msgs:
@@ -353,12 +350,12 @@ async def run_distill(
             runnable_ids.append(cid)
 
     if total_windows == 0:
-        logger.info("蒸馏任务没有可处理的聊天记录（contacts=%d）", len(contact_ids))
+        logger.info("蒸馏任务没有可处理的聊天记录（conversations=%d）", len(conversation_ids))
         return
 
     progress_state = {
-        "contacts_total": len(runnable_ids),
-        "contacts_done": 0,
+        "conversations_total": len(runnable_ids),
+        "conversations_done": 0,
         "windows_total": total_windows,
         "windows_done": 0,
     }
@@ -368,11 +365,11 @@ async def run_distill(
     client = ProviderClient(request_timeout=request_timeout)
     try:
         for cid in runnable_ids:
-            await _fold_contact(
-                client=client, ctx=ctx, contact_id=cid,
+            await _fold_conversation(
+                client=client, ctx=ctx, conversation_id=cid,
                 progress_state=progress_state, progress_cb=progress_cb,
             )
-            progress_state["contacts_done"] += 1
+            progress_state["conversations_done"] += 1
             if progress_cb:
                 progress_cb(dict(progress_state))
     finally:
@@ -382,7 +379,7 @@ async def run_distill(
 def main() -> None:
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
     parser = argparse.ArgumentParser(description="Distill 蒸馏（CLI / 调试用）")
-    parser.add_argument("--contact-ids", required=True, help="逗号分隔的 contact id 列表")
+    parser.add_argument("--conversation-ids", required=True, help="逗号分隔的 conversation id 列表")
     parser.add_argument("--target-persona-id", default=None)
     parser.add_argument("--provider-config-id", required=True)
     parser.add_argument("--request-timeout", type=float, required=True)
@@ -393,7 +390,7 @@ def main() -> None:
 
     asyncio.run(
         run_distill(
-            contact_ids=[c for c in args.contact_ids.split(",") if c],
+            conversation_ids=[c for c in args.conversation_ids.split(",") if c],
             target_persona_id=args.target_persona_id,
             provider_config_id=args.provider_config_id,
             request_timeout=args.request_timeout,

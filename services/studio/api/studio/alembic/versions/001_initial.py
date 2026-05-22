@@ -1,4 +1,4 @@
-"""initial schema
+"""initial schema (Conversation-based)
 
 Revision ID: 001
 Revises:
@@ -19,7 +19,6 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # provider_configs must precede accounts: accounts.distill_provider_id FKs it.
     op.create_table(
         "provider_configs",
         sa.Column("id", sa.String(48), primary_key=True),
@@ -105,10 +104,11 @@ def upgrade() -> None:
     op.create_index("ix_inboxes_bridge_id", "inboxes", ["bridge_id"])
 
     op.create_table(
-        "contacts",
+        "conversations",
         sa.Column("id", sa.String(48), primary_key=True),
         sa.Column("inbox_id", sa.String(48), sa.ForeignKey("inboxes.id"), nullable=False),
-        sa.Column("peer_platform_id", sa.String(256), nullable=False),
+        sa.Column("platform_conversation_id", sa.String(256), nullable=False),
+        sa.Column("kind", sa.String(16), nullable=False),
         sa.Column("display_name", sa.String(256), nullable=False),
         sa.Column("card_md", sa.Text, nullable=False),
         sa.Column("persona_id", sa.String(48), sa.ForeignKey("personas.id"), nullable=True),
@@ -119,52 +119,46 @@ def upgrade() -> None:
         sa.Column("last_reply_round_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint("inbox_id", "peer_platform_id", name="uq_contact_inbox_peer"),
-        sa.CheckConstraint("status IN ('active', 'archived')", name="ck_contact_status"),
-        sa.CheckConstraint("reply_policy IN ('disabled', 'autoreply')", name="ck_contact_reply_policy"),
+        sa.UniqueConstraint("inbox_id", "platform_conversation_id", name="uq_conversation_inbox_pcid"),
+        sa.CheckConstraint("kind IN ('dm', 'group', 'unknown')", name="ck_conversation_kind"),
+        sa.CheckConstraint("status IN ('active', 'archived')", name="ck_conversation_status"),
+        sa.CheckConstraint("reply_policy IN ('disabled', 'autoreply')", name="ck_conversation_reply_policy"),
     )
-    op.create_index("ix_contacts_id", "contacts", ["id"])
-    op.create_index("ix_contacts_inbox_id", "contacts", ["inbox_id"])
+    op.create_index("ix_conversations_id", "conversations", ["id"])
+    op.create_index("ix_conversations_inbox_id", "conversations", ["inbox_id"])
+
+    op.create_table(
+        "conversation_members",
+        sa.Column("conversation_id", sa.String(48),
+                  sa.ForeignKey("conversations.id", ondelete="CASCADE"),
+                  primary_key=True),
+        sa.Column("peer_platform_id", sa.String(256), primary_key=True),
+        sa.Column("display_name", sa.String(256), nullable=False),
+        sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
+    )
 
     op.create_table(
         "messages",
         sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
-        sa.Column("contact_id", sa.String(48), sa.ForeignKey("contacts.id"), nullable=False),
-        sa.Column("external_id", sa.String(256), nullable=True),
-        sa.Column("msg_hash", sa.String(64), nullable=False),
-        sa.Column("role", sa.String(16), nullable=False),
-        sa.Column("authored_by", sa.String(16), nullable=False),
+        sa.Column("conversation_id", sa.String(48), sa.ForeignKey("conversations.id"), nullable=False),
+        sa.Column("client_id", sa.String(256), nullable=False),
         sa.Column("sender_id", sa.String(256), nullable=True),
-        sa.Column("sender_name", sa.String(256), nullable=True),
         sa.Column("msg_type", sa.String(16), nullable=False),
         sa.Column("content", sa.Text, nullable=False),
         sa.Column("timestamp", sa.DateTime(timezone=True), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint("contact_id", "msg_hash", name="uq_message_contact_hash"),
-        sa.CheckConstraint("role IN ('self', 'counterpart')", name="ck_message_role"),
-        sa.CheckConstraint("authored_by IN ('unknown')", name="ck_message_authored_by"),
+        sa.UniqueConstraint("conversation_id", "client_id", name="uq_message_conv_client"),
         sa.CheckConstraint("msg_type IN ('text', 'image', 'audio', 'video', 'file')", name="ck_message_msg_type"),
     )
-    op.create_index("ix_messages_contact_id", "messages", ["contact_id"])
+    op.create_index("ix_messages_conversation_id", "messages", ["conversation_id"])
     op.create_index("ix_messages_timestamp", "messages", ["timestamp"])
-    op.create_index("idx_msg_contact_ts", "messages", ["contact_id", "timestamp"])
-
-    op.create_table(
-        "media_hashes",
-        sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
-        sa.Column("account_id", sa.String(48), nullable=False),
-        sa.Column("content_hash", sa.String(71), nullable=False),
-        sa.Column("storage_key", sa.String(256), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint("account_id", "content_hash", name="uq_media_hash_account"),
-    )
-    op.create_index("idx_media_hash_account", "media_hashes", ["account_id"])
+    op.create_index("idx_msg_conversation_ts", "messages", ["conversation_id", "timestamp"])
 
     op.create_table(
         "distill_jobs",
         sa.Column("id", sa.String(48), primary_key=True),
         sa.Column("account_id", sa.String(48), sa.ForeignKey("accounts.id"), nullable=False),
-        sa.Column("contact_ids", postgresql.JSONB, nullable=False),
+        sa.Column("conversation_ids", postgresql.JSONB, nullable=False),
         sa.Column("target_persona_id", sa.String(48), sa.ForeignKey("personas.id"), nullable=True),
         sa.Column("provider_config_id", sa.String(48), sa.ForeignKey("provider_configs.id"), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
@@ -184,7 +178,7 @@ def upgrade() -> None:
         "outbound_messages",
         sa.Column("id", sa.BigInteger, primary_key=True, autoincrement=True),
         sa.Column("inbox_id", sa.String(48), sa.ForeignKey("inboxes.id"), nullable=False),
-        sa.Column("contact_id", sa.String(48), sa.ForeignKey("contacts.id"), nullable=False),
+        sa.Column("conversation_id", sa.String(48), sa.ForeignKey("conversations.id"), nullable=False),
         sa.Column("msg_type", sa.String(16), nullable=False),
         sa.Column("content", sa.Text, nullable=False),
         sa.Column("send_after", sa.DateTime(timezone=True), nullable=False),
@@ -196,10 +190,10 @@ def upgrade() -> None:
         sa.CheckConstraint("msg_type IN ('text', 'image', 'audio', 'video', 'file')", name="ck_outbound_msg_type"),
     )
     op.create_index("ix_outbound_messages_inbox_id", "outbound_messages", ["inbox_id"])
-    op.create_index("ix_outbound_messages_contact_id", "outbound_messages", ["contact_id"])
+    op.create_index("ix_outbound_messages_conversation_id", "outbound_messages", ["conversation_id"])
     op.create_index("idx_outbound_inbox_id", "outbound_messages", ["inbox_id", "id"])
     op.create_index("idx_outbound_send_after", "outbound_messages", ["status", "send_after"])
-    op.create_index("idx_outbound_contact_created", "outbound_messages", ["contact_id", "created_at"])
+    op.create_index("idx_outbound_conv_created", "outbound_messages", ["conversation_id", "created_at"])
 
     op.create_table(
         "llm_logs",
@@ -221,9 +215,9 @@ def downgrade() -> None:
     op.drop_table("llm_logs")
     op.drop_table("outbound_messages")
     op.drop_table("distill_jobs")
-    op.drop_table("media_hashes")
     op.drop_table("messages")
-    op.drop_table("contacts")
+    op.drop_table("conversation_members")
+    op.drop_table("conversations")
     op.drop_table("inboxes")
     op.drop_table("bridges")
     op.drop_table("personas")

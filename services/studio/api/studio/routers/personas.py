@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from studio.db import get_db, utc_now
 from studio.deps import CurrentAccountDep, get_account_persona, new_id
-from studio.models import Contact, Persona
+from studio.models import Conversation, Persona
 from studio.schemas import PersonaCreate, PersonaRead, PersonaSummary, PersonaUpdate
 
 router = APIRouter()
@@ -86,11 +86,11 @@ def update_persona(persona_id: str, payload: PersonaUpdate, db: Annotated[Sessio
 
 @router.delete("/api/personas/{persona_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_persona(persona_id: str, db: Annotated[Session, Depends(get_db)], account: CurrentAccountDep):
-    """删除人设。若该人设仍被任一 Contact 引用，返回 409。"""
+    """删除人设。若该人设仍被任一 Conversation 引用，返回 409。"""
     p = get_account_persona(db, account, persona_id)
-    in_use_count = db.query(Contact).filter(Contact.persona_id == p.id).count()
+    in_use_count = db.query(Conversation).filter(Conversation.persona_id == p.id).count()
     if in_use_count:
-        raise HTTPException(status_code=409, detail=f"Persona 仍被 {in_use_count} 个联系人引用")
+        raise HTTPException(status_code=409, detail=f"Persona 仍被 {in_use_count} 个会话引用")
     db.delete(p)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

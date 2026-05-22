@@ -199,12 +199,12 @@ def get_account_inbox(db: Session, account: Account, inbox_id: str) -> Inbox:
     return i
 
 
-def get_account_contact(db: Session, account: Account, contact_id: str):
-    from studio.models import Contact
-    query = db.query(Contact).join(Inbox, Inbox.id == Contact.inbox_id).filter(
-        Contact.id == contact_id, Inbox.account_id == account.id
+def get_account_conversation(db: Session, account: Account, conversation_id: str):
+    from studio.models import Conversation
+    query = db.query(Conversation).join(Inbox, Inbox.id == Conversation.inbox_id).filter(
+        Conversation.id == conversation_id, Inbox.account_id == account.id
     )
     c = query.first()
     if not c:
-        raise HTTPException(status_code=404, detail="Contact 不存在")
+        raise HTTPException(status_code=404, detail="Conversation 不存在")
     return c

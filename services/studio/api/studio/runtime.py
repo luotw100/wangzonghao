@@ -3,10 +3,10 @@
 Two scanners run side-by-side:
 - DistillScanner: picks up DistillJob rows in 'pending' state and runs the
   rolling fold pipeline.
-- ReplyScanner: derives Contacts that need an autoreply (latest message
-  from counterpart, newer than last_reply_round_at), gates them through
-  studio.reply._decide(), and (if all gates pass + quiet-period elapsed)
-  calls the LLM and queues outbound messages.
+- ReplyScanner: derives Conversations that need an autoreply (latest
+  message from counterpart, newer than last_reply_round_at), gates them
+  through studio.reply._decide(), and (if all gates pass + quiet-period
+  elapsed) calls the LLM and queues outbound messages.
 
 Bridge online/offline is derived from last_seen_at at read time; no
 scanner needed to flip a cached status.
@@ -23,7 +23,7 @@ from studio.db import SessionLocal, utc_now
 from studio.distill.pipeline import run_distill
 from studio.enums import DistillJobStatus
 from studio.models import DistillJob
-from studio.reply import list_pending_contact_ids, maybe_reply
+from studio.reply import list_pending_conversation_ids, maybe_reply
 
 logger = logging.getLogger(__name__)
 
@@ -87,14 +87,14 @@ class StudioRuntime:
                         .order_by(DistillJob.created_at.asc())
                         .all()
                     )
-                    busy_contacts: set[str] = set()
+                    busy_conversations: set[str] = set()
                     busy_personas: set[str] = set()
                     for j in running:
-                        busy_contacts.update(j.contact_ids or [])
+                        busy_conversations.update(j.conversation_ids or [])
                         if j.target_persona_id:
                             busy_personas.add(j.target_persona_id)
                     pending_specs = [
-                        (j.id, list(j.contact_ids or []), j.target_persona_id, j.provider_config_id)
+                        (j.id, list(j.conversation_ids or []), j.target_persona_id, j.provider_config_id)
                         for j in pending
                     ]
                 finally:
@@ -104,19 +104,19 @@ class StudioRuntime:
                     if self._distill_tasks[jid].done():
                         del self._distill_tasks[jid]
 
-                for job_id, contact_ids, target_persona_id, provider_config_id in pending_specs:
+                for job_id, conv_ids, target_persona_id, provider_config_id in pending_specs:
                     if job_id in self._distill_tasks:
                         continue
-                    if any(c in busy_contacts for c in contact_ids):
+                    if any(c in busy_conversations for c in conv_ids):
                         continue
                     if target_persona_id and target_persona_id in busy_personas:
                         continue
-                    busy_contacts.update(contact_ids)
+                    busy_conversations.update(conv_ids)
                     if target_persona_id:
                         busy_personas.add(target_persona_id)
                     self._distill_tasks[job_id] = asyncio.get_running_loop().create_task(
                         self._run_distill_job(
-                            job_id, contact_ids, target_persona_id, provider_config_id
+                            job_id, conv_ids, target_persona_id, provider_config_id
                         ),
                         name=f"distill-{job_id}",
                     )
@@ -130,7 +130,7 @@ class StudioRuntime:
     async def _run_distill_job(
         self,
         job_id: str,
-        contact_ids: list[str],
+        conversation_ids: list[str],
         target_persona_id: Optional[str],
         provider_config_id: str,
     ):
@@ -157,7 +157,7 @@ class StudioRuntime:
 
         try:
             await run_distill(
-                contact_ids=contact_ids,
+                conversation_ids=conversation_ids,
                 target_persona_id=target_persona_id,
                 provider_config_id=provider_config_id,
                 request_timeout=self.options.request_timeout,
@@ -192,7 +192,7 @@ class StudioRuntime:
     async def _reply_scanner_loop(self):
         while True:
             try:
-                pending = list_pending_contact_ids()
+                pending = list_pending_conversation_ids()
                 for cid in list(self._reply_tasks.keys()):
                     if self._reply_tasks[cid].done():
                         del self._reply_tasks[cid]
@@ -209,10 +209,10 @@ class StudioRuntime:
 
             await asyncio.sleep(2)
 
-    async def _run_reply(self, contact_id: str):
+    async def _run_reply(self, conversation_id: str):
         try:
             assert self._reply_provider is not None
-            status = await maybe_reply(self._reply_provider, contact_id)
-            logger.info("Reply [%s] %s", contact_id, status)
+            status = await maybe_reply(self._reply_provider, conversation_id)
+            logger.info("Reply [%s] %s", conversation_id, status)
         except Exception as exc:
-            logger.error("Reply task for %s crashed: %s", contact_id, exc)
+            logger.error("Reply task for %s crashed: %s", conversation_id, exc)

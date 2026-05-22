@@ -121,10 +121,19 @@ export interface ProviderBrief {
   name: string;
 }
 
-export interface ContactSummary {
+export type ConversationKind = 'dm' | 'group' | 'unknown';
+
+export interface ConversationMember {
+  peer_platform_id: string;
+  display_name: string;
+  updated_at: string;
+}
+
+export interface ConversationSummary {
   id: string;
   inbox_id: string;
-  peer_platform_id: string;
+  platform_conversation_id: string;
+  kind: ConversationKind;
   display_name: string;
   persona_id: string | null;
   provider: ProviderBrief;
@@ -136,31 +145,34 @@ export interface ContactSummary {
   updated_at: string;
 }
 
-export interface Contact extends ContactSummary {
+export interface Conversation extends ConversationSummary {
   card_md: string;
+  members: ConversationMember[];
 }
 
 export interface Message {
   id: number;
-  contact_id: string;
-  external_id: string;
-  role: 'self' | 'counterpart';
-  sender_name: string | null;
+  conversation_id: string;
+  client_id: string;
+  sender_id: string | null;
+  msg_type: string;
   content: string;
   timestamp: string;
   created_at: string;
+  from_self: boolean;
 }
 
-export interface ConversationSummary {
-  contact: ContactSummary;
+export interface ConversationListItem {
+  conversation: ConversationSummary;
   inbox: Inbox;
   latest_message: Message | null;
   message_count: number;
+  member_count: number;
 }
 
 export interface DistillJobProgress {
-  contacts_total?: number;
-  contacts_done?: number;
+  conversations_total?: number;
+  conversations_done?: number;
   windows_total?: number;
   windows_done?: number;
 }
@@ -168,7 +180,7 @@ export interface DistillJobProgress {
 export interface DistillJobSummary {
   id: string;
   account_id: string;
-  contact_ids: string[];
+  conversation_ids: string[];
   target_persona_id: string | null;
   provider: ProviderBrief;
   status: 'pending' | 'running' | 'done' | 'failed';
@@ -240,7 +252,7 @@ export function deleteBridge(id: string) {
   return request<null>(`/bridges/${id}`, { method: 'DELETE' });
 }
 
-// --- Inboxes (read + edit defaults; never created/deleted from UI) ---
+// --- Inboxes ---
 
 export function getInboxes() { return request<Inbox[]>('/inboxes'); }
 export function getInbox(id: string) { return request<Inbox>(`/inboxes/${id}`); }
@@ -248,7 +260,7 @@ export function updateInbox(
   id: string,
   data: {
     display_name?: string;
-    bridge_id?: string | null;  // null = 解除绑定
+    bridge_id?: string | null;
   },
 ) {
   return request<Inbox>(`/inboxes/${id}`, {
@@ -258,20 +270,20 @@ export function updateInbox(
   });
 }
 
-// --- Contacts ---
+// --- Conversations ---
 
 export function getConversations(inboxId?: string) {
   const qs = inboxId ? `?inbox_id=${encodeURIComponent(inboxId)}` : '';
-  return request<ConversationSummary[]>(`/conversations${qs}`);
+  return request<ConversationListItem[]>(`/conversations${qs}`);
 }
-export function getContact(contactId: string) {
-  return request<Contact>(`/contacts/${contactId}`);
+export function getConversation(conversationId: string) {
+  return request<Conversation>(`/conversations/${conversationId}`);
 }
-export function getContactMessages(contactId: string, limit = 200) {
-  return request<Message[]>(`/contacts/${contactId}/messages?limit=${limit}`);
+export function getConversationMessages(conversationId: string, limit = 200) {
+  return request<Message[]>(`/conversations/${conversationId}/messages?limit=${limit}`);
 }
-export function updateContact(
-  contactId: string,
+export function updateConversation(
+  conversationId: string,
   data: {
     display_name?: string;
     card_md?: string;
@@ -281,7 +293,7 @@ export function updateContact(
     status?: 'active' | 'archived';
   },
 ) {
-  return request<Contact>(`/contacts/${contactId}`, {
+  return request<Conversation>(`/conversations/${conversationId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
@@ -295,7 +307,7 @@ export function getDistillJob(jobId: string) {
   return request<DistillJob>(`/distill-jobs/${jobId}`);
 }
 export function createDistillJob(data: {
-  contact_ids: string[]; target_persona_id?: string | null;
+  conversation_ids: string[]; target_persona_id?: string | null;
 }) {
   return request<DistillJob>('/distill-jobs', {
     method: 'POST',

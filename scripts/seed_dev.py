@@ -10,30 +10,20 @@ Schema (see scripts/.env.example.json):
 
   {
     "seed": {
-      "chat_url": "...",         # base URL of chat-api
-      "studio_url": "...",       # base URL of studio-api
+      "chat_url":    "...",         # base URL of chat-api  (via CF tunnel)
+      "studio_url":  "...",         # base URL of studio-api (via CF tunnel)
       "chat_users":   [{username, password, display}, ...],
       "studio_users": [{username, password, display}, ...],
       "providers":    [{name, base_url, model, api_key}, ...]
     }
   }
 
-chat_users / studio_users are independent — if you want the same credentials
-on both sides, duplicate the entries. Accounts that already exist surface
-a warning and are left untouched.
-
-Phasing matters: the studio Providers must exist before any studio account
-is created, because `studio create-account` reads accounts.distill_provider_id
-from the earliest-created Provider. So this script runs three serial phases:
-
-  1. wait for chat-api + studio-api health (parallel)
-  2. create the studio Providers — first one serial, rest parallel
-  3. create chat accounts + studio accounts (parallel)
-
-The first provider goes serial so its created_at is guaranteed to be the
-earliest: that one becomes the default `pick_first_provider` returns for new
-accounts / contacts. The remaining providers race in parallel — their
-relative order doesn't matter because nothing depends on it.
+Phasing:
+  1. wait for chat-api + studio-api health (parallel, via CF tunnel)
+  2. create the first studio Provider serially — it becomes the pick_first_provider
+     default; then create the rest in parallel (inside one docker compose exec)
+  3. create chat accounts (one exec each, parallel from Python) +
+     all studio accounts (one exec, parallel inside the container)
 """
 
 from __future__ import annotations
@@ -41,6 +31,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+import textwrap
 import time
 import urllib.error
 import urllib.request
@@ -52,16 +43,40 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 CHAT_DIR = REPO_ROOT / "services" / "chat"
 STUDIO_DIR = REPO_ROOT / "services" / "studio"
 
+# Runs inside the admin-api container. Reads [{path, body, label}] from stdin,
+# fires them all in parallel against the local admin API, prints results, exits
+# non-zero if any call failed with a non-409 error.
+_ADMIN_INNER = textwrap.dedent("""\
+    import json, sys, urllib.request, urllib.error
+    from concurrent.futures import ThreadPoolExecutor
 
-def resolve_config_arg(argv: list[str]) -> Path:
-    if len(argv) < 2 or not argv[1].strip():
-        die("usage: scripts/seed_dev.py <config.json>   (e.g. scripts/.env.debug.json)")
-    p = Path(argv[1])
-    if not p.is_file():
-        p = REPO_ROOT / argv[1]
-    if not p.is_file():
-        die(f"config not found: {argv[1]}")
-    return p
+    calls = json.load(sys.stdin)
+
+    def do(c):
+        data = json.dumps(c["body"]).encode()
+        req = urllib.request.Request(
+            "http://localhost:23457/api/admin" + c["path"],
+            data=data, method="POST",
+        )
+        req.add_header("Content-Type", "application/json")
+        try:
+            with urllib.request.urlopen(req):
+                return c["label"], "ok", ""
+        except urllib.error.HTTPError as e:
+            return c["label"], str(e.code), e.read().decode("utf-8", "replace")[:200]
+
+    failed = False
+    with ThreadPoolExecutor() as ex:
+        for label, code, body in ex.map(do, calls):
+            if code == "ok":
+                print(f"ok {label}")
+            elif code == "409":
+                print(f"skip {label} (already exists)")
+            else:
+                print(f"FAIL {label}: HTTP {code} — {body}", file=sys.stderr)
+                failed = True
+    sys.exit(1 if failed else 0)
+""")
 
 
 # ---------- logging ----------
@@ -86,12 +101,6 @@ def die(msg: str) -> "None":
 # ---------- parallel ----------
 
 def run_parallel(jobs: list, workers: int = 32) -> None:
-    """Run zero-arg callables concurrently; re-raise the first failure.
-
-    die() raises SystemExit, which ThreadPoolExecutor captures per-future and
-    re-raises here on .result() — so fail-fast still aborts the script (after
-    the in-flight batch drains), just from the main thread.
-    """
     if not jobs:
         return
     if len(jobs) == 1:
@@ -102,7 +111,7 @@ def run_parallel(jobs: list, workers: int = 32) -> None:
             fut.result()
 
 
-# ---------- config dataclasses ----------
+# ---------- config ----------
 
 @dataclass
 class UserSpec:
@@ -121,7 +130,7 @@ class ProviderSpec:
 
 @dataclass
 class SeedConfig:
-    project_name: str   # COMPOSE_PROJECT_NAME — must match what up-all.sh used
+    project_name: str
     chat_url: str
     studio_url: str
     chat_users: list[UserSpec]
@@ -201,12 +210,11 @@ def load_seed_config(path: Path) -> SeedConfig:
     )
 
 
-# ---------- http ----------
+# ---------- health ----------
 
 def http_request(method: str, url: str, token: str = "", body: dict | None = None) -> tuple[int, str]:
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
-    # Cloudflare Bot Fight Mode blocks the default Python-urllib UA with 403.
     req.add_header("User-Agent", "curl/8.0")
     if body is not None:
         req.add_header("Content-Type", "application/json")
@@ -231,51 +239,61 @@ def wait_health(url: str, name: str, tries: int = 30) -> None:
     die(f"{name} not reachable at {url} — start the stack first")
 
 
-# ---------- CLI account creation (via docker compose exec) ----------
+# ---------- admin API (via docker compose exec) ----------
 
-def docker_cli(project: str, service_dir: Path, service: str, module: str, subcommand: str,
-               cli_args: list[str], label: str) -> None:
-    # Explicit -p: seed_dev.py does not source the instance config into its
-    # own env, so docker compose can't infer the project name from there.
-    cmd = [
-        "docker", "compose", "-p", project, "exec", "-T", service,
-        "uv", "run", "python", "-m", module, subcommand, *cli_args,
-    ]
-    result = subprocess.run(cmd, cwd=service_dir, capture_output=True, text=True)
-    if result.returncode == 0:
-        ok(f"{label} ready")
-    else:
-        tail = (result.stderr or result.stdout).strip().splitlines()
-        hint = tail[-1] if tail else "(no output)"
-        warn(f"{label}: non-zero (likely already exists) — continuing: {hint}")
+def admin_exec(project: str, calls: list[dict]) -> None:
+    """Single docker compose exec; all calls run in parallel inside the container."""
+    result = subprocess.run(
+        ["docker", "compose", "-p", project, "exec", "-T", "admin-api",
+         "python", "-c", _ADMIN_INNER],
+        cwd=STUDIO_DIR,
+        capture_output=True,
+        text=True,
+        input=json.dumps(calls),
+    )
+    for line in result.stdout.splitlines():
+        if line.startswith("ok "):
+            ok(line[3:])
+        elif line.startswith("skip "):
+            warn(line[5:])
+    if result.returncode != 0:
+        for line in result.stderr.splitlines():
+            warn(line)
+        die("one or more admin-api calls failed")
 
+
+def provider_call(p: ProviderSpec) -> dict:
+    return {
+        "path": "/providers",
+        "body": {"name": p.name, "base_url": p.base_url, "model": p.model, "api_key": p.api_key},
+        "label": f"studio provider {p.name}",
+    }
+
+
+def account_call(u: UserSpec) -> dict:
+    return {
+        "path": "/accounts",
+        "body": {"username": u.username, "password": u.password, "display_name": u.display},
+        "label": f"studio account {u.username}",
+    }
+
+
+# ---------- chat CLI (unchanged) ----------
 
 def create_chat_account(project: str, u: UserSpec) -> None:
     log(f"creating chat account: {u.username}")
-    docker_cli(
-        project, CHAT_DIR, "chat-api", "chat.cli", "create-account",
-        ["--username", u.username, "--password", u.password, "--nickname", u.display],
-        f"chat account {u.username}",
-    )
-
-
-def create_studio_account(project: str, u: UserSpec) -> None:
-    log(f"creating studio account: {u.username}")
-    docker_cli(
-        project, STUDIO_DIR, "studio-api", "studio.cli", "create-account",
-        ["--username", u.username, "--password", u.password, "--display-name", u.display],
-        f"studio account {u.username}",
-    )
-
-
-def create_studio_provider(project: str, p: ProviderSpec) -> None:
-    log(f"creating studio provider: {p.name}")
-    docker_cli(
-        project, STUDIO_DIR, "studio-api", "studio.cli", "create-provider",
-        ["--name", p.name, "--base-url", p.base_url,
-         "--api-key", p.api_key, "--model", p.model],
-        f"studio provider {p.name}",
-    )
+    cmd = [
+        "docker", "compose", "-p", project, "exec", "-T", "chat-api",
+        "uv", "run", "python", "-m", "chat.cli", "create-account",
+        "--username", u.username, "--password", u.password, "--nickname", u.display,
+    ]
+    result = subprocess.run(cmd, cwd=CHAT_DIR, capture_output=True, text=True)
+    if result.returncode == 0:
+        ok(f"chat account {u.username}")
+    else:
+        tail = (result.stderr or result.stdout).strip().splitlines()
+        hint = tail[-1] if tail else "(no output)"
+        warn(f"chat account {u.username}: non-zero (likely already exists) — {hint}")
 
 
 # ---------- main ----------
@@ -284,30 +302,47 @@ def main() -> None:
     if subprocess.run(["which", "docker"], capture_output=True).returncode != 0:
         die("missing required command: docker")
 
-    cfg = load_seed_config(resolve_config_arg(sys.argv))
+    if len(sys.argv) < 2 or not sys.argv[1].strip():
+        die("usage: scripts/seed_dev.py <config.json>   (e.g. scripts/.env.debug.json)")
+    p = Path(sys.argv[1])
+    if not p.is_file():
+        p = REPO_ROOT / sys.argv[1]
+    if not p.is_file():
+        die(f"config not found: {sys.argv[1]}")
+
+    cfg = load_seed_config(p)
 
     log(f"studio: {cfg.studio_url}  chat: {cfg.chat_url}")
     log(f"chat users  : {', '.join(u.username for u in cfg.chat_users)}")
     log(f"studio users: {', '.join(u.username for u in cfg.studio_users)}")
     log(f"providers   : {', '.join(p.name for p in cfg.providers)}  (first is default)")
 
-    # phase 1: wait for both services
+    # phase 1: wait for both services (via CF tunnel)
     run_parallel([
         lambda: wait_health(cfg.chat_url, "chat-api"),
         lambda: wait_health(cfg.studio_url, "studio-api"),
     ])
 
-    # phase 2: studio providers. First one serial so it's guaranteed to be the
-    # earliest-created (and therefore the default); the rest race in parallel.
-    create_studio_provider(cfg.project_name, cfg.providers[0])
-    run_parallel(
-        [lambda p=p: create_studio_provider(cfg.project_name, p) for p in cfg.providers[1:]]
-    )
+    # phase 2: studio providers
+    # First one serial — guaranteed earliest created_at, becomes pick_first_provider default.
+    # Rest in parallel inside one exec.
+    log(f"creating studio provider (default): {cfg.providers[0].name}")
+    admin_exec(cfg.project_name, [provider_call(cfg.providers[0])])
+    if cfg.providers[1:]:
+        log(f"creating remaining providers: {', '.join(p.name for p in cfg.providers[1:])}")
+        admin_exec(cfg.project_name, [provider_call(p) for p in cfg.providers[1:]])
 
-    # phase 3: accounts (chat + studio in parallel).
+    # phase 3: chat accounts (parallel docker compose exec from Python) +
+    #          studio accounts (one docker compose exec, parallel inside)
+    if cfg.studio_users:
+        log(f"creating studio accounts: {', '.join(u.username for u in cfg.studio_users)}")
+    studio_job = (
+        [lambda: admin_exec(cfg.project_name, [account_call(u) for u in cfg.studio_users])]
+        if cfg.studio_users else []
+    )
     run_parallel(
         [lambda u=u: create_chat_account(cfg.project_name, u) for u in cfg.chat_users]
-        + [lambda u=u: create_studio_account(cfg.project_name, u) for u in cfg.studio_users]
+        + studio_job
     )
 
     print()

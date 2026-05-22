@@ -47,7 +47,7 @@ class OwnPasswordChange(StrictModel):
 
 class PersonaCreate(StrictModel):
     name: str = Field(description="人设名称，同一账号下唯一")
-    persona_md: str = Field(default="", description="人设内容（Markdown 格式）")
+    persona_md: Optional[str] = Field(default="", description="人设内容（Markdown 格式）")
     timezone: str = Field(default="UTC", description="人设所在时区（IANA 格式）")
 
 

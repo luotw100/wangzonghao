@@ -189,6 +189,7 @@ class BridgeConversationsUpsert(StrictModel):
 # ===========================================================================
 
 class AccountRead(_ReadModel):
+    """账号信息（返回给客户端，不含密码）。"""
     id: str
     username: str
     display_name: Optional[str]
@@ -198,6 +199,7 @@ class AccountRead(_ReadModel):
 
 
 class PersonaSummary(_ReadModel):
+    """人设列表项（不含 persona_md 正文，减少传输量）。需要正文时调用 GET /api/personas/{id}。"""
     id: str
     account_id: str
     name: str
@@ -207,13 +209,15 @@ class PersonaSummary(_ReadModel):
 
 
 class PersonaRead(PersonaSummary):
+    """人设详情（含 persona_md）。"""
     persona_md: str
 
 
 class InboxRead(_ReadModel):
+    """Inbox（平台账号身份）详情。bridge_id=null 表示当前未绑定守护进程。"""
     id: str
     account_id: str
-    bridge_id: Optional[str]
+    bridge_id: Optional[str]   # null=未绑定 Bridge，无法收发消息
     platform: str
     display_name: str
     platform_self_id: Optional[str]
@@ -222,45 +226,58 @@ class InboxRead(_ReadModel):
 
 
 class ProviderBrief(_ReadModel):
+    """Provider 的精简视图（仅 name），嵌入会话/蒸馏任务响应中，避免泄露 api_key。"""
     name: str
 
 
 class ConversationMemberRead(_ReadModel):
-    peer_platform_id: str
+    """会话成员（平台侧）。DM 只有一条（对方），群聊有 N 条。"""
+    peer_platform_id: str   # 成员在平台的唯一 ID
     display_name: str
     updated_at: datetime
 
 
 class ConversationSummary(_ReadModel):
+    """会话列表项（不含 card_md 和 members，减少传输量）。"""
     id: str
     inbox_id: str
     platform_conversation_id: str
-    kind: ConversationKind
+    kind: ConversationKind       # dm / group / unknown
     display_name: str
-    persona_id: Optional[str]
+    persona_id: Optional[str]    # null=未绑定人设，ReplyScanner 会跳过
     provider: ProviderBrief
-    takeover: bool
-    reply_policy: ReplyPolicy
+    takeover: bool               # True=Bridge 正在上报该会话消息
+    reply_policy: ReplyPolicy    # disabled / autoreply
     status: ConversationStatus
-    last_reply_round_at: Optional[datetime]
+    last_reply_round_at: Optional[datetime]   # 上次 LLM 回复时间
     created_at: datetime
     updated_at: datetime
 
 
 class ConversationRead(ConversationSummary):
-    card_md: str
+    """会话详情（含 card_md 和 members）。"""
+    card_md: str                            # 对方用户画像 Markdown
     members: List[ConversationMemberRead]
 
 
 class MessageRead(_ReadModel):
-    id: int
+    """消息详情。
+
+    ⚠ id 是数据库自增插入顺序，与消息的真实发送时间（timestamp）完全无关。
+    同一会话中 id 较大的消息不一定比 id 较小的消息发送时间更晚（历史消息导入、
+    平台延迟等场景下时间可能乱序）。展示时请以 timestamp 排序，
+    翻页/去重等"是否已处理"逻辑才使用 id。
+
+    from_self=True 表示该消息由 Inbox 自己发出（sender_id IS NULL）。
+    """
+    id: int               # 插入顺序，用作翻页游标；≠ 时间顺序
     conversation_id: str
-    client_id: str
-    sender_id: Optional[str]
+    client_id: str        # Bridge 侧稳定 ID，(conversation_id, client_id) 全局唯一去重
+    sender_id: Optional[str]   # null=Inbox 本人发出；非 null=对方平台 ID
     msg_type: str
     content: str
-    timestamp: datetime
-    created_at: datetime
+    timestamp: datetime   # 消息的真实平台发送时间（展示和排序应用此字段）
+    created_at: datetime  # Studio 入库时间（仅审计用，不代表发送时间）
 
     @computed_field
     @property
@@ -269,23 +286,26 @@ class MessageRead(_ReadModel):
 
 
 class DistillJobSummary(_ReadModel):
+    """蒸馏任务列表项（不含 progress 和 error_message）。"""
     id: str
     account_id: str
     conversation_ids: List[str]
-    target_persona_id: Optional[str]
+    target_persona_id: Optional[str]   # null=仅预览，不写回人设
     provider: ProviderBrief
-    status: str
+    status: str                        # pending / running / done / failed
     created_at: datetime
     started_at: Optional[datetime]
     finished_at: Optional[datetime]
 
 
 class DistillJobRead(DistillJobSummary):
-    progress: dict
-    error_message: str
+    """蒸馏任务详情（含 progress 进度快照和 error_message）。"""
+    progress: dict        # pipeline 分段进度，由 DistillScanner 回写
+    error_message: str    # 失败原因；done/pending/running 时为空字符串
 
 
 class BridgeRead(_ReadModel):
+    """Bridge 守护进程读取视图。status 字段由 last_seen_at 实时派生，不存库。"""
     id: str
     account_id: str
     machine_id: str
@@ -296,6 +316,7 @@ class BridgeRead(_ReadModel):
     @computed_field
     @property
     def status(self) -> str:
+        """online / offline，由 last_seen_at 实时派生（超过 45s 未心跳视为离线）。"""
         ts = self.last_seen_at
         if ts.tzinfo is None:
             ts = ts.replace(tzinfo=_tz.utc)
@@ -303,7 +324,10 @@ class BridgeRead(_ReadModel):
 
 
 class BridgeInboxView(_ReadModel):
-    """View returned by /api/bridge/inboxes (no account_id/bridge_id leak)."""
+    """Bridge 协议侧的 Inbox 视图（不暴露 account_id / bridge_id）。
+
+    仅供 Bridge daemon 使用；返回给 Bridge 的信息只包含它发送消息时需要的字段。
+    """
     id: str
     platform: str
     platform_self_id: Optional[str]
@@ -311,10 +335,13 @@ class BridgeInboxView(_ReadModel):
 
 
 class OutboundForBridge(_ReadModel):
-    """Slim outbound projection — what the bridge needs to dispatch.
-    Studio-only state (status / created_at / failed_reason) stays internal.
+    """Bridge 拉取待发消息时的精简视图。
+
+    Studio 内部状态字段（status / created_at / failed_reason）不下发给 Bridge，
+    避免 Bridge 做不应由它做的状态决策。
+    ⚠ id 是插入顺序，Studio 侧按 id asc 下发以保证先创建的先发，但 id 不代表时间语义。
     """
-    id: int
+    id: int             # 插入顺序；Bridge 用此值在 _inflight 字典中去重，防止重发
     inbox_id: str
     platform_conversation_id: str
     msg_type: str
@@ -322,7 +349,7 @@ class OutboundForBridge(_ReadModel):
 
 
 class OutboundRead(_ReadModel):
-    """Full outbound projection — for the web UI / debugging."""
+    """待发消息的完整视图（供 Web UI / 调试使用）。"""
     id: int
     inbox_id: str
     conversation_id: str
@@ -335,9 +362,12 @@ class OutboundRead(_ReadModel):
 
 
 class ConversationListItem(BaseModel):
-    """list-conversations aggregate item for the web UI."""
+    """会话列表聚合项（Web UI 会话列表接口的返回格式）。
+
+    包含会话本身、所属 Inbox、最新一条消息及统计数字，一次请求满足列表页的全部展示需求。
+    """
     conversation: ConversationSummary
     inbox: InboxRead
-    latest_message: Optional[MessageRead]
+    latest_message: Optional[MessageRead]   # 无消息时为 null
     message_count: int
     member_count: int

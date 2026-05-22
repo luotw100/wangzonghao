@@ -147,9 +147,15 @@ class MessageSendRequest(StrictModel):
 
 
 class MessageRead(StrictModel):
-    """单条消息详情（读取时返回）。"""
+    """单条消息详情（读取时返回）。
 
-    id: int = Field(description="消息自增 ID，全局单调递增，可用作翻页游标")
+    ⚠ id 是数据库自增插入顺序，与消息的真实发送时间（created_at）无强关联。
+    历史消息导入时可以显式指定 created_at，此时 id 较大的消息 created_at 可能更早。
+    翻页游标（before_id / last_id）使用 id 表示"处理到哪条"，不表示时间先后。
+    展示消息列表时请使用 created_at 排序，不要依赖 id 的大小来判断时间顺序。
+    """
+
+    id: int = Field(description="消息自增 ID，按插入顺序单调递增，用作翻页游标；不代表发送时间顺序")
     account_id: str = Field(description="所属账号 ID")
     conversation_id: str = Field(description="所属会话 ID")
     sender_id: str | None = Field(
@@ -163,7 +169,7 @@ class MessageRead(StrictModel):
             "媒体消息为 storage key，需通过 GET /api/media/{storage_key} 换取实际访问 URL。"
         )
     )
-    created_at: datetime = Field(description="消息时间戳（UTC）")
+    created_at: datetime = Field(description="消息时间戳（UTC）。历史导入时由调用方传入，非服务器接收时间")
 
 
 class ConversationMessages(StrictModel):

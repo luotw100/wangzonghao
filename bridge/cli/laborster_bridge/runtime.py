@@ -170,7 +170,14 @@ class ChannelWorker:
         )
 
     def tick(self) -> None:
-        """One bounded step. Called by the supervisor's scheduler."""
+        """Scheduler 驱动的单步执行，每 PRODUCER_S 秒调用一次。
+
+        状态路由：
+          NEEDS_LOGIN / REMOVED → 直接返回，不做任何事
+          BACKOFF               → 等退避计时器到期后重置为 CONNECTING
+          CONNECTING            → 调 _connect()：构建 Adapter + 注册 Inbox
+          ONLINE                → 调 _poll()：拉会话目录 diff + 抓新消息写本地 store
+        """
         try:
             if self.state == NEEDS_LOGIN or self.state == REMOVED:
                 return
@@ -216,6 +223,12 @@ class ChannelWorker:
         self._events.log(f"ch{self.channel_id}", level, f"{self.platform}: {msg}")
 
     def _connect(self) -> None:
+        """CONNECTING 阶段：构建 Adapter 并向 Studio 注册 Inbox。
+
+        吃：self._credential（平台登录凭据，如 Chat session token）
+        吐：Adapter 实例（self.adapter）+ Studio POST /api/bridge/inboxes 写入 Inbox 记录
+            成功 → state = ONLINE；认证失败 → NEEDS_LOGIN；瞬时错误 → BACKOFF
+        """
         factory = adapters.get(self.platform)
         adapter = factory.build(self._credential)
         self_id = adapter.platform_self_id
@@ -245,6 +258,20 @@ class ChannelWorker:
         self._log("ok", f"online · self_id={self_id} · inbox={inbox['id']}")
 
     def _poll(self) -> None:
+        """ONLINE 阶段：拉取会话目录变更 + 抓取各会话新消息。
+
+        吃：Adapter.list_conversations() — 平台侧当前会话快照
+             store.get_cursor(inbox_id, conv_id) — 本地游标（记录上次已处理到哪个 client_id）
+             Adapter.fetch_new(conv_id, since) — 平台侧新消息列表
+
+        ⚠ 游标（cursor）是消息的接收顺序标记，与消息的真实发送时间（timestamp）无关：
+          cursor 只表示"到这里为止的消息都已被本地 store 处理过"，
+          不代表该 cursor 对应消息的时间最新。
+
+        吐：若会话目录有变更 → POST /api/bridge/conversations（会话 diff 推送到 Studio）
+             新消息 → store.ingest(inbox_id, conv_id, events, new_cursor)（写入本地 SQLite）
+             本地 store 写完后由 UploadActor 独立批量上报给 Studio
+        """
         assert self.adapter is not None and self.inbox is not None
         inbox_id = self.inbox["id"]
         convs = self.adapter.list_conversations()
@@ -451,6 +478,14 @@ class BridgeRuntime:
     # ---- scheduler ----------------------------------------------------
 
     def _scheduler_loop(self) -> None:
+        """调度器线程：驱动所有 ChannelWorker 的状态机。
+
+        吃：_workers 字典（内存中的全部 ChannelWorker）
+        吐：依次调用 worker.tick()，推进各 channel 的 CONNECTING/ONLINE/BACKOFF 状态；
+             每轮结束调用 _push_state() 刷新 Events 快照供 REPL /status 读取。
+
+        调度频率：每 PRODUCER_S 秒（默认 2s）运行一轮。
+        """
         while not self._stop.is_set():
             with self._lock:
                 workers = list(self._workers.values())
@@ -465,6 +500,16 @@ class BridgeRuntime:
     # ---- upload actor -------------------------------------------------
 
     def _upload_loop(self) -> None:
+        """上报线程：将本地 SQLite 中的新消息批量推送给 Studio。
+
+        吃：store.get_unsent(batch, takeovers) — 本地待上报消息行，
+             仅过滤出在当前 takeovers 集合内的会话（未接管的会话不上报）
+        吐：studio.push_incoming(messages) → store.mark_sent(ids)
+             将消息批量 POST 到 Studio /api/bridge/incoming，成功后在本地标记为已发送。
+
+        调度频率：每 UPLOAD_S 秒（默认 1s）扫一次。
+        跳过 inbox 尚未注册成功的行，避免 ChannelWorker 首次 _connect() 与本线程之间的竞争。
+        """
         while not self._stop.is_set():
             try:
                 self._upload_once()
@@ -514,6 +559,15 @@ class BridgeRuntime:
     # ---- takeover actor ----------------------------------------------
 
     def _takeover_loop(self) -> None:
+        """接管状态刷新线程：周期拉取 Studio 下发的接管会话集合。
+
+        吃：GET /api/bridge/takeovers → [{inbox_id, platform_conversation_id}, ...]
+        吐：self._takeovers frozenset（"inbox_id|platform_conversation_id" 字符串集合）
+             以原子引用替换的方式更新，UploadActor 直接读引用无需加锁。
+             UploadActor 用此集合过滤待上报消息：只有接管中的会话才会上报给 Studio。
+
+        调度频率：每 TAKEOVERS_S 秒（默认 10s）刷新一次。
+        """
         while not self._stop.is_set():
             try:
                 items = self._studio.get_takeovers()
@@ -531,6 +585,23 @@ class BridgeRuntime:
     # ---- outbound actor ----------------------------------------------
 
     def _outbound_loop(self) -> None:
+        """发送线程：长轮询 Studio 待发队列并调用平台 API 发出消息。
+
+        吃：GET /api/bridge/outbound（long-poll，timeout=OUTBOUND_TIMEOUT_S）
+             → [{id, inbox_id, platform_conversation_id, msg_type, content}, ...]
+             每次拉取返回当前所有 status=pending 且 send_after 已到期的行（无游标）。
+
+        ⚠ outbound id 是数据库插入顺序，与 send_after / 实际发送时间无关。
+          Bridge 按 id 升序消费（Studio 侧 order_by id asc），保证先创建的先发，
+          但 id 本身不代表任何时间语义。
+
+        吐：worker.send_outbound(item) — 找到对应 Inbox 的 ChannelWorker，
+             调用 Adapter.send() 将消息投递到平台。
+             发送成功后 Studio 等待 inbound from_self 自动 ack，无显式 ack 接口。
+             _inflight 字典（INFLIGHT_TTL_S 窗口内去重）防止同一条消息在同一轮次重复发送。
+
+        调度频率：长轮询本身是阻塞的（最多 OUTBOUND_TIMEOUT_S=30s），无额外 sleep。
+        """
         while not self._stop.is_set():
             try:
                 items = self._studio.get_outbound(OUTBOUND_TIMEOUT_S)
@@ -602,6 +673,15 @@ class BridgeRuntime:
     # ---- heartbeat actor ---------------------------------------------
 
     def _heartbeat_loop(self) -> None:
+        """心跳线程：维持 Bridge 在 Studio 的在线状态，同时哨兵 Studio session 健康。
+
+        吃：无
+        吐：POST /api/bridge/heartbeat → Studio 刷新 Bridge.last_seen_at（超过 45s 未刷新视为离线）。
+             收到 401 时调用 _auth_error()，触发 daemon 优雅关闭并通知 REPL 提示重新登录。
+             其他网络异常仅记录告警，不中断 daemon。
+
+        调度频率：每 HEARTBEAT_S 秒（默认 15s）发一次，启动后立即发第一次。
+        """
         self._beat()
         while not self._sleep(HEARTBEAT_S):
             self._beat()

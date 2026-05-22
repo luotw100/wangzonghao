@@ -79,7 +79,9 @@ def get_messages_before(
 
     - `before_id`：只返回 ID 严格小于此值的消息，用于向上翻页加载更早的内容。不传则从最新一条开始。
     - `limit`：最多返回条数，默认 100，最大 500。
-    - 返回结果按 ID 升序排列（时间从旧到新），方便直接渲染到聊天界面。
+    - 返回结果按插入 ID 升序排列（从旧 ID 到新 ID）。
+      ⚠ ID 是插入顺序，不等于 created_at 时间顺序。若有历史消息导入，
+        ID 较小的消息 created_at 未必更早；渲染时请以 created_at 排序。
     """
     conversation = get_conversation_or_404(db, account, conversation_id)
     q = scoped(db, account, Message).filter(Message.conversation_id == conversation_id)
@@ -99,11 +101,12 @@ def get_messages_after(
 ) -> dict[str, object]:
     """拉取新消息（支持长轮询）。
 
-    - `last_id`：只返回 ID 严格大于此值的消息，客户端应把上次收到的最大消息 ID 传进来。首次拉取传 0。
+    - `last_id`：只返回 ID 严格大于此值的消息；客户端应把上次收到的最大消息 ID 传进来，首次传 0。
+      ⚠ last_id 是插入顺序游标，含义是"已处理到这条"，与 created_at 时间无关。
     - `limit`：最多返回条数，0 表示不限制（返回全部）。
     - `timeout`：长轮询等待秒数。若当前无新消息，服务端会阻塞最多 timeout 秒后返回（期间每 0.5s 轮询一次数据库）。
       传 0 则立即返回（短轮询）。注意：此接口在线程池中同步运行，不会阻塞事件循环，每次轮询间隔会释放数据库连接。
-    - 返回结果按 ID 升序排列（时间从旧到新）。
+    - 返回结果按插入 ID 升序排列。若有历史消息导入场景，ID 顺序不等于 created_at 顺序，渲染时请以 created_at 排序。
     """
     # Sync endpoint: FastAPI runs it in the threadpool, so the blocking DB
     # query and sleep below never stall the event loop. Each iteration uses a

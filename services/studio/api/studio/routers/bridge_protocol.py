@@ -386,13 +386,16 @@ async def bridge_outbound(
     bridge: BridgeDep,
     timeout: int = Query(0, ge=0, le=60),
 ):
-    """Long-poll pending outbound. Returns up to 50 rows of
-    OutboundForBridge each tick. No cursor (bridge always asks for the
-    current PENDING set), no lease (bridge dedups dispatch in-process).
+    """长轮询待发消息队列，每次最多返回 50 条 OutboundForBridge。
 
-    Outbound state transitions are settled by /incoming auto-ack
-    (see incoming handler). Permanent send failures stay PENDING until
-    operator cleanup — explicit by design.
+    设计要点：
+    - 无游标：Bridge 每次拉取的都是当前全量 PENDING 集合（id asc），
+      重启或重连后直接继续处理，不需要维护本地 offset。
+    - 无租约：Bridge 用内存 _inflight 字典（INFLIGHT_TTL_S 窗口）做本地去重，
+      防止同一条消息在同一次 long-poll 内重复发送。
+    - id 是插入顺序，按 id asc 返回保证先创建的先发，但 id 不代表时间语义。
+    - 状态回写：PENDING → DELIVERED 由 /incoming 的 from_self 消息自动 ack，
+      无显式 ack 接口。永久发送失败的行保留 PENDING 状态，由运营手动清理。
     """
     deadline = time.time() + timeout
     while True:

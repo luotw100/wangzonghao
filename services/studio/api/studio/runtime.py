@@ -72,6 +72,16 @@ class StudioRuntime:
     # --- Distill --------------------------------------------------------
 
     async def _distill_scanner_loop(self):
+        """蒸馏任务扫描器（每 5s 扫一次 DB）。
+
+        吃：DistillJob 表中 status=pending 的行（按 created_at asc 排序，先提交先执行）
+        吐：为每个可调度的 pending job 创建一个 asyncio Task（_run_distill_job），
+            并维护 busy_conversations / busy_personas 集合防止同一会话或人设并发蒸馏。
+
+        调度规则：
+          - 已有 running 的 job 占用了相同会话或相同目标人设时，pending job 跳过等下轮。
+          - 每次扫描后 done 的 Task 从 _distill_tasks 字典中移除。
+        """
         while True:
             try:
                 db = SessionLocal()
@@ -190,6 +200,17 @@ class StudioRuntime:
     # --- Reply ----------------------------------------------------------
 
     async def _reply_scanner_loop(self):
+        """自动回复扫描器（每 2s 扫一次 DB）。
+
+        吃：list_pending_conversation_ids() — 查找需要触发 LLM 回复的会话 ID 列表。
+            触发条件（由 reply.list_pending_conversation_ids 内部判断）：
+              1. takeover=True + reply_policy=autoreply + persona_id 非空
+              2. 最新消息来自对方（sender_id 非 NULL）
+              3. 最新消息时间 > last_reply_round_at（还没有回过这一轮）
+        吐：为每个待回复的 conversation_id 创建一个 asyncio Task（_run_reply），
+            Task 内调用 maybe_reply() → ProviderClient.complete_chat() → 写 OutboundMessage。
+            同一会话同时只有一个 reply Task（已在 _reply_tasks 中的跳过）。
+        """
         while True:
             try:
                 pending = list_pending_conversation_ids()

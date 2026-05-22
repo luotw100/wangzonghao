@@ -1,8 +1,17 @@
-"""Studio /api/bridge/* protocol client. Port of studio-client.ts.
+"""Studio /api/bridge/* protocol client (v2 — 8 endpoints).
 
-The base URL is fixed (config.STUDIO_BASE_URL). The token is read lazily
-through a callable so it can be cleared on 401 without rebuilding the
-client.
+  POST /handshake                     password → token (+ account_id, username, machine_id)
+  POST /inboxes                       register channels (with display_name)
+  GET  /inboxes                       read current inbox set
+  POST /heartbeat                     pure heartbeat
+  POST /incoming                      push messages (client_id dedup)
+  GET  /outbound                      long-poll PENDING (no cursor, no lease, no ack)
+  POST /conversations                 upsert conversation metadata
+  GET  /takeovers                     pull takeover conversation set
+
+The session token is read lazily through ``get_token`` so we can clear it
+on 401 without rebuilding the client. ``X-Machine-Id`` header is added
+on every authed request so Studio can resolve the bridge.
 """
 
 from __future__ import annotations
@@ -24,9 +33,6 @@ class StudioClient:
         self._base = config.STUDIO_BASE_URL
 
     def _req(self, method: str, path: str, body=None, timeout: float = 20.0):
-        # The session token is account-scoped (same table as the web
-        # console). Which Bridge row this call belongs to is resolved
-        # server-side from this machine_id, not from the token.
         machine_id = self._get_machine_id()
         return request_json(
             method,
@@ -37,24 +43,31 @@ class StudioClient:
             headers={"X-Machine-Id": machine_id} if machine_id else None,
         )
 
-    def handshake(self, username: str, password: str, machine_id: str | None) -> dict:
+    # ---- 1. handshake -------------------------------------------------
+
+    def handshake(
+        self, username: str, password: str, machine_id: str | None
+    ) -> dict:
         r = request_json(
             "POST",
             f"{self._base}/api/bridge/handshake",
-            body={"username": username, "password": password, "machine_id": machine_id},
+            body={
+                "username": username,
+                "password": password,
+                "machine_id": machine_id,
+            },
         )
         return {
             "token": r["token"],
-            "bridge_id": r["bridge_id"],
-            "machine_id": r["machine_id"],
             "account_id": r["account_id"],
+            "username": r["username"],
+            "machine_id": r["machine_id"],
         }
+
+    # ---- 2/3. inboxes -------------------------------------------------
 
     @staticmethod
     def _inbox(i: dict) -> dict:
-        # Mirrors Studio's BridgeInboxView (schemas.py): the wire format
-        # intentionally hides account_id/bridge_id/enabled/default_persona_id;
-        # we only need what the runtime actually consumes.
         return {
             "id": i["id"],
             "platform": i["platform"],
@@ -62,86 +75,79 @@ class StudioClient:
             "display_name": i["display_name"],
         }
 
-    def register_inboxes(self, self_ids: list[tuple[str, str]]) -> dict:
+    def register_inboxes(self, claims: list[dict]) -> list[dict]:
+        """``claims`` items: ``{platform, platform_self_id, display_name}``.
+
+        Returns the authoritative inbox list (each ``{id, platform,
+        platform_self_id, display_name}``).
+        """
         r = self._req(
             "POST",
             "/api/bridge/inboxes",
-            {
-                "inboxes": [
-                    {"platform": platform, "platform_self_id": sid}
-                    for platform, sid in self_ids
-                ]
-            },
+            {"inboxes": claims},
         )
-        return {
-            "inboxes": [self._inbox(i) for i in r["inboxes"]],
-            "cursor": r["cursor"],
-        }
+        return [self._inbox(i) for i in r["inboxes"]]
 
-    def heartbeat(self) -> dict:
-        r = self._req("POST", "/api/bridge/heartbeat")
-        return {"inboxes": [self._inbox(i) for i in r["inboxes"]]}
+    def get_inboxes(self) -> list[dict]:
+        r = self._req("GET", "/api/bridge/inboxes")
+        return [self._inbox(i) for i in r["inboxes"]]
+
+    # ---- 4. heartbeat -------------------------------------------------
+
+    def heartbeat(self) -> None:
+        self._req("POST", "/api/bridge/heartbeat")
+
+    # ---- 5. incoming --------------------------------------------------
 
     def push_incoming(self, messages: list[dict]) -> dict:
+        """Each item: ``{inbox_id, platform_conversation_id, client_id,
+        sender_id (str|None), msg_type, content, sent_at}``.
+        """
         return self._req(
             "POST",
             "/api/bridge/incoming",
-            {
-                "messages": [
-                    {
-                        "inbox_id": m["inbox_id"],
-                        "peer_platform_id": m["peer_id"],
-                        "peer_display_name": m["peer_display_name"],
-                        "platform_msg_id": m["platform_msg_id"],
-                        "sender_id": m["sender_id"],
-                        "msg_type": m["msg_type"],
-                        "content": m["content"],
-                        "sent_at": m["sent_at"],
-                    }
-                    for m in messages
-                ]
-            },
+            {"messages": messages},
         )
 
-    def get_outbound(self, cursor: int, timeout_secs: int) -> list[dict]:
+    # ---- 6. outbound (long poll, no cursor) ---------------------------
+
+    def get_outbound(self, timeout_secs: int) -> list[dict]:
         res = self._req(
             "GET",
-            f"/api/bridge/outbound?cursor={cursor}&timeout={timeout_secs}",
+            f"/api/bridge/outbound?timeout={timeout_secs}",
             timeout=timeout_secs + 5,
         )
         return [
             {
                 "id": o["id"],
                 "inbox_id": o["inbox_id"],
-                "contact_id": o["contact_id"],
-                "peer_platform_id": o["peer_platform_id"],
+                "platform_conversation_id": o["platform_conversation_id"],
                 "msg_type": o["msg_type"],
                 "content": o["content"],
             }
             for o in res
         ]
 
-    def ack_outbound(self, outbound_id: int, result: str, extra: str) -> None:
-        payload = {"result": result}
-        payload["platform_msg_id" if result == "sent" else "reason"] = extra
-        self._req("POST", f"/api/bridge/outbound/{outbound_id}/ack", payload)
+    # ---- 7. conversations (metadata source of truth) ------------------
 
-    def announce_peers(self, inbox_id: str, peers: list[dict]) -> None:
+    def push_conversations(self, inbox_id: str, conversations: list[dict]) -> None:
+        """``conversations`` items: ``{platform_conversation_id, kind,
+        display_name, members:[{peer_platform_id, display_name}]}``.
+        """
         self._req(
             "POST",
-            "/api/bridge/peers",
-            {
-                "inbox_id": inbox_id,
-                "peers": [
-                    {"peer_platform_id": p["peer_platform_id"], "display_name": p["display_name"]}
-                    for p in peers
-                ],
-            },
+            "/api/bridge/conversations",
+            {"inbox_id": inbox_id, "conversations": conversations},
         )
 
-    def get_active_peers(self) -> list[dict]:
-        res = self._req("GET", "/api/bridge/active-peers")
+    # ---- 8. takeovers -------------------------------------------------
+
+    def get_takeovers(self) -> list[dict]:
+        res = self._req("GET", "/api/bridge/takeovers")
         return [
-            {"inbox_id": p["inbox_id"], "peer_platform_id": p["peer_platform_id"]}
-            for p in res["peers"]
+            {
+                "inbox_id": t["inbox_id"],
+                "platform_conversation_id": t["platform_conversation_id"],
+            }
+            for t in res["takeovers"]
         ]

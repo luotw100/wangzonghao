@@ -112,6 +112,7 @@ class ChatAdapter:
             raise ValueError("chat credential missing 'token'")
         self._token = token
         self._self_id: str | None = None
+        self._self_display: str | None = None
 
     def _req(self, method: str, path: str, body=None, timeout: float = 20.0):
         try:
@@ -127,12 +128,23 @@ class ChatAdapter:
 
     # ---- identity --------------------------------------------------
 
-    @property
-    def platform_self_id(self) -> str:
-        if self._self_id is None:
+    def _ensure_me(self) -> None:
+        if self._self_id is None or self._self_display is None:
             me = self._req("GET", "/api/auth/me")
             self._self_id = me["id"]
+            self._self_display = me.get("nickname") or me.get("username") or me["id"]
+
+    @property
+    def platform_self_id(self) -> str:
+        self._ensure_me()
+        assert self._self_id is not None
         return self._self_id
+
+    @property
+    def platform_self_display_name(self) -> str:
+        self._ensure_me()
+        assert self._self_display is not None
+        return self._self_display
 
     # ---- directory -------------------------------------------------
 
@@ -177,12 +189,13 @@ class ChatAdapter:
                 break
             for m in msgs:
                 cur = int(m["id"])
-                sender_id = (
-                    self.platform_self_id if m["sender_id"] is None else peer_id
-                )
+                # Chat already encodes "self" as sender_id=NULL; we ship
+                # that through unchanged — the wire contract is identical.
+                sender_id = None if m["sender_id"] is None else peer_id
                 gathered.append(
                     IncomingEvent(
                         conversation_id=conversation_id,
+                        client_id=str(m["id"]),
                         sender_id=sender_id,
                         sent_at=_iso_z(m["created_at"]),
                         msg_type=m.get("msg_type") or "text",

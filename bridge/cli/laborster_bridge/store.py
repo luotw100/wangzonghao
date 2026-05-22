@@ -54,16 +54,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS ix_channels_inbox
 CREATE TABLE IF NOT EXISTS local_messages (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   inbox_id          TEXT NOT NULL,
-  conversation_id   TEXT NOT NULL,
-  peer_id           TEXT NOT NULL,
-  peer_display_name TEXT NOT NULL,
-  sender_id         TEXT NOT NULL,
+  conversation_id   TEXT NOT NULL,    -- adapter's platform_conversation_id
+  client_id         TEXT NOT NULL,    -- adapter-decided stable id (chat: msg.id)
+  sender_id         TEXT,             -- NULL = self
   sent_at           TEXT NOT NULL,
   msg_type          TEXT NOT NULL,
   content           TEXT NOT NULL,
-  local_hash        TEXT NOT NULL,
   sent              INTEGER NOT NULL DEFAULT 0,
-  UNIQUE(inbox_id, local_hash)
+  UNIQUE(inbox_id, client_id)
 );
 CREATE INDEX IF NOT EXISTS idx_unsent ON local_messages(sent, id);
 CREATE INDEX IF NOT EXISTS idx_conv   ON local_messages(inbox_id, conversation_id, id);
@@ -95,13 +93,11 @@ class LocalMessage:
     id: int
     inbox_id: str
     conversation_id: str
-    peer_id: str
-    peer_display_name: str
-    sender_id: str
+    client_id: str
+    sender_id: str | None
     sent_at: str
     msg_type: str
     content: str
-    local_hash: str
     sent: int
 
 
@@ -227,22 +223,6 @@ class Store:
 
     # ---- ingest -------------------------------------------------------
 
-    @staticmethod
-    def local_hash(
-        inbox_id: str,
-        conversation_id: str,
-        sender_id: str,
-        sent_at: str,
-        msg_type: str,
-        content: str,
-    ) -> str:
-        import hashlib
-
-        joined = "\x00".join(
-            [inbox_id, conversation_id, sender_id, sent_at, msg_type, content]
-        )
-        return hashlib.sha256(joined.encode("utf-8")).hexdigest()
-
     def get_cursor(self, inbox_id: str, conversation_id: str) -> str | None:
         with self._lock:
             if self._closed:
@@ -258,12 +238,16 @@ class Store:
         self,
         inbox_id: str,
         conversation_id: str,
-        peer_id: str,
-        peer_display_name: str,
         events: list[dict],
         new_cursor: str | None,
     ) -> int:
-        """Atomically insert events and advance the conversation cursor."""
+        """Atomically insert events and advance the conversation cursor.
+
+        Each event dict must contain: client_id (adapter-decided, str),
+        sender_id (str|None where None=self), sent_at, msg_type, content.
+        Dedup is by ``(inbox_id, client_id)`` via INSERT OR IGNORE — both
+        local-side and wire-side use the same key.
+        """
         if not events and new_cursor is None:
             return 0
         inserted = 0
@@ -273,29 +257,19 @@ class Store:
             try:
                 self._db.execute("BEGIN IMMEDIATE")
                 for e in events:
-                    lh = self.local_hash(
-                        inbox_id,
-                        conversation_id,
-                        e["sender_id"],
-                        e["sent_at"],
-                        e["msg_type"],
-                        e["content"],
-                    )
                     cur = self._db.execute(
                         """INSERT OR IGNORE INTO local_messages
-                           (inbox_id, conversation_id, peer_id, peer_display_name,
-                            sender_id, sent_at, msg_type, content, local_hash)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                           (inbox_id, conversation_id, client_id,
+                            sender_id, sent_at, msg_type, content)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
                         (
                             inbox_id,
                             conversation_id,
-                            peer_id,
-                            peer_display_name,
+                            e["client_id"],
                             e["sender_id"],
                             e["sent_at"],
                             e["msg_type"],
                             e["content"],
-                            lh,
                         ),
                     )
                     if cur.rowcount > 0:
@@ -318,22 +292,30 @@ class Store:
 
     # ---- outbound staging --------------------------------------------
 
-    def get_unsent(self, limit: int, active_peers: set[str]) -> list[LocalMessage]:
-        if not active_peers:
+    def get_unsent(
+        self, limit: int, active_takeovers: set[str]
+    ) -> list[LocalMessage]:
+        """Unsent messages whose ``(inbox_id, conversation_id)`` is in the
+        takeover set. The takeover set is the only gate: an empty set
+        means nothing is being forwarded.
+
+        Keys are formatted ``"{inbox_id}|{conversation_id}"``.
+        """
+        if not active_takeovers:
             return []
         with self._lock:
             if self._closed:
                 return []
-            keys = list(active_peers)
+            keys = list(active_takeovers)
             placeholders = ",".join("(?,?)" for _ in keys)
             params: list = []
             for k in keys:
-                inbox_id, _, peer_id = k.partition("|")
-                params += [inbox_id, peer_id]
+                inbox_id, _, conv_id = k.partition("|")
+                params += [inbox_id, conv_id]
             params.append(limit)
             rows = self._db.execute(
                 f"""SELECT * FROM local_messages
-                    WHERE sent = 0 AND (inbox_id, peer_id) IN ({placeholders})
+                    WHERE sent = 0 AND (inbox_id, conversation_id) IN ({placeholders})
                     ORDER BY id LIMIT ?""",
                 params,
             ).fetchall()

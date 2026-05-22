@@ -83,7 +83,13 @@ class Conversation:
 @dataclass(frozen=True)
 class IncomingEvent:
     conversation_id: str
-    sender_id: str          # platform id of whoever sent it; "self" must match adapter.platform_self_id
+    client_id: str          # adapter-decided stable id (chat: platform msg.id;
+                            # wechat: official msg_id; fallback: adapter hash).
+                            # Bridge uses (inbox_id, client_id) for local dedup
+                            # AND ships it on wire — Studio dedups by the same
+                            # key. There is no separate runtime-side hash.
+    sender_id: str | None   # platform id of whoever sent it. None means "self"
+                            # (the inbox's platform_self_id sent it).
     sent_at: str            # ISO-ish; opaque to runtime, used for display ordering
     msg_type: str           # text | image | audio | video | file
     content: str
@@ -161,6 +167,14 @@ class Adapter(Protocol):
         """Platform-stable id of the logged-in account. May lazy-resolve
         on first access (one HTTP) and cache. May raise Unauthorized /
         TransientError on first access only."""
+        ...
+
+    @property
+    def platform_self_display_name(self) -> str:
+        """Platform-side display name of the logged-in account (e.g.
+        nickname). Bridge ships it via register_inboxes so Studio can
+        show a real name instead of an id. Same lifecycle as
+        :attr:`platform_self_id`."""
         ...
 
     def list_conversations(self) -> list[Conversation]:

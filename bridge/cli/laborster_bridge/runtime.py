@@ -1,13 +1,16 @@
-"""BridgeRuntime — loop owner for one logged-in account.
+"""BridgeRuntime — loop owner for one logged-in account (protocol v2).
 
 Loops (one thread each unless noted):
-  producer × N   per-inbox: list_conversations + fetch_new per DM conv,
-                 ingested atomically with cursor advance.
-  consumer  1s   unsent -> Studio /incoming   (only for active/takeover peers)
-  heartbeat 15s  drop inboxes Studio no longer serves
-  announce  60s  report DM peer directory (from list_conversations)
-  active    10s  refresh takeover peer set
-  outbound  LP   long-poll Studio queue -> adapter.send -> ack
+  producer × N   per-inbox: list_conversations + diff-push /conversations
+                 + fetch_new per conversation, ingested atomically with
+                 cursor advance.
+  consumer  1s   unsent -> Studio /incoming   (only for takeover convs)
+  heartbeat 15s  pure heartbeat; 401 -> auth_error
+  takeovers 10s  refresh takeover (inbox_id, conv_id) set
+  outbound  LP   long-poll Studio /outbound -> adapter.send. No ack:
+                 success path closes via /incoming auto-DELIVERED;
+                 PermanentError just drops the message (lease-less).
+                 Per-process in-flight set prevents same-id redispatch.
 """
 
 from __future__ import annotations
@@ -23,12 +26,46 @@ from .store import Store
 from .studio_client import StudioClient
 
 HEARTBEAT_S = 15
-ANNOUNCE_S = 60
-ACTIVE_PEERS_S = 10
+TAKEOVERS_S = 10
 CONSUMER_S = 1
 CONSUMER_BATCH = 50
 OUTBOUND_TIMEOUT_S = 30
 PRODUCER_INTERVAL_S = 2
+
+
+def _conv_signature(convs: list[adapters.Conversation]) -> tuple:
+    """Stable hashable summary used to detect "anything changed"."""
+    return tuple(
+        sorted(
+            (
+                c.id,
+                c.kind,
+                c.display_name,
+                tuple(sorted((p["platform_id"], p["display_name"]) for p in c.peers)),
+            )
+            for c in convs
+        )
+    )
+
+
+def _to_push_conversations(convs: list[adapters.Conversation]) -> list[dict]:
+    out = []
+    for c in convs:
+        out.append(
+            {
+                "platform_conversation_id": c.id,
+                "kind": c.kind,
+                "display_name": c.display_name,
+                "members": [
+                    {
+                        "peer_platform_id": p["platform_id"],
+                        "display_name": p["display_name"],
+                    }
+                    for p in c.peers
+                ],
+            }
+        )
+    return out
 
 
 class BridgeRuntime:
@@ -46,12 +83,14 @@ class BridgeRuntime:
         self._base_info = base_info
         self._on_auth_error = on_auth_error
 
-        self._lock = threading.Lock()  # guards _adapters
-        # inbox_id -> {adapter, inbox, conv_map (peer_id→conv_id),
-        #              peer_names (conv_id→(peer_id, display)), conv_count}
+        self._lock = threading.Lock()
+        # inbox_id -> {adapter, inbox, conv_signature, conv_count}
         self._adapters: dict[str, dict] = {}
-        self._active_peers: set[str] = set()
-        self._outbound_cursor = 0
+        # set of "inbox_id|platform_conversation_id" pulled from /takeovers
+        self._active_takeovers: set[str] = set()
+        # outbound ids currently being dispatched (so we don't redispatch
+        # within the same process between long-polls).
+        self._inflight_outbound: set[int] = set()
         self._last_error: str | None = None
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
@@ -63,9 +102,6 @@ class BridgeRuntime:
         self._threads.append(t)
 
     def _auth_error(self) -> None:
-        # A runtime that has been stopped (e.g. superseded by _ensure)
-        # must not run its 401 handler — it could clear a token a newer
-        # runtime / fresh /login already replaced.
         if self._stop.is_set():
             return
         self._on_auth_error()
@@ -122,7 +158,6 @@ class BridgeRuntime:
         self._threads.append(t)
 
     def _sleep(self, secs: float) -> bool:
-        """Sleep, returning True if stop was requested."""
         return self._stop.wait(timeout=secs)
 
     # --- bootstrap ---
@@ -132,8 +167,8 @@ class BridgeRuntime:
         channels = self._store.channels()
         self._log("core", "info", f"starting · channels={len(channels)}")
 
-        # Build adapters from credentials; resolve self_id (one HTTP each).
-        logged_in: list[tuple[int, adapters.Adapter, str, str]] = []
+        logged_in: list[tuple[int, adapters.Adapter, str, str, str]] = []
+        # (channel_id, adapter, platform, self_id, self_display)
         errors: list[str] = []
         for ch in channels:
             try:
@@ -145,7 +180,8 @@ class BridgeRuntime:
                 continue
             try:
                 adapter = factory.build(ch.credential)
-                self_id = adapter.platform_self_id   # may raise
+                self_id = adapter.platform_self_id
+                self_display = adapter.platform_self_display_name
             except adapters.Unauthorized:
                 m = f"{ch.platform}: credential 失效，请重新 /channel add"
                 errors.append(m)
@@ -162,7 +198,7 @@ class BridgeRuntime:
                 self._log("adapter", "err", f"channel build failed · {m}")
                 continue
             self._log("adapter", "ok", f"{ch.platform} self_id ok · {self_id}")
-            logged_in.append((ch.id, adapter, ch.platform, self_id))
+            logged_in.append((ch.id, adapter, ch.platform, self_id, self_display))
 
         if not logged_in:
             self._last_error = "无法连接任何 channel: " + " / ".join(errors)
@@ -171,8 +207,15 @@ class BridgeRuntime:
             return
 
         try:
-            r = self._studio.register_inboxes(
-                [(platform, sid) for _, _, platform, sid in logged_in]
+            inboxes = self._studio.register_inboxes(
+                [
+                    {
+                        "platform": platform,
+                        "platform_self_id": sid,
+                        "display_name": display,
+                    }
+                    for _, _, platform, sid, display in logged_in
+                ]
             )
         except HttpUnauthorized:
             self._last_error = "Studio session 失效，请重新登录"
@@ -185,14 +228,8 @@ class BridgeRuntime:
             self._push_state("offline")
             return
 
-        inboxes = r["inboxes"]
-        self._outbound_cursor = r["cursor"]
-        self._log(
-            "studio",
-            "ok",
-            f"inboxes registered · {len(inboxes)} inbox · cursor={r['cursor']}",
-        )
-        for channel_id, adapter, platform, self_id in logged_in:
+        self._log("studio", "ok", f"inboxes registered · {len(inboxes)} inbox")
+        for channel_id, adapter, platform, self_id, _display in logged_in:
             inbox = next(
                 (
                     ib
@@ -206,14 +243,11 @@ class BridgeRuntime:
                 self._log("adapter", "warn", f"no inbox for {platform}/{self_id}")
                 self._store.set_channel_inbox(channel_id, None)
                 continue
-            # Cache the Studio-issued inbox_id on the channel row so cursors
-            # and local_messages keyed by it survive restarts.
             self._store.set_channel_inbox(channel_id, inbox["id"])
             entry = {
                 "adapter": adapter,
                 "inbox": inbox,
-                "conv_map": {},
-                "peer_names": {},
+                "conv_signature": None,
                 "conv_count": 0,
             }
             with self._lock:
@@ -229,11 +263,10 @@ class BridgeRuntime:
             )
         self._spawn(self._consumer, "consumer")
         self._spawn(self._heartbeat, "heartbeat")
-        self._spawn(self._announce, "announce")
-        self._spawn(self._loop_active_peers, "active-peers")
+        self._spawn(self._loop_takeovers, "takeovers")
         self._spawn(self._outbound, "outbound")
 
-    # --- producer (bounded fetch_new per conversation) ---
+    # --- producer (diff-aware /conversations push + fetch_new) ---
 
     def _producer(self, inbox_id: str) -> None:
         while not self._stop.is_set():
@@ -241,8 +274,7 @@ class BridgeRuntime:
                 self._poll_inbox(inbox_id)
             except adapters.Unauthorized:
                 self._log(
-                    "producer",
-                    "err",
+                    "producer", "err",
                     f"inbox={inbox_id}: channel credential 失效，停止本 channel",
                 )
                 with self._lock:
@@ -260,8 +292,7 @@ class BridgeRuntime:
                 if self._stop.is_set():
                     return
                 self._log(
-                    "producer",
-                    "err",
+                    "producer", "err",
                     f"inbox={inbox_id}: unexpected {type(exc).__name__}: {exc} — retry 5s",
                 )
                 if self._sleep(5):
@@ -278,25 +309,29 @@ class BridgeRuntime:
         adapter = entry["adapter"]
 
         convs = adapter.list_conversations()
-
-        conv_map: dict[str, str] = {}
-        peer_names: dict[str, tuple[str, str]] = {}
-        for c in convs:
-            if c.kind == "dm" and c.peers:
-                peer = c.peers[0]
-                conv_map[peer["platform_id"]] = c.id
-                peer_names[c.id] = (peer["platform_id"], peer["display_name"])
-        with self._lock:
-            entry["conv_map"] = conv_map
-            entry["peer_names"] = peer_names
-            entry["conv_count"] = len(convs)
+        sig = _conv_signature(convs)
+        prev_sig = entry.get("conv_signature")
+        if sig != prev_sig:
+            try:
+                self._studio.push_conversations(
+                    inbox_id, _to_push_conversations(convs)
+                )
+                entry["conv_signature"] = sig
+                self._log(
+                    "producer", "ok",
+                    f"inbox={inbox_id}: pushed {len(convs)} conversations (diff)",
+                )
+            except HttpUnauthorized:
+                self._auth_error()
+                return
+            except Exception as exc:
+                self._log("producer", "warn", f"push conversations failed: {exc}")
+                # Don't update signature — retry next loop.
+        entry["conv_count"] = len(convs)
 
         for c in convs:
             if self._stop.is_set():
                 return
-            if c.kind != "dm" or not c.peers:
-                continue
-            peer = c.peers[0]
             since = self._store.get_cursor(inbox_id, c.id)
             events = adapter.fetch_new(c.id, since)
             if not events:
@@ -304,6 +339,7 @@ class BridgeRuntime:
             new_cursor = events[-1].cursor
             event_dicts = [
                 {
+                    "client_id": e.client_id,
                     "sender_id": e.sender_id,
                     "sent_at": e.sent_at,
                     "msg_type": e.msg_type,
@@ -311,20 +347,13 @@ class BridgeRuntime:
                 }
                 for e in events
             ]
-            self._store.ingest(
-                inbox_id,
-                c.id,
-                peer["platform_id"],
-                peer["display_name"],
-                event_dicts,
-                new_cursor,
-            )
+            self._store.ingest(inbox_id, c.id, event_dicts, new_cursor)
 
-    # --- consumer (unchanged shape; pushes unsent to Studio) ---
+    # --- consumer ---
 
     def _consumer(self) -> None:
         while not self._sleep(CONSUMER_S):
-            rows = self._store.get_unsent(CONSUMER_BATCH, self._active_peers)
+            rows = self._store.get_unsent(CONSUMER_BATCH, self._active_takeovers)
             if not rows:
                 continue
             with self._lock:
@@ -340,9 +369,8 @@ class BridgeRuntime:
                     [
                         {
                             "inbox_id": r.inbox_id,
-                            "peer_id": r.peer_id,
-                            "peer_display_name": r.peer_display_name,
-                            "platform_msg_id": None,
+                            "platform_conversation_id": r.conversation_id,
+                            "client_id": r.client_id,
                             "sender_id": r.sender_id,
                             "msg_type": r.msg_type,
                             "content": r.content,
@@ -357,7 +385,7 @@ class BridgeRuntime:
             except Exception as exc:
                 self._log("consumer", "warn", f"push failed: {exc}")
 
-    # --- heartbeat ---
+    # --- heartbeat (pure) ---
 
     def _heartbeat(self) -> None:
         self._beat()
@@ -366,17 +394,7 @@ class BridgeRuntime:
 
     def _beat(self) -> None:
         try:
-            res = self._studio.heartbeat()
-            active_ids = {i["id"] for i in res["inboxes"]}
-            with self._lock:
-                removed = [
-                    (i, self._adapters.pop(i))
-                    for i in list(self._adapters)
-                    if i not in active_ids
-                ]
-            for inbox_id, _entry in removed:
-                self._log("heart", "warn", f"inbox {inbox_id} removed by Studio")
-            self._push_state("online")
+            self._studio.heartbeat()
         except HttpUnauthorized:
             self._log("heart", "err", "401 · session revoked")
             self._last_error = "Studio session 失效，请重新登录"
@@ -386,47 +404,22 @@ class BridgeRuntime:
         except Exception as exc:
             self._log("heart", "warn", f"heartbeat failed: {exc}")
 
-    # --- announce ---
+    # --- takeovers ---
 
-    def _announce(self) -> None:
-        while True:
-            with self._lock:
-                items = list(self._adapters.items())
-            for inbox_id, entry in items:
-                try:
-                    convs = entry["adapter"].list_conversations()
-                    peers = [
-                        {
-                            "peer_platform_id": c.peers[0]["platform_id"],
-                            "display_name": c.peers[0]["display_name"],
-                        }
-                        for c in convs
-                        if c.kind == "dm" and c.peers
-                    ]
-                    self._studio.announce_peers(inbox_id, peers)
-                except adapters.Unauthorized:
-                    self._log(
-                        "announce",
-                        "warn",
-                        f"inbox={inbox_id}: channel credential 失效，跳过 announce",
-                    )
-                except Exception as exc:
-                    self._log("announce", "warn", f"inbox={inbox_id}: {exc}")
-            if self._sleep(ANNOUNCE_S):
-                return
-
-    # --- active peers ---
-
-    def _loop_active_peers(self) -> None:
+    def _loop_takeovers(self) -> None:
         while True:
             try:
-                peers = self._studio.get_active_peers()
-                self._active_peers = {
-                    f"{p['inbox_id']}|{p['peer_platform_id']}" for p in peers
+                takeovers = self._studio.get_takeovers()
+                self._active_takeovers = {
+                    f"{t['inbox_id']}|{t['platform_conversation_id']}"
+                    for t in takeovers
                 }
+            except HttpUnauthorized:
+                self._auth_error()
+                return
             except Exception as exc:
-                self._log("active", "warn", f"active-peers refresh failed: {exc}")
-            if self._sleep(ACTIVE_PEERS_S):
+                self._log("takeover", "warn", f"refresh failed: {exc}")
+            if self._sleep(TAKEOVERS_S):
                 return
 
     # --- outbound ---
@@ -434,13 +427,13 @@ class BridgeRuntime:
     def _outbound(self) -> None:
         while not self._stop.is_set():
             try:
-                items = self._studio.get_outbound(
-                    self._outbound_cursor, OUTBOUND_TIMEOUT_S
-                )
+                items = self._studio.get_outbound(OUTBOUND_TIMEOUT_S)
                 for item in items:
                     if self._stop.is_set():
                         break
-                    self._outbound_cursor = max(self._outbound_cursor, item["id"])
+                    if item["id"] in self._inflight_outbound:
+                        continue
+                    self._inflight_outbound.add(item["id"])
                     self._dispatch_outbound(item)
             except HttpUnauthorized:
                 self._last_error = "Studio session 失效，请重新登录"
@@ -457,54 +450,24 @@ class BridgeRuntime:
         with self._lock:
             entry = self._adapters.get(item["inbox_id"])
         if not entry:
-            self._studio.ack_outbound(item["id"], "failed", "inbox not found")
+            # We just don't dispatch — Studio will keep re-offering it
+            # until either the inbox comes back or someone cleans up.
+            self._log("outbound", "warn", f"inbox not served · id={item['id']}")
             return
         adapter = entry["adapter"]
-        conv_id = entry.get("conv_map", {}).get(item["peer_platform_id"])
-        if conv_id is None:
-            # Cache miss — refresh directory once.
-            try:
-                convs = adapter.list_conversations()
-            except adapters.Unauthorized:
-                self._studio.ack_outbound(
-                    item["id"], "failed", "channel credential 失效"
-                )
-                return
-            except Exception as exc:
-                self._studio.ack_outbound(
-                    item["id"], "failed", f"conv lookup failed: {exc}"
-                )
-                return
-            conv_map = {
-                c.peers[0]["platform_id"]: c.id
-                for c in convs
-                if c.kind == "dm" and c.peers
-            }
-            with self._lock:
-                entry["conv_map"] = conv_map
-            conv_id = conv_map.get(item["peer_platform_id"])
-        if conv_id is None:
-            self._studio.ack_outbound(item["id"], "failed", "conversation not found")
-            return
-
+        conv_id = item["platform_conversation_id"]
         payload = adapters.OutboundPayload(
             msg_type=item["msg_type"], content=item["content"]
         )
         try:
             adapter.send(conv_id, payload)
-            self._studio.ack_outbound(item["id"], "sent", "")
             self._log(
-                "outbound",
-                "ok",
-                f"sent {payload.msg_type} to {item['peer_platform_id']}",
+                "outbound", "ok",
+                f"sent {payload.msg_type} -> {conv_id} (id={item['id']})",
             )
         except adapters.PermanentError as exc:
-            self._log("outbound", "warn", f"permanent failure: {exc}")
-            self._studio.ack_outbound(item["id"], "failed", str(exc))
+            self._log("outbound", "warn", f"permanent failure · id={item['id']}: {exc}")
         except adapters.Unauthorized:
-            self._studio.ack_outbound(
-                item["id"], "failed", "channel credential 失效"
-            )
+            self._log("outbound", "warn", f"channel credential 失效 · id={item['id']}")
         except Exception as exc:
-            self._log("outbound", "err", f"dispatch failed: {exc}")
-            self._studio.ack_outbound(item["id"], "failed", str(exc))
+            self._log("outbound", "err", f"dispatch failed · id={item['id']}: {exc}")

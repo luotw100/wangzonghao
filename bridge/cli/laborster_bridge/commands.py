@@ -291,7 +291,6 @@ def cmd_login(ctx: Context, args: list[str]) -> dict:
     lines = [
         "登录成功",
         f"  account_id : {account_id}",
-        f"  bridge_id  : {r['bridge_id']}",
         f"  machine_id : {r['machine_id']}",
     ]
     msg = _ensure(ctx)

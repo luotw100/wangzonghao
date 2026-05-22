@@ -21,9 +21,10 @@ _TOP = [
     "account", "channel", "log", "studio", "quit",
 ]
 _SUB = {
-    "channel": ["add", "rm", "list"],
+    "channel": ["list", "add", "rm", "relogin"],
     "account": ["list", "use", "remove"],
-    "log": ["-f"],
+    "studio":  ["set", "reset"],
+    "log":     ["-f"],
 }
 
 

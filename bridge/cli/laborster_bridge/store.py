@@ -211,6 +211,19 @@ class Store:
             self._db.commit()
         return cur.rowcount > 0
 
+    def update_channel_credential(
+        self, channel_id: int, credential: dict
+    ) -> None:
+        """Replace a channel's credential blob (e.g. after /channel relogin)."""
+        with self._lock:
+            if self._closed:
+                return
+            self._db.execute(
+                "UPDATE channels SET credential_json = ? WHERE id = ?",
+                (json.dumps(credential, ensure_ascii=False), channel_id),
+            )
+            self._db.commit()
+
     def set_channel_inbox(self, channel_id: int, inbox_id: str | None) -> None:
         with self._lock:
             if self._closed:

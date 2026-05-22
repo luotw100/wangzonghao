@@ -30,13 +30,12 @@ class StudioClient:
     ) -> None:
         self._get_token = get_token
         self._get_machine_id = get_machine_id
-        self._base = config.STUDIO_BASE_URL
 
     def _req(self, method: str, path: str, body=None, timeout: float = 20.0):
         machine_id = self._get_machine_id()
         return request_json(
             method,
-            f"{self._base}{path}",
+            f"{config.STUDIO_BASE_URL}{path}",
             token=self._get_token(),
             body=body,
             timeout=timeout,
@@ -50,7 +49,7 @@ class StudioClient:
     ) -> dict:
         r = request_json(
             "POST",
-            f"{self._base}/api/bridge/handshake",
+            f"{config.STUDIO_BASE_URL}/api/bridge/handshake",
             body={
                 "username": username,
                 "password": password,

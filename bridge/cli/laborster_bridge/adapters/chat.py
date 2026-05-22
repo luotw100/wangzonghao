@@ -59,8 +59,15 @@ class _ChatLoginFlow:
         Field(name="password", label="Chat 密码", secret=True),
     ]
 
-    def __init__(self) -> None:
-        self._step: Step = PromptInput(title="登录 Chat 沙箱", fields=self._FIELDS)
+    def __init__(self, base_url: str | None = None) -> None:
+        # Per-channel override (defaults to the hardcoded prod URL). The
+        # resolved URL is baked into the credential below so the adapter
+        # is pinned to it for its lifetime — useful when one daemon
+        # bridges channels on multiple chat instances (dev/prod).
+        self._base_url = (base_url or config.CHAT_BASE_URL).rstrip("/")
+        self._step: Step = PromptInput(
+            title=f"登录 Chat 沙箱 · {self._base_url}", fields=self._FIELDS
+        )
 
     def current(self) -> Step:
         return self._step
@@ -72,7 +79,7 @@ class _ChatLoginFlow:
         p = answers.get("password") or ""
         if not u or not p:
             self._step = PromptInput(
-                title="登录 Chat 沙箱",
+                title=f"登录 Chat 沙箱 · {self._base_url}",
                 fields=self._FIELDS,
                 error="用户名和密码不能为空",
             )
@@ -80,19 +87,21 @@ class _ChatLoginFlow:
         try:
             r = request_json(
                 "POST",
-                f"{config.CHAT_BASE_URL}/api/auth/login",
+                f"{self._base_url}/api/auth/login",
                 body={"username": u, "password": p},
             )
         except HttpUnauthorized:
             self._step = PromptInput(
-                title="登录 Chat 沙箱",
+                title=f"登录 Chat 沙箱 · {self._base_url}",
                 fields=self._FIELDS,
                 error="账号或密码错误",
             )
             return self._step
         except HttpError as exc:
             raise TransientError(str(exc)) from None
-        self._step = Done(credential={"token": r["token"]})
+        self._step = Done(
+            credential={"token": r["token"], "base_url": self._base_url}
+        )
         return self._step
 
     def poll(self) -> Step:
@@ -111,6 +120,11 @@ class ChatAdapter:
         if not isinstance(token, str) or not token:
             raise ValueError("chat credential missing 'token'")
         self._token = token
+        # Credentials minted before per-channel base_url existed simply
+        # didn't carry one; fall back to the hardcoded prod URL.
+        self._base_url = (
+            credential.get("base_url") or config.CHAT_BASE_URL
+        ).rstrip("/")
         self._self_id: str | None = None
         self._self_display: str | None = None
 
@@ -118,7 +132,7 @@ class ChatAdapter:
         try:
             return request_json(
                 method,
-                f"{config.CHAT_BASE_URL}{path}",
+                f"{self._base_url}{path}",
                 token=self._token,
                 body=body,
                 timeout=timeout,
@@ -242,7 +256,7 @@ class ChatAdapter:
 register(
     AdapterFactory(
         platform="chat",
-        begin_login=lambda: _ChatLoginFlow(),
+        begin_login=lambda base_url=None: _ChatLoginFlow(base_url=base_url),
         build=lambda credential: ChatAdapter(credential),
     )
 )

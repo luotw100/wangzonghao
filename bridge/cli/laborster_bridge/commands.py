@@ -24,20 +24,35 @@ DEFAULT_CHANNEL_PLATFORM = "chat"
 HELP = """\
 Laborster Bridge — 命令
 
-  /help                    显示本指南
-  /state <path>            设置状态目录根（无默认；每次启动都要指定）
-  /login                   输入 Studio 账号密码 → 落 token / machine_id
-  /logout                  清除当前账号的 Studio token（自动断开）
-  /status                  daemon 与各 channel 状态快照
-  /account list            列出本机已绑定的所有 Studio 账号
-  /account use <account>   切换到指定账号（按 id 或 username 前缀匹配）
-  /account remove <acc>    彻底删除一个本地账号（含全部消息与凭据）
-  /channel add [platform]  启动登录流绑定一个 channel（默认 platform=chat）
-  /channel rm <n>          删除第 n 个 channel（见 /channel list）
-  /channel list            列出已绑定 channel（不含任何凭据）
-  /log [-f]                查看日志；-f 跟随（Ctrl-C 或 EOF 退出）
-  /studio                  打印 Studio 地址
-  /quit                    停 daemon 并退出
+  状态目录
+    /state                       打印当前状态目录
+    /state <path>                设置（无默认；每次启动都要指定）
+
+  Studio 账号
+    /login                       Studio 账号密码 → 落 token / machine_id
+    /logout                      清除当前账号 token（自动断开 daemon）
+    /account                     等价于 /account list
+    /account list                列出本机已绑定的所有 Studio 账号
+    /account use <acc>           切换账号（id 或 username 前缀匹配）
+    /account remove <acc>        删除一个本地账号（含全部消息与凭据）
+
+  Channel
+    /channel                     等价于 /channel list
+    /channel list                列出已绑定 channel
+    /channel add [platform] [..] 绑定一个 channel；platform 默认 chat
+                                 chat 可加位置参数 base_url（默认硬编码 URL）
+    /channel rm <n>              删除第 n 个 channel
+    /channel relogin <n>         重跑该 channel 的登录流，更新 credential
+
+  调试
+    /studio                      打印当前 Studio 地址
+    /studio set <url>            会话内覆盖 Studio 地址（不落盘，重启复原）
+    /studio reset                恢复默认 Studio 地址
+    /status                      daemon 与各 channel 状态快照
+    /log [n]                     打印最近 n 条日志（默认 50）
+    /log -f                      跟随日志（Ctrl-C 退出）
+    /help                        显示本指南
+    /quit                        停 daemon 并退出
 """
 
 
@@ -157,9 +172,13 @@ def autostart(ctx: Context) -> str | None:
 # --- LoginFlow runner (CLI side) ----------------------------------------
 
 def _run_login_flow_cli(
-    ctx: Context, platform: str
+    ctx: Context, platform: str, extra: dict | None = None
 ) -> tuple[adapters.Credential | None, str | None]:
-    """Drive an adapter LoginFlow with the REPL's ask_line/ask_secret."""
+    """Drive an adapter LoginFlow with the REPL's ask_line/ask_secret.
+
+    ``extra`` is forwarded as kwargs to ``factory.begin_login``. The
+    only platform that consumes anything today is ``chat`` (``base_url``).
+    """
     try:
         factory = adapters.get(platform)
     except KeyError:
@@ -168,7 +187,7 @@ def _run_login_flow_cli(
             f"（已注册: {', '.join(adapters.platforms())}）"
         )
     try:
-        flow = factory.begin_login()
+        flow = factory.begin_login(**(extra or {}))
     except adapters.TransientError as exc:
         return None, f"启动登录失败: {exc}"
 
@@ -325,9 +344,7 @@ def _match_account(token: str) -> dict | None:
 
 
 def cmd_account(ctx: Context, args: list[str]) -> dict:
-    if not args:
-        return {"error": "用法: /account list | use <acc> | remove <acc>"}
-    sub = args[0]
+    sub = args[0] if args else "list"
 
     if sub == "list":
         accounts = store_mod.list_accounts(config.state_root())
@@ -380,34 +397,59 @@ def cmd_account(ctx: Context, args: list[str]) -> dict:
             return {"error": f"删除失败: {exc}"}
         return {"lines": [f"已删除账号 {aid}"]}
 
-    return {"error": "用法: /account list | use <acc> | remove <acc>"}
+    return {"error": "用法: /account [list] | use <acc> | remove <acc>"}
+
+
+def _login_extras(platform: str, args: list[str]) -> tuple[dict, str | None]:
+    """Parse positional args after platform into LoginFlow kwargs.
+
+    Currently only ``chat`` takes a positional ``base_url``; other
+    platforms accept no extras and reject any.
+    """
+    if platform == "chat":
+        if not args:
+            return {}, None
+        if len(args) > 1:
+            return {}, "chat 只接受一个可选位置参数: base_url"
+        url = args[0].strip().rstrip("/")
+        if not (url.startswith("http://") or url.startswith("https://")):
+            return {}, f"base_url 必须以 http(s):// 开头: {url}"
+        return {"base_url": url}, None
+    if args:
+        return {}, f"{platform} 不接受额外参数: {' '.join(args)}"
+    return {}, None
 
 
 def cmd_channel(ctx: Context, args: list[str]) -> dict:
-    if not args:
-        return {"error": "用法: /channel add [platform] | rm <n> | list"}
-    sub = args[0]
     if ctx.store is None:
         return {"error": "请先 /login"}
+    sub = args[0] if args else "list"
     channels = ctx.store.channels()
 
     if sub == "list":
         if not channels:
-            return {"lines": ["（无 channel）"]}
+            return {"lines": ["（无 channel — 执行 /channel add）"]}
         lines = []
         for i, c in enumerate(channels):
             try:
                 self_id = (
                     adapters.get(c.platform).build(c.credential).platform_self_id
                 )
-                lines.append(f"  {i + 1}. {c.platform}  {self_id}")
+                head = f"  {i + 1}. {c.platform}  {self_id}"
             except Exception as exc:
-                lines.append(f"  {i + 1}. {c.platform}  (无法解析: {exc})")
+                head = f"  {i + 1}. {c.platform}  (无法解析: {exc})"
+            url = c.credential.get("base_url")
+            if url and url != _platform_default_url(c.platform):
+                head += f"  [{url}]"
+            lines.append(head)
         return {"lines": lines}
 
     if sub == "add":
         platform = args[1].strip() if len(args) >= 2 else DEFAULT_CHANNEL_PLATFORM
-        credential, err = _run_login_flow_cli(ctx, platform)
+        extras, err = _login_extras(platform, args[2:])
+        if err:
+            return {"error": err}
+        credential, err = _run_login_flow_cli(ctx, platform, extras)
         if err is not None:
             return {"error": err}
         assert credential is not None
@@ -424,15 +466,51 @@ def cmd_channel(ctx: Context, args: list[str]) -> dict:
         _ensure(ctx)
         return {"lines": [f"已删除 channel #{idx + 1} ({removed.platform})"]}
 
-    return {"error": "用法: /channel add [platform] | rm <n> | list"}
+    if sub == "relogin":
+        if len(args) < 2 or not args[1].isdigit():
+            return {"error": "用法: /channel relogin <n>"}
+        idx = int(args[1]) - 1
+        if idx < 0 or idx >= len(channels):
+            return {"error": "序号超出范围（见 /channel list）"}
+        ch = channels[idx]
+        # Reuse the existing per-channel base_url where present so the
+        # operator doesn't have to retype it.
+        extras: dict = {}
+        url = ch.credential.get("base_url")
+        if ch.platform == "chat" and url:
+            extras["base_url"] = url
+        credential, err = _run_login_flow_cli(ctx, ch.platform, extras)
+        if err is not None:
+            return {"error": err}
+        assert credential is not None
+        _stop_daemon(ctx)
+        ctx.store.update_channel_credential(ch.id, credential)
+        lines = [f"已更新 channel #{idx + 1} ({ch.platform}) credential"]
+        msg = _ensure(ctx)
+        if msg:
+            lines.append(msg)
+        return {"lines": lines}
+
+    return {"error": "用法: /channel [list] | add [platform] [..] | rm <n> | relogin <n>"}
+
+
+def _platform_default_url(platform: str) -> str | None:
+    if platform == "chat":
+        return config.DEFAULT_CHAT_BASE_URL
+    return None
 
 
 def cmd_status(ctx: Context, args: list[str]) -> dict:
     snap = ctx.events.snapshot()
     running = bool(ctx.runtime and ctx.runtime.is_running())
+    status = snap.get("status", "idle")
+    if not running and status != "idle":
+        status += " (daemon 未运行)"
+    studio_url = config.STUDIO_BASE_URL
+    studio_marker = "" if studio_url == config.DEFAULT_STUDIO_BASE_URL else "  (session override)"
     lines = [
-        f"status      : {snap.get('status', 'idle')}{'' if running else ' (daemon 未运行)'}",
-        f"studio      : {snap.get('studio_url', config.STUDIO_BASE_URL)}",
+        f"status      : {status}",
+        f"studio      : {studio_url}{studio_marker}",
         f"account_id  : {snap.get('account_id') or ctx.account_id or '-'}",
         f"username    : {snap.get('username') or '-'}",
         f"machine_id  : {snap.get('machine_id') or '-'}",
@@ -445,20 +523,59 @@ def cmd_status(ctx: Context, args: list[str]) -> dict:
     if chans:
         lines.append("channels:")
         for c in chans:
-            lines.append(
+            head = (
                 f"  - {c.get('platform', '?')}/{c.get('platform_self_id') or '-'} "
-                f"convs={c.get('conv_count', 0)} "
-                f"{'online' if c.get('online') else 'offline'}"
+                f"state={c.get('state', '?')} convs={c.get('conv_count', 0)}"
             )
+            if c.get("last_error"):
+                head += f"  · {c['last_error']}"
+            lines.append(head)
     return {"lines": lines}
 
 
 def cmd_log(ctx: Context, args: list[str]) -> dict:
-    return {"logs": ctx.events.tail(50), "follow": "-f" in args}
+    follow = "-f" in args
+    nums = [int(a) for a in args if a.isdigit()]
+    n = nums[0] if nums else 50
+    return {"logs": ctx.events.tail(n), "follow": follow}
 
 
 def cmd_studio(ctx: Context, args: list[str]) -> dict:
-    return {"lines": [config.STUDIO_BASE_URL]}
+    if not args:
+        marker = (
+            "" if config.STUDIO_BASE_URL == config.DEFAULT_STUDIO_BASE_URL
+            else "  (session override)"
+        )
+        return {"lines": [f"{config.STUDIO_BASE_URL}{marker}"]}
+    sub = args[0]
+    if sub == "reset":
+        return _apply_studio_url(ctx, config.DEFAULT_STUDIO_BASE_URL, reset=True)
+    if sub == "set":
+        if len(args) < 2:
+            return {"error": "用法: /studio set <url>"}
+        url = args[1].strip().rstrip("/")
+        if not (url.startswith("http://") or url.startswith("https://")):
+            return {"error": f"url 必须以 http(s):// 开头: {url}"}
+        return _apply_studio_url(ctx, url, reset=False)
+    return {"error": "用法: /studio | /studio set <url> | /studio reset"}
+
+
+def _apply_studio_url(ctx: Context, url: str, *, reset: bool) -> dict:
+    """Override Studio base URL for this process (never persisted).
+
+    The current daemon is stopped because StudioClient + per-account
+    state are pinned to the previous URL; the operator should /login
+    again (likely as a different account) against the new URL.
+    """
+    _stop_daemon(ctx)
+    config.STUDIO_BASE_URL = url
+    label = "已恢复默认 Studio 地址" if reset else "已切换 Studio 地址 (本次进程)"
+    lines = [f"{label}: {url}"]
+    if ctx.account_id is not None:
+        lines.append(
+            "当前账号是用旧地址登录的，请 /login 或 /account use 切换后再使用"
+        )
+    return {"lines": lines}
 
 
 def cmd_quit(ctx: Context, args: list[str]) -> dict:
@@ -479,4 +596,4 @@ DISPATCH = {
     "quit": cmd_quit,
 }
 
-NO_STATE_OK = {"help", "state", "quit"}
+NO_STATE_OK = {"help", "state", "studio", "quit"}

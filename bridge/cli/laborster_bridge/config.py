@@ -15,8 +15,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-CHAT_BASE_URL = "https://chat.laborster.com"
-STUDIO_BASE_URL = "https://studio.laborster.com"
+DEFAULT_CHAT_BASE_URL = "https://chat.laborster.com"
+DEFAULT_STUDIO_BASE_URL = "https://studio.laborster.com"
+
+# Module-level mutable: `/studio set <url>` rewrites STUDIO_BASE_URL for
+# the running process (never persisted). Restart restores the default.
+CHAT_BASE_URL = DEFAULT_CHAT_BASE_URL
+STUDIO_BASE_URL = DEFAULT_STUDIO_BASE_URL
 
 _state_root: Path | None = None
 

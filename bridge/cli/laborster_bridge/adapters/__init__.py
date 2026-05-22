@@ -209,7 +209,10 @@ class Adapter(Protocol):
 @dataclass(frozen=True)
 class AdapterFactory:
     platform: str
-    begin_login: Callable[[], LoginFlow]
+    # begin_login accepts platform-specific kwargs (e.g. chat passes
+    # base_url for dev-stack overrides). Implementations should treat
+    # unknown kwargs as opt-in and never required.
+    begin_login: Callable[..., LoginFlow]
     build: Callable[[Credential], Adapter]
 
 

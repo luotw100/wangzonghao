@@ -1,22 +1,42 @@
 """Single SQLite per account — the only on-disk state.
 
-One file per Studio account, at ``<state_root>/<account_id>/state.db``,
-holding four tables:
+One file per Studio account, at ``<state_root>/<account_id>/state.db``.
 
-* ``kv``              — startup-essential values: ``studio_token``,
-                        ``machine_id`` (Studio-issued), ``display_name``
-                        (cached username for the account picker),
-                        ``last_active_at`` (UTC ISO; written on open
-                        and on close, used to auto-pick the most recent
-                        account at launch).
-* ``channels``        — one row per bound channel. PK is a local
-                        autoincrement ``id`` so the row identity is
-                        stable; ``inbox_id`` is a cache filled by
-                        ``register_inboxes`` each bootstrap.
-* ``local_messages``  — incoming dedup queue (never TTL'd).
-* ``conv_cursors``    — per-conversation opaque resume cursor (never
-                        TTL'd; orphans from removed channels are kept
-                        so users can re-add a channel and resume).
+Design rule: bridge is a message relay. Studio is the source of truth for
+everything except (a) the credentials we need to talk to platforms and
+(b) the bookkeeping we need to resume a relay across restarts. So this
+file holds only four tables:
+
+* ``kv``              — startup-essential values:
+                          ``studio_token``      — Studio session token.
+                          ``machine_id``        — Studio-issued, sent as
+                                                  a header on every call.
+                          ``last_active_at``    — UTC ISO; pure local
+                                                  decision for "which
+                                                  account to autostart".
+                          ``display_name``      — RENDER CACHE ONLY. Re-
+                                                  written from Studio's
+                                                  handshake response so
+                                                  the account picker can
+                                                  show a name before the
+                                                  daemon comes up. Never
+                                                  read as truth.
+* ``channels``        — one row per bound channel. The only durable
+                        per-channel state is ``platform`` (which adapter)
+                        and ``credential_json`` (the platform token).
+                        Inbox id is Studio's — we re-fetch it on every
+                        connect, never cache.
+* ``local_messages``  — incoming dedup + relay queue (kept for the
+                        ``(inbox_id, client_id)`` uniqueness, even after
+                        upload).
+* ``conv_cursors``    — per-conversation opaque resume cursor for the
+                        adapter; orphans are kept so re-adding a channel
+                        resumes where we left off.
+
+If the on-disk schema doesn't match :data:`_SCHEMA_VERSION`, the db is
+deleted and recreated. Migration is intentionally not implemented —
+bridge state is recoverable (re-login Studio + re-add channel) and the
+shape is still changing.
 
 Opened with a POSIX ``flock`` (LOCK_EX|LOCK_NB) so two bridge processes
 can't share an account. Read-only metadata queries used to enumerate
@@ -35,6 +55,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+_SCHEMA_VERSION = 2
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS kv (
   key   TEXT PRIMARY KEY,
@@ -44,18 +66,14 @@ CREATE TABLE IF NOT EXISTS kv (
 CREATE TABLE IF NOT EXISTS channels (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
   platform        TEXT    NOT NULL,
-  credential_json TEXT    NOT NULL,
-  inbox_id        TEXT,
-  created_at      TEXT    NOT NULL
+  credential_json TEXT    NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS ix_channels_inbox
-  ON channels(inbox_id) WHERE inbox_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS local_messages (
   id                INTEGER PRIMARY KEY AUTOINCREMENT,
   inbox_id          TEXT NOT NULL,
   conversation_id   TEXT NOT NULL,    -- adapter's platform_conversation_id
-  client_id         TEXT NOT NULL,    -- adapter-decided stable id (chat: msg.id)
+  client_id         TEXT NOT NULL,    -- adapter-decided stable id
   sender_id         TEXT,             -- NULL = self
   sent_at           TEXT NOT NULL,
   msg_type          TEXT NOT NULL,
@@ -85,7 +103,6 @@ class Channel:
     id: int
     platform: str
     credential: dict
-    inbox_id: str | None
 
 
 @dataclass
@@ -114,17 +131,50 @@ class Store:
 
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._acquire_flock()
-
-        self._db = sqlite3.connect(str(self._path), check_same_thread=False)
-        self._db.row_factory = sqlite3.Row
-        self._db.execute("PRAGMA journal_mode = WAL")
-        self._db.executescript(_SCHEMA)
-        self._db.commit()
+        self._open_with_schema_check()
         try:
             os.chmod(self._path, 0o600)
         except OSError:
             pass
         self.kv_set("last_active_at", _now_iso())
+
+    def _open_with_schema_check(self) -> None:
+        """Open the db; nuke and recreate if schema version doesn't match.
+
+        Cheaper than maintaining migrations while the shape still moves.
+        Bridge state is recoverable — user re-logs Studio + re-adds channel.
+        """
+        if self._path.exists():
+            try:
+                probe = sqlite3.connect(str(self._path))
+                probe.execute(
+                    "CREATE TABLE IF NOT EXISTS meta(version INTEGER)"
+                )
+                row = probe.execute("SELECT version FROM meta LIMIT 1").fetchone()
+                probe.close()
+            except sqlite3.Error:
+                row = None
+            if not row or row[0] != _SCHEMA_VERSION:
+                self._nuke()
+
+        self._db = sqlite3.connect(str(self._path), check_same_thread=False)
+        self._db.row_factory = sqlite3.Row
+        self._db.execute("PRAGMA journal_mode = WAL")
+        self._db.executescript(_SCHEMA)
+        self._db.execute("CREATE TABLE IF NOT EXISTS meta(version INTEGER)")
+        self._db.execute("DELETE FROM meta")
+        self._db.execute("INSERT INTO meta(version) VALUES (?)", (_SCHEMA_VERSION,))
+        self._db.commit()
+
+    def _nuke(self) -> None:
+        for suffix in ("", "-wal", "-shm"):
+            p = Path(str(self._path) + suffix)
+            try:
+                p.unlink()
+            except FileNotFoundError:
+                pass
+            except OSError:
+                pass
 
     def _acquire_flock(self) -> None:
         # Windows: skip — the GUI binary already enforces a singleton via
@@ -176,15 +226,13 @@ class Store:
             if self._closed:
                 return []
             rows = self._db.execute(
-                "SELECT id, platform, credential_json, inbox_id "
-                "FROM channels ORDER BY id"
+                "SELECT id, platform, credential_json FROM channels ORDER BY id"
             ).fetchall()
         return [
             Channel(
                 id=r["id"],
                 platform=r["platform"],
                 credential=json.loads(r["credential_json"]),
-                inbox_id=r["inbox_id"],
             )
             for r in rows
         ]
@@ -194,9 +242,8 @@ class Store:
             if self._closed:
                 raise RuntimeError("store closed")
             cur = self._db.execute(
-                "INSERT INTO channels(platform, credential_json, created_at) "
-                "VALUES(?, ?, ?)",
-                (platform, json.dumps(credential, ensure_ascii=False), _now_iso()),
+                "INSERT INTO channels(platform, credential_json) VALUES(?, ?)",
+                (platform, json.dumps(credential, ensure_ascii=False)),
             )
             self._db.commit()
             return int(cur.lastrowid)
@@ -214,23 +261,13 @@ class Store:
     def update_channel_credential(
         self, channel_id: int, credential: dict
     ) -> None:
-        """Replace a channel's credential blob (e.g. after /channel relogin)."""
+        """Replace a channel's credential blob (e.g. after relogin)."""
         with self._lock:
             if self._closed:
                 return
             self._db.execute(
                 "UPDATE channels SET credential_json = ? WHERE id = ?",
                 (json.dumps(credential, ensure_ascii=False), channel_id),
-            )
-            self._db.commit()
-
-    def set_channel_inbox(self, channel_id: int, inbox_id: str | None) -> None:
-        with self._lock:
-            if self._closed:
-                return
-            self._db.execute(
-                "UPDATE channels SET inbox_id = ? WHERE id = ?",
-                (inbox_id, channel_id),
             )
             self._db.commit()
 
@@ -393,6 +430,9 @@ def read_account_meta(db_file: Path) -> dict:
     """Read kv + channel_count from an account db without taking flock.
 
     Returns ``{}`` for missing/corrupt files so the caller can skip them.
+    Tolerates schema-version mismatch (returns what it can read) so the
+    account picker still works before the db gets nuked-and-recreated on
+    first open.
     """
     if not db_file.exists():
         return {}
@@ -402,17 +442,22 @@ def read_account_meta(db_file: Path) -> dict:
         return {}
     try:
         conn.row_factory = sqlite3.Row
-        meta = {
-            r["key"]: r["value"]
-            for r in conn.execute("SELECT key, value FROM kv").fetchall()
-        }
-        meta["channel_count"] = conn.execute(
-            "SELECT COUNT(*) AS n FROM channels"
-        ).fetchone()["n"]
+        meta: dict = {}
+        try:
+            meta = {
+                r["key"]: r["value"]
+                for r in conn.execute("SELECT key, value FROM kv").fetchall()
+            }
+        except sqlite3.Error:
+            pass
+        try:
+            meta["channel_count"] = conn.execute(
+                "SELECT COUNT(*) AS n FROM channels"
+            ).fetchone()["n"]
+        except sqlite3.Error:
+            meta["channel_count"] = 0
         meta["has_token"] = "studio_token" in meta
         return meta
-    except sqlite3.Error:
-        return {}
     finally:
         conn.close()
 

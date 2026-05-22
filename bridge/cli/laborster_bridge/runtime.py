@@ -249,7 +249,8 @@ class ChannelWorker:
             raise adapters.TransientError(
                 "Studio 未返回匹配的 inbox（稍后重试）"
             )
-        self._store.set_channel_inbox(self.channel_id, inbox["id"])
+        # inbox id is Studio's truth — held in memory for this worker's
+        # lifetime, refreshed every reconnect, never cached to sqlite.
         self.adapter = adapter
         self.inbox = inbox
         self.platform_self_id = self_id

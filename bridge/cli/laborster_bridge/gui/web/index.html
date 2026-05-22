@@ -8,87 +8,122 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- ============ HEADER ============ -->
   <header>
-    <img id="logo" src="favicon.svg" alt="" width="24" height="24" />
+    <img id="logo" src="favicon.svg" alt="" width="22" height="22" />
     <span class="brand">Laborster Bridge</span>
-    <nav id="tabs">
-      <button class="tab active" data-tab="channels">Channels</button>
-      <button class="tab" data-tab="status">状态</button>
-      <button class="tab" data-tab="account">账号</button>
-      <button class="tab" data-tab="log">日志</button>
-    </nav>
-    <span id="pill" class="pill off">未运行</span>
+
+    <div class="spacer"></div>
+
+    <div id="acc-menu" class="menu" hidden>
+      <button id="acc-trigger" class="menu-trigger">
+        <span id="acc-trigger-label">未登录</span>
+        <span class="caret">▾</span>
+      </button>
+      <div id="acc-dropdown" class="menu-dropdown" hidden>
+        <div id="acc-list" class="menu-section"></div>
+        <div class="menu-sep"></div>
+        <button class="menu-item" id="mi-add-account">+ 添加 Studio 账号…</button>
+        <button class="menu-item" id="mi-logout">登出当前账号</button>
+        <div class="menu-sep"></div>
+        <div class="menu-meta">
+          <div class="kvline"><span>Studio</span><b id="acc-studio">-</b></div>
+          <div class="kvline"><span>machine_id</span><b id="acc-machine">-</b></div>
+        </div>
+        <button class="menu-item small" id="mi-studio-set">覆盖 Studio 地址…</button>
+        <button class="menu-item small" id="mi-studio-reset" hidden>恢复默认 Studio 地址</button>
+      </div>
+    </div>
   </header>
 
+  <!-- ============ MAIN ============ -->
   <main>
-    <!-- Channels -->
-    <section class="page active" id="page-channels">
-      <div class="page-head">
-        <h2>Channels <span id="ch-count" class="count">0</span></h2>
-        <button id="btn-ch-toggle" class="primary sm">+ 添加</button>
-      </div>
+    <!-- Status strip (only visible once logged in) -->
+    <section id="strip" class="strip" hidden>
+      <span id="strip-dot" class="dot"></span>
+      <span id="strip-label" class="strip-label">-</span>
+      <span class="strip-sep">·</span>
+      <span id="strip-studio" class="strip-studio">-</span>
+      <span class="spacer"></span>
+      <span class="strip-metric"><label>近 5min 入站</label><b id="strip-in">0</b></span>
+      <span class="strip-metric"><label>待发</label><b id="strip-unsent">0</b></span>
+    </section>
+    <div id="strip-err" class="strip-err" hidden></div>
 
-      <div id="ch-add" class="addbox" hidden>
-        <div class="row">
-          <input id="ch-user" type="text" placeholder="Chat 用户名" autocomplete="off" />
-          <input id="ch-pass" type="password" placeholder="Chat 密码" autocomplete="off" />
-          <button id="btn-ch-add" class="primary">添加</button>
-          <button id="btn-ch-cancel" class="ghost">取消</button>
+    <!-- View: not logged in -->
+    <section id="view-login" class="view" hidden>
+      <div class="card narrow">
+        <h2>登录 Studio</h2>
+        <p class="sub">用 Studio 账号密码换取本机 token，bridge 才能把消息转发给 Studio。</p>
+        <div class="field">
+          <label>用户名</label>
+          <input id="login-user" type="text" autocomplete="off" />
         </div>
-        <p class="hint">添加后会用账号密码换取 token 存入，并自动重连注册。</p>
-      </div>
-
-      <div id="ch-list" class="cards"></div>
-      <div id="ch-empty" class="empty-state" hidden>
-        <div class="big">还没有 channel</div>
-        <div>点右上「+ 添加」绑定一个 Chat 账号。</div>
-      </div>
-    </section>
-
-    <!-- 状态 -->
-    <section class="page" id="page-status">
-      <div class="page-head"><h2>运行状态</h2></div>
-      <div class="grid2">
-        <div class="stat"><label>daemon</label><b id="st-run">-</b></div>
-        <div class="stat"><label>status</label><b id="st-status">-</b></div>
-        <div class="stat"><label>近 5 分钟入站</label><b id="st-in">0</b></div>
-        <div class="stat"><label>待发送</label><b id="st-unsent">0</b></div>
-      </div>
-      <div class="stat wide"><label>studio</label><b id="st-studio">-</b></div>
-      <div class="stat wide" id="st-err-row" hidden>
-        <label>last_error</label><b id="st-err" class="err">-</b>
-      </div>
-    </section>
-
-    <!-- 账号 -->
-    <section class="page" id="page-account">
-      <div class="page-head"><h2>账号</h2></div>
-      <div id="account-out" class="panel narrow">
-        <div class="field"><label>Studio 用户名</label>
-          <input id="login-user" type="text" autocomplete="off" /></div>
-        <div class="field"><label>Studio 密码</label>
-          <input id="login-pass" type="password" autocomplete="off" /></div>
+        <div class="field">
+          <label>密码</label>
+          <input id="login-pass" type="password" autocomplete="off" />
+        </div>
         <button id="btn-login" class="primary block">登录</button>
       </div>
-      <div id="account-in" class="panel narrow" hidden>
-        <div class="kv"><span>用户名</span><b id="acc-user">-</b></div>
-        <div class="kv"><span>bridge_id</span><b id="acc-bridge">-</b></div>
-        <div class="kv"><span>machine_id</span><b id="acc-machine">-</b></div>
-        <button id="btn-logout" class="ghost block">登出</button>
+    </section>
+
+    <!-- View: logged in, no channels yet -->
+    <section id="view-empty" class="view" hidden>
+      <div class="empty">
+        <div class="empty-icon">🔗</div>
+        <h2>绑定第一个 channel</h2>
+        <p>选择平台、登录账号，bridge 会把会话桥接到 Studio。</p>
+        <button id="btn-empty-add" class="primary lg">+ 绑定 channel</button>
       </div>
     </section>
 
-    <!-- 日志 -->
-    <section class="page" id="page-log">
-      <div class="page-head"><h2>日志</h2></div>
-      <div id="log" class="log"></div>
+    <!-- View: normal — channel list -->
+    <section id="view-channels" class="view" hidden>
+      <div class="section-head">
+        <h2>Channels <span id="ch-count" class="pill-count">0</span></h2>
+        <button id="btn-ch-add" class="primary sm">+ 绑定</button>
+      </div>
+      <div id="ch-list" class="cards"></div>
     </section>
   </main>
 
-  <footer>
-    <button id="btn-opendir" class="link">打开数据目录</button>
-    <span id="msg"></span>
-  </footer>
+  <!-- ============ LOG DRAWER ============ -->
+  <div id="drawer" class="drawer collapsed">
+    <button id="drawer-toggle" class="drawer-toggle">
+      <span class="chev">▸</span> 日志
+      <span id="drawer-badge" class="badge" hidden>0</span>
+      <span class="spacer"></span>
+      <button id="btn-opendir" class="link inline">打开数据目录</button>
+    </button>
+    <div id="drawer-body" class="drawer-body">
+      <div class="drawer-controls">
+        <label><input type="checkbox" id="filt-err" checked> err</label>
+        <label><input type="checkbox" id="filt-warn" checked> warn</label>
+        <label><input type="checkbox" id="filt-ok" checked> ok</label>
+        <label><input type="checkbox" id="filt-info" checked> info</label>
+        <span class="spacer"></span>
+        <label><input type="checkbox" id="follow-end" checked> 跟随末尾</label>
+        <button id="btn-clear" class="ghost sm">清空</button>
+      </div>
+      <div id="log" class="log"></div>
+    </div>
+  </div>
+
+  <!-- ============ TOAST ============ -->
+  <div id="toast" hidden></div>
+
+  <!-- ============ MODAL ============ -->
+  <div id="modal" class="modal" hidden>
+    <div class="modal-bg"></div>
+    <div class="modal-body">
+      <div class="modal-head">
+        <h3 id="modal-title">-</h3>
+        <button class="modal-close" id="modal-close" aria-label="close">×</button>
+      </div>
+      <div id="modal-content" class="modal-content"></div>
+      <div id="modal-foot" class="modal-foot"></div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>

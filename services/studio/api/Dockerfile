@@ -14,5 +14,6 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 COPY alembic.ini ./
 COPY studio ./studio
+COPY admin ./admin
 
 CMD ["uv", "run", "uvicorn", "studio.main:app", "--host", "0.0.0.0", "--port", "23456"]

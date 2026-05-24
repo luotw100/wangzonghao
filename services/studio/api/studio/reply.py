@@ -24,11 +24,12 @@ from datetime import timedelta
 from typing import List, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session as ORMSession
 
 from studio.clients import ProviderClient
 from studio.db import SessionLocal, utc_now
+from studio.notify import outbound_channel
 from studio.enums import (
     ConversationStatus,
     LlmPurpose,
@@ -413,6 +414,9 @@ async def maybe_reply(provider: ProviderClient, conversation_id: str) -> str:
                     created_at=now_ts,
                 )
                 db.add(ob)
+            db.execute(
+                text("SELECT pg_notify(:ch, '')").bindparams(ch=outbound_channel(ctx.inbox_id))
+            )
             status = f"queued {len(chunks)} message(s)"
         else:
             status = "model returned empty (intentional silence)"

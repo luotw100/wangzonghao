@@ -7,13 +7,18 @@ from slowapi.errors import RateLimitExceeded
 
 from chat.config import LONG_POLL_THREADPOOL_TOKENS
 from chat.limiter import limiter
+from chat.notify import init_broker, shutdown_broker
 from chat.routers import auth, contacts, conversations, health, media, messages, uploads
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     anyio.to_thread.current_default_thread_limiter().total_tokens = LONG_POLL_THREADPOOL_TOKENS
-    yield
+    await init_broker()
+    try:
+        yield
+    finally:
+        await shutdown_broker()
 
 
 app = FastAPI(

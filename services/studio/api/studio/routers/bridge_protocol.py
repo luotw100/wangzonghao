@@ -388,55 +388,132 @@ async def bridge_outbound(
 ):
     """长轮询待发消息队列，每次最多返回 50 条 OutboundForBridge。
 
+    事件驱动：订阅本 Bridge 名下每个 inbox 的 ``ob_<inbox_id>`` NOTIFY 通道，
+    PENDING 行只在收到通知（或下一条 send_after 到点）时才扫表。无空闲 SELECT。
+
     设计要点：
-    - 无游标：Bridge 每次拉取的都是当前全量 PENDING 集合（id asc），
-      重启或重连后直接继续处理，不需要维护本地 offset。
-    - 无租约：Bridge 用内存 _inflight 字典（INFLIGHT_TTL_S 窗口）做本地去重，
-      防止同一条消息在同一次 long-poll 内重复发送。
-    - id 是插入顺序，按 id asc 返回保证先创建的先发，但 id 不代表时间语义。
-    - 状态回写：PENDING → DELIVERED 由 /incoming 的 from_self 消息自动 ack，
-      无显式 ack 接口。永久发送失败的行保留 PENDING 状态，由运营手动清理。
+    - 无游标：Bridge 每次拉取的都是当前全量 PENDING 集合（id asc）。
+    - 无租约：Bridge 本地 _inflight 做去重。
+    - 状态回写：PENDING → DELIVERED 由 /incoming 的 from_self 消息自动 ack。
     """
-    deadline = time.time() + timeout
-    while True:
-        from studio.db import SessionLocal
+    from studio.db import SessionLocal
+    from studio.notify import get_broker, outbound_channel
+
+    def _query_pending(inbox_ids: List[str]) -> List[Dict[str, Any]]:
+        if not inbox_ids:
+            return []
         db = SessionLocal()
         try:
-            inbox_ids = [
-                r[0] for r in db.query(Inbox.id).filter(Inbox.bridge_id == bridge.id).all()
-            ]
-            if not inbox_ids:
-                payload: List[Dict[str, Any]] = []
-            else:
-                rows = (
-                    db.query(OutboundMessage, Conversation.platform_conversation_id)
-                    .join(Conversation, Conversation.id == OutboundMessage.conversation_id)
-                    .filter(
-                        OutboundMessage.inbox_id.in_(inbox_ids),
-                        OutboundMessage.status == OutboundStatus.PENDING,
-                        OutboundMessage.send_after <= utc_now(),
-                    )
-                    .order_by(OutboundMessage.id.asc())
-                    .limit(50)
-                    .all()
+            rows = (
+                db.query(OutboundMessage, Conversation.platform_conversation_id)
+                .join(Conversation, Conversation.id == OutboundMessage.conversation_id)
+                .filter(
+                    OutboundMessage.inbox_id.in_(inbox_ids),
+                    OutboundMessage.status == OutboundStatus.PENDING,
+                    OutboundMessage.send_after <= utc_now(),
                 )
-                payload = [
-                    {
-                        "id": ob.id,
-                        "inbox_id": ob.inbox_id,
-                        "platform_conversation_id": pcid,
-                        "msg_type": ob.msg_type,
-                        "content": ob.content,
-                    }
-                    for ob, pcid in rows
-                ]
+                .order_by(OutboundMessage.id.asc())
+                .limit(50)
+                .all()
+            )
+            return [
+                {
+                    "id": ob.id,
+                    "inbox_id": ob.inbox_id,
+                    "platform_conversation_id": pcid,
+                    "msg_type": ob.msg_type,
+                    "content": ob.content,
+                }
+                for ob, pcid in rows
+            ]
         finally:
             db.close()
-        if payload:
-            return payload
-        if time.time() >= deadline:
-            return payload
-        await asyncio.sleep(min(0.5, max(0.1, deadline - time.time())))
+
+    def _next_send_after(inbox_ids: List[str]) -> Optional[float]:
+        """Earliest future send_after among PENDING rows (epoch seconds, or None)."""
+        if not inbox_ids:
+            return None
+        db = SessionLocal()
+        try:
+            row = (
+                db.query(OutboundMessage.send_after)
+                .filter(
+                    OutboundMessage.inbox_id.in_(inbox_ids),
+                    OutboundMessage.status == OutboundStatus.PENDING,
+                    OutboundMessage.send_after > utc_now(),
+                )
+                .order_by(OutboundMessage.send_after.asc())
+                .limit(1)
+                .first()
+            )
+            if row is None:
+                return None
+            ts = row[0]
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=timezone.utc)
+            return ts.timestamp()
+        finally:
+            db.close()
+
+    def _query_inbox_ids() -> List[str]:
+        db = SessionLocal()
+        try:
+            return [r[0] for r in db.query(Inbox.id).filter(Inbox.bridge_id == bridge.id).all()]
+        finally:
+            db.close()
+
+    inbox_ids = await asyncio.to_thread(_query_inbox_ids)
+
+    # First pass: drain anything already PENDING before we wait.
+    payload = await asyncio.to_thread(_query_pending, inbox_ids)
+    if payload or timeout <= 0:
+        return payload
+
+    broker = get_broker()
+    # Subscribe to all owned inbox channels, multiplex into a single wake event.
+    from contextlib import AsyncExitStack
+
+    deadline = time.time() + timeout
+    async with AsyncExitStack() as stack:
+        wake = asyncio.Event()
+        forwarders: List[asyncio.Task[None]] = []
+
+        async def _forward(q: asyncio.Queue[str]) -> None:
+            await q.get()
+            wake.set()
+
+        for ib in inbox_ids:
+            q = await stack.enter_async_context(broker.subscribe(outbound_channel(ib)))
+            forwarders.append(asyncio.create_task(_forward(q)))
+
+        try:
+            # Re-check after subscribe to close the race: a NOTIFY emitted
+            # between our first SELECT and LISTEN would otherwise be lost.
+            payload = await asyncio.to_thread(_query_pending, inbox_ids)
+            if payload:
+                return payload
+
+            while True:
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    return []
+                # Bound wait by the earliest future send_after, so we re-poll
+                # right when typing-rhythm messages become eligible.
+                next_ts = await asyncio.to_thread(_next_send_after, inbox_ids)
+                wait_s = remaining
+                if next_ts is not None:
+                    wait_s = min(wait_s, max(0.0, next_ts - time.time()))
+                try:
+                    await asyncio.wait_for(wake.wait(), timeout=wait_s)
+                except asyncio.TimeoutError:
+                    pass
+                wake.clear()
+                payload = await asyncio.to_thread(_query_pending, inbox_ids)
+                if payload:
+                    return payload
+        finally:
+            for t in forwarders:
+                t.cancel()
 
 
 # ===========================================================================

@@ -4,10 +4,16 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from studio.notify import init_broker, shutdown_broker
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    yield
+    await init_broker()
+    try:
+        yield
+    finally:
+        await shutdown_broker()
 
 
 app = FastAPI(

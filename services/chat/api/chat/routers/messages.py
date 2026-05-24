@@ -1,14 +1,17 @@
+import asyncio
 import time
 from datetime import datetime, timezone
 from typing import Annotated
 
+import anyio
 from fastapi import APIRouter, HTTPException, Query
+from sqlalchemy import text
 
-from chat.config import LONG_POLL_INTERVAL_SECONDS
 from chat.db import SessionLocal, utc_now
 from chat.deps import CurrentAccountDep, DbDep, get_conversation_or_404
 from chat.enums import CommandStatus, MessageType
 from chat.models import Message
+from chat.notify import get_broker, message_channel
 from chat.schemas import ConversationMessages, MessageSendRequest, StatusResponse
 from chat.scoping import scoped
 
@@ -63,6 +66,10 @@ def send_messages(
     ]
     db.add_all(to_insert)
     conversation.updated_at = utc_now()
+    if to_insert:
+        db.execute(
+            text("SELECT pg_notify(:ch, '')").bindparams(ch=message_channel(conversation.id))
+        )
     db.commit()
     return StatusResponse(status=CommandStatus.SUCCESS, count=len(to_insert))
 
@@ -92,7 +99,7 @@ def get_messages_before(
 
 
 @router.get("/{conversation_id}/messages/after", response_model=ConversationMessages)
-def get_messages_after(
+async def get_messages_after(
     conversation_id: str,
     account: CurrentAccountDep,
     last_id: Annotated[int, Query(ge=0)] = 0,
@@ -101,25 +108,20 @@ def get_messages_after(
 ) -> dict[str, object]:
     """拉取新消息（支持长轮询）。
 
-    - `last_id`：只返回 ID 严格大于此值的消息；客户端应把上次收到的最大消息 ID 传进来，首次传 0。
-      ⚠ last_id 是插入顺序游标，含义是"已处理到这条"，与 created_at 时间无关。
-    - `limit`：最多返回条数，0 表示不限制（返回全部）。
-    - `timeout`：长轮询等待秒数。若当前无新消息，服务端会阻塞最多 timeout 秒后返回（期间每 0.5s 轮询一次数据库）。
-      传 0 则立即返回（短轮询）。注意：此接口在线程池中同步运行，不会阻塞事件循环，每次轮询间隔会释放数据库连接。
-    - 返回结果按插入 ID 升序排列。若有历史消息导入场景，ID 顺序不等于 created_at 顺序，渲染时请以 created_at 排序。
+    事件驱动：订阅 ``cm_<conversation_id>`` NOTIFY 通道，新消息插入会
+    立即唤醒等待者，无周期性 SELECT。
+
+    - `last_id`：只返回 ID 严格大于此值的消息；客户端把上次收到的最大消息 ID 传进来，首次传 0。
+    - `limit`：最多返回条数，0 表示不限制。
+    - `timeout`：长轮询等待秒数；超时仍无新消息则返回空列表。
+    - 返回按 ID 升序。
     """
-    # Sync endpoint: FastAPI runs it in the threadpool, so the blocking DB
-    # query and sleep below never stall the event loop. Each iteration uses a
-    # short-lived session so the pooled connection is released during sleep.
-    start_time = time.time()
-    db = SessionLocal()
-    try:
-        conversation = get_conversation_or_404(db, account, conversation_id)
-    finally:
-        db.close()
-    while True:
+    account_id = account.id
+
+    def _query_messages() -> tuple[object, list[object]] | None:
         db = SessionLocal()
         try:
+            conversation = get_conversation_or_404(db, account, conversation_id)
             q = scoped(db, account, Message).filter(
                 Message.conversation_id == conversation_id,
                 Message.id > last_id,
@@ -127,8 +129,35 @@ def get_messages_after(
             if limit > 0:
                 q = q.limit(limit)
             messages = q.all()
+            # Detach so callers can read attributes outside this session.
+            for m in messages:
+                db.expunge(m)
+            db.expunge(conversation)
+            return conversation, messages
         finally:
             db.close()
-        if messages or (time.time() - start_time) >= timeout:
+
+    conversation, messages = await anyio.to_thread.run_sync(lambda: _query_messages())
+    if messages or timeout <= 0:
+        return {"conversation": conversation, "messages": messages}
+
+    broker = get_broker()
+    deadline = time.time() + timeout
+    async with broker.subscribe(message_channel(conversation_id)) as wake_q:
+        # Re-check after subscribe to close the race against a NOTIFY that
+        # fired between our initial SELECT and our LISTEN.
+        _, messages = await anyio.to_thread.run_sync(lambda: _query_messages())
+        if messages:
             return {"conversation": conversation, "messages": messages}
-        time.sleep(max(0.0, min(LONG_POLL_INTERVAL_SECONDS, timeout - (time.time() - start_time))))
+
+        while True:
+            remaining = deadline - time.time()
+            if remaining <= 0:
+                return {"conversation": conversation, "messages": []}
+            try:
+                await asyncio.wait_for(wake_q.get(), timeout=remaining)
+            except asyncio.TimeoutError:
+                return {"conversation": conversation, "messages": []}
+            _, messages = await anyio.to_thread.run_sync(lambda: _query_messages())
+            if messages:
+                return {"conversation": conversation, "messages": messages}

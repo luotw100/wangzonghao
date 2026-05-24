@@ -3,10 +3,11 @@
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import func
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from studio.db import get_db, utc_now
+from studio.notify import outbound_channel
 from studio.deps import (
     CurrentAccountDep,
     get_account_conversation,
@@ -205,6 +206,9 @@ def seed_outbound(
         created_at=now_ts,
     )
     db.add(o)
+    db.execute(
+        text("SELECT pg_notify(:ch, '')").bindparams(ch=outbound_channel(conv.inbox_id))
+    )
     db.commit()
     db.refresh(o)
     return o

@@ -25,6 +25,7 @@ import json
 import secrets
 import threading
 import time
+from urllib.parse import urlencode
 
 from .. import adapters, commands, config
 from .. import store as store_mod
@@ -83,7 +84,13 @@ class Api:
     def __init__(self) -> None:
         self._events = Events()
         self._ctx = commands.Context(self._events, _noprompt, _noprompt)
+        # _window is the log-pump target (Studio window once it exists,
+        # otherwise the local window). _local_window is the *settings*
+        # window — kept around even when Studio takes the stage so the
+        # "设置" menu can re-show it for channel binding / account
+        # switching.
         self._window = None
+        self._local_window = None
         self._log_stop = threading.Event()
         self._log_thread: threading.Thread | None = None
 
@@ -96,6 +103,23 @@ class Api:
 
     def attach_window(self, window) -> None:
         self._window = window
+
+    def attach_local_window(self, window) -> None:
+        """Register the local settings window so the menu can re-show it
+        after the user has been swapped into the Studio console."""
+        self._local_window = window
+
+    def show_local_window(self) -> None:
+        """Bring the local settings window back. Called by the native
+        menu so logged-in users can still reach channel binding,
+        account switching and daemon logs from inside Studio."""
+        w = self._local_window
+        if w is None:
+            return
+        try:
+            w.show()
+        except Exception:
+            pass
 
     def autostart(self) -> None:
         """Open the most-recent account (if any) and start its daemon."""
@@ -231,7 +255,14 @@ class Api:
     # --- account mutations ----------------------------------------------
 
     def login(self, username: str, password: str) -> dict:
-        return commands.cmd_login(self._ctx, [username, password])
+        r = commands.cmd_login(self._ctx, [username, password])
+        if "error" not in r:
+            # First login succeeded — swap the local login UI out for the
+            # embedded Studio console. From here on the user lives inside
+            # the Studio web app; the local UI only re-appears after a
+            # logout (which clears studio_token and forces a relaunch).
+            self._open_studio_window()
+        return r
 
     def logout(self) -> dict:
         return commands.cmd_logout(self._ctx, [])
@@ -393,6 +424,67 @@ class Api:
         stale = [k for k, (_, _, t) in self._flows.items() if now - t > _FLOW_TTL_S]
         for k in stale:
             self._flows.pop(k, None)
+
+    # --- embedded Studio console ----------------------------------------
+
+    def studio_url_for_active(self) -> str | None:
+        """If the active account has a Studio token, build a token-bearing
+        URL for the embedded webview. Returns None when no account is
+        opened yet or the token has been cleared (logout / 401 / first
+        run) — in those cases the local login UI stays visible.
+
+        The token rides in the URL fragment so it never reaches the
+        server (no access logs, no Referer). main.tsx scrubs it from
+        history immediately after persisting to localStorage.
+        """
+        store = self._ctx.store
+        if store is None:
+            return None
+        token = store.kv_get("studio_token")
+        if not token:
+            return None
+        machine_id = store.kv_get("machine_id") or ""
+        base = config.STUDIO_BASE_URL.rstrip("/")
+        return f"{base}/#{urlencode({'token': token, 'machine': machine_id})}"
+
+    def _open_studio_window(self) -> None:
+        """Swap the current window for an embedded Studio console.
+
+        The new window deliberately has no ``js_api``: remote Studio
+        pages must never reach into local Python (XSS would otherwise
+        own the daemon). Closing it quits the app — the daemon lives in
+        this process, so window-close = full exit, matching the product
+        decision.
+        """
+        url = self.studio_url_for_active()
+        if not url:
+            return
+        try:
+            import webview  # late import: webview only present in GUI build
+        except ImportError:
+            return
+        new_win = webview.create_window(
+            "Laborster",
+            url=url,
+            width=1200,
+            height=800,
+            min_size=(900, 600),
+            background_color="#1b1d23",
+        )
+        new_win.events.closing += lambda: self.shutdown()
+        # Re-target the log pump to the new window. Studio's React tree
+        # doesn't define window.pushLog, so evaluate_js silently no-ops
+        # there (the pump already swallows exceptions); logs remain
+        # available via the daemon's state directory.
+        self._window = new_win
+        # Hide (not destroy) the local window: channel binding / account
+        # switching still need to live somewhere, and the "设置" menu
+        # item re-shows it on demand.
+        if self._local_window is not None:
+            try:
+                self._local_window.hide()
+            except Exception:
+                pass
 
     # --- misc -----------------------------------------------------------
 

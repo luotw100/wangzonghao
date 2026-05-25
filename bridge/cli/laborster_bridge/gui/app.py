@@ -105,31 +105,79 @@ def main() -> int:
         return 0
 
     import webview
+    from webview.menu import Menu, MenuAction
 
     api = Api()
+
+    # Open the most-recent account (if any) before deciding window
+    # layout. autostart() only touches local state + spawns daemon
+    # threads — no UI dependency — so it's safe to run before
+    # webview.start.
+    api.autostart()
+
+    studio_url = api.studio_url_for_active()
+
+    # The local window is ALWAYS created. It owns channel binding,
+    # account switching, Studio URL override and daemon logs — none of
+    # which the Studio web console knows about yet. When the user has a
+    # valid token, we start the local window hidden and raise Studio
+    # on top; otherwise the local window is the only thing on screen
+    # and hosts the login form.
     index = _web_dir() / "index.html"
-    window = webview.create_window(
-        WINDOW_TITLE,
+    local_window = webview.create_window(
+        f"{WINDOW_TITLE} — 设置",
         url=str(index),
         js_api=api,
         width=980,
         height=720,
         min_size=(760, 560),
         background_color="#1b1d23",
+        hidden=bool(studio_url),
     )
-    api.attach_window(window)
+    api.attach_local_window(local_window)
 
-    # close = quit (stop daemon, exit). Minimize does NOT trigger this,
-    # so minimizing keeps the daemon bridging in the background.
-    def _on_closing():
-        api.shutdown()
+    # close = quit. The daemon lives in this process, so closing any
+    # window stops bridging; matches the explicit product call (X =
+    # full exit). Hiding the local window from the menu uses .hide()
+    # which does not fire 'closing'.
+    local_window.events.closing += lambda: api.shutdown()
 
-    window.events.closing += _on_closing
+    storage_path = None
+    if studio_url:
+        # Returning user: jump straight into the embedded Studio
+        # console. storage_path is pinned to the active account dir so
+        # cookies / localStorage / IndexedDB / http cache stay isolated
+        # from the system browser and from other local accounts.
+        storage_path = str(config.account_dir(api._ctx.account_id) / "webview")
+        studio_window = webview.create_window(
+            WINDOW_TITLE,
+            url=studio_url,
+            # No js_api: remote pages must not reach into local Python.
+            width=1200,
+            height=800,
+            min_size=(900, 600),
+            background_color="#1b1d23",
+        )
+        studio_window.events.closing += lambda: api.shutdown()
+        # Log pump targets the visible window; the local one is hidden
+        # and would silently no-op anyway.
+        api.attach_window(studio_window)
+    else:
+        api.attach_window(local_window)
 
-    def _on_start():
-        api.autostart()
+    # Native menu lets logged-in users summon the settings window for
+    # channel binding / account switching while they're inside Studio.
+    menu = [
+        Menu(
+            "Laborster",
+            [MenuAction("设置", api.show_local_window)],
+        ),
+    ]
 
-    webview.start(_on_start)
+    if storage_path is not None:
+        webview.start(menu=menu, storage_path=storage_path)
+    else:
+        webview.start(menu=menu)
     return 0
 
 

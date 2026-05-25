@@ -16,5 +16,3 @@ COPY alembic.ini ./
 COPY studio ./studio
 COPY admin ./admin
 COPY chat ./chat
-
-CMD ["uv", "run", "uvicorn", "studio.main:app", "--host", "0.0.0.0", "--port", "23456"]

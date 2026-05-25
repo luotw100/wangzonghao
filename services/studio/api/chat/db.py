@@ -6,16 +6,14 @@ their respective ``MetaData``; alembic combines them at migration time.
 
 from sqlalchemy.orm import DeclarativeBase
 
-# Re-export the shared infrastructure so chat code reads the same engine
-# and pool without re-creating either. This is the *only* cross-package
-# dependency chat takes on studio: schema-creation, connection pool,
-# session factory and utc_now. Auth tables live in the shared "auth"
-# schema; everything else respects the chat/studio split.
-from studio.db import SessionLocal, engine, get_db, utc_now  # noqa: F401
+# Re-export the shared infrastructure so chat code reads the same engine,
+# pool and MetaData without re-creating any. Chat keeps its own
+# DeclarativeBase subclass so string-based ``relationship("Conversation")``
+# resolves within chat's class registry instead of colliding with studio's
+# identically-named class; both bases share ``metadata`` so cross-schema
+# FKs (chat.contacts.account_id → auth.accounts.id) resolve at flush time.
+from studio.db import SessionLocal, engine, get_db, metadata, utc_now  # noqa: F401
 
 
 class Base(DeclarativeBase):
-    """Chat-only declarative base. Distinct from studio's ``Base`` so
-    string-based ``relationship("Conversation")`` resolves within chat's
-    registry instead of colliding with studio's identically-named class.
-    """
+    metadata = metadata

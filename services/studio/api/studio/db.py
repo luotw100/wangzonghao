@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timezone
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import MetaData, create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 database_url = os.environ.get("DATABASE_URL")
@@ -12,8 +12,15 @@ engine = create_engine(database_url, pool_size=10, max_overflow=20)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
+# Shared across studio.Base and chat.Base so cross-schema FKs
+# (chat.contacts.account_id → auth.accounts.id) resolve at flush time.
+# Class-name registries stay per-Base, so chat.Conversation and
+# studio.Conversation can co-exist.
+metadata = MetaData()
+
+
 class Base(DeclarativeBase):
-    pass
+    metadata = metadata
 
 
 SCHEMAS = ("auth", "studio", "chat")

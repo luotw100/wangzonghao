@@ -117,32 +117,15 @@ def main() -> int:
 
     studio_url = api.studio_url_for_active()
 
-    # The local window is ALWAYS created. It owns channel binding,
-    # account switching, Studio URL override and daemon logs — none of
-    # which the Studio web console knows about yet. When the user has a
-    # valid token, we start the local window hidden and raise Studio
-    # on top; otherwise the local window is the only thing on screen
-    # and hosts the login form.
+    # Window creation order matters: pywebview attaches the native menu
+    # to the FIRST window created (on Windows in particular). When the
+    # user is already logged in we want the menu visible on the Studio
+    # console, so Studio is created first; the local window comes after,
+    # hidden, and is summoned via Laborster → 设置.
     index = _web_dir() / "index.html"
-    local_window = webview.create_window(
-        f"{WINDOW_TITLE} — 设置",
-        url=str(index),
-        js_api=api,
-        width=980,
-        height=720,
-        min_size=(760, 560),
-        background_color="#1b1d23",
-        hidden=bool(studio_url),
-    )
-    api.attach_local_window(local_window)
-
-    # close = quit. The daemon lives in this process, so closing any
-    # window stops bridging; matches the explicit product call (X =
-    # full exit). Hiding the local window from the menu uses .hide()
-    # which does not fire 'closing'.
-    local_window.events.closing += lambda: api.shutdown()
-
     storage_path = None
+    studio_window = None
+
     if studio_url:
         # Returning user: jump straight into the embedded Studio
         # console. storage_path is pinned to the active account dir so
@@ -159,11 +142,28 @@ def main() -> int:
             background_color="#1b1d23",
         )
         studio_window.events.closing += lambda: api.shutdown()
-        # Log pump targets the visible window; the local one is hidden
-        # and would silently no-op anyway.
-        api.attach_window(studio_window)
-    else:
-        api.attach_window(local_window)
+
+    # The local window is ALWAYS created. It owns channel binding,
+    # account switching, Studio URL override and daemon logs — none of
+    # which the Studio web console knows about yet. Hidden when Studio
+    # takes the stage; visible when it's the only window (first run /
+    # logged-out).
+    local_window = webview.create_window(
+        f"{WINDOW_TITLE} — 设置",
+        url=str(index),
+        js_api=api,
+        width=980,
+        height=720,
+        min_size=(760, 560),
+        background_color="#1b1d23",
+        hidden=bool(studio_url),
+    )
+    local_window.events.closing += lambda: api.shutdown()
+    api.attach_local_window(local_window)
+
+    # Log pump targets the visible window; on a hidden local window
+    # evaluate_js no-ops silently.
+    api.attach_window(studio_window if studio_window is not None else local_window)
 
     # Native menu lets logged-in users summon the settings window for
     # channel binding / account switching while they're inside Studio.

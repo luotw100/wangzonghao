@@ -154,6 +154,19 @@ class Api:
             commands.cmd_quit(self._ctx, [])
         except Exception:
             pass
+        # Destroy every remaining window so webview.start() returns.
+        # Both local and Studio register `closing → shutdown`; without
+        # this, closing one window leaves the other (often hidden)
+        # holding the event loop alive — feels like "the app won't quit".
+        try:
+            import webview
+            for w in list(webview.windows):
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
     # --- platform metadata ----------------------------------------------
 

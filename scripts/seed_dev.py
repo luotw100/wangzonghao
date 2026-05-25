@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""scripts/seed_dev.py — One-shot dev seed for internal testing.
+"""scripts/seed_dev.py — One-shot dev seed for the merged stack.
 
 Run after the instance is up (scripts/up-all.sh <config.json>). Driven by
 that same JSON config, passed as the argument:
@@ -10,20 +10,21 @@ Schema (see scripts/.env.example.json):
 
   {
     "seed": {
-      "chat_url":    "...",         # base URL of chat-api  (via CF tunnel)
-      "studio_url":  "...",         # base URL of studio-api (via CF tunnel)
-      "chat_users":   [{username, password, display}, ...],
-      "studio_users": [{username, password, display}, ...],
-      "providers":    [{name, base_url, model, api_key}, ...]
+      "studio_url":  "...",         # base URL of api (via CF tunnel)
+      "users":       [{username, password, display}, ...],
+      "providers":   [{name, base_url, model, api_key}, ...]
     }
   }
 
+After merge there is a single account pool (auth.accounts). Each ``users``
+entry creates one studio account that also doubles as the chat-sandbox
+identity (chat has no separate login).
+
 Phasing:
-  1. wait for chat-api + studio-api health (parallel, via CF tunnel)
-  2. create the first studio Provider serially — it becomes the pick_first_provider
-     default; then create the rest in parallel (inside one docker compose exec)
-  3. create chat accounts (one exec each, parallel from Python) +
-     all studio accounts (one exec, parallel inside the container)
+  1. wait for api health (via CF tunnel)
+  2. create the first provider serially — it becomes the
+     pick_first_provider default; then create the rest in parallel
+  3. create accounts in one admin-api call (parallel inside the container)
 """
 
 from __future__ import annotations
@@ -40,8 +41,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-CHAT_DIR = REPO_ROOT / "services" / "chat"
-STUDIO_DIR = REPO_ROOT / "services" / "studio"
+INFRA_DIR = REPO_ROOT / "infra"
 
 # Runs inside the admin-api container. Reads [{path, body, label}] from stdin,
 # fires them all in parallel against the local admin API, prints results, exits
@@ -98,19 +98,6 @@ def die(msg: str) -> "None":
     raise SystemExit(1)
 
 
-# ---------- parallel ----------
-
-def run_parallel(jobs: list, workers: int = 32) -> None:
-    if not jobs:
-        return
-    if len(jobs) == 1:
-        jobs[0]()
-        return
-    with ThreadPoolExecutor(max_workers=min(workers, len(jobs))) as ex:
-        for fut in [ex.submit(j) for j in jobs]:
-            fut.result()
-
-
 # ---------- config ----------
 
 @dataclass
@@ -131,10 +118,8 @@ class ProviderSpec:
 @dataclass
 class SeedConfig:
     project_name: str
-    chat_url: str
     studio_url: str
-    chat_users: list[UserSpec]
-    studio_users: list[UserSpec]
+    users: list[UserSpec]
     providers: list[ProviderSpec]
 
 
@@ -202,10 +187,8 @@ def load_seed_config(path: Path) -> SeedConfig:
         die(f"{path}: compose.COMPOSE_PROJECT_NAME is required")
     return SeedConfig(
         project_name=project.strip(),
-        chat_url=_require_str(seed, "chat_url", "seed"),
         studio_url=_require_str(seed, "studio_url", "seed"),
-        chat_users=_parse_users(seed.get("chat_users"), "seed.chat_users"),
-        studio_users=_parse_users(seed.get("studio_users"), "seed.studio_users"),
+        users=_parse_users(seed.get("users"), "seed.users"),
         providers=_parse_providers(seed.get("providers"), "seed.providers"),
     )
 
@@ -246,7 +229,7 @@ def admin_exec(project: str, calls: list[dict]) -> None:
     result = subprocess.run(
         ["docker", "compose", "-p", project, "exec", "-T", "admin-api",
          "python", "-c", _ADMIN_INNER],
-        cwd=STUDIO_DIR,
+        cwd=INFRA_DIR,
         capture_output=True,
         text=True,
         input=json.dumps(calls),
@@ -266,7 +249,7 @@ def provider_call(p: ProviderSpec) -> dict:
     return {
         "path": "/providers",
         "body": {"name": p.name, "base_url": p.base_url, "model": p.model, "api_key": p.api_key},
-        "label": f"studio provider {p.name}",
+        "label": f"provider {p.name}",
     }
 
 
@@ -274,26 +257,8 @@ def account_call(u: UserSpec) -> dict:
     return {
         "path": "/accounts",
         "body": {"username": u.username, "password": u.password, "display_name": u.display},
-        "label": f"studio account {u.username}",
+        "label": f"account {u.username}",
     }
-
-
-# ---------- chat CLI (unchanged) ----------
-
-def create_chat_account(project: str, u: UserSpec) -> None:
-    log(f"creating chat account: {u.username}")
-    cmd = [
-        "docker", "compose", "-p", project, "exec", "-T", "chat-api",
-        "uv", "run", "python", "-m", "chat.cli", "create-account",
-        "--username", u.username, "--password", u.password, "--nickname", u.display,
-    ]
-    result = subprocess.run(cmd, cwd=CHAT_DIR, capture_output=True, text=True)
-    if result.returncode == 0:
-        ok(f"chat account {u.username}")
-    else:
-        tail = (result.stderr or result.stdout).strip().splitlines()
-        hint = tail[-1] if tail else "(no output)"
-        warn(f"chat account {u.username}: non-zero (likely already exists) — {hint}")
 
 
 # ---------- main ----------
@@ -312,46 +277,30 @@ def main() -> None:
 
     cfg = load_seed_config(p)
 
-    log(f"studio: {cfg.studio_url}  chat: {cfg.chat_url}")
-    log(f"chat users  : {', '.join(u.username for u in cfg.chat_users)}")
-    log(f"studio users: {', '.join(u.username for u in cfg.studio_users)}")
-    log(f"providers   : {', '.join(p.name for p in cfg.providers)}  (first is default)")
+    log(f"studio: {cfg.studio_url}")
+    log(f"users     : {', '.join(u.username for u in cfg.users)}")
+    log(f"providers : {', '.join(pr.name for pr in cfg.providers)}  (first is default)")
 
-    # phase 1: wait for both services (via CF tunnel)
-    run_parallel([
-        lambda: wait_health(cfg.chat_url, "chat-api"),
-        lambda: wait_health(cfg.studio_url, "studio-api"),
-    ])
+    # phase 1: wait for api
+    wait_health(cfg.studio_url, "api")
 
-    # phase 2: studio providers
-    # First one serial — guaranteed earliest created_at, becomes pick_first_provider default.
-    # Rest in parallel inside one exec.
-    log(f"creating studio provider (default): {cfg.providers[0].name}")
+    # phase 2: providers (first one alone to win pick_first_provider race)
+    log(f"creating default provider: {cfg.providers[0].name}")
     admin_exec(cfg.project_name, [provider_call(cfg.providers[0])])
     if cfg.providers[1:]:
-        log(f"creating remaining providers: {', '.join(p.name for p in cfg.providers[1:])}")
-        admin_exec(cfg.project_name, [provider_call(p) for p in cfg.providers[1:]])
+        log(f"creating remaining providers: {', '.join(pr.name for pr in cfg.providers[1:])}")
+        admin_exec(cfg.project_name, [provider_call(pr) for pr in cfg.providers[1:]])
 
-    # phase 3: chat accounts (parallel docker compose exec from Python) +
-    #          studio accounts (one docker compose exec, parallel inside)
-    if cfg.studio_users:
-        log(f"creating studio accounts: {', '.join(u.username for u in cfg.studio_users)}")
-    studio_job = (
-        [lambda: admin_exec(cfg.project_name, [account_call(u) for u in cfg.studio_users])]
-        if cfg.studio_users else []
-    )
-    run_parallel(
-        [lambda u=u: create_chat_account(cfg.project_name, u) for u in cfg.chat_users]
-        + studio_job
-    )
+    # phase 3: accounts
+    if cfg.users:
+        log(f"creating accounts: {', '.join(u.username for u in cfg.users)}")
+        admin_exec(cfg.project_name, [account_call(u) for u in cfg.users])
 
     print()
     print("---")
-    print("seed done. credentials:")
-    for u in cfg.chat_users:
-        print(f"  chat user   : {u.username} / {u.password}   ({cfg.chat_url})")
-    for u in cfg.studio_users:
-        print(f"  studio user : {u.username} / {u.password}   ({cfg.studio_url})")
+    print(f"seed done. login at {cfg.studio_url} (chat sandbox at {cfg.studio_url}/chat):")
+    for u in cfg.users:
+        print(f"  {u.username} / {u.password}")
     print()
     print("next: start bridge with the snippet shown on Studio → 设备 → 快速生成命令.")
 

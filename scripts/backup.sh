@@ -1,22 +1,16 @@
 #!/usr/bin/env bash
-# Hot backup of one instance's stateful data: Studio PG + Chat PG +
-# MinIO buckets. Safe to run while services are up (pg_dump is
-# transaction-consistent; mc mirror is object-level).
-#
-# Takes the instance config (the same one as up-all.sh) so it targets
-# that instance's containers (compose project = COMPOSE_PROJECT_NAME):
+# Hot backup of one instance's stateful data: PG + MinIO bucket. Safe to
+# run while services are up (pg_dump is transaction-consistent; mc mirror
+# is object-level).
 #
 #   scripts/backup.sh scripts/.env.release.json
-#   BACKUP_DIR=/mnt/backups scripts/backup.sh scripts/.env.release.json  # custom root
-#   LABEL=before-seed-reset scripts/backup.sh scripts/.env.release.json  # tag why
+#   BACKUP_DIR=/mnt/backups scripts/backup.sh scripts/.env.release.json
+#   LABEL=before-seed-reset scripts/backup.sh scripts/.env.release.json
 #
-# This script NEVER deletes a backup. Pruning old backups is entirely
-# manual and up to you -- there is no retention/rotation logic.
-#
-# At the end it LOCKS the new backup with `chattr +i` (needs sudo;
-# you'll be prompted for your password) so it cannot be deleted/changed.
-# To delete a backup later you must first unlock it:
-#   sudo chattr -R -i ~/laborster-backups/<the-one-you-chose>
+# This script NEVER deletes a backup. Pruning is manual. At the end it
+# LOCKS the new backup with `chattr +i` (needs sudo) so it can't be
+# deleted/changed by mistake. To unlock later:
+#   sudo chattr -R -i ~/laborster-backups/<the-one>
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -33,9 +27,6 @@ case "$INST" in /*) :;; *) INST="$REPO_DIR/$INST";; esac
 [ -f "$INFRA_DIR/.env" ] || { echo "ERROR: $INFRA_DIR/.env not found" >&2; exit 1; }
 jq empty "$INST" 2>/dev/null || { echo "ERROR: invalid JSON: $INST" >&2; exit 1; }
 
-# infra/.env carries the PG/MinIO creds (seam); the instance JSON's
-# `compose` block carries COMPOSE_PROJECT_NAME so we target the right
-# instance. Render that block to a tmp KV so docker compose can read it.
 TMP_ENV=$(mktemp); trap "rm -f $TMP_ENV" EXIT
 jq -r '.compose | to_entries[] | "\(.key)=\(.value)"' "$INST" > "$TMP_ENV"
 set -a; . "$INFRA_DIR/.env"; . "$TMP_ENV"; set +a
@@ -44,11 +35,9 @@ set -a; . "$INFRA_DIR/.env"; . "$TMP_ENV"; set +a
 COMPOSE=(docker compose -f "$INFRA_DIR/compose.yaml" --project-directory "$INFRA_DIR" \
   -p "$COMPOSE_PROJECT_NAME" --env-file "$INFRA_DIR/.env")
 BACKUP_DIR="${BACKUP_DIR:-$HOME/laborster-backups}"
-# Run helper containers as the host user so output files are owned by
-# you, not root (no more mixed ownership in the backup dir).
 HOST_UGID="$(id -u):$(id -g)"
 
-# --- Provenance: tie this snapshot to an exact code state -------------------
+# --- Provenance ----------------------------------------------------------
 git_in_repo() { git -C "$REPO_DIR" "$@" 2>/dev/null; }
 BRANCH="$(git_in_repo rev-parse --abbrev-ref HEAD || echo nogit)"
 SHORT_HASH="$(git_in_repo rev-parse --short HEAD || echo nogit)"
@@ -67,46 +56,37 @@ mkdir -p "$DEST/minio"
 echo ">>> Backup target: $DEST"
 
 dump_pg() {
-  local svc="$1" user="$2" db="$3" out="$4"
-  echo ">>> Dumping $svc ($db)"
-  "${COMPOSE[@]}" exec -T "$svc" pg_dump -U "$user" -d "$db" -Fc > "$DEST/$out"
+  local out="$1"
+  echo ">>> Dumping $POSTGRES_DB"
+  "${COMPOSE[@]}" exec -T db pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > "$DEST/$out"
 }
 
-# Best-effort schema version (Alembic). Never fails the backup.
 schema_ver() {
-  local svc="$1" user="$2" db="$3"
-  "${COMPOSE[@]}" exec -T "$svc" \
-    psql -U "$user" -d "$db" -tAc \
-    'SELECT version_num FROM alembic_version' 2>/dev/null | tr -d '[:space:]' || true
+  "${COMPOSE[@]}" exec -T db \
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
+    'SELECT version_num FROM studio.alembic_version' 2>/dev/null | tr -d '[:space:]' || true
 }
 
-# Browse-friendly copy: a single .sqlite file you can open in the VSCode
-# SQLite extension / DB Browser / any SQLite tool and view like a
-# spreadsheet. The .dump stays the canonical/restorable artifact; this
-# is purely for eyeballing data. Uses only already-cached, maintained
-# official images (postgres + python stdlib sqlite3) -- no third-party
-# tool, works offline. Columns land as TEXT (SQLite is dynamically
-# typed; values display fine). Best-effort: never fails the backup.
+# Browse-friendly copy: a single .sqlite of every table across all schemas.
 sqlite_pg() {
-  local svc="$1" user="$2" db="$3" out="$4"
+  local out="$1"
   echo ">>> Building $out (sqlite, browse copy)"
   rm -f "$DEST/$out"
   local tmp="$DEST/.csv-${out%.sqlite}"
   mkdir -p "$tmp"
-  # Read table list into an array (a `while read` loop would have its
-  # stdin eaten by `docker compose exec`, truncating the iteration).
-  local tables=()
-  mapfile -t tables < <("${COMPOSE[@]}" exec -T "$svc" \
-    psql -U "$user" -d "$db" -tAc \
-    "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY 1" \
+  local rows=()
+  mapfile -t rows < <("${COMPOSE[@]}" exec -T db \
+    psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAF '|' -c \
+    "SELECT schemaname, tablename FROM pg_tables WHERE schemaname IN ('auth','studio','chat') ORDER BY 1,2" \
     </dev/null 2>/dev/null || true)
-  [ "${#tables[@]}" -gt 0 ] || { echo "    WARN: no tables read; skipping $out"; rm -rf "$tmp"; return; }
-  local t
-  for t in "${tables[@]}"; do
-    [ -n "$t" ] || continue
-    "${COMPOSE[@]}" exec -T "$svc" psql -U "$user" -d "$db" \
-      -c "\copy (SELECT * FROM public.\"$t\") TO STDOUT WITH CSV HEADER" \
-      </dev/null > "$tmp/$t.csv" 2>/dev/null || true
+  [ "${#rows[@]}" -gt 0 ] || { echo "    WARN: no tables read; skipping $out"; rm -rf "$tmp"; return; }
+  local entry sch tbl
+  for entry in "${rows[@]}"; do
+    [ -n "$entry" ] || continue
+    sch="${entry%%|*}"; tbl="${entry##*|}"
+    "${COMPOSE[@]}" exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" \
+      -c "\copy (SELECT * FROM ${sch}.\"$tbl\") TO STDOUT WITH CSV HEADER" \
+      </dev/null > "$tmp/${sch}__${tbl}.csv" 2>/dev/null || true
   done
 
   docker run --rm -i --user "$HOST_UGID" -v "$tmp:/csv" -v "$DEST:/out" python:3.12-slim \
@@ -126,20 +106,17 @@ for path in sorted(glob.glob("/csv/*.csv")):
         db.execute(f'CREATE TABLE {q(name)} ({", ".join(q(c)+" TEXT" for c in header)})')
         ph = ", ".join("?" * len(header))
         db.executemany(f'INSERT INTO {q(name)} ({cols}) VALUES ({ph})',
-                        (row for row in r if len(row) == len(header)))
+                       (row for row in r if len(row) == len(header)))
 db.commit()
 db.close()
 PY
   rm -rf "$tmp"
 }
 
-dump_pg studio-db "$STUDIO_POSTGRES_USER" "$STUDIO_POSTGRES_DB" studio.dump
-dump_pg chat-db   "$CHAT_POSTGRES_USER"   "$CHAT_POSTGRES_DB"   chat.dump
+dump_pg laborster.dump
+sqlite_pg laborster.sqlite
 
-sqlite_pg studio-db "$STUDIO_POSTGRES_USER" "$STUDIO_POSTGRES_DB" studio.sqlite
-sqlite_pg chat-db   "$CHAT_POSTGRES_USER"   "$CHAT_POSTGRES_DB"   chat.sqlite
-
-echo ">>> Mirroring MinIO buckets"
+echo ">>> Mirroring MinIO bucket"
 MINIO_CID="$("${COMPOSE[@]}" ps -q minio)"
 [ -n "$MINIO_CID" ] || { echo "ERROR: minio container not running" >&2; exit 1; }
 docker run --rm \
@@ -150,8 +127,7 @@ docker run --rm \
   --entrypoint /bin/sh \
   minio/mc:RELEASE.2025-08-13T08-35-41Z -c "
     mc alias set local http://localhost:9000 '$MINIO_ROOT_USER' '$MINIO_ROOT_PASSWORD' >/dev/null;
-    mc mirror --overwrite --remove local/studio /backup/studio;
-    mc mirror --overwrite --remove local/chat   /backup/chat;
+    mc mirror --overwrite --remove local/$S3_BUCKET /backup/$S3_BUCKET;
   "
 
 {
@@ -164,8 +140,7 @@ docker run --rm \
   echo "host / user : $(hostname) / ${USER:-$(id -un)}"
   echo "pg image    : postgres:16-alpine"
   echo "mc image    : minio/mc:RELEASE.2025-08-13T08-35-41Z"
-  echo "studio schema: $(schema_ver studio-db "$STUDIO_POSTGRES_USER" "$STUDIO_POSTGRES_DB")"
-  echo "chat schema  : $(schema_ver chat-db "$CHAT_POSTGRES_USER" "$CHAT_POSTGRES_DB")"
+  echo "schema_ver  : $(schema_ver)"
   if [ -n "$DIRTY" ]; then
     echo "dirty files :"
     git_in_repo status --porcelain | sed 's/^/  /'
@@ -175,76 +150,52 @@ docker run --rm \
 } > "$DEST/MANIFEST.txt"
 cat "$DEST/MANIFEST.txt"
 
-# Self-documenting: read instructions travel with the data, no repo needed.
 cat > "$DEST/HOW_TO_READ.txt" <<'EOF'
 HOW TO READ THIS BACKUP
 =======================
 
-NOT ENCRYPTED. *.dump are plaintext-equivalent full data copies
-(pg_dump custom format). Treat this directory as sensitive: never
-put it in git, public cloud, or share it casually.
+NOT ENCRYPTED. *.dump is a plaintext-equivalent full data copy
+(pg_dump custom format). Treat this dir as sensitive.
 
-EASIEST: just open studio.sqlite / chat.sqlite to browse data like a
-spreadsheet -- VSCode "SQLite" / "SQLite Viewer" extension, DB Browser
-for SQLite, or any SQLite tool. No password, no Docker, no commands.
-The .sqlite is a convenience copy; *.dump below is the authoritative
-restorable backup.
+EASIEST: open laborster.sqlite to browse data like a spreadsheet
+(VSCode "SQLite Viewer", DB Browser for SQLite, ...). All schemas
+(auth / studio / chat) flatten into prefixed tables like
+"auth__accounts", "chat__messages", etc.
 
-The commands below are only for the *.dump files.
-You do NOT need a password. You only need Docker (or local pg tools).
-Run these from inside this directory.
+The .sqlite is a convenience copy; laborster.dump below is the
+authoritative restorable backup.
 
-1) List tables/objects in a dump (no data extracted):
+1) List objects in the dump:
    docker run --rm -v "$PWD":/b postgres:16-alpine \
-     pg_restore --list /b/studio.dump
+     pg_restore --list /b/laborster.dump
 
-2) Convert a dump to readable SQL text (note: -f - is required):
+2) Convert dump to readable SQL:
    docker run --rm -v "$PWD":/b postgres:16-alpine \
-     pg_restore --no-owner --no-privileges -f - /b/studio.dump > studio.sql
+     pg_restore --no-owner --no-privileges -f - /b/laborster.dump > laborster.sql
 
-3) Dump one table's data only (note: -f - is required):
-   docker run --rm -v "$PWD":/b postgres:16-alpine \
-     pg_restore --data-only --table=personas -f - /b/studio.dump
-
-4) Restore into a live database:
+3) Restore into a live database:
    docker run --rm -v "$PWD":/b -e PGPASSWORD=<pw> postgres:16-alpine \
      pg_restore --no-owner --clean --if-exists \
-     -h <host> -U <user> -d <db> /b/studio.dump
+     -h <host> -U <user> -d <db> /b/laborster.dump
 
-5) MinIO objects: ./minio/studio and ./minio/chat hold raw object
-   files (empty if the bucket had no objects). Open directly, no tools.
+4) MinIO objects live under ./minio/<bucket>/.
 
-See MANIFEST.txt for the exact commit, branch and schema version this
-data corresponds to before restoring.
+See MANIFEST.txt for the exact commit and schema version.
 EOF
 
-# No retention/rotation: this script never deletes a backup. Deleting
-# old backups is a manual decision. Just report disk usage as an FYI.
 echo ">>> Backups kept: $(ls -1d "$BACKUP_DIR"/20*/ 2>/dev/null | wc -l), total on disk:"
 du -sh "$BACKUP_DIR" 2>/dev/null | sed 's/^/    /'
 
 echo ">>> Backup complete: $DEST"
 
-# Make this backup immutable (chattr +i) so it cannot be deleted or
-# overwritten -- not even by you with `rm -rf` -- until you explicitly
-# `sudo chattr -R -i` it. Needs sudo; you will be asked for your
-# password below. Best-effort: the backup is already safely written,
-# locking failure does not lose data.
 echo
 echo "=================================================================="
 echo "  LOCKING BACKUP (chattr +i) -- making it delete-proof"
 echo "  >>> sudo may ask for your password now. Type it to lock. <<<"
 echo "=================================================================="
 if sudo chattr -R +i "$DEST"; then
-  echo "=================================================================="
-  echo "  OK -- backup LOCKED: $DEST"
-  echo "  To delete it later you must first unlock:"
-  echo "    sudo chattr -R -i \"$DEST\""
-  echo "=================================================================="
+  echo "  OK -- LOCKED: $DEST"
+  echo "  To delete later: sudo chattr -R -i \"$DEST\""
 else
-  echo "=================================================================="
-  echo "  WARN: lock FAILED (sudo declined / chattr unsupported)."
-  echo "  Backup data is fine and complete, just NOT delete-protected."
-  echo "  Lock it manually with: sudo chattr -R +i \"$DEST\""
-  echo "=================================================================="
+  echo "  WARN: lock FAILED. Backup data is fine, just not delete-protected."
 fi

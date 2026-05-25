@@ -1,15 +1,9 @@
 #!/usr/bin/env bash
-# Stop one instance of the stack.
+# Stop one instance of the merged stack.
 #
 #   scripts/down-all.sh <config.json>       stop, KEEP volumes
-#   scripts/down-all.sh <config.json> -v    stop and DELETE this
-#                                           instance's volumes (data loss)
+#   scripts/down-all.sh <config.json> -v    stop and DELETE volumes (data loss)
 set -euo pipefail
-
-# Same project name across 4 compose files -> silence the bogus
-# "orphan containers" warning (and keep --remove-orphans from ever
-# nuking sibling services).
-export COMPOSE_IGNORE_ORPHANS=true
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -40,19 +34,7 @@ if [[ "$WIPE" == "-v" ]]; then
   V="--volumes"
 fi
 
-echo ">>> [$P] down tunnel"
-cd "$ROOT/tunnel"
-docker compose -p "$P" --env-file "$TMP_ENV" down $V
-
-echo ">>> [$P] down studio"
-cd "$ROOT/services/studio"
-docker compose -p "$P" --env-file .env --env-file "$TMP_ENV" down $V
-
-echo ">>> [$P] down chat"
-cd "$ROOT/services/chat"
-docker compose -p "$P" --env-file .env --env-file "$TMP_ENV" down $V
-
-echo ">>> [$P] down infra"
+echo ">>> [$P] down"
 cd "$ROOT/infra"
 docker compose -p "$P" --env-file .env --env-file "$TMP_ENV" down $V
 

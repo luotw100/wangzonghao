@@ -230,7 +230,8 @@ class ChannelWorker:
             成功 → state = ONLINE；认证失败 → NEEDS_LOGIN；瞬时错误 → BACKOFF
         """
         factory = adapters.get(self.platform)
-        adapter = factory.build(self._credential)
+        provider = factory.make_provider(self._credential, self._store)
+        adapter = factory.build(provider)
         self_id = adapter.platform_self_id
         self_display = adapter.platform_self_display_name
         inboxes = self._studio.register_inboxes(

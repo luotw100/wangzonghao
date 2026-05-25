@@ -39,15 +39,11 @@ Laborster Bridge — 命令
   Channel
     /channel                     等价于 /channel list
     /channel list                列出已绑定 channel
-    /channel add [platform] [..] 绑定一个 channel；platform 默认 chat
-                                 chat 可加位置参数 base_url（默认硬编码 URL）
+    /channel add [platform]      绑定一个 channel；platform 默认 chat
     /channel rm <n>              删除第 n 个 channel
     /channel relogin <n>         重跑该 channel 的登录流，更新 credential
 
   调试
-    /studio                      打印当前 Studio 地址
-    /studio set <url>            会话内覆盖 Studio 地址（不落盘，重启复原）
-    /studio reset                恢复默认 Studio 地址
     /status                      daemon 与各 channel 状态快照
     /log [n]                     打印最近 n 条日志（默认 50）
     /log -f                      跟随日志（Ctrl-C 退出）
@@ -176,8 +172,10 @@ def _run_login_flow_cli(
 ) -> tuple[adapters.Credential | None, str | None]:
     """Drive an adapter LoginFlow with the REPL's ask_line/ask_secret.
 
-    ``extra`` is forwarded as kwargs to ``factory.begin_login``. The
-    only platform that consumes anything today is ``chat`` (``base_url``).
+    ``extra`` is forwarded as kwargs to ``factory.begin_login``. Today's
+    sole adapter (chat) takes no extras — it's a degenerate flow that
+    returns ``Done({})`` immediately — but the runner stays generic so
+    future adapters (QR, OAuth, ...) drop straight in.
     """
     try:
         factory = adapters.get(platform)
@@ -217,15 +215,28 @@ def _run_login_flow_cli(
         return None, f"未知 step 类型: {type(step).__name__}"
 
 
+def _build_adapter(
+    ctx: Context, platform: str, credential: adapters.Credential
+) -> adapters.Adapter:
+    """Build an adapter the same way runtime does: ask the factory to
+    turn (stored credential, account store) into a CredentialProvider,
+    then construct. Keeps validation paths aligned with the live path —
+    e.g. chat resolves studio_token from the store, not from a stale
+    credential snapshot.
+    """
+    factory = adapters.get(platform)
+    provider = factory.make_provider(credential, ctx.store)
+    return factory.build(provider)
+
+
 def _persist_channel(
     ctx: Context, platform: str, credential: adapters.Credential
 ) -> dict:
     """Add a credential row. Dedup by (platform, self_id) against existing rows."""
     if ctx.store is None:
         return {"error": "请先 /login"}
-    factory = adapters.get(platform)
     try:
-        self_id = factory.build(credential).platform_self_id
+        self_id = _build_adapter(ctx, platform, credential).platform_self_id
     except adapters.Unauthorized:
         return {"error": "凭据立即被拒绝（不应发生）"}
     except adapters.TransientError as exc:
@@ -236,9 +247,7 @@ def _persist_channel(
         if ch.platform != platform:
             continue
         try:
-            existing = (
-                adapters.get(platform).build(ch.credential).platform_self_id
-            )
+            existing = _build_adapter(ctx, platform, ch.credential).platform_self_id
         except Exception:
             continue
         if existing == self_id:
@@ -403,20 +412,10 @@ def cmd_account(ctx: Context, args: list[str]) -> dict:
 def _login_extras(ctx: Context, platform: str, args: list[str]) -> tuple[dict, str | None]:
     """Parse positional args after platform into LoginFlow kwargs.
 
-    After Chat/Studio were merged, ``chat`` no longer takes a base_url —
-    it lives on the studio host. Its only extra is ``studio_token``,
-    fetched here from the bridge state so the LoginFlow can confirm
-    without prompting the user.
+    Today no platform takes positional extras — chat is a degenerate
+    flow (inherits Studio's session), future adapters can declare their
+    own kwargs and this is where parsing would land.
     """
-    if platform == "chat":
-        if args:
-            return {}, f"chat 不接受额外参数: {' '.join(args)}"
-        if ctx.store is None:
-            return {}, "请先 /login Studio"
-        token = ctx.store.kv_get("studio_token")
-        if not token:
-            return {}, "未拿到 Studio session token — 请先 /login"
-        return {"studio_token": token}, None
     if args:
         return {}, f"{platform} 不接受额外参数: {' '.join(args)}"
     return {}, None
@@ -434,15 +433,10 @@ def cmd_channel(ctx: Context, args: list[str]) -> dict:
         lines = []
         for i, c in enumerate(channels):
             try:
-                self_id = (
-                    adapters.get(c.platform).build(c.credential).platform_self_id
-                )
+                self_id = _build_adapter(ctx, c.platform, c.credential).platform_self_id
                 head = f"  {i + 1}. {c.platform}  {self_id}"
             except Exception as exc:
                 head = f"  {i + 1}. {c.platform}  (无法解析: {exc})"
-            url = c.credential.get("base_url")
-            if url and url != _platform_default_url(c.platform):
-                head += f"  [{url}]"
             lines.append(head)
         return {"lines": lines}
 
@@ -495,26 +489,15 @@ def cmd_channel(ctx: Context, args: list[str]) -> dict:
     return {"error": "用法: /channel [list] | add [platform] [..] | rm <n> | relogin <n>"}
 
 
-def _platform_default_url(platform: str) -> str | None:
-    if platform == "chat":
-        # Chat sandbox lives on the studio host (under /api/chat/*). The
-        # adapter no longer holds a separate base_url; this helper still
-        # answers so old "channel relogin --url" UX keeps working.
-        return config.STUDIO_BASE_URL
-    return None
-
-
 def cmd_status(ctx: Context, args: list[str]) -> dict:
     snap = ctx.events.snapshot()
     running = bool(ctx.runtime and ctx.runtime.is_running())
     status = snap.get("status", "idle")
     if not running and status != "idle":
         status += " (daemon 未运行)"
-    studio_url = config.STUDIO_BASE_URL
-    studio_marker = "" if studio_url == config.DEFAULT_STUDIO_BASE_URL else "  (session override)"
     lines = [
         f"status      : {status}",
-        f"studio      : {studio_url}{studio_marker}",
+        f"studio      : {config.STUDIO_BASE_URL}",
         f"account_id  : {snap.get('account_id') or ctx.account_id or '-'}",
         f"username    : {snap.get('username') or '-'}",
         f"machine_id  : {snap.get('machine_id') or '-'}",
@@ -544,44 +527,6 @@ def cmd_log(ctx: Context, args: list[str]) -> dict:
     return {"logs": ctx.events.tail(n), "follow": follow}
 
 
-def cmd_studio(ctx: Context, args: list[str]) -> dict:
-    if not args:
-        marker = (
-            "" if config.STUDIO_BASE_URL == config.DEFAULT_STUDIO_BASE_URL
-            else "  (session override)"
-        )
-        return {"lines": [f"{config.STUDIO_BASE_URL}{marker}"]}
-    sub = args[0]
-    if sub == "reset":
-        return _apply_studio_url(ctx, config.DEFAULT_STUDIO_BASE_URL, reset=True)
-    if sub == "set":
-        if len(args) < 2:
-            return {"error": "用法: /studio set <url>"}
-        url = args[1].strip().rstrip("/")
-        if not (url.startswith("http://") or url.startswith("https://")):
-            return {"error": f"url 必须以 http(s):// 开头: {url}"}
-        return _apply_studio_url(ctx, url, reset=False)
-    return {"error": "用法: /studio | /studio set <url> | /studio reset"}
-
-
-def _apply_studio_url(ctx: Context, url: str, *, reset: bool) -> dict:
-    """Override Studio base URL for this process (never persisted).
-
-    The current daemon is stopped because StudioClient + per-account
-    state are pinned to the previous URL; the operator should /login
-    again (likely as a different account) against the new URL.
-    """
-    _stop_daemon(ctx)
-    config.STUDIO_BASE_URL = url
-    label = "已恢复默认 Studio 地址" if reset else "已切换 Studio 地址 (本次进程)"
-    lines = [f"{label}: {url}"]
-    if ctx.account_id is not None:
-        lines.append(
-            "当前账号是用旧地址登录的，请 /login 或 /account use 切换后再使用"
-        )
-    return {"lines": lines}
-
-
 def cmd_quit(ctx: Context, args: list[str]) -> dict:
     _close_account(ctx)
     return {"quit": True}
@@ -596,8 +541,7 @@ DISPATCH = {
     "account": cmd_account,
     "channel": cmd_channel,
     "log": cmd_log,
-    "studio": cmd_studio,
     "quit": cmd_quit,
 }
 
-NO_STATE_OK = {"help", "state", "studio", "quit"}
+NO_STATE_OK = {"help", "state", "quit"}

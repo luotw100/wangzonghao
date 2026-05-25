@@ -206,14 +206,42 @@ class Adapter(Protocol):
 
 # ---- factory + registry ----------------------------------------------
 
+# Every adapter receives a "credential provider" — a parameterless
+# function it calls each time it needs auth material to make a request.
+# This abstracts over static credentials (provider returns the same dict
+# every call) and live credentials (provider reads fresh state on each
+# call, e.g. chat reading the current studio_token from the store, or a
+# future adapter doing OAuth refresh-on-expiry).
+CredentialProvider = Callable[[], Credential]
+
+
+def _snapshot_provider(credential: Credential, _store: Any) -> CredentialProvider:
+    """Default ``make_provider``: hand the stored credential back verbatim.
+
+    Suitable for any adapter whose credential never changes after
+    ``begin_login`` completes — passwords, long-lived bot tokens, fixed
+    cookie jars. Adapters needing live state (chat → studio_token) ship
+    their own ``make_provider``.
+    """
+    return lambda: credential
+
+
 @dataclass(frozen=True)
 class AdapterFactory:
     platform: str
-    # begin_login accepts platform-specific kwargs (e.g. chat passes
-    # base_url for dev-stack overrides). Implementations should treat
-    # unknown kwargs as opt-in and never required.
+    # begin_login accepts platform-specific kwargs. Implementations
+    # should treat unknown kwargs as opt-in and never required.
     begin_login: Callable[..., LoginFlow]
-    build: Callable[[Credential], Adapter]
+    # build receives a CredentialProvider (see above) rather than the
+    # raw credential — the adapter calls it on every request.
+    build: Callable[[CredentialProvider], Adapter]
+    # make_provider turns (stored credential, account store) into the
+    # provider closure. Default snapshots the stored credential; chat
+    # overrides to read studio_token live from the store.
+    # `store` is typed `Any` to avoid a runtime import cycle with
+    # laborster_bridge.store; concrete adapters that need it will
+    # narrow the type internally.
+    make_provider: Callable[[Credential, Any], CredentialProvider] = _snapshot_provider
 
 
 REGISTRY: dict[str, AdapterFactory] = {}

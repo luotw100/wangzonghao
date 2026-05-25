@@ -15,22 +15,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-DEFAULT_STUDIO_BASE_URL = "https://studio.laborster.com"
+# Single hardcoded endpoint. Chat sandbox shares the same host — its
+# API is mounted at /api/chat/*. Change this string if you need to
+# point Bridge at a non-production environment; there is no runtime
+# override on purpose.
+STUDIO_BASE_URL = "https://studio.laborster.com"
 
-# Module-level mutable: `/studio set <url>` rewrites STUDIO_BASE_URL for
-# the running process (never persisted). Restart restores the default.
-# Chat sandbox shares the same host — its API is mounted at /api/chat/*.
-STUDIO_BASE_URL = DEFAULT_STUDIO_BASE_URL
-
-
-def chat_base_url() -> str:
-    """Chat sandbox endpoint = studio host + /api/chat namespace.
-
-    Chat adapter requests target ``f"{STUDIO_BASE_URL}/api/chat{path}"``;
-    this helper returns the host prefix so callers can compose URLs
-    consistently without knowing the layout.
-    """
-    return STUDIO_BASE_URL
 
 _state_root: Path | None = None
 

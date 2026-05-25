@@ -153,7 +153,6 @@ function renderHeader() {
 
   $("acc-studio").textContent = state.account.studio_url || "-";
   $("acc-machine").textContent = state.account.machine_id || "-";
-  $("mi-studio-reset").hidden = !state.account.studio_url_overridden;
   $("mi-logout").hidden = !state.account.logged_in;
 }
 
@@ -194,9 +193,7 @@ function renderStrip() {
   dot.className = "dot " + (meta.dot || (s.running ? "ok" : ""));
   $("strip-label").textContent = meta.text;
 
-  const studio = $("strip-studio");
-  studio.textContent = s.studio_url || "-";
-  studio.className = "strip-studio" + (s.studio_url_overridden ? " override" : "");
+  $("strip-studio").textContent = s.studio_url || "-";
 
   $("strip-in").textContent = s.in_count_5m || 0;
   $("strip-unsent").textContent = s.outbound_pending || 0;
@@ -345,33 +342,6 @@ function openLoginModal() {
   foot.querySelector("#m-cancel").onclick = () => modal.close();
   foot.querySelector("#m-submit").onclick = onSubmit;
   wrap.querySelector("#m-login-user").focus();
-}
-
-// ---- Studio URL override -----
-function openStudioOverride() {
-  const cur = state.account?.studio_url || "";
-  const wrap = document.createElement("div");
-  wrap.innerHTML = `
-    <p class="hint" style="margin-bottom:12px">仅本次进程生效，重启恢复默认。切换后需要重新登录该地址的账号。</p>
-    <div class="field"><label>Studio 地址</label>
-      <input id="m-studio-url" type="text" placeholder="https://studio.example.com">
-    </div>
-    <div id="m-err" class="flow-err" hidden></div>
-  `;
-  wrap.querySelector("#m-studio-url").value = cur;
-  const foot = document.createElement("div");
-  foot.innerHTML = `<button class="ghost" id="m-cancel">取消</button><button class="primary" id="m-submit">应用</button>`;
-  modal.open("覆盖 Studio 地址", wrap, foot);
-  foot.querySelector("#m-cancel").onclick = () => modal.close();
-  foot.querySelector("#m-submit").onclick = async () => {
-    const v = wrap.querySelector("#m-studio-url").value.trim();
-    if (!v) return showFlowErr(wrap, "地址不能为空");
-    const r = await api().set_studio_url(v);
-    if (r.error) return showFlowErr(wrap, r.error);
-    modal.close();
-    toast(r.lines?.[0] || "已切换", "ok");
-    await refreshAll();
-  };
 }
 
 function showFlowErr(wrap, msg) {
@@ -598,13 +568,6 @@ function wire() {
     renderResult(await api().logout(), "已登出");
     await refreshAll();
   };
-  $("mi-studio-set").onclick = () => { closeAccountMenu(); openStudioOverride(); };
-  $("mi-studio-reset").onclick = async () => {
-    closeAccountMenu();
-    renderResult(await api().reset_studio_url(), "已恢复默认");
-    await refreshAll();
-  };
-
   // First-time login (in-view, not modal)
   $("btn-login").onclick = async () => {
     const u = $("login-user").value.trim();

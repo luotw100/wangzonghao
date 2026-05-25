@@ -2,10 +2,11 @@
 
 After Chat and Studio were merged into a single backend, chat lives at
 ``${STUDIO_BASE_URL}/api/chat/*`` and there is no separate chat login —
-the studio session token authenticates both planes. ``/channel add chat``
-therefore skips the password prompt: it captures the current studio
-token at registration time and uses it for the lifetime of this channel
-(401 → user re-runs ``/channel relogin <n>`` to capture a fresh token).
+the studio session token authenticates both planes. Chat therefore has
+no login flow of its own: ``begin_login`` is degenerate (immediate
+``Done({})``) and the adapter reads the *current* ``studio_token`` from
+the account store on every request via its CredentialProvider. A Studio
+re-login is picked up automatically; no per-channel relogin needed.
 """
 
 from __future__ import annotations
@@ -18,6 +19,7 @@ from . import (
     AdapterFactory,
     Conversation,
     Credential,
+    CredentialProvider,
     Done,
     Failed,
     IncomingEvent,
@@ -51,16 +53,14 @@ def _classify(exc: Exception) -> Exception:
 # ---- login flow -------------------------------------------------------
 
 class _ChatLoginFlow:
-    """One-step confirm. ``studio_token`` is captured by commands.py from
-    the bridge state and passed in here — the user is not prompted."""
+    """Degenerate flow: chat inherits Studio's session, so there is
+    nothing for the user to do. The credential stored on the channel
+    row is an empty marker — the live ``studio_token`` is read from the
+    account store on every request via the CredentialProvider.
+    """
 
-    def __init__(self, *, studio_token: str | None = None) -> None:
-        if not studio_token:
-            self._step: Step = Failed(
-                reason="未登录 Studio：请先 /login <username>，再 /channel add chat"
-            )
-            return
-        self._step = Done(credential={"token": studio_token})
+    def __init__(self) -> None:
+        self._step: Step = Done(credential={})
 
     def current(self) -> Step:
         return self._step
@@ -80,27 +80,32 @@ class _ChatLoginFlow:
 class ChatAdapter:
     """Chat sandbox client. Talks to ``${STUDIO_BASE_URL}/api/chat/*`` for
     chat-specific endpoints and ``/api/auth/me`` for identity (the studio
-    account *is* the chat sandbox identity now)."""
+    account *is* the chat sandbox identity now).
 
-    def __init__(self, credential: Credential) -> None:
-        token = credential.get("token")
-        if not isinstance(token, str) or not token:
-            raise ValueError("chat credential missing 'token'")
-        self._token = token
+    Holds a CredentialProvider rather than a snapshot. Each request calls
+    ``self._provider()`` and pulls ``token`` out — so a Studio re-login
+    is picked up on the next request with no relogin step.
+    """
+
+    def __init__(self, provider: CredentialProvider) -> None:
+        self._provider = provider
         self._self_id: str | None = None
         self._self_display: str | None = None
 
-    @property
-    def _base(self) -> str:
-        # Read each call so /studio set <url> overrides land without a
-        # bridge restart.
-        return config.STUDIO_BASE_URL.rstrip("/")
+    def _token(self) -> str:
+        cred = self._provider()
+        token = cred.get("token") if isinstance(cred, dict) else None
+        if not isinstance(token, str) or not token:
+            # No studio session → surface as Unauthorized so the worker
+            # transitions to NEEDS_LOGIN, prompting a fresh /login.
+            raise Unauthorized()
+        return token
 
     def _req(self, method: str, path: str, body=None, timeout: float = 20.0):
         try:
             return request_json(
-                method, f"{self._base}{path}",
-                token=self._token, body=body, timeout=timeout,
+                method, f"{config.STUDIO_BASE_URL.rstrip('/')}{path}",
+                token=self._token(), body=body, timeout=timeout,
             )
         except (HttpUnauthorized, HttpError) as exc:
             raise _classify(exc) from None
@@ -208,10 +213,19 @@ class ChatAdapter:
 
 # ---- registration -----------------------------------------------------
 
+def _chat_make_provider(_credential: Credential, store) -> CredentialProvider:
+    """Chat inherits Studio's session: each request reads the *current*
+    ``studio_token`` from the account store. The stored channel credential
+    is empty — nothing per-channel to snapshot.
+    """
+    return lambda: {"token": store.kv_get("studio_token") if store else None}
+
+
 register(
     AdapterFactory(
         platform="chat",
-        begin_login=lambda *, studio_token=None: _ChatLoginFlow(studio_token=studio_token),
-        build=lambda credential: ChatAdapter(credential),
+        begin_login=lambda: _ChatLoginFlow(),
+        build=lambda provider: ChatAdapter(provider),
+        make_provider=_chat_make_provider,
     )
 )

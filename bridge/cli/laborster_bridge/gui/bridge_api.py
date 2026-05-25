@@ -149,9 +149,6 @@ class Api:
                 "display_name": None,
                 "machine_id": None,
                 "studio_url": config.STUDIO_BASE_URL,
-                "studio_url_overridden": (
-                    config.STUDIO_BASE_URL != config.DEFAULT_STUDIO_BASE_URL
-                ),
                 "has_channels": False,
             }
         return {
@@ -160,9 +157,6 @@ class Api:
             "display_name": store.kv_get("display_name"),
             "machine_id": store.kv_get("machine_id"),
             "studio_url": config.STUDIO_BASE_URL,
-            "studio_url_overridden": (
-                config.STUDIO_BASE_URL != config.DEFAULT_STUDIO_BASE_URL
-            ),
             "has_channels": bool(store.channels()),
         }
 
@@ -220,9 +214,6 @@ class Api:
             "outbound_pending": snap.get("outbound_pending", 0),
             "last_error": snap.get("last_error"),
             "studio_url": snap.get("studio_url") or config.STUDIO_BASE_URL,
-            "studio_url_overridden": (
-                config.STUDIO_BASE_URL != config.DEFAULT_STUDIO_BASE_URL
-            ),
         }
 
     def logs(self, n: int = 200) -> list:
@@ -241,12 +232,6 @@ class Api:
 
     def remove_account(self, account_id: str) -> dict:
         return commands.cmd_account(self._ctx, ["remove", account_id])
-
-    def set_studio_url(self, url: str) -> dict:
-        return commands.cmd_studio(self._ctx, ["set", url])
-
-    def reset_studio_url(self) -> dict:
-        return commands.cmd_studio(self._ctx, ["reset"])
 
     # --- channel mutations ----------------------------------------------
 
@@ -275,10 +260,9 @@ class Api:
     ) -> dict:
         """Start a LoginFlow. Returns {flow_id, step, channel_id}.
 
-        ``extras`` are forwarded as kwargs to ``factory.begin_login`` —
-        chat consumes ``base_url`` here. For relogin (channel_id given),
-        if the caller doesn't supply ``base_url`` we fish it out of the
-        existing credential so the user doesn't have to retype it.
+        ``extras`` are forwarded as kwargs to ``factory.begin_login``.
+        Today's sole adapter (chat) takes none — it's degenerate — but
+        the dispatch stays generic for future adapters.
         """
         try:
             factory = adapters.get(platform)
@@ -286,14 +270,6 @@ class Api:
             return {"error": str(exc)}
 
         extras = dict(extras or {})
-        if channel_id is not None and self._ctx.store is not None:
-            for c in self._ctx.store.channels():
-                if c.id == int(channel_id) and c.platform == platform:
-                    if platform == "chat" and "base_url" not in extras:
-                        url = c.credential.get("base_url")
-                        if url:
-                            extras["base_url"] = url
-                    break
 
         try:
             flow = factory.begin_login(**extras)

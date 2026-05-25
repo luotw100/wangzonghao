@@ -15,7 +15,7 @@ Laborster 是一个**通用拟人自动化回复服务**，帮助职业用户在
 ## 架构原则
 
 - 简单可靠、耐操、易于理解、可扩展、性能好
-- 三件套：**Channel（聊天平台）↔ Bridge（主播 PC daemon）↔ Studio（云端）**。Studio 不直连任何 Channel；Bridge 不调 LLM、不存人设。
+- 三件套：**Channel（聊天平台）↔ Bridge（主播 PC daemon）↔ Studio（云端）**。Studio 不直连任何 Channel；Bridge 不调 LLM、不存人设。仓库代码层面合并成**两个项目**——`services/studio/`（云端：Studio + Chat sandbox + admin 同进程，schema 隔离）和 `bridge/cli/`（主播本机 daemon），但运行时 Bridge → Chat 仍走 HTTP，Channel 边界不破。
 - Bridge 用账号密码握手 + 长轮询，没有消息队列；Studio 用一张 `outbound_messages` 表当队列即可。
 - 延迟发送（拟人打字速度）由 Studio worker 在创建 OutboundMessage 时通过 `send_after` 时间戳控制；Bridge 侧不做任何 delay，收到即发。
 - Studio 拥有完整消息历史（source of truth），Bridge 离线不影响 Studio 决策。
@@ -43,23 +43,30 @@ Laborster 是一个**通用拟人自动化回复服务**，帮助职业用户在
 
 ## 技术架构详解
 
-### 三个独立项目
+### 仓库结构（两项目）
 
-仓库下三个互不依赖的服务，各自一份 `pyproject.toml` / `uv.lock` / `Dockerfile` / `compose.yaml`：
-
-- [services/chat/](services/chat/) — Chat sandbox（dogfood Channel）
-- [services/studio/](services/studio/) — Studio（云端：人设 / 卡片 / 蒸馏 / 回复脑）
-- [services/bridge/](services/bridge/) — Bridge daemon（跑在主播 PC 上）
-
-### Studio 内部组成
-
-| 容器 | 内部端口 | 职责 |
+| 项目 | 路径 | 跑在哪 |
 | --- | --- | --- |
-| `studio-web` (nginx) | `:23457` | 静态资源 + `/api/` 反向代理到 studio-api |
-| `studio-api` | `:23457` | FastAPI；账号与首次 admin 初始化 / Persona / Provider / Bridge 握手 / Inbox / Contact / Distill 全部 CRUD + Bridge 协议 |
-| `studio-worker` | — | DistillScanner（扫 pending DistillJob 跑蒸馏）+ ReplyScanner（扫 `pending_reply=true` 的 Contact 调 LLM 写 outbound） |
+| Server  | [services/studio/](services/studio/) | 云端 compose；同一 FastAPI 进程里挂 studio + chat 子包，另起 admin-api、worker、user_web、admin_web、cloudflared |
+| Bridge  | [bridge/cli/](bridge/cli/) | 主播本机的 Python daemon |
 
-Studio 不再有任何"直连 Channel"的代码，所有平台 IO 都经过 Bridge。
+详细架构、不变量、schema 布局、Bridge 协议见 `.claude/skills/repository-architecture/SKILL.md`，那是最新事实。
+
+### Server 进程组成（infra/compose.yaml）
+
+| 服务 | 内部端口 | 职责 |
+| --- | --- | --- |
+| `db` | 5432 | 单 PostgreSQL，三 schema（auth / studio / chat） |
+| `minio` + `minio-create-buckets` | 9000 | 单 bucket `${S3_BUCKET}` |
+| `migrate` | — | 一次性，`studio.migrate` 建 schema + alembic upgrade |
+| `api` | 23456 | FastAPI `studio.main:app`：挂 studio 路由 + `/api/chat/*` + bridge protocol |
+| `worker` | — | DistillScanner + ReplyScanner |
+| `admin-api` | 23457 | FastAPI `admin.app:app`；Cloudflare Access 在边缘鉴权 |
+| `web` | 23456 | nginx + user_web 构建产物；`/studio` 和 `/chat` 都是它的 SPA 路由 |
+| `admin-web` | 23457 | nginx + admin_web |
+| `cloudflared` | — | tunnel |
+
+Server 进程不直连 Channel：所有平台 IO 都经过 Bridge HTTP。
 
 ### Bridge 内部组成
 

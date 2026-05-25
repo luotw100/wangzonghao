@@ -21,11 +21,12 @@ Laborster 是一个**通用拟人化私聊接管服务**：让 AI 替主播 / �
 | **Bridge** | 跑在主播 PC 上的 daemon | 接管这台机器上的所有平台登录、收发消息、模拟打字、缓存离线 | 不调 LLM、不存人设、不蒸馏 |
 | **Studio** | 云端服务（本仓库） | 人设 / 卡片管理、蒸馏、生成回复、把待发回复排进 outbound 队列 | 不直连任何 Channel |
 
-仓库结构里**三个独立项目**：
+仓库结构里**两个独立项目**：
 
-- [services/chat/](services/chat/) — Chat sandbox，作为 dogfood 用的可控 Channel
-- [services/studio/](services/studio/) — Studio
-- [services/bridge/](services/bridge/) — Bridge daemon
+- [services/studio/](services/studio/) — 云端 server（Studio 控制台 + Chat sandbox 子包 + admin 面板 + worker + 两个 React 前端），同一份 PG 三 schema 隔离
+- [bridge/cli/](bridge/cli/) — Bridge daemon（主播 PC 上的 Python REPL）
+
+Chat sandbox 在代码上是 `services/studio/api/chat/` 子包，路由挂在 `/api/chat/*` 下；与 Studio 同进程跑，但仍只能被 Bridge HTTP 触达。
 
 ---
 
@@ -77,76 +78,52 @@ UI 上你只直接接触 **接管 / 人设 / 设备 / 设置** 这几个区域�
 
 ## 怎么跑起来
 
-### 1. Chat sandbox（dogfood Channel）
+### 1. 起整套 server（单 compose）
 
 ```bash
-cd services/chat
-docker compose up -d --build
-docker compose exec -T chat-api uv run python -m chat.cli create-account \
-  --username alice --password Alice123 --display-name 主播alice
+cp infra/.env.example infra/.env  # 填 POSTGRES_*、MINIO_*、S3_PUBLIC_URL 等
+scripts/up-all.sh scripts/.env.debug.json   # 实例配置，含 COMPOSE_PROJECT_NAME / CF_TUNNEL_TOKEN
+scripts/seed_dev.py scripts/.env.debug.json # 建首个 Provider + 账号
 ```
 
-Chat 后台在 http://localhost:23456 。
-
-### 2. Studio
-
-```bash
-cd services/studio
-docker compose up -d --build
-```
-
-Studio 后台在 http://localhost:23457 。
-
-第一次打开 Studio 时，如果数据库里没有任何账号，登录页会进入初始化模式：填写用户名、密码和显示名，直接创建首个 `admin` 并登录。之后账号都在 Web「设置」里管理，不需要再用命令行操作 Studio 账号。
+- Studio 后台和 Chat 沙箱共域：`https://<your-domain>/studio` 和 `https://<your-domain>/chat`，共用一个登录。
+- Admin 面板独立部署在另一个域 / 子路径，Cloudflare Access 在边缘做身份校验。
 
 后台操作顺序（推荐）：
-1. admin 在 **设置** → 新建全局默认 Provider、创建普通 user
-2. 普通 user 登录后在 **人设** → 新建至少一个人设
-3. 在主播 PC 上启动 Bridge daemon（见下）—— Bridge / Inbox 会自动出现在 Studio
-4. **接管** → 选粉丝、设人设 / 开 autoreply、写关系卡
-5. 在「接管」tab 配置 Contact 的人设和 autoreply；Bridge 积累一定消息后可创建 distill job 自动产出 Persona + Card
-6. 创建蒸馏任务，未显式指定 Provider 时使用全局默认 Provider
+1. admin（通过 admin-web）→ 维护 Provider 池、创建普通 user
+2. 普通 user 登录 → **人设** 新建至少一个人设
+3. 在主播 PC 上启动 Bridge daemon（见下）—— Bridge / Inbox 自动出现在 Studio
+4. **接管** → 选粉丝、设人设 / 开 autoreply、写关系卡；首条 Conversation 默认绑定 pick_first_provider
+5. Bridge 积累一定消息后可创建 distill job 自动产出 Persona + Card
 
-### 3. Bridge daemon
-
-直接拿主播的 Studio 账号密码 + 该机器要登的 chat 账号起来：
+### 2. Bridge daemon
 
 ```bash
-cd services/bridge
-docker compose run --rm bridge \
-  --studio-username=demo --studio-password=demo123 \
-  --studio-url=http://host.docker.internal:23457 \
-  --chat-inbox 'base_url=http://host.docker.internal:23456,username=alice,password=Alice123'
+cd bridge/cli
+uv run laborster-bridge --state ~/.laborster-bridge
+# REPL 里：
+#   /login <username>          (用 Studio 账号密码握手，会拿到 session token)
+#   /channel add chat          (复用 studio token 自动建 chat channel，无需再输密码)
 ```
 
-- 默认连云端 `https://studio.laborster.com`，本地联调用 `--studio-url` 覆盖。
-- 想让一个 Bridge 同时挂多个 chat 账号：再加一行 `--chat-inbox '...'`。
+默认连云端 `https://studio.laborster.com`；本地联调时在 REPL 里 `/studio set http://host.docker.internal:23456` 覆盖。
 
 启动后 Bridge 会：
-1. 用账号密码 + hostname 调 `/api/bridge/handshake`，按 (account, hostname) upsert Bridge 行，发回一次性 session token。
-2. 报告它登入的每个 chat 账号，Studio 自动 upsert Inbox。
-3. 之后所有 heartbeat / inbound / outbound 都用 session token；bridge 重启 = 重新 handshake = 新 token。
+1. 调 `/api/bridge/handshake` 用账号密码 + machine_id 换 session token；写进 `~/.laborster-bridge/<account_id>/state.db`（0600）。
+2. `/channel add chat` 自动把当前 studio token 注入 chat channel。chat adapter 调用 `${STUDIO}/api/chat/*` 走同一份 token。
+3. 之后 heartbeat / inbound / outbound 都用 session token；24h 滑动续期，401 才再输密码。
 
-撤掉一个 Bridge：在 web 「Bridges」tab 点 revoke，daemon 下次调用会被 401，需要重启才能复活（拿新 token）。
+撤掉一个 Bridge：在 Studio「设备」tab 删它对应的行；daemon 下次调用会被 401。
 
 ---
 
 ## 账号管理
 
-Studio 账号管理主路径是 Web「设置」：
+账号统一在 `auth.accounts`（PostgreSQL `auth` schema），由 admin 面板通过 admin-api 维护：
 
-- 首次初始化：没有任何账号时，在登录页创建首个 admin。
-- admin：创建普通用户、列出账号、停用/启用账号、重置任意账号密码。
-- 普通 user：在设置页修改自己的密码。
-
-CLI 仅保留为运维救援入口；Chat sandbox 账号目前仍用 CLI：
-
-```bash
-cd services/chat
-docker compose exec -T chat-api uv run python -m chat.cli list-accounts
-```
-
-⚠️ Docker 起的服务跟本地裸跑的服务是**两份独立的存储**（docker volume vs `services/*/storage/`）。账号互不可见，要在哪边管账号就用对应的命令。
+- admin：通过 admin-web（Cloudflare Access 鉴权）创建 / 列出 / 停用 / 重置账号密码。
+- 普通 user：登录后在 Studio「设置」里改自己的密码。
+- Chat sandbox **没有独立账号**，共用 `auth.accounts`：dogfood 时一个 user 既是 Studio 操作者也是 chat 沙箱身份。
 
 ---
 
@@ -154,9 +131,8 @@ docker compose exec -T chat-api uv run python -m chat.cli list-accounts
 
 | 项目 | 存储 |
 | --- | --- |
-| Chat | docker volume `chat-storage`（chat.db + 附件） |
-| Studio | docker volume `studio-storage`（studio.db + uploads/） |
-| Bridge | 无任何持久化；CLI 参数即全部状态 |
+| Server | 单 docker volume `pgdata`（PostgreSQL，三 schema：auth / studio / chat）+ MinIO bucket `${S3_BUCKET}` |
+| Bridge | 状态目录 `<--state>/<account_id>/state.db`（sqlite，仅 token / machine_id / channel credentials / 消息中转表） |
 
 ---
 
@@ -179,7 +155,7 @@ docker compose exec -T chat-api uv run python -m chat.cli list-accounts
 - **Bridge 自注册：** 没有"先在 UI 建 Bridge → 拷 token"。每次握手就是一次 Studio 账号登录，按 (account, hostname) upsert Bridge 行。daemon 连续重启拿新 token，状态最少。
 - **Studio 不直连 Channel：** 早期 Studio 直接调 Chat 接口创建 user / bulk-import / poll，把 Chat 当微信模拟器。这条路下线了，由 Bridge 桥接。Chat sandbox 现在跟未来真微信完全对称——Bridge 把它们一视同仁。
 - **不存默认值：** 每条 INSERT 显式赋值。schema 演化、字段重命名、字段语义变更都能在 git diff 里看清——而不是依赖 sqlalchemy 的某行 `default=False` 在某次重启时悄悄改掉行为。
-- **三个独立项目：** services/chat、services/studio、services/bridge 各有自己的 `pyproject.toml`、`uv.lock`、`Dockerfile`、`compose.yaml`，互不依赖。
+- **两个独立项目：** `services/studio/`（云端 server，单进程挂 studio + chat + admin）和 `bridge/cli/`（主播 daemon）。Chat sandbox 是 server 内的子包，靠 PostgreSQL schema (`auth` / `studio` / `chat`) 和 Python 包纪律隔离；Bridge 仍以 HTTP 触达，Channel 边界没变。
 
 ## TODO
 

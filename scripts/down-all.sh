@@ -35,8 +35,8 @@ if [[ "$WIPE" == "-v" ]]; then
 fi
 
 echo ">>> [$P] down"
-cd "$ROOT/infra"
-docker compose -p "$P" --env-file .env --env-file "$TMP_ENV" down $V
+docker compose -f "$ROOT/docker-compose.yaml" -p "$P" \
+  --env-file "$ROOT/.env" --env-file "$TMP_ENV" down $V
 
 if [[ "$WIPE" == "-v" ]]; then
   echo ">>> [$P] stopped, volumes deleted"

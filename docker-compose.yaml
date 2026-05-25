@@ -50,7 +50,7 @@ services:
   # ---------------------------------------------------------------------
   migrate:
     build:
-      context: ../services/studio/api
+      context: services/studio/api
     command: ["uv", "run", "python", "-m", "studio.migrate"]
     environment:
       DATABASE_URL: ${DATABASE_URL}
@@ -61,7 +61,7 @@ services:
 
   api:
     build:
-      context: ../services/studio/api
+      context: services/studio/api
     environment:
       DATABASE_URL: ${DATABASE_URL}
       S3_ENDPOINT: ${S3_ENDPOINT}
@@ -77,7 +77,7 @@ services:
 
   worker:
     build:
-      context: ../services/studio/api
+      context: services/studio/api
     command: ["uv", "run", "python", "-m", "studio.worker", "--request-timeout", "120"]
     environment:
       DATABASE_URL: ${DATABASE_URL}
@@ -94,7 +94,7 @@ services:
 
   admin-api:
     build:
-      context: ../services/studio/api
+      context: services/studio/api
     command: ["uv", "run", "uvicorn", "admin.app:app", "--host", "0.0.0.0", "--port", "23457"]
     environment:
       DATABASE_URL: ${DATABASE_URL}
@@ -108,9 +108,9 @@ services:
   # ---------------------------------------------------------------------
   web:
     build:
-      context: ../services/studio/user_web
+      context: services/studio/user_web
     volumes:
-      - ../services/studio/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./services/studio/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       api:
         condition: service_started
@@ -118,9 +118,9 @@ services:
 
   admin-web:
     build:
-      context: ../services/studio/admin_web
+      context: services/studio/admin_web
     volumes:
-      - ../services/studio/admin_nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./services/studio/admin_nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       admin-api:
         condition: service_started

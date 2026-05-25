@@ -15,7 +15,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-INFRA_DIR="$REPO_DIR/infra"
 
 INST="${1:-}"
 if [ -z "$INST" ]; then
@@ -24,16 +23,15 @@ if [ -z "$INST" ]; then
 fi
 case "$INST" in /*) :;; *) INST="$REPO_DIR/$INST";; esac
 [ -f "$INST" ] || { echo "ERROR: config not found: $INST" >&2; exit 1; }
-[ -f "$INFRA_DIR/.env" ] || { echo "ERROR: $INFRA_DIR/.env not found" >&2; exit 1; }
+[ -f "$REPO_DIR/.env" ] || { echo "ERROR: $REPO_DIR/.env not found" >&2; exit 1; }
 jq empty "$INST" 2>/dev/null || { echo "ERROR: invalid JSON: $INST" >&2; exit 1; }
 
 TMP_ENV=$(mktemp); trap "rm -f $TMP_ENV" EXIT
 jq -r '.compose | to_entries[] | "\(.key)=\(.value)"' "$INST" > "$TMP_ENV"
-set -a; . "$INFRA_DIR/.env"; . "$TMP_ENV"; set +a
+set -a; . "$REPO_DIR/.env"; . "$TMP_ENV"; set +a
 : "${COMPOSE_PROJECT_NAME:?config.compose must set COMPOSE_PROJECT_NAME}"
 
-COMPOSE=(docker compose -f "$INFRA_DIR/compose.yaml" --project-directory "$INFRA_DIR" \
-  -p "$COMPOSE_PROJECT_NAME" --env-file "$INFRA_DIR/.env")
+COMPOSE=(docker compose -f "$REPO_DIR/docker-compose.yaml" -p "$COMPOSE_PROJECT_NAME" --env-file "$REPO_DIR/.env")
 BACKUP_DIR="${BACKUP_DIR:-$HOME/laborster-backups}"
 HOST_UGID="$(id -u):$(id -g)"
 

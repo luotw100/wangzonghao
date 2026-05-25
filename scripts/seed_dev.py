@@ -41,7 +41,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-INFRA_DIR = REPO_ROOT / "infra"
 
 # Runs inside the admin-api container. Reads [{path, body, label}] from stdin,
 # fires them all in parallel against the local admin API, prints results, exits
@@ -227,9 +226,10 @@ def wait_health(url: str, name: str, tries: int = 30) -> None:
 def admin_exec(project: str, calls: list[dict]) -> None:
     """Single docker compose exec; all calls run in parallel inside the container."""
     result = subprocess.run(
-        ["docker", "compose", "-p", project, "exec", "-T", "admin-api",
+        ["docker", "compose", "-f", str(REPO_ROOT / "docker-compose.yaml"),
+         "-p", project, "exec", "-T", "admin-api",
          "python", "-c", _ADMIN_INNER],
-        cwd=INFRA_DIR,
+        cwd=REPO_ROOT,
         capture_output=True,
         text=True,
         input=json.dumps(calls),

@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import * as api from './api';
-import type { Account } from './api';
+import type { Account, Message } from './api';
 import Sidebar from './components/Sidebar';
 import ChatPanel from './components/ChatPanel';
 import ImportDialog from './components/ImportDialog';
@@ -31,6 +31,11 @@ export default function ChatApp() {
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
   const [showImport, setShowImport] = useState(false);
 
+  // Per-conversation message cache: seeds useMessages on switch (instant display)
+  // and provides lastMessages to the sidebar for all conversations.
+  const msgCacheRef = useRef<Map<string, Message[]>>(new Map());
+  const [lastMsgCache, setLastMsgCache] = useState<Record<string, Message | undefined>>({});
+
   useEffect(() => {
     if (!workspace.loaded) return;
     if (activeConversationId) return;
@@ -55,15 +60,24 @@ export default function ChatApp() {
     [workspace.conversations, activeConversationId],
   );
 
-  const messagesState = useMessages(activeConversationId, !!account);
+  const conversationSeed = activeConversationId
+    ? msgCacheRef.current.get(activeConversationId)
+    : undefined;
 
-  const lastMessages = useMemo(() => {
-    const out: Record<string, typeof messagesState.messages[number] | undefined> = {};
-    if (activeConversation && messagesState.messages.length > 0) {
-      out[activeConversation.id] = messagesState.messages[messagesState.messages.length - 1];
-    }
-    return out;
-  }, [activeConversation, messagesState.messages]);
+  const messagesState = useMessages(activeConversationId, !!account, conversationSeed);
+
+  // Keep cache and sidebar previews in sync with live messages.
+  useEffect(() => {
+    if (!activeConversationId || messagesState.messages.length === 0) return;
+    msgCacheRef.current.set(activeConversationId, [...messagesState.messages]);
+    const last = messagesState.messages[messagesState.messages.length - 1];
+    setLastMsgCache((prev) => ({ ...prev, [activeConversationId]: last }));
+  }, [activeConversationId, messagesState.messages]);
+
+  // lastMessages is now derived from the accumulated cache across all visited
+  // conversations, so every sidebar row shows a preview regardless of which
+  // conversation is currently active.
+  const lastMessages = useMemo(() => lastMsgCache, [lastMsgCache]);
 
   if (!account) return null; // RequireAuth should prevent this state
 

@@ -95,23 +95,24 @@
   background: var(--wc-green-press);
 }
 .primary:disabled {
-  background: #b6e2ca;
+  background: var(--brass-deep);
+  opacity: 0.45;
   cursor: not-allowed;
 }
 .secondary {
-  background: #ffffff;
+  background: var(--bg-raised);
   border-color: var(--wc-divider-strong);
   color: var(--wc-text);
 }
 .secondary:hover {
-  background: #f4f4f4;
+  background: var(--bg-hover);
 }
 .ghost {
   background: transparent;
   color: var(--wc-text-muted);
 }
 .ghost:hover {
-  background: #ececec;
+  background: var(--bg-raised);
 }
 
 .icon-btn {
@@ -221,8 +222,8 @@ label > span {
 .error {
   margin-top: 16px;
   padding: 10px 12px;
-  background: #fff1f0;
-  border: 1px solid #ffd6d2;
+  background: oklch(0.62 0.150 22 / 0.12);
+  border: 1px solid oklch(0.62 0.150 22 / 0.35);
   border-radius: var(--wc-radius-large);
   color: var(--wc-danger);
   font-size: 13px;
@@ -344,7 +345,7 @@ label > span {
 .new-contact {
   margin: 10px 12px 0;
   padding: 12px;
-  background: #fff;
+  background: var(--bg-raised);
   border: 1px solid var(--wc-divider);
   border-radius: 8px;
   display: grid;
@@ -446,7 +447,7 @@ label > span {
 .chat-header {
   height: 56px;
   padding: 0 16px;
-  background: #ededed;
+  background: var(--bg-base);
   border-bottom: 1px solid var(--wc-divider);
   display: flex;
   align-items: center;
@@ -633,7 +634,7 @@ label > span {
    ========================================================================= */
 .composer {
   border-top: 1px solid var(--wc-divider);
-  background: #f7f7f7;
+  background: var(--bg-base);
   padding: 8px 14px 14px;
   display: flex;
   flex-direction: column;
@@ -643,7 +644,7 @@ label > span {
 .sender-toggle {
   display: inline-flex;
   align-self: flex-start;
-  background: #ececec;
+  background: var(--bg-sunken);
   border-radius: 8px;
   padding: 3px;
   gap: 2px;
@@ -658,9 +659,9 @@ label > span {
   transition: background 120ms, color 120ms;
 }
 .sender-toggle button.selected {
-  background: #fff;
+  background: var(--bg-hover);
   color: var(--wc-text);
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 }
 
 .composer-hint {
@@ -693,7 +694,7 @@ label > span {
   border: 1px solid var(--wc-divider-strong);
 }
 .attach-btn:hover {
-  background: #f0f0f0;
+  background: var(--bg-hover);
   color: var(--wc-text);
 }
 .attach-btn:disabled {
@@ -724,7 +725,8 @@ label > span {
   background: var(--wc-green-press);
 }
 .send:disabled {
-  background: #b6e2ca;
+  background: var(--brass-deep);
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
@@ -766,10 +768,11 @@ label > span {
 }
 
 .modal-card {
-  background: #fff;
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
   border-radius: 12px;
   width: min(480px, 100%);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+  box-shadow: var(--shadow-lg);
   overflow: hidden;
 }
 
@@ -828,7 +831,7 @@ label > span {
 .import-dropzone:hover,
 .import-dropzone.drag-over {
   border-color: var(--wc-green);
-  background: rgba(7, 193, 96, 0.04);
+  background: oklch(0.78 0.090 78 / 0.06);
   color: var(--wc-text);
 }
 .import-dropzone p {
@@ -869,16 +872,16 @@ label > span {
   padding: 12px;
   cursor: pointer;
   text-align: left;
-  background: #fff;
+  background: var(--bg-base);
   transition: border-color 120ms, background 120ms;
   width: 100%;
 }
 .member-card:hover {
-  border-color: #a8d8b2;
+  border-color: var(--brass-line);
 }
 .member-card.selected {
   border-color: var(--wc-green);
-  background: rgba(7, 193, 96, 0.05);
+  background: var(--brass-soft);
 }
 .member-card .member-name {
   font-weight: 500;
@@ -901,7 +904,7 @@ label > span {
   font-size: 11px;
   font-weight: 600;
   color: var(--wc-green);
-  background: rgba(7, 193, 96, 0.12);
+  background: var(--brass-soft);
   padding: 1px 7px;
   border-radius: 4px;
 }
@@ -978,10 +981,10 @@ label > span {
    ========================================================================= */
 .context-menu {
   position: fixed;
-  background: #fff;
-  border: 1px solid var(--wc-divider);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
   border-radius: 8px;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
+  box-shadow: var(--shadow);
   padding: 4px;
   z-index: 200;
   min-width: 160px;
@@ -997,13 +1000,13 @@ label > span {
   background: transparent;
 }
 .context-item:hover {
-  background: #f0f0f0;
+  background: var(--bg-hover);
 }
 .context-item.danger {
   color: var(--wc-danger);
 }
 .context-item.danger:hover {
-  background: #fff1f0;
+  background: oklch(0.62 0.150 22 / 0.12);
 }
 
 /* =========================================================================

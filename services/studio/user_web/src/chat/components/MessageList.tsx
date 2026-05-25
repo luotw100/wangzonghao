@@ -74,6 +74,8 @@ export default function MessageList({
   const savedScrollHeightRef = useRef(0);
   const pendingPrependRef = useRef(false);
   const loadingOlderRef = useRef(false);
+  // True between a conversation switch and the first non-empty render of that conversation.
+  const justSwitchedRef = useRef(false);
 
   const rows: Row[] = useMemo(() => {
     const out: Row[] = [];
@@ -112,10 +114,25 @@ export default function MessageList({
     previousLengthRef.current = messages.length;
 
     if (conversationChanged) {
-      node.scrollTop = node.scrollHeight;
+      if (messages.length > 0) {
+        // Messages already available (cache hit) — scroll immediately.
+        node.scrollTop = node.scrollHeight;
+        justSwitchedRef.current = false;
+      } else {
+        // Messages not loaded yet — mark so we scroll when they arrive.
+        justSwitchedRef.current = true;
+      }
       return;
     }
-    // New messages appended (not prepended)
+
+    // First batch of messages after a switch (no cache, initial fetch just landed).
+    if (justSwitchedRef.current && messages.length > 0) {
+      node.scrollTop = node.scrollHeight;
+      justSwitchedRef.current = false;
+      return;
+    }
+
+    // New messages appended while already viewing the conversation.
     if (messages.length > prevLen && !pendingPrependRef.current) {
       const distanceFromBottom = node.scrollHeight - node.scrollTop - node.clientHeight;
       if (distanceFromBottom < 120) {

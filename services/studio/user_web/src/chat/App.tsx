@@ -67,8 +67,12 @@ export default function ChatApp() {
   const messagesState = useMessages(activeConversationId, !!account, conversationSeed);
 
   // Keep cache and sidebar previews in sync with live messages.
+  // Guard: only write when messages actually belong to the active conversation.
+  // Without this, switching conversations causes the old messages (still in state)
+  // to be cached under the new conversation ID on the first render after switch.
   useEffect(() => {
     if (!activeConversationId || messagesState.messages.length === 0) return;
+    if (messagesState.messages[0].conversation_id !== activeConversationId) return;
     msgCacheRef.current.set(activeConversationId, [...messagesState.messages]);
     const last = messagesState.messages[messagesState.messages.length - 1];
     setLastMsgCache((prev) => ({ ...prev, [activeConversationId]: last }));

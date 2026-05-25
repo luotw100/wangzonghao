@@ -12,7 +12,6 @@ interface SidebarProps {
   onSelectConversation: (id: string) => void;
   onCreateContact: (nickname: string, remarkName: string) => Promise<void>;
   onUpdateContactRemark: (contactId: string, remarkName: string) => Promise<void>;
-  onLogout: () => void;
   onUpdateNickname: (nickname: string) => Promise<void>;
   onOpenImport: () => void;
   onExit: () => void;
@@ -26,7 +25,6 @@ export default function Sidebar({
   onSelectConversation,
   onCreateContact,
   onUpdateContactRemark,
-  onLogout,
   onUpdateNickname,
   onOpenImport,
   onExit,
@@ -152,25 +150,12 @@ export default function Sidebar({
         <button
           type="button"
           className="icon-btn"
-          aria-label="回到 Studio"
+          aria-label="回到控制台"
           onClick={onExit}
-          title="回到 Studio 控制台"
+          title="回到控制台"
         >
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
-          </svg>
-        </button>
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="退出登录"
-          onClick={onLogout}
-          title="退出登录"
-        >
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-            <polyline points="16 17 21 12 16 7" />
-            <line x1="21" y1="12" x2="9" y2="12" />
           </svg>
         </button>
       </header>

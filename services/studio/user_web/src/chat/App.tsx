@@ -11,7 +11,7 @@ import { useMessages } from './hooks/useMessages';
 
 export default function ChatApp() {
   const navigate = useNavigate();
-  const { account: studioAccount, logout } = useAuth();
+  const { account: studioAccount } = useAuth();
 
   // Adapter: chat components want { id, username, nickname }. Studio's
   // session account has display_name — we shadow it as nickname so the
@@ -124,11 +124,6 @@ export default function ChatApp() {
     setGlobalError('账号昵称请到 Studio 设置中修改');
   }
 
-  async function handleLogout() {
-    await logout();
-    navigate('/', { replace: true });
-  }
-
   return (
     <main className={mobileView === 'chat' ? 'app-shell view-chat' : 'app-shell view-list'}>
       <Sidebar
@@ -138,7 +133,6 @@ export default function ChatApp() {
         onSelectConversation={handleSelectConversation}
         onCreateContact={handleCreateContact}
         onUpdateContactRemark={handleUpdateContactRemark}
-        onLogout={handleLogout}
         onUpdateNickname={handleUpdateNickname}
         onOpenImport={() => setShowImport(true)}
         onExit={() => navigate('/studio')}

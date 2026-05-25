@@ -23,8 +23,6 @@ export default function ChatPanel({
   messages,
   hasMore,
   onLoadOlder,
-  onMessagesReload,
-  onWorkspaceReload,
   onBack,
 }: ChatPanelProps) {
   const [perspective, setPerspective] = useState<'self' | 'contact'>(() => {

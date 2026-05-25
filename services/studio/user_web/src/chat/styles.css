@@ -1,95 +1,75 @@
 /* =========================================================================
-   Laborster Chat — WeChat-style light theme
-   - Desktop: WeChat for Mac / Windows feel (sidebar + chat panel, no header bar)
-   - Mobile: WeChat app feel (full-screen list ↔ full-screen chat with back btn)
+   Laborster Chat (sandbox) — re-skinned onto Studio's dark/brass tokens.
+   Layout still WeChat-shaped (sidebar + panel, message bubbles); colors,
+   typography and surfaces come from --bg-*, --ink-*, --brass-* defined
+   in user_web/src/index.css.
    ========================================================================= */
 
-:root {
-  --wc-green: #07c160;
-  --wc-green-press: #06ad57;
-  --wc-bubble-self: #95ec69;     /* iconic light green */
-  --wc-bubble-self-text: #18211b;
-  --wc-bubble-contact: #ffffff;
-  --wc-bubble-contact-text: #181818;
+.app-shell,
+.login-shell {
+  /* Local aliases that map the chat UI's WeChat vocabulary onto studio's
+     design tokens. Touch these here only; the rest of the file references
+     --wc-* and inherits the new palette automatically. */
+  --wc-green:           var(--brass);
+  --wc-green-press:     var(--brass-deep);
+  --wc-bubble-self:     var(--brass-soft);
+  --wc-bubble-self-text: var(--ink-1);
+  --wc-bubble-contact:  var(--bg-raised);
+  --wc-bubble-contact-text: var(--ink-1);
 
-  --wc-bg: #f5f5f5;              /* mac client bg */
-  --wc-sidebar: #eeeeee;
-  --wc-sidebar-active: #d6d6d6;
-  --wc-sidebar-hover: #e3e3e3;
-  --wc-divider: #e6e6e6;
-  --wc-divider-strong: #d6d6d6;
+  --wc-bg:              var(--bg-deep);
+  --wc-sidebar:         var(--bg-base);
+  --wc-sidebar-active:  var(--bg-hover);
+  --wc-sidebar-hover:   var(--bg-raised);
+  --wc-divider:         var(--line-subtle);
+  --wc-divider-strong:  var(--line);
 
-  --wc-text: #1a1a1a;
-  --wc-text-muted: #888888;
-  --wc-text-faint: #b0b0b0;
-  --wc-input-bg: #ffffff;
-  --wc-search-bg: #e5e5e5;
+  --wc-text:            var(--ink-1);
+  --wc-text-muted:      var(--ink-3);
+  --wc-text-faint:      var(--ink-4);
+  --wc-input-bg:        var(--bg-sunken);
+  --wc-search-bg:       var(--bg-sunken);
 
-  --wc-danger: #fa5151;
-  --wc-radius: 4px;              /* WeChat uses very slight rounding on bubbles */
-  --wc-radius-large: 8px;
-
-  color-scheme: light;
-  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB",
-    "Microsoft YaHei", "Helvetica Neue", Helvetica, Arial, "Segoe UI", sans-serif;
-  color: var(--wc-text);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+  --wc-danger:          var(--danger);
+  --wc-radius:          var(--r-sm);
+  --wc-radius-large:    var(--r);
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html,
-body,
-#root {
-  margin: 0;
-  padding: 0;
-  height: 100%;
-  background: var(--wc-bg);
-}
-
-body {
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--wc-text);
-  overscroll-behavior: none;
-}
-
-button,
-input,
-textarea {
+.app-shell input,
+.app-shell textarea,
+.login-shell input,
+.login-shell textarea {
   font: inherit;
-  color: inherit;
-}
-
-button {
-  cursor: pointer;
-  background: transparent;
-  border: 0;
-  padding: 0;
-}
-
-input,
-textarea {
+  color: var(--wc-text);
   background: var(--wc-input-bg);
   border: 1px solid var(--wc-divider-strong);
   border-radius: var(--wc-radius-large);
   padding: 8px 10px;
   outline: none;
   width: 100%;
-  color: var(--wc-text);
 }
 
-input:focus,
-textarea:focus {
-  border-color: var(--wc-green);
-  box-shadow: 0 0 0 3px rgba(7, 193, 96, 0.15);
+.app-shell input:focus,
+.app-shell textarea:focus,
+.login-shell input:focus,
+.login-shell textarea:focus {
+  border-color: var(--brass);
+  box-shadow: 0 0 0 3px var(--brass-soft);
 }
 
-textarea {
+.app-shell textarea,
+.login-shell textarea {
   resize: none;
+}
+
+.app-shell button,
+.login-shell button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  padding: 0;
 }
 
 /* ---------- Buttons ---------- */
@@ -206,8 +186,10 @@ textarea {
   font-weight: 500;
   letter-spacing: 0.18em;
 }
-h1,
-h2 {
+.app-shell h1,
+.app-shell h2,
+.login-shell h1,
+.login-shell h2 {
   margin: 0;
   font-weight: 600;
   letter-spacing: -0.01em;

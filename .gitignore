@@ -10,3 +10,7 @@ __pycache__/
 
 # Bridge cli .venv
 bridge/cli/.venv/
+
+# Node
+node_modules/
+dist/

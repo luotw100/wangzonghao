@@ -1,13 +1,16 @@
-const API_BASE = '/api';
-const TOKEN_KEY = 'laborster-chat-token';
+// Chat sandbox API client. Auth is shared with studio:
+// the studio session token (under 'laborster-studio-token') is the
+// only credential — chat has no separate login.
 
+const API_BASE = '/api/chat';
+const TOKEN_KEY = 'laborster-studio-token';
+
+// Adapter shape for chat UI components. Fed from studio's session
+// account via App.tsx — chat components never fetch identity themselves.
 export interface Account {
   id: string;
   username: string;
   nickname: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface Contact {
@@ -48,22 +51,12 @@ export interface UploadPresignResponse {
   fields: Record<string, string>;
 }
 
-export interface LoginResponse {
-  token: string;
-  account: Account;
-}
-
 export function contactDisplayName(contact: Contact): string {
   return contact.remark_name || contact.nickname;
 }
 
-export function getToken(): string | null {
+function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
-}
-
-export function setToken(token: string | null): void {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
 }
 
 async function request<T>(path: string, options: RequestInit = {}, timeout = 15000): Promise<T> {
@@ -77,7 +70,8 @@ async function request<T>(path: string, options: RequestInit = {}, timeout = 150
     const res = await fetch(`${API_BASE}${path}`, { ...options, headers, signal: controller.signal });
     clearTimeout(timeoutId);
     if (res.status === 401) {
-      setToken(null);
+      // Don't clear the token here — studio's UnauthorizedRedirect handler
+      // owns that and will bounce the user back to /. We just surface the error.
       throw new Error('登录已失效，请重新登录');
     }
     if (!res.ok) {
@@ -97,30 +91,6 @@ async function request<T>(path: string, options: RequestInit = {}, timeout = 150
     if (err instanceof DOMException && err.name === 'AbortError') throw new Error('请求超时');
     throw err;
   }
-}
-
-export function login(username: string, password: string): Promise<LoginResponse> {
-  return request<LoginResponse>('/auth/login', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username, password }),
-  });
-}
-
-export function me(): Promise<Account> {
-  return request<Account>('/auth/me');
-}
-
-export function logout(): Promise<void> {
-  return request<void>('/auth/logout', { method: 'POST' });
-}
-
-export function updateMe(payload: { nickname: string }): Promise<Account> {
-  return request<Account>('/auth/me', {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload),
-  });
 }
 
 export function createContact(payload: {
@@ -235,10 +205,7 @@ export async function getMessagesAfter(
       { headers, signal: controller.signal }
     );
     clearTimeout(timeoutId);
-    if (res.status === 401) {
-      setToken(null);
-      throw new Error('登录已失效，请重新登录');
-    }
+    if (res.status === 401) throw new Error('登录已失效，请重新登录');
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return data?.messages || [];

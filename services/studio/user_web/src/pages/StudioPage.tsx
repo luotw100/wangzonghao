@@ -126,6 +126,28 @@ export function StudioPage() {
               </button>
             );
           })}
+          <button
+            title="Chat 沙箱"
+            onClick={() => navigate('/chat')}
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: 10,
+              border: '1px dashed var(--line-subtle)',
+              background: 'transparent',
+              color: 'var(--ink-3)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              fontFamily: 'var(--f-serif)',
+              marginTop: 8,
+            }}
+          >
+            <span style={{ fontSize: 16 }}>☷</span>
+            <span className="mono" style={{ marginTop: 2, fontSize: 9, opacity: 0.85 }}>沙箱</span>
+          </button>
         </div>
         <div style={{ marginTop: 'auto', position: 'relative' }}>
           {accountMenuOpen && (

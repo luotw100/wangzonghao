@@ -1,4 +1,4 @@
-import { KeyboardEvent, useRef, useState } from 'react';
+import { useRef, useState, type KeyboardEvent } from 'react';
 import type { Account, Conversation, MessageType } from '../api';
 import { contactDisplayName, presignUpload, sendMessage, uploadPresignedFile } from '../api';
 

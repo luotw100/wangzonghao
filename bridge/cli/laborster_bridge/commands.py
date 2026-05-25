@@ -400,21 +400,23 @@ def cmd_account(ctx: Context, args: list[str]) -> dict:
     return {"error": "用法: /account [list] | use <acc> | remove <acc>"}
 
 
-def _login_extras(platform: str, args: list[str]) -> tuple[dict, str | None]:
+def _login_extras(ctx: Context, platform: str, args: list[str]) -> tuple[dict, str | None]:
     """Parse positional args after platform into LoginFlow kwargs.
 
-    Currently only ``chat`` takes a positional ``base_url``; other
-    platforms accept no extras and reject any.
+    After Chat/Studio were merged, ``chat`` no longer takes a base_url —
+    it lives on the studio host. Its only extra is ``studio_token``,
+    fetched here from the bridge state so the LoginFlow can confirm
+    without prompting the user.
     """
     if platform == "chat":
-        if not args:
-            return {}, None
-        if len(args) > 1:
-            return {}, "chat 只接受一个可选位置参数: base_url"
-        url = args[0].strip().rstrip("/")
-        if not (url.startswith("http://") or url.startswith("https://")):
-            return {}, f"base_url 必须以 http(s):// 开头: {url}"
-        return {"base_url": url}, None
+        if args:
+            return {}, f"chat 不接受额外参数: {' '.join(args)}"
+        if ctx.store is None:
+            return {}, "请先 /login Studio"
+        token = ctx.store.kv_get("studio_token")
+        if not token:
+            return {}, "未拿到 Studio session token — 请先 /login"
+        return {"studio_token": token}, None
     if args:
         return {}, f"{platform} 不接受额外参数: {' '.join(args)}"
     return {}, None
@@ -446,7 +448,7 @@ def cmd_channel(ctx: Context, args: list[str]) -> dict:
 
     if sub == "add":
         platform = args[1].strip() if len(args) >= 2 else DEFAULT_CHANNEL_PLATFORM
-        extras, err = _login_extras(platform, args[2:])
+        extras, err = _login_extras(ctx, platform, args[2:])
         if err:
             return {"error": err}
         credential, err = _run_login_flow_cli(ctx, platform, extras)
@@ -473,12 +475,11 @@ def cmd_channel(ctx: Context, args: list[str]) -> dict:
         if idx < 0 or idx >= len(channels):
             return {"error": "序号超出范围（见 /channel list）"}
         ch = channels[idx]
-        # Reuse the existing per-channel base_url where present so the
-        # operator doesn't have to retype it.
-        extras: dict = {}
-        url = ch.credential.get("base_url")
-        if ch.platform == "chat" and url:
-            extras["base_url"] = url
+        # Re-derive extras the same way /channel add does so chat picks
+        # up the freshest studio_token without operator input.
+        extras, err = _login_extras(ctx, ch.platform, [])
+        if err:
+            return {"error": err}
         credential, err = _run_login_flow_cli(ctx, ch.platform, extras)
         if err is not None:
             return {"error": err}
@@ -496,7 +497,10 @@ def cmd_channel(ctx: Context, args: list[str]) -> dict:
 
 def _platform_default_url(platform: str) -> str | None:
     if platform == "chat":
-        return config.DEFAULT_CHAT_BASE_URL
+        # Chat sandbox lives on the studio host (under /api/chat/*). The
+        # adapter no longer holds a separate base_url; this helper still
+        # answers so old "channel relogin --url" UX keeps working.
+        return config.STUDIO_BASE_URL
     return None
 
 

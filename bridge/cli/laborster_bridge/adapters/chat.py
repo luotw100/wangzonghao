@@ -1,11 +1,11 @@
 """Chat sandbox adapter.
 
-Login is one-step username+password (single ``PromptInput``). The
-adapter then runs purely off the stored credential ``{"token": "..."}``.
-
-Reference implementation of the Adapter Protocol — new platform modules
-should follow the same shape: a LoginFlow class, an Adapter class, a
-single ``register(AdapterFactory(...))`` at the bottom.
+After Chat and Studio were merged into a single backend, chat lives at
+``${STUDIO_BASE_URL}/api/chat/*`` and there is no separate chat login —
+the studio session token authenticates both planes. ``/channel add chat``
+therefore skips the password prompt: it captures the current studio
+token at registration time and uses it for the lifetime of this channel
+(401 → user re-runs ``/channel relogin <n>`` to capture a fresh token).
 """
 
 from __future__ import annotations
@@ -20,11 +20,9 @@ from . import (
     Credential,
     Done,
     Failed,
-    Field,
     IncomingEvent,
     OutboundPayload,
     PermanentError,
-    PromptInput,
     Step,
     TransientError,
     Unauthorized,
@@ -43,7 +41,6 @@ def _iso_z(created_at: str) -> str:
 
 
 def _classify(exc: Exception) -> Exception:
-    """Translate http.* exceptions into the adapter taxonomy."""
     if isinstance(exc, HttpUnauthorized):
         return Unauthorized()
     if isinstance(exc, HttpError):
@@ -54,58 +51,24 @@ def _classify(exc: Exception) -> Exception:
 # ---- login flow -------------------------------------------------------
 
 class _ChatLoginFlow:
-    _FIELDS = [
-        Field(name="username", label="Chat 用户名"),
-        Field(name="password", label="Chat 密码", secret=True),
-    ]
+    """One-step confirm. ``studio_token`` is captured by commands.py from
+    the bridge state and passed in here — the user is not prompted."""
 
-    def __init__(self, base_url: str | None = None) -> None:
-        # Per-channel override (defaults to the hardcoded prod URL). The
-        # resolved URL is baked into the credential below so the adapter
-        # is pinned to it for its lifetime — useful when one daemon
-        # bridges channels on multiple chat instances (dev/prod).
-        self._base_url = (base_url or config.CHAT_BASE_URL).rstrip("/")
-        self._step: Step = PromptInput(
-            title=f"登录 Chat 沙箱 · {self._base_url}", fields=self._FIELDS
-        )
+    def __init__(self, *, studio_token: str | None = None) -> None:
+        if not studio_token:
+            self._step: Step = Failed(
+                reason="未登录 Studio：请先 /login <username>，再 /channel add chat"
+            )
+            return
+        self._step = Done(credential={"token": studio_token})
 
     def current(self) -> Step:
         return self._step
 
     def submit(self, answers: dict[str, str]) -> Step:
-        if not isinstance(self._step, PromptInput):
-            return self._step
-        u = (answers.get("username") or "").strip()
-        p = answers.get("password") or ""
-        if not u or not p:
-            self._step = PromptInput(
-                title=f"登录 Chat 沙箱 · {self._base_url}",
-                fields=self._FIELDS,
-                error="用户名和密码不能为空",
-            )
-            return self._step
-        try:
-            r = request_json(
-                "POST",
-                f"{self._base_url}/api/auth/login",
-                body={"username": u, "password": p},
-            )
-        except HttpUnauthorized:
-            self._step = PromptInput(
-                title=f"登录 Chat 沙箱 · {self._base_url}",
-                fields=self._FIELDS,
-                error="账号或密码错误",
-            )
-            return self._step
-        except HttpError as exc:
-            raise TransientError(str(exc)) from None
-        self._step = Done(
-            credential={"token": r["token"], "base_url": self._base_url}
-        )
         return self._step
 
     def poll(self) -> Step:
-        # No external-wait step in this flow; nothing to poll.
         return self._step
 
     def cancel(self) -> None:
@@ -115,27 +78,29 @@ class _ChatLoginFlow:
 # ---- adapter ---------------------------------------------------------
 
 class ChatAdapter:
+    """Chat sandbox client. Talks to ``${STUDIO_BASE_URL}/api/chat/*`` for
+    chat-specific endpoints and ``/api/auth/me`` for identity (the studio
+    account *is* the chat sandbox identity now)."""
+
     def __init__(self, credential: Credential) -> None:
         token = credential.get("token")
         if not isinstance(token, str) or not token:
             raise ValueError("chat credential missing 'token'")
         self._token = token
-        # Credentials minted before per-channel base_url existed simply
-        # didn't carry one; fall back to the hardcoded prod URL.
-        self._base_url = (
-            credential.get("base_url") or config.CHAT_BASE_URL
-        ).rstrip("/")
         self._self_id: str | None = None
         self._self_display: str | None = None
+
+    @property
+    def _base(self) -> str:
+        # Read each call so /studio set <url> overrides land without a
+        # bridge restart.
+        return config.STUDIO_BASE_URL.rstrip("/")
 
     def _req(self, method: str, path: str, body=None, timeout: float = 20.0):
         try:
             return request_json(
-                method,
-                f"{self._base_url}{path}",
-                token=self._token,
-                body=body,
-                timeout=timeout,
+                method, f"{self._base}{path}",
+                token=self._token, body=body, timeout=timeout,
             )
         except (HttpUnauthorized, HttpError) as exc:
             raise _classify(exc) from None
@@ -143,10 +108,13 @@ class ChatAdapter:
     # ---- identity --------------------------------------------------
 
     def _ensure_me(self) -> None:
-        if self._self_id is None or self._self_display is None:
-            me = self._req("GET", "/api/auth/me")
-            self._self_id = me["id"]
-            self._self_display = me.get("nickname") or me.get("username") or me["id"]
+        if self._self_id is not None and self._self_display is not None:
+            return
+        me = self._req("GET", "/api/auth/me")
+        self._self_id = me["id"]
+        # Studio account uses display_name; fall back to username so the
+        # inbox always has a non-empty label.
+        self._self_display = me.get("display_name") or me.get("username") or me["id"]
 
     @property
     def platform_self_id(self) -> str:
@@ -163,7 +131,7 @@ class ChatAdapter:
     # ---- directory -------------------------------------------------
 
     def list_conversations(self) -> list[Conversation]:
-        convs = self._req("GET", "/api/conversations")
+        convs = self._req("GET", "/api/chat/conversations")
         out: list[Conversation] = []
         for c in convs:
             contact = c["contact"]
@@ -183,7 +151,6 @@ class ChatAdapter:
     def fetch_new(
         self, conversation_id: str, since: str | None
     ) -> list[IncomingEvent]:
-        # Chat's cursor is just the last-seen message id as a string.
         try:
             last_id = int(since) if since else 0
         except (TypeError, ValueError):
@@ -195,7 +162,7 @@ class ChatAdapter:
         while True:
             payload = self._req(
                 "GET",
-                f"/api/conversations/{conversation_id}/messages/after"
+                f"/api/chat/conversations/{conversation_id}/messages/after"
                 f"?last_id={cur}&limit={_SCAN_BATCH}",
             )
             msgs = payload["messages"]
@@ -203,8 +170,6 @@ class ChatAdapter:
                 break
             for m in msgs:
                 cur = int(m["id"])
-                # Chat already encodes "self" as sender_id=NULL; we ship
-                # that through unchanged — the wire contract is identical.
                 sender_id = None if m["sender_id"] is None else peer_id
                 gathered.append(
                     IncomingEvent(
@@ -222,9 +187,6 @@ class ChatAdapter:
         return gathered
 
     def _peer_for(self, conversation_id: str) -> str:
-        # Chat is DM-only; the conversation has exactly one peer. We
-        # could cache this across calls, but list_conversations is
-        # cheap and the runtime calls it on its own cadence.
         for c in self.list_conversations():
             if c.id == conversation_id:
                 return c.peers[0]["platform_id"]
@@ -232,22 +194,15 @@ class ChatAdapter:
 
     # ---- outbound --------------------------------------------------
 
-    def send(
-        self, conversation_id: str, payload: OutboundPayload
-    ) -> None:
+    def send(self, conversation_id: str, payload: OutboundPayload) -> None:
         if payload.msg_type != "text":
             raise PermanentError(
                 f"chat adapter only supports text; got {payload.msg_type!r}"
             )
-        # sender_id omitted => recorded as self-sent by the chat server.
         self._req(
             "POST",
-            f"/api/conversations/{conversation_id}/messages",
-            body={
-                "messages": [
-                    {"msg_type": "text", "content": payload.content}
-                ]
-            },
+            f"/api/chat/conversations/{conversation_id}/messages",
+            body={"messages": [{"msg_type": "text", "content": payload.content}]},
         )
 
 
@@ -256,7 +211,7 @@ class ChatAdapter:
 register(
     AdapterFactory(
         platform="chat",
-        begin_login=lambda base_url=None: _ChatLoginFlow(base_url=base_url),
+        begin_login=lambda *, studio_token=None: _ChatLoginFlow(studio_token=studio_token),
         build=lambda credential: ChatAdapter(credential),
     )
 )

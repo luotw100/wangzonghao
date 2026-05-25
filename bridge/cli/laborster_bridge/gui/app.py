@@ -105,79 +105,31 @@ def main() -> int:
         return 0
 
     import webview
-    from webview.menu import Menu, MenuAction
 
     api = Api()
-
-    # Open the most-recent account (if any) before deciding window
-    # layout. autostart() only touches local state + spawns daemon
-    # threads — no UI dependency — so it's safe to run before
-    # webview.start.
-    api.autostart()
-
-    studio_url = api.studio_url_for_active()
-
-    # Window creation order matters: pywebview attaches the native menu
-    # to the FIRST window created (on Windows in particular). When the
-    # user is already logged in we want the menu visible on the Studio
-    # console, so Studio is created first; the local window comes after,
-    # hidden, and is summoned via Laborster → 设置.
     index = _web_dir() / "index.html"
-    storage_path = None
-    studio_window = None
-
-    if studio_url:
-        # Returning user: jump straight into the embedded Studio
-        # console. storage_path is pinned to the active account dir so
-        # cookies / localStorage / IndexedDB / http cache stay isolated
-        # from the system browser and from other local accounts.
-        storage_path = str(config.account_dir(api._ctx.account_id) / "webview")
-        studio_window = webview.create_window(
-            WINDOW_TITLE,
-            url=studio_url,
-            # No js_api: remote pages must not reach into local Python.
-            width=1200,
-            height=800,
-            min_size=(900, 600),
-            background_color="#1b1d23",
-        )
-        studio_window.events.closing += lambda: api.shutdown()
-
-    # The local window is ALWAYS created. It owns channel binding,
-    # account switching, Studio URL override and daemon logs — none of
-    # which the Studio web console knows about yet. Hidden when Studio
-    # takes the stage; visible when it's the only window (first run /
-    # logged-out).
-    local_window = webview.create_window(
-        f"{WINDOW_TITLE} — 设置",
+    window = webview.create_window(
+        WINDOW_TITLE,
         url=str(index),
         js_api=api,
         width=980,
         height=720,
         min_size=(760, 560),
         background_color="#1b1d23",
-        hidden=bool(studio_url),
     )
-    local_window.events.closing += lambda: api.shutdown()
-    api.attach_local_window(local_window)
+    api.attach_window(window)
 
-    # Log pump targets the visible window; on a hidden local window
-    # evaluate_js no-ops silently.
-    api.attach_window(studio_window if studio_window is not None else local_window)
+    # close = quit (stop daemon, exit). Minimize does NOT trigger this,
+    # so minimizing keeps the daemon bridging in the background.
+    def _on_closing():
+        api.shutdown()
 
-    # Native menu lets logged-in users summon the settings window for
-    # channel binding / account switching while they're inside Studio.
-    menu = [
-        Menu(
-            "Laborster",
-            [MenuAction("设置", api.show_local_window)],
-        ),
-    ]
+    window.events.closing += _on_closing
 
-    if storage_path is not None:
-        webview.start(menu=menu, storage_path=storage_path)
-    else:
-        webview.start(menu=menu)
+    def _on_start():
+        api.autostart()
+
+    webview.start(_on_start)
     return 0
 
 

@@ -1,11 +1,6 @@
 from enum import StrEnum
 
 
-class AccountStatus(StrEnum):
-    ACTIVE = "active"
-    DISABLED = "disabled"
-
-
 class MessageType(StrEnum):
     TEXT = "text"
     IMAGE = "image"

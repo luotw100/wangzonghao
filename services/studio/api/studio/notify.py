@@ -160,3 +160,13 @@ async def shutdown_broker() -> None:
 
 def outbound_channel(inbox_id: str) -> str:
     return f"ob_{inbox_id}"
+
+
+def chat_message_channel(conversation_id: str) -> str:
+    """LISTEN channel for new ``chat.messages`` rows in a conversation.
+
+    Producer (chat router) ``pg_notify`` here after inserting a message;
+    the long-poll ``/api/chat/conversations/{id}/messages/after`` wakes
+    up immediately instead of spin-polling.
+    """
+    return f"cm_{conversation_id}"

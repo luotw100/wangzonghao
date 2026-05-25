@@ -2,47 +2,11 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from chat.enums import AccountStatus, CommandStatus, MessageType
+from chat.enums import CommandStatus, MessageType
 
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", from_attributes=True)
-
-
-class AccountRead(StrictModel):
-    """账号信息（返回给客户端，不含密码）。"""
-
-    id: str = Field(description="账号唯一 ID，前缀 'acct'")
-    username: str = Field(description="登录用用户名，全局唯一，不可修改")
-    nickname: str = Field(description="显示昵称，可通过 PATCH /api/auth/me 修改")
-    status: AccountStatus = Field(description="账号状态：active（正常可用）/ disabled（已禁用，无法登录）")
-    created_at: datetime = Field(description="账号创建时间（UTC）")
-    updated_at: datetime = Field(description="账号最后更新时间（UTC）")
-
-
-class AccountUpdate(StrictModel):
-    """修改当前账号资料（目前仅支持改昵称）。"""
-
-    nickname: str = Field(min_length=1, max_length=128, description="新昵称")
-
-
-class LoginRequest(StrictModel):
-    """登录请求体。"""
-
-    username: str = Field(min_length=1, max_length=64, description="用户名")
-    password: str = Field(min_length=1, max_length=256, description="明文密码（传输层走 HTTPS 加密）")
-
-
-class LoginResponse(StrictModel):
-    """登录成功响应，返回 session token 和账号信息。"""
-
-    token: str = Field(
-        description=(
-            "Bearer token。后续所有需要鉴权的请求均需在 Header 中携带：Authorization: Bearer <token>。"
-            "有效期 24 小时，每次鉴权成功后自动续期。"
-        )
-    )
-    account: AccountRead = Field(description="当前登录账号的完整信息")
 
 
 class ContactCreate(StrictModel):
@@ -116,7 +80,7 @@ class MessageSend(StrictModel):
         default=MessageType.TEXT,
         description=(
             "消息类型：text（文本）/ image（图片）/ audio（音频）/ video（视频）/ file（文件）。"
-            "非文本类型的 content 必须是通过 POST /api/uploads/presign 上传完成后的 storage key。"
+            "非文本类型的 content 必须是通过 POST /api/chat/uploads/presign 上传完成后的 storage key。"
         ),
     )
     content: str = Field(
@@ -166,7 +130,7 @@ class MessageRead(StrictModel):
         description=(
             "消息内容。"
             "文本消息为正文；"
-            "媒体消息为 storage key，需通过 GET /api/media/{storage_key} 换取实际访问 URL。"
+            "媒体消息为 storage key，需通过 GET /api/chat/media/{storage_key} 换取实际访问 URL。"
         )
     )
     created_at: datetime = Field(description="消息时间戳（UTC）。历史导入时由调用方传入，非服务器接收时间")
@@ -195,7 +159,7 @@ class UploadPresignRequest(StrictModel):
     """申请媒体文件上传预签名的请求体。
 
     上传流程：
-    1. POST /api/uploads/presign 获取 storage_key、upload_url 和 fields；
+    1. POST /api/chat/uploads/presign 获取 storage_key、upload_url 和 fields；
     2. 以 multipart/form-data 格式直接 POST 到 upload_url，把 fields 里的所有键值对都带上，
        最后附上文件二进制（key 为 'file'）；S3 返回 204 表示上传成功；
     3. 将 storage_key 填入消息的 content 字段，调用发消息接口即可。

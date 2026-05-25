@@ -7,7 +7,7 @@ from chat.schemas import ConversationRead
 from chat.scoping import scoped
 
 
-router = APIRouter(prefix="/api/conversations", tags=["conversations"])
+router = APIRouter(prefix="/conversations", tags=["chat-conversations"])
 
 
 @router.get("", response_model=list[ConversationRead])

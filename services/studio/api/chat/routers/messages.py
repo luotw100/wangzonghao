@@ -11,12 +11,12 @@ from chat.db import SessionLocal, utc_now
 from chat.deps import CurrentAccountDep, DbDep, get_conversation_or_404
 from chat.enums import CommandStatus, MessageType
 from chat.models import Message
-from chat.notify import get_broker, message_channel
 from chat.schemas import ConversationMessages, MessageSendRequest, StatusResponse
 from chat.scoping import scoped
+from studio.notify import chat_message_channel, get_broker
 
 
-router = APIRouter(prefix="/api/conversations", tags=["messages"])
+router = APIRouter(prefix="/conversations", tags=["chat-messages"])
 
 
 def _normalize_timestamp(value: datetime) -> datetime:
@@ -36,7 +36,7 @@ def send_messages(
 
     支持一次提交多条，按数组顺序依次写入，返回实际写入的条数（`count` 字段）。
     媒体消息（image/audio/video/file）的 content 必须是以 `media/{account_id}/` 开头的 storage key，
-    需先通过 POST /api/uploads/presign 完成上传后再填入，否则会返回 400。
+    需先通过 POST /api/chat/uploads/presign 完成上传后再填入，否则会返回 400。
     `sender_id` 必须为 null（本人发出）或本会话对应的联系人 ID（对方发出），其他值会返回 400。
     """
     conversation = get_conversation_or_404(db, account, conversation_id)
@@ -68,7 +68,7 @@ def send_messages(
     conversation.updated_at = utc_now()
     if to_insert:
         db.execute(
-            text("SELECT pg_notify(:ch, '')").bindparams(ch=message_channel(conversation.id))
+            text("SELECT pg_notify(:ch, '')").bindparams(ch=chat_message_channel(conversation.id))
         )
     db.commit()
     return StatusResponse(status=CommandStatus.SUCCESS, count=len(to_insert))
@@ -143,7 +143,7 @@ async def get_messages_after(
 
     broker = get_broker()
     deadline = time.time() + timeout
-    async with broker.subscribe(message_channel(conversation_id)) as wake_q:
+    async with broker.subscribe(chat_message_channel(conversation_id)) as wake_q:
         # Re-check after subscribe to close the race against a NOTIFY that
         # fired between our initial SELECT and our LISTEN.
         _, messages = await anyio.to_thread.run_sync(lambda: _query_messages())

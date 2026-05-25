@@ -19,6 +19,3 @@ DISALLOWED_UPLOAD_MIME_TYPES = {
     "application/xhtml+xml",
     "image/svg+xml",
 }
-
-# 长轮询路由已转 async + LISTEN/NOTIFY，threadpool 只承载短查询，保留 500 以防其它 sync 路由突增。
-LONG_POLL_THREADPOOL_TOKENS = 500

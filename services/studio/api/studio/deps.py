@@ -101,12 +101,13 @@ def revoke_account_sessions(db: Session, account_id: str) -> None:
 # FastAPI dependency: authenticated web user
 # ---------------------------------------------------------------------------
 
-def get_account(
-    db: Annotated[Session, Depends(get_db)],
-    authorization: Annotated[Optional[str], Header()] = None,
-) -> Account:
-    token = extract_bearer(authorization)
-    s = db.query(AuthSession).filter(AuthSession.id == hash_token(token)).first()
+def resolve_account_from_token(db: Session, raw_token: str) -> Account:
+    """Look up the account for a bearer token and slide its TTL by 24h.
+
+    Used by both the standard ``get_account`` FastAPI dep and by chat's
+    media route, which accepts a fallback ``?token=`` query parameter.
+    """
+    s = db.query(AuthSession).filter(AuthSession.id == hash_token(raw_token)).first()
     if not s:
         raise HTTPException(status_code=401, detail="登录已失效")
     now = utc_now()
@@ -120,6 +121,13 @@ def get_account(
     s.expires_at = now + timedelta(hours=24)
     db.commit()
     return account
+
+
+def get_account(
+    db: Annotated[Session, Depends(get_db)],
+    authorization: Annotated[Optional[str], Header()] = None,
+) -> Account:
+    return resolve_account_from_token(db, extract_bearer(authorization))
 
 
 CurrentAccountDep = Annotated[Account, Depends(get_account)]

@@ -6,7 +6,7 @@ from chat.s3 import s3_generate_storage_key, s3_presigned_post
 from chat.schemas import UploadPresignRequest, UploadPresignResponse
 
 
-router = APIRouter(prefix="/api/uploads", tags=["uploads"])
+router = APIRouter(prefix="/uploads", tags=["chat-uploads"])
 
 
 @router.post("/presign", response_model=UploadPresignResponse)
@@ -19,7 +19,7 @@ def presign_upload(
     返回 `upload_url`（S3 地址）和 `fields`（签名表单字段）。
     客户端用 multipart/form-data 把 fields 里的所有键值对加上文件二进制（key='file'）一起 POST 到 upload_url，
     S3 返回 204 表示上传成功。
-    上传完成后，将返回的 `storage_key` 填入消息的 content 字段发送即可。
+    上传完成后，将返回的 `storage_key` 填入消息的 content 字段发送即可（GET /api/chat/media/{key} 取下载链接）。
 
     注意：text/html、application/xhtml+xml、image/svg+xml 等 MIME 类型会被拒绝（防止存储型 XSS）。
     """

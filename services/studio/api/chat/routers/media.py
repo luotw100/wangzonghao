@@ -8,7 +8,7 @@ from chat.s3 import s3_presigned_get_url
 from chat.scoping import scoped
 
 
-router = APIRouter(prefix="/api/media", tags=["media"])
+router = APIRouter(prefix="/media", tags=["chat-media"])
 
 
 @router.get("/{storage_key:path}")

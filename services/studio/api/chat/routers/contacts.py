@@ -5,12 +5,13 @@ from sqlalchemy.orm import Session, joinedload
 from chat.db import utc_now
 from chat.deps import CurrentAccountDep, DbDep, get_contact_or_404
 from chat.ids import new_id
-from chat.models import Account, Contact, Conversation
+from chat.models import Contact, Conversation
 from chat.schemas import ContactCreate, ContactRead, ContactUpdate
 from chat.scoping import scoped
+from studio.models import Account
 
 
-router = APIRouter(prefix="/api/contacts", tags=["contacts"])
+router = APIRouter(prefix="/contacts", tags=["chat-contacts"])
 
 
 def _get_or_create_direct_conversation(

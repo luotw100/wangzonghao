@@ -53,6 +53,7 @@ class Account(Base):
     __tablename__ = "accounts"
     __table_args__ = (
         CheckConstraint("status IN ('active', 'disabled')", name="ck_account_status"),
+        {"schema": "auth"},
     )
 
     id                  = Column(String(48),  primary_key=True, index=True)
@@ -61,7 +62,7 @@ class Account(Base):
     display_name        = Column(String(128), nullable=False)
     status              = Column(String(16),  nullable=False)   # active / disabled
     # 账号级蒸馏 LLM 路由；reply 使用 Conversation.provider_id，互不影响
-    distill_provider_id = Column(String(48),  ForeignKey("provider_configs.id"), nullable=False, index=True)
+    distill_provider_id = Column(String(48),  ForeignKey("studio.provider_configs.id"), nullable=False, index=True)
     created_at          = Column(DateTime(timezone=True), nullable=False)
     updated_at          = Column(DateTime(timezone=True), nullable=False)
 
@@ -70,9 +71,10 @@ class Account(Base):
 
 class AuthSession(Base):
     __tablename__ = "auth_sessions"
+    __table_args__ = ({"schema": "auth"},)
 
     id           = Column(String(64), primary_key=True, index=True)
-    account_id   = Column(String(48), ForeignKey("accounts.id"), nullable=False, index=True)
+    account_id   = Column(String(48), ForeignKey("auth.accounts.id"), nullable=False, index=True)
     expires_at   = Column(DateTime(timezone=True), nullable=False)
     created_at   = Column(DateTime(timezone=True), nullable=False)
 
@@ -94,6 +96,7 @@ class ProviderConfig(Base):
     __tablename__ = "provider_configs"
     __table_args__ = (
         UniqueConstraint("name", name="uq_provider_name"),
+        {"schema": "studio"},
     )
 
     id         = Column(String(48),  primary_key=True, index=True)
@@ -121,10 +124,11 @@ class Persona(Base):
     __tablename__ = "personas"
     __table_args__ = (
         UniqueConstraint("account_id", "name", name="uq_persona_account_name"),
+        {"schema": "studio"},
     )
 
     id         = Column(String(48),  primary_key=True, index=True)
-    account_id = Column(String(48),  ForeignKey("accounts.id"), nullable=False, index=True)
+    account_id = Column(String(48),  ForeignKey("auth.accounts.id"), nullable=False, index=True)
     name       = Column(String(128), nullable=False)
     persona_md = Column(Text,        nullable=False)   # 人设 Markdown，作为 LLM system prompt
     timezone   = Column(String(64),  nullable=False)   # IANA 时区，用于生成 reply 时间上下文
@@ -150,10 +154,11 @@ class Bridge(Base):
     __tablename__ = "bridges"
     __table_args__ = (
         UniqueConstraint("account_id", "machine_id", name="uq_bridge_account_machine_id"),
+        {"schema": "studio"},
     )
 
     id           = Column(String(48),  primary_key=True, index=True)
-    account_id   = Column(String(48),  ForeignKey("accounts.id"), nullable=False, index=True)
+    account_id   = Column(String(48),  ForeignKey("auth.accounts.id"), nullable=False, index=True)
     machine_id   = Column(String(256), nullable=False)          # Studio 签发的 4 位短 ID
     last_seen_at = Column(DateTime(timezone=True), nullable=False)   # 心跳/上报时刷新，派生在线状态
     created_at   = Column(DateTime(timezone=True), nullable=False)
@@ -179,11 +184,12 @@ class Inbox(Base):
         CheckConstraint(
             "platform IN ('chat', 'wechat', 'feishu')", name="ck_inbox_platform"
         ),
+        {"schema": "studio"},
     )
 
     id               = Column(String(48),  primary_key=True, index=True)
-    account_id       = Column(String(48),  ForeignKey("accounts.id"),  nullable=False, index=True)
-    bridge_id        = Column(String(48),  ForeignKey("bridges.id"),   nullable=True,  index=True)  # NULL=未绑定
+    account_id       = Column(String(48),  ForeignKey("auth.accounts.id"),  nullable=False, index=True)
+    bridge_id        = Column(String(48),  ForeignKey("studio.bridges.id"), nullable=True,  index=True)  # NULL=未绑定
     platform         = Column(String(32),  nullable=False)             # chat / wechat / feishu
     display_name     = Column(String(256), nullable=False)             # 平台侧真实昵称，Bridge 注册时写入
     platform_self_id = Column(String(128), nullable=True)              # 本账号在平台的唯一 ID
@@ -227,16 +233,17 @@ class Conversation(Base):
             "reply_policy IN ('disabled', 'autoreply')",
             name="ck_conversation_reply_policy",
         ),
+        {"schema": "studio"},
     )
 
     id                       = Column(String(48),  primary_key=True, index=True)
-    inbox_id                 = Column(String(48),  ForeignKey("inboxes.id"),          nullable=False, index=True)
+    inbox_id                 = Column(String(48),  ForeignKey("studio.inboxes.id"),          nullable=False, index=True)
     platform_conversation_id = Column(String(256), nullable=False)   # 平台侧原始会话 ID（DM=对方 ID，群=群 ID）
     kind                     = Column(String(16),  nullable=False)   # dm / group / unknown（占位时为 unknown）
     display_name             = Column(String(256), nullable=False)   # DM=对方昵称，群=群名
     card_md                  = Column(Text,        nullable=False)   # 对方用户画像 Markdown，拼入 reply system prompt
-    persona_id               = Column(String(48),  ForeignKey("personas.id"),         nullable=True)   # NULL=不自动回复
-    provider_id              = Column(String(48),  ForeignKey("provider_configs.id"), nullable=False)  # reply LLM 路由
+    persona_id               = Column(String(48),  ForeignKey("studio.personas.id"),         nullable=True)   # NULL=不自动回复
+    provider_id              = Column(String(48),  ForeignKey("studio.provider_configs.id"), nullable=False)  # reply LLM 路由
     takeover                 = Column(Boolean,     nullable=False)   # True=Bridge 上报该会话消息到 Studio
     reply_policy             = Column(String(16),  nullable=False)   # disabled / autoreply
     status                   = Column(String(16),  nullable=False)   # active / archived
@@ -261,10 +268,11 @@ class ConversationMember(Base):
     this table from elsewhere.
     """
     __tablename__ = "conversation_members"
+    __table_args__ = ({"schema": "studio"},)
 
     conversation_id  = Column(
         String(48),
-        ForeignKey("conversations.id", ondelete="CASCADE"),
+        ForeignKey("studio.conversations.id", ondelete="CASCADE"),
         primary_key=True,
     )
     peer_platform_id = Column(String(256), primary_key=True)
@@ -291,10 +299,11 @@ class Message(Base):
             "msg_type IN ('text', 'image', 'audio', 'video', 'file')",
             name="ck_message_msg_type",
         ),
+        {"schema": "studio"},
     )
 
     id              = Column(BigInteger, primary_key=True, autoincrement=True)
-    conversation_id = Column(String(48),  ForeignKey("conversations.id"), nullable=False, index=True)
+    conversation_id = Column(String(48),  ForeignKey("studio.conversations.id"), nullable=False, index=True)
     # Bridge 侧稳定唯一 ID；chat adapter 用平台 msg.id，其他 adapter 用平台原生 msg_id
     client_id       = Column(String(256), nullable=False)
     # NULL = Inbox 自己发出（即主播从其他客户端发的消息被 Bridge 观察并上报）
@@ -321,13 +330,14 @@ class DistillJob(Base):
             "status IN ('pending', 'running', 'done', 'failed')",
             name="ck_distill_status",
         ),
+        {"schema": "studio"},
     )
 
     id                 = Column(String(48), primary_key=True, index=True)
-    account_id         = Column(String(48), ForeignKey("accounts.id"),          nullable=False, index=True)
+    account_id         = Column(String(48), ForeignKey("auth.accounts.id"),          nullable=False, index=True)
     conversation_ids   = Column(JSONB,      nullable=False)              # JSONB 字符串数组，参与蒸馏的会话 ID
-    target_persona_id  = Column(String(48), ForeignKey("personas.id"),  nullable=True,  index=True)  # NULL=不写回
-    provider_config_id = Column(String(48), ForeignKey("provider_configs.id"),  nullable=False, index=True)
+    target_persona_id  = Column(String(48), ForeignKey("studio.personas.id"),        nullable=True,  index=True)  # NULL=不写回
+    provider_config_id = Column(String(48), ForeignKey("studio.provider_configs.id"),nullable=False, index=True)
     status             = Column(String(16), nullable=False)              # pending → running → done / failed
     progress           = Column(JSONB,      nullable=False)              # pipeline 进度快照，供前端轮询
     error_message      = Column(Text,       nullable=False)              # 失败原因，成功时为空字符串
@@ -375,11 +385,12 @@ class OutboundMessage(Base):
             "msg_type IN ('text', 'image', 'audio', 'video', 'file')",
             name="ck_outbound_msg_type",
         ),
+        {"schema": "studio"},
     )
 
     id              = Column(BigInteger, primary_key=True, autoincrement=True)  # 插入顺序，≠ 时间顺序
-    inbox_id        = Column(String(48), ForeignKey("inboxes.id"),        nullable=False, index=True)
-    conversation_id = Column(String(48), ForeignKey("conversations.id"),  nullable=False, index=True)
+    inbox_id        = Column(String(48), ForeignKey("studio.inboxes.id"),        nullable=False, index=True)
+    conversation_id = Column(String(48), ForeignKey("studio.conversations.id"),  nullable=False, index=True)
     msg_type        = Column(String(16), nullable=False)
     content         = Column(Text,       nullable=False)
     send_after      = Column(DateTime(timezone=True), nullable=False)   # 打字节奏：到此时刻才对 Bridge 可见
@@ -397,6 +408,7 @@ class LlmLog(Base):
     __tablename__ = "llm_logs"
     __table_args__ = (
         CheckConstraint("purpose IN ('distill', 'reply')", name="ck_llm_log_purpose"),
+        {"schema": "studio"},
     )
 
     id               = Column(BigInteger, primary_key=True, autoincrement=True)

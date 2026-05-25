@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 
-from chat.models import Account
+from studio.models import Account
 
 
 def scoped(db: Session, account: Account, model):

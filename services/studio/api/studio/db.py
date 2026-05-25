@@ -1,7 +1,7 @@
 import os
 from datetime import datetime, timezone
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 database_url = os.environ.get("DATABASE_URL")
@@ -14,6 +14,21 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 class Base(DeclarativeBase):
     pass
+
+
+SCHEMAS = ("auth", "studio", "chat")
+
+
+def ensure_schemas() -> None:
+    """Create the three logical schemas if missing.
+
+    Boundary rule: every table lives under exactly one of these.
+    ``auth`` is the only shared layer (accounts, auth_sessions); ``studio``
+    and ``chat`` business tables stay strictly within their package.
+    """
+    with engine.begin() as conn:
+        for s in SCHEMAS:
+            conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{s}"'))
 
 
 def utc_now() -> datetime:

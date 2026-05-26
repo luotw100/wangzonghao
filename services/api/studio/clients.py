@@ -32,6 +32,8 @@ ALLOWED_BASE_URLS = {
     "https://api.siliconflow.cn/v1",
     # 聚合
     "https://aixuny.com/v1",
+    # 测试桩：仅在 docker 测试网络内可解析（hostname=fake-llm），prod 无影响
+    "http://fake-llm:8080/v1",
 }
 
 

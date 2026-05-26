@@ -128,6 +128,57 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------
+  # Fake LLM (profile "test"): tiny stdlib HTTP server impersonating an
+  # OpenAI-compatible /chat/completions, hostname `fake-llm`. Reachable
+  # from user-worker via the same docker network. Whitelisted in
+  # studio.clients.ALLOWED_BASE_URLS as http://fake-llm:8080/v1.
+  # ---------------------------------------------------------------------
+  fake-llm:
+    profiles: ["test"]
+    build:
+      context: services/api
+    working_dir: /app
+    command: ["python", "/app/tests/fake_llm/server.py"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/health',timeout=1).status==200 else 1)"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------
+  # Test runner (profile "test" — not started by `up`; invoked via
+  # `docker compose -p <project> --profile test run --rm test-runner`).
+  # Shares the api image so it has all runtime deps + studio/chat/admin
+  # source. Tests are mounted live so edits don't require a rebuild.
+  # ---------------------------------------------------------------------
+  test-runner:
+    profiles: ["test"]
+    build:
+      context: services/api
+    working_dir: /app
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_URL: ${S3_PUBLIC_URL}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      S3_BUCKET: ${S3_BUCKET}
+      UPLOAD_MAX_SIZE_MB: ${UPLOAD_MAX_SIZE_MB}
+      STUDIO_BASE_URL: http://user-api:23456
+      ADMIN_BASE_URL: http://admin-api:23457
+      PYTHONPATH: /app
+    depends_on:
+      user-api:
+        condition: service_started
+      admin-api:
+        condition: service_started
+      fake-llm:
+        condition: service_healthy
+    entrypoint: ["uv", "run", "python", "-m", "pytest"]
+    command: ["tests/", "-x", "-v"]
+
+  # ---------------------------------------------------------------------
   # Tunnel
   # ---------------------------------------------------------------------
   cloudflared:

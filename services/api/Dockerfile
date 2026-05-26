@@ -16,3 +16,4 @@ COPY alembic.ini ./
 COPY studio ./studio
 COPY admin ./admin
 COPY chat ./chat
+COPY tests ./tests

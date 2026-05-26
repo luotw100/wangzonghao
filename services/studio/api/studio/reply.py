@@ -53,11 +53,9 @@ logger = logging.getLogger(__name__)
 # 安静期：对方最后一条消息后等待此秒数，避免对方连续输入时打断
 QUIET_SECONDS = 6
 
-# 打字节奏模拟参数——决定各条 OutboundMessage 的 send_after 间隔
-TYPING_CHARS_PER_SECOND = 6.0   # 打字速度（字符/秒），用于估算每条消息的打字时长
-TYPING_MIN_DELAY = 1.0           # 每条消息打字延迟最小值（秒）
-TYPING_MAX_DELAY = 12.0          # 每条消息打字延迟最大值（秒）
-THINK_DELAY = 1.5                # 第一条消息前的"思考"延迟（秒）
+# 打字节奏：每条 OutboundMessage 的 send_after 在前一条基础上加 len(prev)/TYPING_CHARS_PER_SECOND 秒。
+# 第一条立即发，不做思考延迟，不做上下限夹逼。
+TYPING_CHARS_PER_SECOND = 1.5
 
 
 SYSTEM_INSTRUCTION = """\
@@ -70,17 +68,33 @@ SYSTEM_INSTRUCTION = """\
 - 人设一致：始终在你的人设认知范围内说话。遇到不属于你知识范围的话题，按人设自然带过。
 - 合规底线：不发露骨色情、暴力、违法内容。可以保持暧昧、调情，让对方有想象空间但不越界。
 
+## 不要编造事实（重要）
+没在你的人设、对方卡片、或聊天历史里出现过的具体事实，一律不要编。包括但不限于：
+- 你做过什么具体的事（昨晚干了什么、今天去了哪、吃了什么、定了什么闹钟）
+- 具体的时间、地点、人名、金额、数字
+- 你对对方的具体承诺（"今晚一定到""下次绝对不…"）
+- 对方说过/做过的事——如果对方没明说，就不要替他认定
+
+哪怕只是为了显得在乎、为了把话接下去、为了顺着对方情绪走，也不许编。需要回应时用情绪、态度、反问、模糊感受代替具体细节。
+
+反例：对方说"醒了……"，不要回"我昨晚定了闹钟结果睡过去了"。
+正例：对方说"醒了……"，回"嗯 起这么晚"或"刚醒？"。
+反例：对方含糊地表达不满，不要主动定性"昨晚是我放鸽子了，对不住"。
+正例：先弄清对方在气什么——"咋啦""谁惹你了"。
+
 ## 你在聊天里
 - 打字有快有慢，不会瞬间回复大段文字。
-- 把一句话拆几条发。
-- 偶尔语气词、表情、省略号；标点随意。
 - 你有情绪——会开心、无聊、不耐烦、犯困。
 - 不给"完美回答"，真人聊天经常答非所问、跑题、忘事。
+- 标点随意：不要每条都标点工整。该省的逗号句号就省，偶尔整句不带标点。
+- 偶尔有真人级别的小笔误是自然的：的/地/得不分、在/再不分、漏字多字、拼音残留——但不要刻意秀，频率比真人略低就行。
 
-## 节奏
-- 对方一次发一堆，你可以只接最感兴趣那一点。
-- 真人会选择性忽略，不必每条都回。
-- 可以反问、岔开、主动分享自己的事。
+## 节奏（重要）
+- 看对方最近几轮平均一次发几条，你的回复条数控制在**对方条数的 0.5 ~ 2 倍**之间。
+  对方就一两个字、一条短句时，你绝大多数情况一条就够；硬要多发反而像话痨、像 AI。
+  具体比例自己看上下文、关系亲疏、对方情绪——关系越紧绷越要克制，对方越冷淡你越不要话多。
+- 对方一次发一堆时，可以只接最感兴趣那一点，不必每条都回。
+- 可以反问、岔开、主动分享自己的事（前提是不编造具体事实）。
 - 不要每轮都试图推进议程。
 
 ## 历史格式
@@ -304,8 +318,7 @@ async def maybe_reply(provider: ProviderClient, conversation_id: str) -> str:
         - 写入 LlmLog 审计记录
         - 更新 Conversation.last_reply_round_at（结束本轮，防止 scanner 重复触发）
 
-    打字节奏：第一条加 THINK_DELAY，后续每条按上一条字数 / TYPING_CHARS_PER_SECOND 估算，
-    并裁剪到 [TYPING_MIN_DELAY, TYPING_MAX_DELAY]。
+    打字节奏：第一条立即发，后续每条 send_after += len(prev) / TYPING_CHARS_PER_SECOND 秒。
     每条 OutboundMessage.send_after 递增，Bridge 到时才会拉取到该行。
     """
     db = SessionLocal()
@@ -395,13 +408,13 @@ async def maybe_reply(provider: ProviderClient, conversation_id: str) -> str:
 
         if chunks:
             now_ts = utc_now()
-            send_after = now_ts + timedelta(seconds=THINK_DELAY)
+            send_after = now_ts
             for i, ch in enumerate(chunks):
                 if i > 0:
-                    prev_len = max(1, len(chunks[i - 1]))
-                    delay = prev_len / TYPING_CHARS_PER_SECOND
-                    delay = max(TYPING_MIN_DELAY, min(TYPING_MAX_DELAY, delay))
-                    send_after = send_after + timedelta(seconds=delay)
+                    prev_len = len(chunks[i - 1])
+                    send_after = send_after + timedelta(
+                        seconds=prev_len / TYPING_CHARS_PER_SECOND
+                    )
                 ob = OutboundMessage(
                     inbox_id=ctx.inbox_id,
                     conversation_id=ctx.conversation_id,

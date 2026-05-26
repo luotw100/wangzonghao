@@ -10,8 +10,7 @@ Studio 所有平台 IO 都通过 Bridge 进入/离开，不直连 Chat 或其他
 
 ```text
 services/studio/
-  compose.yaml
-  nginx.conf
+  docker-compose.yaml (项目根目录)
   api/
     Dockerfile
     pyproject.toml
@@ -25,11 +24,11 @@ services/studio/
       enums.py
       main.py                 ← 薄入口，仅 mount routers
       models.py
+      notify.py               ← LISTEN/NOTIFY broker（outbound_channel + chat_message_channel）
       provider_policy.py
       reply.py
       runtime.py
       schemas.py
-      serializers.py           ← 响应序列化函数 s_account / s_persona / ...
       worker.py
       distill/
         packer.py
@@ -40,11 +39,11 @@ services/studio/
         auth.py               ← health + 登录/登出/me/改自己密码
         personas.py            ← Persona CRUD
         bridges.py             ← Bridge list + revoke
-        inboxes.py             ← Inbox 操作（Inbox 创建仅通过 bridge handshake）
-        conversations.py        ← Conversation endpoints
+        inboxes.py             ← Inbox 操作
+        conversations.py        ← Conversation endpoints + outbound
         distill.py             ← Distill job endpoints
-        bridge_protocol.py     ← Bridge daemon ↔ Studio protocol
-  web/
+        bridge_protocol.py     ← Bridge daemon ↔ Studio protocol (8 endpoints)
+  user_web/
     Dockerfile
     package.json
     vite.config.ts
@@ -55,6 +54,8 @@ services/studio/
       components/
       lib/
       pages/
+  user_nginx.conf
+  admin_nginx.conf
 ```
 
 ## 技术栈
@@ -80,13 +81,13 @@ services/studio/
 
 基础设施：
 
-- Docker Compose：`studio-web`、`studio-api`、`studio-worker`。
+- Docker Compose：`user-api`、`user-worker`、`admin-api`、`user-web`、`admin-web`（共用 compose 文件与 db/minio/migrate/cloudflared）。
 - Nginx serve SPA + reverse proxy。
-- Docker volume `studio-storage`。
+- Docker volumes：`pgdata`、`minio-data`。
 
 ## 后端进程划分
 
-### `studio-api`
+### `user-api`
 
 运行 `studio.main:app`。
 
@@ -95,9 +96,9 @@ services/studio/
 - Web auth。
 - CRUD endpoints。
 - Distill job creation。
-- Bridge handshake / heartbeat / incoming / outbound / ack。
+- Bridge protocol（8 个端点：handshake / heartbeat / inboxes / conversations / takeovers / incoming / outbound / plus web-side bridges list + revoke）。
 
-### `studio-worker`
+### `user-worker`
 
 运行 `python -m studio.worker --request-timeout 120`。
 

@@ -26,10 +26,10 @@ bridge/cli/
 
 ## 网络与环境
 
-- Chat/Studio 地址在 `laborster_bridge/config.py` 硬编码（`https://chat.laborster.com` / `https://studio.laborster.com`）。无 base-URL 输入、无环境变量、无默认覆盖。
+- Studio 地址在 `laborster_bridge/config.py` 硬编码为 `https://studio.laborster.com`；Chat 沙箱同主机路径加 `/api/chat` 前缀。无 base-URL 输入、无环境变量、无默认覆盖。
 - 所有出站 HTTP 带 `User-Agent: laborster-bridge/0.1`；服务前置 Cloudflare 会对默认 `Python-urllib` UA 返回 403 code 1010。
 - 状态目录无默认值、无环境变量，只能 `--state` 或 `/state` 指定；路径不持久化，每次启动都要给。
 
 ## 本机文件
 
-状态目录下仅两个文件：`laborster.json`（0600，所有 token，无密码）与 `messages.db`（SQLite 去重表）。凭据安全模型是「磁盘只存可撤销 token + 文件权限 0600」，不依赖任何外部 keychain。
+状态目录下按账号隔离：`<state_root>/<account_id>/state.db` 是 SQLite 数据库（4 张表：kv 键值存储、channels 配置、local_messages 去重队列、conv_cursors 续传锚点）。凭据安全模型是「磁盘只存可撤销 token + 文件权限 0600」，不依赖任何外部 keychain。POSIX flock 防止同一 state.db 被双进程打开。

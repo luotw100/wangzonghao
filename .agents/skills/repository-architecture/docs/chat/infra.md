@@ -22,7 +22,7 @@
 
 ## 外部依赖
 
-Chat 的数据库和对象存储由 `infra/compose.yaml` 统一管理，通过 host 端口暴露：
+Chat 的数据库和对象存储由项目根 `docker-compose.yaml` 统一管理，通过容器网络连接：
 
 - PostgreSQL：`host.docker.internal:5433`
 - MinIO S3 API：`host.docker.internal:9000`

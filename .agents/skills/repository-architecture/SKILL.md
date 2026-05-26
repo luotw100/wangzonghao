@@ -34,12 +34,11 @@ services/studio/
 │   └── pyproject.toml
 ├── user_web/      # 单个 React SPA：/studio + /chat 都是它的路由
 ├── admin_web/     # 独立 admin React 面板，CF Access 保护
-├── nginx.conf     # user_web 的 nginx（/api 反代 api、/、/studio、/chat SPA fallback）
+├── user_nginx.conf   # user_web 的 nginx（/api 反代 api、/、/studio、/chat SPA fallback）
 └── admin_nginx.conf
 bridge/cli/        # laborster_bridge Python 包
-infra/
-├── compose.yaml   # 唯一的 docker-compose：minio + db + migrate + api + worker + admin-api + web + admin-web + cloudflared
-└── .env.example
+docker-compose.yaml  # 唯一的 compose：minio + db + migrate + user-api + user-worker + admin-api + user-web + admin-web + cloudflared
+.env.example
 scripts/
 ├── up-all.sh / down-all.sh / backup.sh
 └── seed_dev.py
@@ -67,7 +66,7 @@ scripts/
 6. **Conversation 是接管单元。** Studio 的 `conversations` 行持有 `kind`（dm/group/unknown）、`persona_id`、`provider_id`、`takeover`、`reply_policy`、`card_md`、`last_reply_round_at`；`conversation_members` 描述群/DM 成员。
 7. **Inbox 是平台身份。** Bridge 握手时通过 `POST /api/bridge/inboxes` 自动注册，没有面向用户的创建 API。
 8. **Bridge 行 = `(account_id, machine_id)`。** `machine_id` 由 Studio 首次握手生成，Bridge 本地持久化，每次请求带 `X-Machine-Id` 头解析。
-9. **Auth 是 account 粒度的单一 token。** 浏览器、Bridge 和 chat adapter 共用同一张 `auth.auth_sessions`。Bridge 启动时用账号密码握手换 token，写进 `laborster.json` (0600)；chat channel 的 credential 直接复用同一个 studio token。token 24h 滑动续期；401 才再输密码。改密码会清空该 account 的所有 session（web 和 Bridge 一并下线）。`bridge/cli/laborster_bridge/config.py` 硬编码 `STUDIO_BASE_URL=https://studio.laborster.com`；chat 沙箱同主机，访问路径加 `/api/chat` 前缀，不再有独立 base URL。HTTP 请求加自定义 `User-Agent`（Cloudflare 屏蔽默认 `Python-urllib`）。
+9. **Auth 是 account 粒度的单一 token。** 浏览器、Bridge 和 chat adapter 共用同一张 `auth.auth_sessions`。Bridge 启动时用账号密码握换 token，存入本地 SQLite `kv` 表；chat channel 的 credential 直接复用同一个 studio token。token 24h 滑动续期；401 才再输密码。改密码会清空该 account 的所有 session（web 和 Bridge 一并下线）。`bridge/cli/laborster_bridge/config.py` 硬编码 `STUDIO_BASE_URL=https://studio.laborster.com`；chat 沙箱同主机，访问路径加 `/api/chat` 前缀。HTTP 请求加自定义 `User-Agent`（Cloudflare 屏蔽默认 `Python-urllib`）。
 10. **Outbound 队列是数据库表。** `studio.outbound_messages`，Bridge long-poll；`status=pending` 含 `send_after` 控制打字节奏。
 11. **环境变量必须显式提供。** 缺 `DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`、`UPLOAD_MAX_SIZE_MB` 直接报错。
 12. **Models 不用 SQLAlchemy column default。** 每次 INSERT 显式写所有字段。
@@ -76,18 +75,18 @@ scripts/
 
 ## 部署形态
 
-一份 `infra/compose.yaml` 起：
+一份 `docker-compose.yaml`（项目根）起：
 
 | 服务 | 说明 |
 | --- | --- |
 | `db`         | postgres:16-alpine，单 DB，启动后 `migrate` 跑 alembic 建 3 schema + 全部表 |
 | `minio` + `minio-create-buckets` | 单 bucket `${S3_BUCKET}` |
 | `migrate`    | 一次性，跑 `studio.migrate` |
-| `api`        | uvicorn studio.main:app，挂全部路由（studio + /api/chat） |
-| `worker`     | `studio.worker` — DistillScanner + ReplyScanner |
+| `user-api`   | uvicorn studio.main:app，挂全部路由（studio + /api/chat） |
+| `user-worker`| `studio.worker` — DistillScanner + ReplyScanner |
 | `admin-api`  | uvicorn admin.app:app（端口 23457） |
-| `web`        | nginx + user_web 构建产物，`/api` 反代到 `api`，其余 SPA fallback |
-| `admin-web`  | nginx + admin_web，`/api` 反代到 `admin-api` |
+| `user-web`   | nginx + user_web 构建产物，`/api` 反代到 user-api，其余 SPA fallback |
+| `admin-web`  | nginx + admin_web，`/api` 反代到 admin-api |
 | `cloudflared` | tunnel，对外暴露 |
 
 ## Bridge ↔ Studio 协议

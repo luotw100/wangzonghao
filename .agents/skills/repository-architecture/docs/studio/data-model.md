@@ -12,43 +12,43 @@ PostgreSQL，schema 由 Alembic 管理。所有 DateTime 列 `timezone=True`（`
 
 ### `accounts` — `Account`
 
-- `id` `acc_{uuid_hex}`、`username` unique、`password_hash`、`display_name`、`status (active|disabled)`、`distill_provider_id` FK、timestamps。
+- `id` String(48)、`username` unique、`password_hash`、`display_name`、`status (active|disabled)`、`distill_provider_id` FK、timestamps。无 `role` 列。
 
 ### `auth_sessions` — `AuthSession`
 
 Web 控制台与 Bridge daemon 共用。Bridge 身份不在 token 里——靠 `X-Machine-Id` 头在 Studio 解析。token 24h 滑动续期；改密码删除该 account 全部 session。
 
-- `id` (token sha256, 64 hex)、`account_id` FK、`expires_at`、`created_at`。
+- `id` String(64)、`account_id` FK、`expires_at`、`created_at`。
 
 ### `provider_configs` — `ProviderConfig`
 
-OpenAI-compatible LLM Provider。运维通过 `studio.cli` 维护。
+OpenAI-compatible LLM Provider。运维通过 admin-api 或 CLI 维护。
 
-- `id` `p_*`、`name` unique、`base_url`、`api_key` nullable、`model`、timestamps。
-- `pick_first_provider(db)` 返回 created_at 最早的一条——新 Account / 新 Conversation 用作种子。
+- `id`、`name` unique、`base_url`、`api_key` nullable、`model`、timestamps。
+- `pick_first_provider(db)` 返回 created_at 最早的一条——新 Conversation / 新 Account 用作种子。
 
 ### `personas` — `Persona`
 
-- `id` `ps_*`、`account_id` FK、`name`、`persona_md`、`timezone` (IANA)、timestamps。unique `(account_id, name)`。
+- `id`、`account_id` FK、`name`、`persona_md`、`timezone` (IANA)、timestamps。unique `(account_id, name)`。
 
 ### `bridges` — `Bridge`
 
-本地 daemon 注册行。`machine_id` 由 Studio 在 handshake 签发（4 位短码，per-account 唯一），Bridge 持久化复用。
+本地 daemon 注册行。`machine_id` 由 Studio 在 handshake 签发（4 位短码，per-account 唯一），Bridge 持久化到本地 SQLite kv 表复用。
 
-- `id` `br_*`、`account_id` FK、`machine_id`、`last_seen_at`、timestamps。unique `(account_id, machine_id)`。
+- `id`、`account_id` FK、`machine_id`、`last_seen_at`、timestamps。unique `(account_id, machine_id)`。
 - online/offline 由 `last_seen_at + 45s` 阈值派生，无缓存列。
 
 ### `inboxes` — `Inbox`
 
 平台侧身份。
 
-- `id` `ib_*`、`account_id` FK、`bridge_id` nullable FK、`platform (chat|wechat|feishu)`、`display_name`（Bridge 上报，不再 Studio 编 `f"{self_id}@{platform}"`）、`platform_self_id` nullable、timestamps。
+- `id`、`account_id` FK、`bridge_id` nullable FK、`platform (chat|wechat|feishu)`、`display_name`（Bridge 上报）、`platform_self_id` nullable、timestamps。
 
 ### `conversations` — `Conversation`
 
 **接管单元，单位是 conversation 不是 peer**。一个 DM 是 `kind="dm"` + 1 个 member 的 Conversation；一个群是 `kind="group"` + N 个 members。同一套 takeover / reply_policy / persona / provider 配置统一管理。
 
-- `id` `cv_*`、`inbox_id` FK
+- `id`、`inbox_id` FK
 - `platform_conversation_id` — 平台稳定 ID（DM 一般等于 peer id，群是群 id）
 - `kind` CHECK `dm | group | unknown`（unknown 是 `/incoming` 创建的占位，等 `/conversations` 来补全）
 - `display_name`、`card_md`、`persona_id` nullable FK、`provider_id` FK
@@ -90,7 +90,7 @@ Studio → Bridge 队列。**无 leased_at、无 ack endpoint**：PENDING → DE
 
 蒸馏 worker job。
 
-- `id` `dj_*`、`account_id` FK
+- `id`、`account_id` FK
 - `conversation_ids` JSONB（要处理的 conversation id 列表，长度 1..N）
 - `target_persona_id` nullable FK、`provider_config_id` FK
 - `status` CHECK `pending|running|done|failed`、`progress` JSONB、`error_message`
@@ -106,7 +106,7 @@ LLM 调用日志。`persona_id` / `inbox_id` 是裸 string FK（无 ON DELETE �
 
 ```text
 ProviderConfig
-  全局配置，无 owner，CLI 维护
+  全局配置，admin-api 或 CLI 维护
 
 Account
   owns Persona / Bridge / Inbox / DistillJob / AuthSession

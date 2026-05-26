@@ -117,17 +117,17 @@
 1. Conversation 存在。
 2. Conversation status 是 active。
 3. Conversation `reply_policy == 'autoreply'`（`disabled` 时跳过）。
-4. Inbox 存在且 enabled。
-5. Provider 由 `get_default_provider(db)` 返回全局默认（`scope=global`、`status=active`、`is_default=True`）。
+4. Inbox 存在。
+5. Provider 由 `Conversation.provider_id` 指定（`pick_first_provider(db)` 兜底）。
 6. Provider 存在且有 API key。
 7. Persona 存在。
 8. History 非空。
 9. History 最新消息来自 counterpart。
 10. 最新 counterpart 消息已超过 quiet period。
 
-如果 skip reason 以 `等静默期` 开头，`pending_reply` 保持 true，下一轮 scanner 会重试。
+如果 skip reason 以 `等静默期` 开头，保持 `last_reply_round_at` 不变，下一轮 scanner 会重试。
 
-永久 skip 会清除 `pending_reply`。
+永久 skip 会更新 `last_reply_round_at`。
 
 ### Prompt 构造
 
@@ -160,9 +160,9 @@
 
 1. DB session 中调用 `_decide()`。
 2. 不持有 DB session 调 LLM。
-3. 重新打开 DB session，写 `LlmLog`、解析、写 `OutboundMessage`、清 `pending_reply`。
+3. 重新打开 DB session，写 `LlmLog`、解析、写 `OutboundMessage`、更新 `last_reply_round_at`。
 
-LLM 调用异常时写 `LlmLog(response_raw='ERROR: ...')`，当前不清 `pending_reply`。解析异常时清 `pending_reply`。
+LLM 调用异常时写 `LlmLog(response_raw='ERROR: ...')`。
 
 ### OutboundMessage 节奏
 
@@ -198,20 +198,20 @@ Bridge 收到即发，不做延迟。
 
 当前流程：
 
-1. `_load_ctx(target_persona_id, provider_config_id)`：persona 可选——设置了才查 Persona 拿 `persona_name` 和 `display_tz`，否则 `persona_id=None`、`persona_name=""`、`display_tz="UTC"`。始终校验 Provider active 且有 API key。**不再加载 Inbox**（character_wxid 按每个 contact 的 inbox 查）。
+1. `_load_ctx(target_persona_id, provider_config_id)`：persona 可选——设置了才查 Persona 拿 `persona_name` 和 `display_tz`，否则 `persona_id=None`、`persona_name=""`、`display_tz="UTC"`。始终校验 Provider active 且有 API key。加载 Account 的 `distill_provider_id` 对应的 ProviderConfig。
 2. `run_distill(conversation_ids, target_persona_id, provider_config_id, ...)` 遍历传入的 `conversation_ids`（过滤掉不存在 / 无消息 / 无 window 的）。
 3. 每个 runnable Conversation：
    - 读取消息，按 timestamp/id 升序；
-   - `_fold_conversation()` 内查 contact 所属 Inbox 的 `platform_self_id` 作为 `character_wxid`；
+   - `_fold_conversation()` 内查 Conversation 所属 Inbox 的 `platform_self_id` 作为 `character_wxid`；
    - `_messages_to_text_messages(msgs, ctx.display_tz)`；
    - split sessions；pack windows；顺序 fold 每个 window。
 4. `_fold_conversation()` 每个 window 调一次 LLM。
 5. `_parse_fold_output()` 提取 `Character Persona` 和 `Contact Card` 两段。
 6. 解析到内容时：始终覆盖 `Conversation.card_md`；仅当 `ctx.persona_id` 非空时才覆盖 `Persona.persona_md`。
-7. 每次 LLM 调用写 `LlmLog(purpose='distill')`，`persona_id` 可为 null，`inbox_id` 取该 contact 的 inbox。
-8. progress callback 更新 contacts/windows 计数（`contacts_total` 为 runnable contact 数）。
+7. 每次 LLM 调用写 `LlmLog(purpose='distill')`，`persona_id` 可为 null，`inbox_id` 取该 Conversation 的 inbox。
+8. progress callback 更新 conversations/windows 计数。
 
-CLI（调试用）：`--contact-ids`（逗号分隔）、`--target-persona-id`（可选）、`--provider-config-id`、`--request-timeout`。
+CLI（调试用）：传 `conversation_ids`（逗号分隔）、`target_persona_id`（可选）、`provider_config_id`、`request_timeout`。
 
 ## Fold prompt
 

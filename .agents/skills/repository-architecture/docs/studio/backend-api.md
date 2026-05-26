@@ -68,7 +68,7 @@
 - `get_account_persona()`。
 - `get_account_bridge()`。
 - `get_account_inbox()`。
-- `get_account_conversation()`：Contact 通过 join Inbox 校验 account。
+- `get_account_conversation()`：Conversation 通过 join Inbox 校验 account。
 
 ## Schemas
 

@@ -49,7 +49,7 @@ docker compose exec -T studio-api uv run python -m studio.cli create-provider \
 2. 用该账号登录 Studio，创建至少一个 Persona。
 3. 启动 Bridge（在 Studio 的 设备 tab 顶部有「快速生成命令」面板可一键复制）。
 4. 等 Bridge handshake 创建 Bridge、`POST /api/bridge/inboxes` 注册 Inbox。
-5. 在 Takeover tab 中给 Contact 配置 Persona、autoreply 和 card，可创建 distill job 蒸馏 Persona 和 Card。reply/distill 恒用 CLI 维护的全局默认 Provider。
+5. 在 Takeover tab 中给 Conversation 配置 Persona、autoreply 和 card_md，可创建 distill job 蒸馏 Persona 和 Card_md。Conv 每个 Conversation 有独立的 provider_id，Account 有 distill_provider_id。
 
 > 一键 dev seed：`python3 scripts/seed_dev.py`，全部配置走 `scripts/.env`（参考 `scripts/.env.example`，所有键必填、无代码默认值）。它创建 `CHAT_SEED_USERS` / `STUDIO_SEED_USERS` 两份独立清单里的用户（格式严格为 `username:password:display`），并经 `studio.cli create-provider` 创建一个全局 Provider。仅建账号 + provider，不播种 persona/contact/消息（清空 volume 后可重复执行；账号已存在会告警跳过，未清空 volume 重跑会多建一行 Provider，最新者为默认）。
 
@@ -69,7 +69,7 @@ Chat/Studio 地址硬编码在 `config.py`（`chat.laborster.com` / `studio.labo
 
 ## Storage 事实
 
-基础设施（PostgreSQL + MinIO）由 `infra/compose.yaml` 统一管理，通过 host 端口暴露。Chat/Studio/Bridge 通过 `host.docker.internal` 连接。
+基础设施（PostgreSQL + MinIO）由项目根 `docker-compose.yaml` 统一管理，通过 host 端口暴露。Studio 通过容器网络连接。
 
 | Service | 连接方式 |
 | --- | --- |
@@ -128,7 +128,7 @@ docker compose exec -T studio-api uv run python -m studio.cli list-providers
 5. 在 Chat 中以 contact 视角发送消息。
 6. 确认 Studio 收到 live message。
 7. 开启 autoreply，确认 worker 写入 outbound。
-8. 确认 Bridge 发送并 ack outbound。
+8. 确认 Bridge 发送 outbound，Bridge 上报 from_self inbound 后 Studio 自动标记 delivered。
 
 前端改动：
 
@@ -146,7 +146,7 @@ distill 改动：
 ## 跨服务改动检查表
 
 - 改 Bridge protocol：同步更新 Studio schema/endpoint、`bridge/cli/laborster_bridge/studio_client.py`、文档。
-- 改 Contact 语义：检查 Studio data model、Takeover UI、reply gates、distill card。
+- 改 Conversation 语义：检查 Studio data model、Takeover UI、reply gates、distill card_md。
 - 增加平台适配：当前边界是在 `bridge/cli/laborster_bridge/` 新增 adapter 模块并在 `runtime.py` 中接入，Studio 不直连平台。
-- 增加配置项（Bridge）：扩展 `laborster.json` 字段或 slash 命令，不引入 env var、不加默认状态目录。
+- 增加配置项（Bridge）：扩展本地 SQLite kv 表字段或 slash 命令，不引入 env var、不加默认状态目录。
 - 改 outbound status：同步检查 Studio model、`runtime.py` `_dispatch_outbound`、frontend 展示和文档。

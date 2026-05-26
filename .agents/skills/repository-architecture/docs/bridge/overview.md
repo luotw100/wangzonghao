@@ -17,16 +17,19 @@ bridge/
       __main__.py                  # 入口：解析可选 --state，起 REPL
       repl.py                      # 主线程：读输入 → 解析 slash → dispatch → 渲染
       commands.py                  # 每个命令一个 handler，返回 dict；运行时装配；HELP 文本
-      config.py                    # 硬编码 CHAT/STUDIO base url；状态目录解析（无默认/无 env）
-      state.py                     # laborster.json 原子读写（0600）
-      store.py                     # sqlite local_messages 去重表（单连接 + Lock，WAL）
+      config.py                    # 硬编码 STUDIO_BASE_URL；状态目录解析（无默认/无 env）
       http.py                      # urllib JSON helper；Unauthorized/HttpError；自定义 UA
       studio_client.py             # Studio /api/bridge/* 全部端点
+      store.py                     # SQLite per-account state.db（kv 表 + channels 表 + local_messages 去重 + conv_cursors 续传锚点）
       adapters/                    # 平台适配器（Protocol + REGISTRY）
         __init__.py                # Adapter Protocol、AdapterFactory、REGISTRY、register/get
         chat.py                    # Chat sandbox HTTP 轮询适配器（token 登录/scan/send），自注册 platform="chat"
-      runtime.py                   # BridgeRuntime：6 个循环线程 + 状态聚合（按 ch["platform"] 查 REGISTRY）
+      runtime.py                   # BridgeRuntime：5 个循环线程 + 状态聚合（按 ch["platform"] 查 REGISTRY）
       events.py                    # 线程安全：日志环形缓冲 + DaemonState 快照
+      gui/                         # pywebview GUI 入口（单实例锁 / 窗口生命周期 + js_api 桥）
+        __init__.py
+        app.py                     # pywebview 窗口，单实例锁，per-OS 默认数据目录
+        bridge_api.py              # Api 类暴露为 window.js_api；LoginFlow 驱动 / 状态读取 / 命令转发
 ```
 
 ## 技术栈
@@ -58,14 +61,16 @@ bridge/
 
 ## 凭据与状态文件
 
-状态目录来源**只有两条，无默认值、无环境变量**：启动参数 `--state <path>`，或 REPL 内 `/state <path>`（当次会话生效，不持久化）。都没有时进入「无状态模式」，只有 `/help` `/state` `/quit` 可用。
+状态目录来源**只有两条，无默认值、无环境变量**：启动参数 `--state <path>`，或 REPL 内 `/state <path>`（当次会话生效，不持久化）。都没有时进入「无状态模式」，只有 `/help` `/state` `/quit` 可用。GUI 模式使用 per-OS 默认数据目录，不经过 REPL。
 
-状态目录下：
+状态目录按账号隔离：`<state_root>/<account_id>/state.db` 是 SQLite 数据库，包含 4 张表：
 
-- `laborster.json`（0600，原子写：临时文件 + `os.replace`）：`username`、`machine_id`、`bridge_id`、`studio_token`、`channels:[{platform, credential}]`。**磁盘上一个密码都不存**——`credential` 是 adapter 自定义的 JSON 不透明 blob（chat 当前形如 `{"token": "..."}`）；Bridge 永不解析。`studio_token` 在 401 或 `/logout` 时清除。
-- `messages.db`：SQLite 本地存储（`local_messages` 去重队列 + `conv_cursors` 每会话续传锚点）。
+- `kv`：键值存储（`studio_token`、`machine_id`、`display_name`、`last_active_at`）。**磁盘上一个密码都不存**——`studio_token` 在 401 或 `/logout` 时清除。
+- `channels`：platform + credential_json。credential 是 adapter 自定义的 JSON 不透明 blob（chat 当前形如 `{"token": "..."}`）；Bridge 永不解析。
+- `local_messages`：去重队列（`UNIQUE(inbox_id, client_id)`）+ `sent` 标记。
+- `conv_cursors`：每会话续传锚点。
 
-Chat/Studio 地址在 `config.py` 硬编码为 `https://chat.laborster.com` / `https://studio.laborster.com`，没有任何 base-URL 输入。
+Studio 地址在 `config.py` 硬编码为 `https://studio.laborster.com`，Chat 沙箱同主机路径加 `/api/chat` 前缀，没有任何 base-URL 输入。
 
 ## 启动生命周期
 
@@ -79,16 +84,16 @@ laborster-bridge [--state DIR]
   /login    → StudioClient.handshake(pwd) → 写 token/machine_id/bridge_id → _ensure()
   /channel add [platform] → adapters.get(platform).begin_login() → 按 Step 驱动登录流
                           → Done(credential) → 存 {platform, credential}（按 platform_self_id 去重）→ _ensure()
-  _ensure() ready 时 → 构造 StudioClient(token getter=读 laborster.json)
+  _ensure() ready 时 → 构造 StudioClient(token getter=读 state.db kv)
             → LocalStore(messages.db) → BridgeRuntime.start()（后台 bootstrap 线程）
 ```
 
-`BridgeRuntime.start()` 不阻塞 REPL：bootstrap 在后台线程对每个 channel 按 `ch["platform"]` 在 REGISTRY 中查 factory，`factory.build(ch["credential"])` 构造 adapter，读 `adapter.platform_self_id`（property 懒加载）拿 selfId，token 鉴权 `register_inboxes` 注册 inbox（按 `(platform, self_id)` 匹配 Studio 返回的 inbox 列表），然后并行启动 6 个循环线程。**self_id 不持久化**——每次启动从 credential 实时解析，避免派生事实飘移。Studio 401 时回调 `on_auth_error` 清 Studio token 并提示重新 `/login`；某个 channel 的 credential 失效（adapter 抛 `Unauthorized`）只摘除该 channel，daemon 与其他 channel 继续。
+`BridgeRuntime.start()` 不阻塞 REPL：bootstrap 在后台线程对每个 channel 按 `ch["platform"]` 在 REGISTRY 中查 factory，`factory.make_provider(credential, store)` 构造 credential provider，`factory.build(provider)` 构造 adapter，读 `adapter.platform_self_id`（property 懒加载）拿 selfId，token 鉴权 `register_inboxes` 注册 inbox（`POST /api/bridge/inboxes`），然后并行启动 5 个循环线程（scheduler、upload、takeover、outbound、heartbeat）。**self_id 不持久化**——每次启动从 credential 实时解析，避免派生事实飘移。Studio 401 时回调 `on_auth_error` 清 Studio token 并提示重新 `/login`；某个 channel 的 credential 失效（adapter 抛 `Unauthorized`）只摘除该 channel，daemon 与其他 channel 继续。
 
 ## Bridge 当前不做的事
 
 - 不调 LLM
-- 不存 Persona / Contact Card
+- 不存 Persona / Conversation Card_md
 - 不判断 autoreply 是否开启
 - 不选择 ProviderConfig
 - 不实现媒体 S3 搬运（媒体 outbound ack failed）

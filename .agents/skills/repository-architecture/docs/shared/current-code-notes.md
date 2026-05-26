@@ -34,11 +34,11 @@ Auth/AuthSession 的 ID 使用 `hash_token(secrets.token_urlsafe(32))`（SHA-256
 
 ## API 模块结构
 
-`studio/main.py` 当前是薄入口，仅 mount 各 router module。路由处理逻辑分布在 `studio/routers/` 目录下（auth, accounts, providers, personas, bridges, inboxes, contacts, distill, bridge_protocol）。序列化函数在 `studio/serializers.py`，认证依赖和 ownership helpers 在 `studio/deps.py`。
+`studio/main.py` 当前是薄入口，仅 mount 各 router module。路由处理逻辑分布在 `studio/routers/` 目录下（auth, personas, bridges, inboxes, conversations, distill, bridge_protocol）。序列化函数在 `studio/schemas.py`，认证依赖和 ownership helpers 在 `studio/deps.py`。
 
 ## Inbox 创建
 
-Inbox 仅由 Bridge handshake 自动 upsert 创建，没有独立的创建 API。
+Inbox 由 Bridge 通过 `POST /api/bridge/inboxes` 注册（upsert），没有独立的创建 API。
 
 ## Bridge offline 状态
 
@@ -46,10 +46,10 @@ Studio worker 中 `BridgeOfflineScanner` 每 30s 扫描 `last_seen_at` 超过 45
 
 ## Bridge token
 
-Bridge 持有的是 account session token（与 web 控制台共用 Studio `auth_sessions`，不再有独立 bridge session 表），保存在状态目录下唯一的 `laborster.json`（0600，原子写）的 `studio_token` 字段，`machine_id` 同存该文件；同文件 `channels[].chat_token` 存各 Chat 账号 token。磁盘上不存任何密码。每个 `/api/bridge/*` 请求带 `Authorization: Bearer studio_token` + `X-Machine-Id: machine_id`，服务端按 `(account, machine_id)` 解析 Bridge 行。重启直接复用 token，无需密码、无需重新 handshake；channel 集合通过 `POST /api/bridge/inboxes` 注册（加/删 channel 也走它）。token 24h 滑动续期；只有 401 时才清 `studio_token` 并提示用密码重新 `/login`。改密码会按 account 删除全部 session（web 与所有 Bridge 一并下线）。
+Bridge 持有的是 account session token（与 web 控制台共用 Studio `auth_sessions`，不再有独立 bridge session 表），保存在状态目录下按账号隔离的 SQLite `state.db` 的 `kv` 表中（`studio_token` 键），`machine_id` 同存该表；各 Chat 账号 token 也存在 `kv` 表里。磁盘上不存任何密码。每个 `/api/bridge/*` 请求带 `Authorization: Bearer studio_token` + `X-Machine-Id: machine_id`，服务端按 `(account, machine_id)` 解析 Bridge 行。重启直接复用 token，无需密码、无需重新 handshake；channel 集合通过 `POST /api/bridge/inboxes` 注册。token 24h 滑动续期；只有 401 时才清 `studio_token` 并提示用密码重新 `/login`。改密码会按 account 删除全部 session（web 与所有 Bridge 一并下线）。
 
-`on_auth_error` 带 token 身份保护：只在「当前磁盘 `studio_token` == 本 runtime 启动时的 token」才清除，且 runtime 已 `stop()` 后不触发。这样 autostart 用遗留旧 token 起的 runtime 收到 401 时，不会误删 `/login` 刚写入的新 token（`commands._make_runtime` 闭包捕获 `token_at_start`，`runtime._auth_error` 检查 `_stop`）。`LocalStore` 关闭后所有方法安全 no-op（关 store 与濒死 worker 线程的竞态下不再 `Cannot operate on a closed database`；未发消息留 unsent，下次重扫，Studio 按 msg_hash 去重）。
+`on_auth_error` 带 token 身份保护：只在「当前磁盘 `studio_token` == 本 runtime 启动时的 token」才清除，且 runtime 已 `stop()` 后不触发。`LocalStore` 关闭后所有方法安全 no-op；未发消息留 unsent，下次重扫，Studio 按 `(conversation_id, client_id)` 去重。
 
 ## Provider 管理
 
-Studio 没有任何 Provider Web UI/API。Provider 是单个全局配置，只能用服务端 `studio.cli create-provider / list-providers / delete-provider` 维护；最新创建者成为唯一默认。reply/distill 恒用全局默认 Provider。
+Studio Provider 通过 admin-api 或 CLI 管理。最早创建的 ProviderConfig 作为新 Conversation / 新 Account 的默认 Provider（`pick_first_provider`）。`Conversation.provider_id` 控 reply LLM 路由，`Account.distill_provider_id` 控 distill LLM 路由。无系统级 fallback。

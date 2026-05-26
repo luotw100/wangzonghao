@@ -6,14 +6,14 @@
 
 ### `user-web`
 
-- build context：`./services/studio/user_web`。
-- mount `./services/studio/user_nginx.conf:/etc/nginx/conf.d/default.conf:ro`。
+- build context：`./services/user_web`。
+- mount `./services/user_web/nginx.conf:/etc/nginx/conf.d/default.conf:ro`。
 - depends on `user-api`。
 - restart：`unless-stopped`。
 
 ### `user-api`
 
-- build context：`./services/studio/api`。
+- build context：`./services/api`。
 - command：`uv run uvicorn studio.main:app --host 0.0.0.0 --port 23456`。
 - env：`DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`、`UPLOAD_MAX_SIZE_MB`。
 - depends on `migrate`。
@@ -21,7 +21,7 @@
 
 ### `user-worker`
 
-- build context：`./services/studio/api`。
+- build context：`./services/api`。
 - command：`uv run python -m studio.worker --request-timeout 120`。
 - env：同 `user-api`。
 - depends on `migrate`。
@@ -38,7 +38,7 @@ Studio 的数据库和对象存储由项目根 `docker-compose.yaml` 统一管�
 
 ## Nginx
 
-`services/studio/user_nginx.conf` 当前行为：
+`services/user_web/nginx.conf` 当前行为：
 
 - listen `23457`。
 - 从 `/usr/share/nginx/html` serve SPA。
@@ -50,7 +50,7 @@ Studio 的数据库和对象存储由项目根 `docker-compose.yaml` 统一管�
 
 ## API Dockerfile
 
-`services/studio/api/Dockerfile` 当前行为：
+`services/api/Dockerfile` 当前行为：
 
 - base image：`python:3.12-slim`。
 - 安装 `uv`。
@@ -62,7 +62,7 @@ Studio 的数据库和对象存储由项目根 `docker-compose.yaml` 统一管�
 
 ## Web Dockerfile
 
-`services/studio/user_web/Dockerfile` 当前行为：
+`services/user_web/Dockerfile` 当前行为：
 
 - build stage：`node:20-alpine`。
 - 支持 npm registry mirror build arg。
@@ -72,7 +72,7 @@ Studio 的数据库和对象存储由项目根 `docker-compose.yaml` 统一管�
 
 ## Vite dev server 当前配置
 
-`services/studio/user_web/vite.config.ts` 当前只把 `/api` proxy 到 `localhost:23456`。
+`services/user_web/vite.config.ts` 当前只把 `/api` proxy 到 `localhost:23456`。
 
 ## 必要环境变量
 

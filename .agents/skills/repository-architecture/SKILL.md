@@ -11,7 +11,7 @@ description: Laborster 仓库架构全景 Skill。用于理解当前代码、服
 
 ## 什么时候使用
 
-- 改动 `bridge/` 或 `services/studio/api/{studio,chat,admin}` 中任一模块。
+- 改动 `bridge/` 或 `services/api/{studio,chat,admin}` 中任一模块。
 - 理解 Studio API、worker、reply brain、distill pipeline、数据库 schema 或 Bridge protocol。
 - 理解 Chat sandbox 联系人/会话/消息/导入/长轮询/connector。
 - 理解 Bridge daemon 的 adapter 生命周期、inbound/outbound、heartbeat、REPL 命令。
@@ -20,23 +20,21 @@ description: Laborster 仓库架构全景 Skill。用于理解当前代码、服
 
 ## 一句话总览
 
-Laborster 是私聊接管系统：`Channel ↔ Bridge ↔ Studio`。仓库由 **两个独立项目**组成——`bridge/cli/`（主播 PC 上的 Python REPL daemon）和 `services/studio/`（云端：API + worker + admin + web）。Chat sandbox 是 dogfood Channel，但**代码上**作为 `services/studio/api/chat/` 的子包与 Studio 同进程跑，业务边界靠 schema 和 Python 包隔离维持，运行边界仍是 Bridge HTTP。
+Laborster 是私聊接管系统：`Channel ↔ Bridge ↔ Studio`。仓库由 **两个独立项目**组成——`bridge/`（主播 PC 上的 Python REPL daemon）和 `services/`（云端：API + worker + admin + web）。Chat sandbox 是 dogfood Channel，但**代码上**作为 `services/api/chat/` 的子包与 Studio 同进程跑，业务边界靠 schema 和 Python 包隔离维持，运行边界仍是 Bridge HTTP。
 
 ## 仓库布局
 
 ```
-services/studio/
+services/
 ├── api/
 │   ├── studio/    # Studio 控制台 (auth、人设、卡片、reply、distill、bridge protocol)
 │   ├── chat/      # Chat sandbox 子包（路由挂在 /api/chat/*）
 │   ├── admin/     # 独立 FastAPI app，Cloudflare Access 在边缘鉴权
 │   ├── alembic.ini
 │   └── pyproject.toml
-├── user_web/      # 单个 React SPA：/studio + /chat 都是它的路由
-├── admin_web/     # 独立 admin React 面板，CF Access 保护
-├── user_nginx.conf   # user_web 的 nginx（/api 反代 api、/、/studio、/chat SPA fallback）
-└── admin_nginx.conf
-bridge/cli/        # laborster_bridge Python 包
+├── user_web/      # 单个 React SPA：/studio + /chat 都是它的路由（含 nginx.conf）
+└── admin_web/     # 独立 admin React 面板，CF Access 保护（含 nginx.conf）
+bridge/        # laborster_bridge Python 包
 docker-compose.yaml  # 唯一的 compose：minio + db + migrate + user-api + user-worker + admin-api + user-web + admin-web + cloudflared
 .env.example
 scripts/
@@ -59,19 +57,19 @@ scripts/
 ## 核心不变量
 
 1. **Studio 进程不直连 Channel。** Chat sandbox 也只能由 Bridge 的 `chat` adapter 通过 HTTP 走 `/api/chat/*` 进入。
-2. **包边界：`services/studio/api/chat/` 与 `services/studio/api/studio/` 不得互相 import；不得跨 schema 查业务表。** 允许的共享层：`studio.db`（engine / Base / utc_now）、`studio.auth_utils`、`studio.deps`（auth deps）、`studio.models.Account`、`studio.notify`。这条边界是用 import 纪律和 schema 隔离一起守的，没有别的强制机制。
+2. **包边界：`services/api/chat/` 与 `services/api/studio/` 不得互相 import；不得跨 schema 查业务表。** 允许的共享层：`studio.db`（engine / Base / utc_now）、`studio.auth_utils`、`studio.deps`（auth deps）、`studio.models.Account`、`studio.notify`。这条边界是用 import 纪律和 schema 隔离一起守的，没有别的强制机制。
 3. **Bridge 不做策略决策。** 只登录平台、收消息、推 Studio、拉 outbound、发送。媒体消息走 S3 搬运。
 4. **Studio S3 是媒体唯一源。** 单 bucket（默认 `media`）；chat keys 以 `media/{account_id}/` 前缀；studio keys 各自约定。
 5. **Studio DB 是 source of truth。** `studio.messages` 表保存全部接管聊天历史，每条消息有 `msg_type`。
 6. **Conversation 是接管单元。** Studio 的 `conversations` 行持有 `kind`（dm/group/unknown）、`persona_id`、`provider_id`、`takeover`、`reply_policy`、`card_md`、`last_reply_round_at`；`conversation_members` 描述群/DM 成员。
 7. **Inbox 是平台身份。** Bridge 握手时通过 `POST /api/bridge/inboxes` 自动注册，没有面向用户的创建 API。
 8. **Bridge 行 = `(account_id, machine_id)`。** `machine_id` 由 Studio 首次握手生成，Bridge 本地持久化，每次请求带 `X-Machine-Id` 头解析。
-9. **Auth 是 account 粒度的单一 token。** 浏览器、Bridge 和 chat adapter 共用同一张 `auth.auth_sessions`。Bridge 启动时用账号密码握换 token，存入本地 SQLite `kv` 表；chat channel 的 credential 直接复用同一个 studio token。token 24h 滑动续期；401 才再输密码。改密码会清空该 account 的所有 session（web 和 Bridge 一并下线）。`bridge/cli/laborster_bridge/config.py` 硬编码 `STUDIO_BASE_URL=https://studio.laborster.com`；chat 沙箱同主机，访问路径加 `/api/chat` 前缀。HTTP 请求加自定义 `User-Agent`（Cloudflare 屏蔽默认 `Python-urllib`）。
+9. **Auth 是 account 粒度的单一 token。** 浏览器、Bridge 和 chat adapter 共用同一张 `auth.auth_sessions`。Bridge 启动时用账号密码握换 token，存入本地 SQLite `kv` 表；chat channel 的 credential 直接复用同一个 studio token。token 24h 滑动续期；401 才再输密码。改密码会清空该 account 的所有 session（web 和 Bridge 一并下线）。`bridge/laborster_bridge/config.py` 硬编码 `STUDIO_BASE_URL=https://studio.laborster.com`；chat 沙箱同主机，访问路径加 `/api/chat` 前缀。HTTP 请求加自定义 `User-Agent`（Cloudflare 屏蔽默认 `Python-urllib`）。
 10. **Outbound 队列是数据库表。** `studio.outbound_messages`，Bridge long-poll；`status=pending` 含 `send_after` 控制打字节奏。
 11. **环境变量必须显式提供。** 缺 `DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`、`UPLOAD_MAX_SIZE_MB` 直接报错。
 12. **Models 不用 SQLAlchemy column default。** 每次 INSERT 显式写所有字段。
 13. **Per-Conversation / per-Account Provider。** `conversations.provider_id` 控 reply，`accounts.distill_provider_id` 控 distill。无系统级 fallback；admin 通过 admin-api 维护 ProviderConfig 池，最早创建那条作为 pick_first_provider 默认。每个 web 账号只看自己的数据。
-14. **Admin 平面独立**：`services/studio/api/admin/` + `admin_web/`，挂 `/api/admin/*`，**无 in-app auth**，靠 Cloudflare Access 在边缘鉴权；与 user_web 不混。
+14. **Admin 平面独立**：`services/api/admin/` + `admin_web/`，挂 `/api/admin/*`，**无 in-app auth**，靠 Cloudflare Access 在边缘鉴权；与 user_web 不混。
 
 ## 部署形态
 
@@ -128,7 +126,7 @@ DistillJob 路径走 `accounts.distill_provider_id`，由 DistillScanner 异步�
 
 1. 先读本 SKILL.md（事实最新）。
 2. 跨服务的改动：再扫 `docs/shared/architecture.md` 和 `docs/bridge/protocol.md`。
-3. 改 API/schema：直接读 `services/studio/api/studio/models.py` 和 `routers/`。
-4. 改 chat：直接读 `services/studio/api/chat/`。
-5. 改 UI：读 `services/studio/user_web/src/`（chat 部分在 `chat/` 子目录）。
+3. 改 API/schema：直接读 `services/api/studio/models.py` 和 `routers/`。
+4. 改 chat：直接读 `services/api/chat/`。
+5. 改 UI：读 `services/user_web/src/`（chat 部分在 `chat/` 子目录）。
 6. 动手前对照不变量。

@@ -16,7 +16,7 @@ Bridge daemon on operator PC
 Studio cloud control plane
 ```
 
-- **Channel**：真实或模拟聊天平台。当前仓库中的实现是 `services/studio/api/chat/` 子包。
+- **Channel**：真实或模拟聊天平台。当前仓库中的实现是 `services/api/chat/` 子包。
 - **Bridge**：本地 IO daemon，持有平台登录态，负责收发消息。媒体消息走 S3 搬运（平台 S3 ↔ Studio S3）。
 - **Studio**：云端控制面，持有账号、人设、Provider、消息历史、关系卡、蒸馏任务、回复决策和 outbound 队列。Studio S3 是媒体文件的唯一源。
 
@@ -24,13 +24,13 @@ Studio cloud control plane
 
 ### Chat sandbox
 
-`services/studio/api/chat/` 是 Studio 同进程的子包，当前用作可控 Channel（dogfood）。它包含自己的联系人、会话、消息（支持 text/image/audio/video/file 五种类型）、媒体上传下载（presigned URL 直连 S3）、long polling 和前端 UI。
+`services/api/chat/` 是 Studio 同进程的子包，当前用作可控 Channel（dogfood）。它包含自己的联系人、会话、消息（支持 text/image/audio/video/file 五种类型）、媒体上传下载（presigned URL 直连 S3）、long polling 和前端 UI。
 
 Chat 与 Studio 之间没有代码 import（除共享 DB engine、auth deps 和 notify broker）；仅 Bridge 的 `ChatAdapter` 通过 HTTP 调用 `/api/chat/*`。
 
 ### Bridge CLI
 
-`bridge/cli/` 是 Python 命令行 daemon（交互式 REPL + GUI 模式）。用户通过 `/login` 命令配置 Studio 账号密码，通过 `/channel add` 添加平台账号，state 持久化在本地 SQLite。后台 5 个循环线程在同进程运行，关掉进程即断线。
+`bridge/` 是 Python 命令行 daemon（交互式 REPL + GUI 模式）。用户通过 `/login` 命令配置 Studio 账号密码，通过 `/channel add` 添加平台账号，state 持久化在本地 SQLite。后台 5 个循环线程在同进程运行，关掉进程即断线。
 
 Bridge 当前负责：
 
@@ -53,7 +53,7 @@ Bridge 当前不负责：
 
 ### Studio
 
-`services/studio` 是控制台和 AI brain。它提供 Web API（用户侧 + admin 侧）和 Bridge protocol API（8 个端点），存储消息历史，执行 reply 和 distill，并写入 outbound queue。
+`services` 是控制台和 AI brain。它提供 Web API（用户侧 + admin 侧）和 Bridge protocol API（8 个端点），存储消息历史，执行 reply 和 distill，并写入 outbound queue。
 
 Studio 当前负责：
 
@@ -132,4 +132,4 @@ Studio S3 是媒体 binary 的唯一 source of truth。Inbound 时 Bridge 从平
 - Studio 需要 `DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET` 环境变量，缺失时报错。
 - Chat 和 Studio models 当前不使用 SQLAlchemy column default。
 - Studio 和 Chat 使用 PostgreSQL，由 Alembic 管理 schema 迁移。
-- Bridge CLI 的 Studio 地址在 `bridge/cli/laborster_bridge/config.py` 硬编码为 `https://studio.laborster.com`，Chat 沙箱同主机路径加 `/api/chat` 前缀，无环境变量、无默认覆盖。
+- Bridge CLI 的 Studio 地址在 `bridge/laborster_bridge/config.py` 硬编码为 `https://studio.laborster.com`，Chat 沙箱同主机路径加 `/api/chat` 前缀，无环境变量、无默认覆盖。

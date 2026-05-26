@@ -50,7 +50,7 @@ services:
   # ---------------------------------------------------------------------
   migrate:
     build:
-      context: services/studio/api
+      context: services/api
     command: ["uv", "run", "python", "-m", "studio.migrate"]
     environment:
       DATABASE_URL: ${DATABASE_URL}
@@ -61,7 +61,7 @@ services:
 
   user-api:
     build:
-      context: services/studio/api
+      context: services/api
     command: ["uv", "run", "uvicorn", "studio.main:app", "--host", "0.0.0.0", "--port", "23456"]
     environment:
       DATABASE_URL: ${DATABASE_URL}
@@ -78,7 +78,7 @@ services:
 
   user-worker:
     build:
-      context: services/studio/api
+      context: services/api
     command: ["uv", "run", "python", "-m", "studio.worker", "--request-timeout", "120"]
     environment:
       DATABASE_URL: ${DATABASE_URL}
@@ -95,7 +95,7 @@ services:
 
   admin-api:
     build:
-      context: services/studio/api
+      context: services/api
     command: ["uv", "run", "uvicorn", "admin.app:app", "--host", "0.0.0.0", "--port", "23457"]
     environment:
       DATABASE_URL: ${DATABASE_URL}
@@ -109,9 +109,9 @@ services:
   # ---------------------------------------------------------------------
   user-web:
     build:
-      context: services/studio/user_web
+      context: services/user_web
     volumes:
-      - ./services/studio/user_nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./services/user_web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       user-api:
         condition: service_started
@@ -119,9 +119,9 @@ services:
 
   admin-web:
     build:
-      context: services/studio/admin_web
+      context: services/admin_web
     volumes:
-      - ./services/studio/admin_nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./services/admin_web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
     depends_on:
       admin-api:
         condition: service_started

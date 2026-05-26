@@ -4,7 +4,7 @@
 
 ## Studio Vite proxy
 
-`services/studio/web/vite.config.ts` 当前把 `/api` proxy 到 `localhost:23457`。
+`services/user_web/vite.config.ts` 当前把 `/api` proxy 到 `localhost:23457`。
 
 ## Bridge 默认 Studio URL
 

@@ -5,7 +5,7 @@ laborster_bridge/gui/assets/ are committed so CI needs no SVG toolchain.
 
     python scripts/gen_icons.py
 
-Source mark (services/studio/web/public/favicon.svg), 28x28 viewBox:
+Source mark (services/user_web/public/favicon.svg), 28x28 viewBox:
   rounded square, diagonal gradient cyan->blue->purple,
   white "L" stroke, cyan dot at the elbow's end.
 """

@@ -2,10 +2,10 @@
 
 ## 包结构
 
-`bridge/cli/` 是独立 Python 包，不属于 `services/` 工作流，与 Chat/Studio 的 Docker/uv 无关。
+`bridge/` 是独立 Python 包，不属于 `services/` 工作流，与 Chat/Studio 的 Docker/uv 无关。
 
 ```text
-bridge/cli/
+bridge/
   pyproject.toml          # [project] name=laborster-bridge, requires-python>=3.12
                           #   dependencies = ["prompt_toolkit>=3.0"]
                           # [project.scripts] laborster-bridge / lbr → laborster_bridge.__main__:main
@@ -19,7 +19,7 @@ bridge/cli/
 
 ## 运行与打包定位
 
-- 开发运行：`cd bridge/cli && uv run laborster-bridge [--state DIR]`（uv 自动解析 prompt_toolkit）。
+- 开发运行：`cd bridge && uv run laborster-bridge [--state DIR]`（uv 自动解析 prompt_toolkit）。
 - 安装后运行：`pip install .` / `uv tool install --editable .` 暴露 `laborster-bridge` 和 `lbr` 两个等价入口。
 - 终端启动可带 `--state <path>`；双击场景无参数进入无状态模式，靠 `/state <path>` 设置。
 - 单文件可执行打包（PyInstaller 等）属于发布层，不在当前代码内。

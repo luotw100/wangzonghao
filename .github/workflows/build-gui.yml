@@ -11,7 +11,7 @@ on:
 
 defaults:
   run:
-    working-directory: bridge/cli
+    working-directory: bridge
 
 jobs:
   windows:
@@ -27,7 +27,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: LaborsterBridge-${{ github.event.inputs.version }}-win-x64
-          path: bridge/cli/dist/LaborsterBridge.exe
+          path: bridge/dist/LaborsterBridge.exe
           if-no-files-found: error
 
   mac-arm64:
@@ -42,5 +42,5 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: LaborsterBridge-${{ github.event.inputs.version }}-mac-arm64
-          path: bridge/cli/dist/LaborsterBridge-mac-arm64.zip
+          path: bridge/dist/LaborsterBridge-mac-arm64.zip
           if-no-files-found: error

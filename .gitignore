@@ -8,8 +8,8 @@ __pycache__/
 !.env.example
 !.env.example.json
 
-# Bridge cli .venv
-bridge/cli/.venv/
+# Bridge .venv
+bridge/.venv/
 
 # Node
 node_modules/

@@ -3,14 +3,13 @@
 ## 仓库布局
 
 ```text
-bridge/
-  cli/       # Bridge 命令行 daemon（Python REPL，prompt_toolkit + stdlib）
+bridge/      # Bridge 命令行 daemon（Python REPL + GUI，prompt_toolkit + stdlib）
 services/
   chat/      # Chat sandbox Channel
   studio/    # 控制台和 AI brain
 ```
 
-三个项目互相独立。`bridge/cli/` 是 Python 包（依赖 prompt_toolkit，其余 stdlib），`services/` 是 Python/Docker 工作区，不要跨项目直接 import 源码。
+三个项目互相独立。`bridge/` 是 Python 包（依赖 prompt_toolkit，其余 stdlib），`services/` 是 Python/Docker 工作区，不要跨项目直接 import 源码。
 
 ## 启动 Chat sandbox
 
@@ -28,7 +27,7 @@ Chat web/API 通过 Nginx 暴露在 `http://localhost:23456`。
 
 ```bash
 cd infra && docker compose up -d    # 先启动基础设施
-cd services/studio
+cd services
 docker compose up -d --build
 ```
 
@@ -56,7 +55,7 @@ docker compose exec -T studio-api uv run python -m studio.cli create-provider \
 ## 启动 Bridge（命令行 daemon）
 
 ```bash
-cd bridge/cli
+cd bridge
 uv run laborster-bridge --state /path/to/state
 ```
 
@@ -100,7 +99,7 @@ docker compose exec -T chat-api uv run python -m chat.cli reset-password --usern
 Studio：账号开通和 Provider 维护只有 CLI 一条路径，没有任何 Web 管理入口；登录页仅提供 username/password 登录，Web 端只能改自己的密码。
 
 ```bash
-cd services/studio
+cd services
 docker compose exec -T studio-api uv run python -m studio.cli create-account \
   --username u1 --password Pw123 --display-name 主播一
 docker compose exec -T studio-api uv run python -m studio.cli list-accounts
@@ -112,9 +111,9 @@ docker compose exec -T studio-api uv run python -m studio.cli list-providers
 
 ## 构建命令
 
-- Bridge CLI：无构建步骤；`cd bridge/cli && python3 -m compileall -q laborster_bridge` 做语法自检，`uv run laborster-bridge` 运行（uv 解析 prompt_toolkit）。单文件可执行打包属发布层。
+- Bridge CLI：无构建步骤；`cd bridge && python3 -m compileall -q laborster_bridge` 做语法自检，`uv run laborster-bridge` 运行（uv 解析 prompt_toolkit）。单文件可执行打包属发布层。
 - Chat web：在 `services/chat/web` 下执行 `npm run build`。
-- Studio web：在 `services/studio/web` 下执行 `npm run build`；需要 lint 时执行 `npm run lint`。
+- Studio web：在 `services/user_web` 下执行 `npm run build`；需要 lint 时执行 `npm run lint`。
 - Python 服务在 Dockerfile / Compose 中使用 `uv`。
 
 ## 当前验证策略
@@ -145,8 +144,8 @@ distill 改动：
 
 ## 跨服务改动检查表
 
-- 改 Bridge protocol：同步更新 Studio schema/endpoint、`bridge/cli/laborster_bridge/studio_client.py`、文档。
+- 改 Bridge protocol：同步更新 Studio schema/endpoint、`bridge/laborster_bridge/studio_client.py`、文档。
 - 改 Conversation 语义：检查 Studio data model、Takeover UI、reply gates、distill card_md。
-- 增加平台适配：当前边界是在 `bridge/cli/laborster_bridge/` 新增 adapter 模块并在 `runtime.py` 中接入，Studio 不直连平台。
+- 增加平台适配：当前边界是在 `bridge/laborster_bridge/` 新增 adapter 模块并在 `runtime.py` 中接入，Studio 不直连平台。
 - 增加配置项（Bridge）：扩展本地 SQLite kv 表字段或 slash 命令，不引入 env var、不加默认状态目录。
 - 改 outbound status：同步检查 Studio model、`runtime.py` `_dispatch_outbound`、frontend 展示和文档。

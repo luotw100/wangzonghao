@@ -10,7 +10,7 @@ description: Laborster 架构 Skill 维护规则。用于发现当前代码与 .
 当你在当前仓库中遇到以下情况时，必须使用本 Skill：
 
 - 实际代码、配置、Docker、前端行为或协议与 `repository-architecture` Skill 描述不一致。
-- 修改了 `services/chat`、`services/bridge`、`services/studio` 中任意代码或配置，并影响架构文档已有描述。
+- 修改了 `services/`（api、user_web、admin_web）或 `bridge/` 中任意代码或配置，并影响架构文档已有描述。
 - 新增、删除、重命名 API、DB 字段、协议字段、环境变量、CLI 参数、Compose service、前端 tab 或关键流程。
 - 验证过程中发现 `repository-architecture` Skill 中存在过时、缺漏或错误事实。
 

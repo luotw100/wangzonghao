@@ -2,14 +2,14 @@
 
 ## 当前角色
 
-`services/studio` 是当前仓库中的云端控制台和 AI brain。它存储 source-of-truth 消息历史，管理 Persona / ProviderConfig，接受 Bridge protocol，运行 reply 和 distill worker，并提供 Studio web console。
+`services` 是当前仓库中的云端控制台和 AI brain。它存储 source-of-truth 消息历史，管理 Persona / ProviderConfig，接受 Bridge protocol，运行 reply 和 distill worker，并提供 Studio web console。
 
 Studio 所有平台 IO 都通过 Bridge 进入/离开，不直连 Chat 或其他平台。
 
 ## 目录结构
 
 ```text
-services/studio/
+services/
   docker-compose.yaml (项目根目录)
   api/
     Dockerfile
@@ -45,6 +45,7 @@ services/studio/
         bridge_protocol.py     ← Bridge daemon ↔ Studio protocol (8 endpoints)
   user_web/
     Dockerfile
+    nginx.conf
     package.json
     vite.config.ts
     src/
@@ -54,8 +55,10 @@ services/studio/
       components/
       lib/
       pages/
-  user_nginx.conf
-  admin_nginx.conf
+  admin_web/
+    Dockerfile
+    nginx.conf
+    ...
 ```
 
 ## 技术栈

@@ -1,18 +1,12 @@
 #!/usr/bin/env bash
-# Run the API test suite against an already-running instance.
+# Run the API test suite inside the already-running user-api container.
 #
 #   scripts/test.sh <config.json> [pytest args...]
 #
-# Example: scripts/test.sh scripts/.env.debug.json -k test_auth
-#
-# Assumes the stack is already up (scripts/up-all.sh <config.json>).
-# Tests live in the api image (tests/ is COPY'd in), so --build re-bakes
-# only the tests layer when test code changes — other layers stay cached.
-#
-# Self-cleaning: on exit (success, failure, Ctrl-C) the test-runner and
-# fake-llm containers are removed and the test image is dropped, so the
-# next run starts from a clean slate without touching the long-running
-# user-api/user-worker/admin-api stack.
+# Tests are baked into the api image (Dockerfile COPY tests). fake-llm
+# is a regular long-running service on the same network. To pick up
+# test/source changes, re-run scripts/up-all.sh — that's the only
+# build step in the loop.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -30,25 +24,11 @@ if [[ ! -f "$INST" ]]; then
   exit 1
 fi
 
-TMP_ENV=$(mktemp); trap "rm -f $TMP_ENV" EXIT
-jq -r '.compose | to_entries[] | "\(.key)=\(.value)"' "$INST" > "$TMP_ENV"
-set -a; source "$TMP_ENV"; set +a
-: "${COMPOSE_PROJECT_NAME:?config.compose must set COMPOSE_PROJECT_NAME}"
-P="$COMPOSE_PROJECT_NAME"
-
-COMPOSE=(docker compose -f "$ROOT/docker-compose.yaml" -p "$P"
-         --env-file "$ROOT/.env" --env-file "$TMP_ENV"
-         --profile test)
-
-cleanup() {
-  echo ">>> [$P] cleaning up fake-llm + test-runner"
-  "${COMPOSE[@]}" rm -fsv fake-llm test-runner >/dev/null 2>&1 || true
-}
-trap cleanup EXIT INT TERM
+P=$(jq -r '.compose.COMPOSE_PROJECT_NAME' "$INST")
+: "${P:?config.compose.COMPOSE_PROJECT_NAME missing}"
 
 if [[ "$#" -eq 0 ]]; then
   set -- tests/ -x -v
 fi
 
-echo ">>> [$P] running tests"
-"${COMPOSE[@]}" run --build --rm test-runner "$@"
+exec docker compose -p "$P" exec user-api uv run python -m pytest "$@"

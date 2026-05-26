@@ -4,37 +4,32 @@
 
 ## Studio Vite proxy
 
-`services/user_web/vite.config.ts` 当前把 `/api` proxy 到 `localhost:23457`。
+`services/user_web/vite.config.ts` 当前把 `/api` proxy 到 `localhost:23456`。
 
-## Bridge 默认 Studio URL
+## Bridge Studio URL
 
-`services/bridge/bridge/main.py` 当前定义 `DEFAULT_STUDIO_URL = "https://studio.laborster.com"`。本地联调命令通过 `--studio-url` 覆盖。
+`bridge/laborster_bridge/config.py` 当前硬编码 `STUDIO_BASE_URL = "https://studio.laborster.com"`，无环境变量、无 CLI 覆盖。Chat 沙箱同主机，路径加 `/api/chat` 前缀。
 
 ## Model defaults
 
-Chat sandbox 和 Studio models 当前都不使用 SQLAlchemy column defaults；insert 路径必须显式写入状态、时间戳和布尔值。
+Models 不使用 SQLAlchemy column defaults；insert 路径必须显式写入状态、时间戳和布尔值。
 
 ## Database
 
-Studio 和 Chat 都使用 PostgreSQL，由 Alembic 管理 schema 迁移。启动时通过 `run_migrations()` 执行 `alembic upgrade head`。所有 DateTime 列存储为 `timestamptz`（时区感知 UTC）。所有自增主键使用 `BigInteger`。
-
-## Migrations
-
-`studio/migrate.py` 和 `chat/migrate.py` 封装 Alembic `upgrade head`。API 启动通过 FastAPI lifespan 调用；Worker 和 CLI 在各自入口调用。
+单 PG 实例，三 schema（`auth` / `studio` / `chat`）。Alembic 管理迁移；启动时通过 `services/api/studio/migrate.py` 跑 `ensure_schemas()` + `alembic upgrade head`。`alembic_version` 表落在 `studio` schema。所有 DateTime 列存为 `timestamptz`（时区感知 UTC），自增主键 `BigInteger`。`studio.db.Base` 与 `chat.db.Base` 是两套独立 Base、共享 engine + 连接池。
 
 ## ID 生成
 
-所有非自增主键使用 `new_id(prefix)` 生成，格式为 `{prefix}_{uuid4().hex}`（完整 128 bit UUID hex，32 字符随机部分）。128 bit 熵下碰撞概率可忽略，不需要重试逻辑。
+所有非自增主键使用 `new_id(prefix)`，格式 `{prefix}_{uuid4().hex}`（128 bit 熵，碰撞概率可忽略）。
 
-- Studio: `studio/deps.py` 中的 `new_id(prefix)` 函数。
-- Chat: `chat/main.py` 中的 `new_id(prefix)` 函数。
-- 辅助模块中的 ID 生成（`studio/cli.py`）也使用 `new_id()`，不内联 `uuid4().hex`。
+- Studio 子包：`services/api/studio/deps.py:new_id`。
+- Chat 子包：`services/api/chat/ids.py:new_id`。
 
-Auth/AuthSession 的 ID 使用 `hash_token(secrets.token_urlsafe(32))`（SHA-256，64 hex 字符），不会碰撞。
+Auth/AuthSession 的 ID 用 `hash_token(secrets.token_urlsafe(32))`（SHA-256，64 hex 字符）。
 
 ## API 模块结构
 
-`studio/main.py` 当前是薄入口，仅 mount 各 router module。路由处理逻辑分布在 `studio/routers/` 目录下（auth, personas, bridges, inboxes, conversations, distill, bridge_protocol）。序列化函数在 `studio/schemas.py`，认证依赖和 ownership helpers 在 `studio/deps.py`。
+`services/api/studio/main.py` 是薄入口，挂 studio 路由（`studio/routers/`：auth、personas、bridges、inboxes、conversations、distill、bridge_protocol）+ chat 子包路由（`chat/routers/`，前缀 `/api/chat/*`）。admin 是独立 FastAPI app `services/api/admin/app.py`（CF Access 鉴权，无 in-app auth）。序列化在各自 `schemas.py`，鉴权 + ownership helpers 在 `studio/deps.py`。
 
 ## Inbox 创建
 

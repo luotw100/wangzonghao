@@ -24,7 +24,7 @@ Studio cloud control plane
 
 ### Chat sandbox
 
-`services/api/chat/` 是 Studio 同进程的子包，当前用作可控 Channel（dogfood）。它包含自己的联系人、会话、消息（支持 text/image/audio/video/file 五种类型）、媒体上传下载（presigned URL 直连 S3）、long polling 和前端 UI。
+`services/api/chat/` 是 user-api 进程的子包，当前用作可控 Channel（dogfood）。它包含自己的联系人、会话、消息（支持 text/image/audio/video/file 五种类型）、媒体上传下载（presigned URL 直连 S3）和 long polling。Chat 的前端在 `services/user_web/src/chat/`，与 Studio SPA 同一 Vite 构建产物，路由挂 `/chat`。
 
 Chat 与 Studio 之间没有代码 import（除共享 DB engine、auth deps 和 notify broker）；仅 Bridge 的 `ChatAdapter` 通过 HTTP 调用 `/api/chat/*`。
 
@@ -92,7 +92,7 @@ ProviderConfig
 
 ### Account
 
-Studio 登录账号，`status ∈ {active, disabled}`，无 role 列。账号只能用服务端 `studio.cli create-account`或 admin-api 开通；Web 端只有登录 / 登出 / 改自己密码。每个账号只能读写自己的数据。Web 与 Bridge 共用同一张 account 粒度 session 表。
+Studio 登录账号，`status ∈ {active, disabled}`，无 role 列。账号只能通过 admin-api（`POST /api/admin/accounts`，CF Access 鉴权）开通；Web 端只有登录 / 登出 / 改自己密码。每个账号只能读写自己的数据。Web 与 Bridge 共用同一张 account 粒度 session 表。
 
 ### ProviderConfig
 
@@ -128,8 +128,7 @@ Studio S3 是媒体 binary 的唯一 source of truth。Inbound 时 Bridge 从平
 
 ## 配置原则在当前代码中的体现
 
-- Chat 需要 `DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`、`UPLOAD_MAX_SIZE_MB` 环境变量，缺失时报错。`S3_ENDPOINT` 是容器内地址，`S3_PUBLIC_URL` 是浏览器可达地址，两者不同因为 presigned URL 签名绑定 host。
-- Studio 需要 `DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET` 环境变量，缺失时报错。
-- Chat 和 Studio models 当前不使用 SQLAlchemy column default。
-- Studio 和 Chat 使用 PostgreSQL，由 Alembic 管理 schema 迁移。
-- Bridge CLI 的 Studio 地址在 `bridge/laborster_bridge/config.py` 硬编码为 `https://studio.laborster.com`，Chat 沙箱同主机路径加 `/api/chat` 前缀，无环境变量、无默认覆盖。
+- user-api / user-worker / admin-api / migrate 需要 `DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`、`UPLOAD_MAX_SIZE_MB` 环境变量，缺失时报错。`S3_ENDPOINT` 是容器内地址，`S3_PUBLIC_URL` 是浏览器可达地址，两者不同因为 presigned URL 签名绑定 host。
+- Models 不使用 SQLAlchemy column default；insert 路径显式写入所有字段。
+- 单 PG 实例 + 单 MinIO bucket；三 schema 由 Alembic 在 `studio.migrate` 启动时 ensure。
+- Bridge 的 Studio 地址在 `bridge/laborster_bridge/config.py` 硬编码为 `https://studio.laborster.com`，Chat 沙箱同主机路径加 `/api/chat` 前缀，无环境变量、无默认覆盖。

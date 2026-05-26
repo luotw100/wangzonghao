@@ -8,11 +8,9 @@
 - Schemas：`studio/schemas.py`。
 - Auth utils：`studio/auth_utils.py`。
 - LLM client：`studio/clients.py`。
-- CLI：`studio/cli.py`。
-- Serializers：`studio/serializers.py`。
 - 依赖：`studio/deps.py`。
-- Migration：`studio/migrate.py`（封装 Alembic `upgrade head`）。
-- Routers：`studio/routers/`（auth, accounts, providers, personas, bridges, inboxes, conversations, distill, bridge_protocol）。
+- Migration：`studio/migrate.py`（`ensure_schemas()` + `alembic upgrade head`）。
+- Routers：`studio/routers/`（auth, personas, bridges, inboxes, conversations, distill, bridge_protocol）。Chat 子包路由在 `services/api/chat/routers/`，由 `studio/main.py` 一并挂在 `/api/chat/*`。Admin 是独立 FastAPI app（`services/api/admin/app.py`），单独进程，CF Access 鉴权。
 
 ## DB 初始化
 
@@ -23,7 +21,7 @@
 - 暴露 `Base`、`SessionLocal`、`get_db()`、`utc_now()`。
 - `utc_now()` 返回时区感知的 UTC datetime。
 
-`main.py` 通过 FastAPI lifespan 在 startup 时调用 `run_migrations()`（`studio/migrate.py`），执行 `alembic upgrade head`。Worker 和 CLI 在各自的入口也调用 `run_migrations()`。
+`migrate` compose service（`uv run python -m studio.migrate`）一次性跑 `ensure_schemas()` + `alembic upgrade head`，user-api / user-worker / admin-api 都依赖它 `service_completed_successfully`。
 
 ## Auth
 
@@ -97,7 +95,7 @@
 
 `PUT /api/auth/password` 要求当前密码和新密码，成功后会删除该账号所有 Web AuthSession（web 与所有 Bridge 一并下线）。
 
-Studio 没有 admin 概念，没有任何账号管理 / Provider 管理的 Web API。账号开通和 Provider 维护只能用服务端 `studio.cli`（见 CLI 小节）。
+user-api 上没有账号管理或 Provider 管理端点。这些都在独立的 admin-api 进程上，挂 `/api/admin/*`（CF Access 鉴权）：`POST /api/admin/accounts`、`POST /api/admin/accounts/{id}/reset-password`、`PATCH /api/admin/accounts/{id}/distill-provider`、`POST /api/admin/providers`、`PATCH /api/admin/providers/{id}`、`DELETE /api/admin/providers/{id}` 等。详见 `services/api/admin/app.py`。
 
 ### Persona
 
@@ -171,15 +169,21 @@ Inbox 仅由 Bridge handshake 自动 upsert 创建，没有 `POST /api/inboxes` 
 - 非 2xx 抛错。
 - 返回 `(content, usage)`。
 
-## Studio CLI
+## Admin API
 
-`python -m studio.cli` 当前命令：
+`services/api/admin/app.py` 是独立 FastAPI app（compose service `admin-api`，端口 23457，CF Access 在边缘鉴权，进程内无 auth middleware）。
 
-- `create-account`（`--username --password --display-name`）
-- `list-accounts`
-- `reset-password`（`--username --password`）
-- `create-provider`（`--name --base-url [--api-key] --default-model`）：校验 `base_url` 在 `ALLOWED_BASE_URLS` 白名单，清掉已有 default，新建者 `is_default=True`。
-- `list-providers`
-- `delete-provider`（`--id`）
+当前端点：
 
-account id 生成规则是 `acc_{完整 UUID hex}`（128 bit，无截断）。Create 显式设置 active status 和 timestamps。CLI 输出使用带颜色的表格。账号开通和 Provider 维护的唯一路径就是这个 CLI——没有任何 Web 入口。
+- `GET/POST /api/admin/accounts`
+- `POST /api/admin/accounts/{id}/reset-password`
+- `PATCH /api/admin/accounts/{id}/distill-provider`
+- `GET /api/admin/providers`
+- `GET /api/admin/allowed-base-urls`
+- `POST /api/admin/providers`
+- `PATCH /api/admin/providers/{id}`
+- `DELETE /api/admin/providers/{id}`
+- `GET /api/admin/conversations`
+- `PATCH /api/admin/conversations/{id}/provider`
+
+`POST /api/admin/providers` 校验 `base_url` 在 `ALLOWED_BASE_URLS` 白名单。最早创建的 ProviderConfig 作为新 Conversation / 新 Account 的默认 Provider（`studio.deps.pick_first_provider`）。account id 生成规则是 `acc_{完整 UUID hex}`，Create 显式设置 active status 和 timestamps。

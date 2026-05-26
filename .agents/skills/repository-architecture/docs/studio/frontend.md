@@ -64,7 +64,7 @@
 - 纯 username/password form，仅提供登录功能。
 - 调 `api.login()` → `api.setToken()` 保存 token → auth `refresh()` → 跳转 `/studio`。
 - 登录失败时显示错误。
-- 账号由服务端 `studio.cli create-account` 创建，没有任何 Web 注册/管理入口。
+- 账号由 admin-api（`POST /api/admin/accounts`，CF Access 鉴权）创建，user-web 端没有注册/管理入口。
 
 ### StudioPage 顶层
 

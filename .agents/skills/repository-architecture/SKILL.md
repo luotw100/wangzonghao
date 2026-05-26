@@ -120,7 +120,6 @@ DistillJob 路径走 `accounts.distill_provider_id`，由 DistillScanner 异步�
 - `docs/shared/architecture.md` / `end-to-end-flows.md` / `development-workflow.md` / `current-code-notes.md`
 - `docs/bridge/overview.md` / `runtime-adapters.md` / `protocol.md` / `infra.md`
 - `docs/studio/overview.md` / `backend-api.md` / `data-model.md` / `worker-reply-distill.md` / `frontend.md` / `infra.md`
-- `docs/chat/*` 子文档存在但已和合并后的事实脱节，使用前比对代码。
 
 ## AI / 开发者阅读顺序
 

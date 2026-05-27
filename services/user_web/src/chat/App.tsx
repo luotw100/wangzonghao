@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import * as api from './api';
 import type { Account, Message } from './api';
@@ -26,7 +26,11 @@ export default function ChatApp() {
   }, [studioAccount]);
 
   const workspace = useWorkspace(!!account);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const { conversationId: routeConvId } = useParams<{ conversationId: string }>();
+  const activeConversationId = routeConvId ?? null;
+  const setActiveConversationId = useCallback((id: string | null, replace = false) => {
+    navigate(id ? `/chat/c/${id}` : '/chat', { replace });
+  }, [navigate]);
   const [globalError, setGlobalError] = useState('');
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
   const [showImport, setShowImport] = useState(false);
@@ -41,19 +45,19 @@ export default function ChatApp() {
     if (activeConversationId) return;
     if (workspace.conversations.length === 0) return;
     if (window.matchMedia('(min-width: 860px)').matches) {
-      setActiveConversationId(workspace.conversations[0].id);
+      setActiveConversationId(workspace.conversations[0].id, true);
     }
-  }, [workspace.loaded, workspace.conversations, activeConversationId]);
+  }, [workspace.loaded, workspace.conversations, activeConversationId, setActiveConversationId]);
 
   useEffect(() => {
     if (!activeConversationId) return;
     if (!workspace.loaded) return;
     const stillExists = workspace.conversations.some(c => c.id === activeConversationId);
     if (!stillExists) {
-      setActiveConversationId(null);
+      setActiveConversationId(null, true);
       setMobileView('list');
     }
-  }, [workspace.conversations, workspace.loaded, activeConversationId]);
+  }, [workspace.conversations, workspace.loaded, activeConversationId, setActiveConversationId]);
 
   const activeConversation = useMemo(
     () => workspace.conversations.find(c => c.id === activeConversationId) || null,

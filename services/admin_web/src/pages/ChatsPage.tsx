@@ -1,33 +1,70 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import * as api from '../api.ts';
 import { LlmTraceDrawer } from './LlmTraceDrawer.tsx';
 
 export function ChatsPage() {
+  const navigate = useNavigate();
+  const { conversationId } = useParams<{ conversationId: string }>();
+  const [searchParams, setSearchParams] = useSearchParams();
+  // Account picker — query string so it survives reload but stays out of the
+  // path (which is reserved for the active conversation).
+  const accountId = searchParams.get('account') ?? '';
+  const setAccountId = useCallback((id: string) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (id) next.set('account', id); else next.delete('account');
+      return next;
+    });
+    // Switching accounts invalidates any conversation pinned in the path.
+    if (conversationId) navigate(id ? `/chats?account=${encodeURIComponent(id)}` : '/chats', { replace: true });
+  }, [setSearchParams, navigate, conversationId]);
+
   const [accounts, setAccounts] = useState<api.Account[]>([]);
-  const [accountId, setAccountId] = useState<string>('');
   const [convs, setConvs] = useState<api.ChatConversation[]>([]);
-  const [activeConv, setActiveConv] = useState<api.ChatConversation | null>(null);
   const [messages, setMessages] = useState<api.ChatMessage[]>([]);
   const [error, setError] = useState('');
   const [drawerLog, setDrawerLog] = useState<number | null>(null);
+
+  const activeConv = useMemo(
+    () => convs.find(c => c.id === conversationId) ?? null,
+    [convs, conversationId],
+  );
+
+  const selectConv = useCallback((c: api.ChatConversation) => {
+    // Keep the account query param so reloading the page restores both.
+    const qs = accountId ? `?account=${encodeURIComponent(accountId)}` : '';
+    navigate(`/chats/c/${c.id}${qs}`);
+  }, [navigate, accountId]);
 
   useEffect(() => {
     api.getAccounts().then(setAccounts).catch(e => setError(e.message));
   }, []);
 
   useEffect(() => {
-    setActiveConv(null);
-    setMessages([]);
-    if (!accountId) { setConvs([]); return; }
-    api.getChats(accountId).then(setConvs).catch(e => setError(e.message));
-  }, [accountId]);
+    // Cold-load case: deep link like /chats/c/<id> with no ?account= in URL.
+    // Fetch all chats so we can locate the conv and infer its account below.
+    if (!accountId && !conversationId) { setConvs([]); return; }
+    api.getChats(accountId || undefined).then(setConvs).catch(e => setError(e.message));
+  }, [accountId, conversationId]);
+
+  // If the URL pins a conversation but no account is set yet, infer the
+  // account from the loaded conv so the dropdown and list line up.
+  useEffect(() => {
+    if (accountId || !activeConv) return;
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('account', activeConv.account_id);
+      return next;
+    }, { replace: true });
+  }, [accountId, activeConv, setSearchParams]);
 
   useEffect(() => {
-    if (!activeConv) { setMessages([]); return; }
-    api.getChatMessages(activeConv.id, { limit: 300 })
+    if (!conversationId) { setMessages([]); return; }
+    api.getChatMessages(conversationId, { limit: 300 })
       .then(setMessages)
       .catch(e => setError(e.message));
-  }, [activeConv?.id]);
+  }, [conversationId]);
 
   const convsByInbox = useMemo(() => {
     const groups: Record<string, api.ChatConversation[]> = {};
@@ -64,7 +101,7 @@ export function ChatsPage() {
               {list.map(c => (
                 <button
                   key={c.id}
-                  onClick={() => setActiveConv(c)}
+                  onClick={() => selectConv(c)}
                   style={{
                     display: 'block', width: '100%', textAlign: 'left',
                     padding: '8px 12px',

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import * as api from '../lib/api';
 import type {
   Bridge,
@@ -15,6 +15,11 @@ import { useAuth } from '../lib/auth';
 type Tab = 'takeover' | 'persona' | 'device';
 type ChangeHandler = () => void | Promise<void>;
 
+const TABS: Tab[] = ['takeover', 'persona', 'device'];
+function parseTab(value: string | undefined): Tab {
+  return (TABS as string[]).includes(value ?? '') ? (value as Tab) : 'takeover';
+}
+
 const NAV: { id: Tab; label: string; icon: string }[] = [
   { id: 'takeover', label: '接管', icon: '◇' },
   { id: 'persona', label: '人设', icon: '✶' },
@@ -29,8 +34,9 @@ const TAB_CONTEXT: Record<Tab, { ctx: string; sub: string }> = {
 
 export function StudioPage() {
   const navigate = useNavigate();
+  const { tab: tabParam } = useParams<{ tab: string }>();
+  const tab = parseTab(tabParam);
   const { account: me, logout } = useAuth();
-  const [tab, setTab] = useState<Tab>('takeover');
   const [bridges, setBridges] = useState<Bridge[]>([]);
   const [personas, setPersonas] = useState<PersonaSummary[]>([]);
   const [inboxes, setInboxes] = useState<Inbox[]>([]);
@@ -91,7 +97,7 @@ export function StudioPage() {
               <button
                 key={item.id}
                 title={item.label}
-                onClick={() => setTab(item.id)}
+                onClick={() => navigate(`/studio/${item.id}`)}
                 style={{
                   width: 44,
                   height: 44,
@@ -313,7 +319,15 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
   const [showTaken, setShowTaken] = useState(true);
   const [showAvailable, setShowAvailable] = useState(true);
   const [items, setItems] = useState<api.ConversationListItem[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const selectedId = searchParams.get('c');
+  const setSelectedId = useCallback((id: string | null, replace = false) => {
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      if (id) next.set('c', id); else next.delete('c');
+      return next;
+    }, { replace });
+  }, [setSearchParams]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -322,11 +336,6 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
     try {
       const next = await api.getConversations();
       setItems(next);
-      setSelectedId(previous => (
-        previous && next.some(item => item.conversation.id === previous)
-          ? previous
-          : next[0]?.conversation.id ?? null
-      ));
     } catch (err) {
       setError(String(err));
     } finally {
@@ -339,6 +348,14 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
     const id = setInterval(() => reload(false), 3_000);
     return () => clearInterval(id);
   }, [reload]);
+
+  // Default selection: pick first conversation when nothing in URL,
+  // or fall back if the URL points at a conversation that no longer exists.
+  useEffect(() => {
+    if (items.length === 0) return;
+    const exists = selectedId && items.some(item => item.conversation.id === selectedId);
+    if (!exists) setSelectedId(items[0].conversation.id, true);
+  }, [items, selectedId, setSelectedId]);
 
   const selected = items.find(item => item.conversation.id === selectedId) ?? null;
   const selectedInbox = useMemo(() => {

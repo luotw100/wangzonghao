@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { BrowserRouter, Routes, Route, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { HomePage } from './pages/HomePage';
 import { StudioPage } from './pages/StudioPage.tsx';
 import ChatApp from './chat/App';
@@ -27,8 +27,11 @@ export default function App() {
         <UnauthorizedRedirect />
         <Routes>
           <Route path="/" element={<HomePage />} />
-          <Route path="/studio" element={<RequireAuth><StudioPage /></RequireAuth>} />
+          <Route path="/studio" element={<Navigate to="/studio/takeover" replace />} />
+          <Route path="/studio/:tab" element={<RequireAuth><StudioPage /></RequireAuth>} />
           <Route path="/chat" element={<RequireAuth><ChatApp /></RequireAuth>} />
+          <Route path="/chat/c/:conversationId" element={<RequireAuth><ChatApp /></RequireAuth>} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AuthProvider>
     </BrowserRouter>

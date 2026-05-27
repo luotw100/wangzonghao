@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { AccountsPage } from './pages/AccountsPage.tsx';
 import { ProvidersPage } from './pages/ProvidersPage.tsx';
 import { ConversationsPage } from './pages/ConversationsPage.tsx';
@@ -24,8 +24,6 @@ const NAV: { id: Page; label: string }[] = [
 ];
 
 export default function App() {
-  const [page, setPage] = useState<Page>('accounts');
-
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       {/* Sidebar */}
@@ -58,40 +56,46 @@ export default function App() {
         <div style={{ height: 1, background: 'var(--line-subtle)', margin: '0 0 12px' }} />
 
         {NAV.map(({ id, label }) => (
-          <button
+          <NavLink
             key={id}
-            onClick={() => setPage(id)}
-            style={{
+            to={`/${id}`}
+            style={({ isActive }) => ({
               display: 'block',
               width: '100%',
               textAlign: 'left',
               padding: '8px 20px',
-              background: page === id ? 'var(--bg-raised)' : 'transparent',
+              background: isActive ? 'var(--bg-raised)' : 'transparent',
               border: 'none',
-              borderLeft: page === id ? '2px solid var(--brass)' : '2px solid transparent',
-              color: page === id ? 'var(--ink-1)' : 'var(--ink-3)',
+              borderLeft: isActive ? '2px solid var(--brass)' : '2px solid transparent',
+              color: isActive ? 'var(--ink-1)' : 'var(--ink-3)',
               fontFamily: 'var(--f-ui)',
               fontSize: 13,
-              fontWeight: page === id ? 500 : 400,
+              fontWeight: isActive ? 500 : 400,
               cursor: 'pointer',
+              textDecoration: 'none',
               transition: 'all .12s',
-            }}
+            })}
           >
             {label}
-          </button>
+          </NavLink>
         ))}
       </nav>
 
       {/* Main content */}
       <main style={{ flex: 1, overflow: 'auto', padding: 28 }}>
-        {page === 'accounts' && <AccountsPage />}
-        {page === 'providers' && <ProvidersPage />}
-        {page === 'conversations' && <ConversationsPage />}
-        {page === 'hosted-bridges' && <HostedBridgesPage />}
-        {page === 'chats' && <ChatsPage />}
-        {page === 'llm-logs' && <LlmLogsPage />}
-        {page === 'distill-jobs' && <DistillJobsPage />}
-        {page === 'persona-timeline' && <PersonaTimelinePage />}
+        <Routes>
+          <Route path="/" element={<Navigate to="/accounts" replace />} />
+          <Route path="/accounts" element={<AccountsPage />} />
+          <Route path="/providers" element={<ProvidersPage />} />
+          <Route path="/conversations" element={<ConversationsPage />} />
+          <Route path="/hosted-bridges" element={<HostedBridgesPage />} />
+          <Route path="/chats" element={<ChatsPage />} />
+          <Route path="/chats/c/:conversationId" element={<ChatsPage />} />
+          <Route path="/llm-logs" element={<LlmLogsPage />} />
+          <Route path="/distill-jobs" element={<DistillJobsPage />} />
+          <Route path="/persona-timeline" element={<PersonaTimelinePage />} />
+          <Route path="*" element={<Navigate to="/accounts" replace />} />
+        </Routes>
       </main>
     </div>
   );

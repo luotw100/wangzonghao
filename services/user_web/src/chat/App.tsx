@@ -158,8 +158,8 @@ export default function ChatApp() {
         <section className="empty-page">
           <div>
             <EmptyArt />
-            <h1>选择一个联系人</h1>
-            <p>左侧选择联系人开始对话，或新建一个联系人。</p>
+            <h1>开始对话</h1>
+            <p>从左侧选择一个联系人，或新建一个。</p>
           </div>
         </section>
       )}

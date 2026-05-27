@@ -28,8 +28,8 @@ const NAV: { id: Tab; label: string; icon: string }[] = [
 
 const TAB_CONTEXT: Record<Tab, { ctx: string; sub: string }> = {
   takeover: { ctx: '接管', sub: '你负责的所有粉丝' },
-  persona: { ctx: '人设', sub: '你可以扮演的人设' },
-  device: { ctx: '设备', sub: '主播电脑上的接入程序' },
+  persona: { ctx: '人设', sub: '回复时使用的语气和身份' },
+  device: { ctx: '设备', sub: '自己电脑上的接入程序' },
 };
 
 export function StudioPage() {
@@ -133,7 +133,7 @@ export function StudioPage() {
             );
           })}
           <button
-            title="Chat 沙箱"
+            title="内部聊天沙箱（内测用）"
             onClick={() => navigate('/chat')}
             style={{
               width: 44,
@@ -151,7 +151,7 @@ export function StudioPage() {
               marginTop: 8,
             }}
           >
-            <span style={{ fontSize: 16 }}>☷</span>
+            <span style={{ fontSize: 16 }}>◌</span>
             <span className="mono" style={{ marginTop: 2, fontSize: 9, opacity: 0.85 }}>沙箱</span>
           </button>
         </div>
@@ -235,10 +235,9 @@ export function StudioPage() {
             <span style={{ fontSize: 14, fontWeight: 600 }}>{TAB_CONTEXT[tab].ctx}</span>
             <span className="mono text-xs text-ink-4">{TAB_CONTEXT[tab].sub}</span>
           </div>
-          <span className="chip mono">
+          <span className="chip" title="在线设备数 / 总设备数">
             <span className={`dot ${onlineBridges > 0 ? 'dot-live' : 'dot-off'}`} /> 设备 {onlineBridges}/{totalBridges}
           </span>
-          <span className="chip mono">@{me.username}</span>
         </header>
 
         {error && (
@@ -429,8 +428,8 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
   return (
     <div>
       <PageHead
-        title={`${takenItems.length} 个已接管 · ${availableItems.length} 个未接管`}
-        kicker="你负责的所有粉丝"
+        title="接管"
+        kicker={`已接管 ${takenItems.length} 个 · 未接管 ${availableItems.length} 个`}
         right={<button className="btn btn-sm btn-ghost" onClick={() => reload()}>{loading ? '刷新中…' : '刷新'}</button>}
       />
       {inboxOrder.length === 0 ? (
@@ -599,7 +598,7 @@ function InboxGroup({ inbox, bridge, conversations, selectedId, onSelect, onSetT
               </button>
               <button
                 className="btn btn-sm btn-ghost"
-                style={{ flex: '0 0 auto', color: 'var(--danger)' }}
+                style={{ flex: '0 0 auto' }}
                 title="不再由你接管这个粉丝"
                 onClick={() => {
                   if (!confirm(`取消接管「${item.conversation.display_name}」？取消后将停止自动回复。`)) return;
@@ -669,7 +668,6 @@ function ConversationDetail({ conversation, inbox, bridge, messages, personas, o
         {conversation.takeover ? (
           <button
             className="btn btn-sm btn-ghost"
-            style={{ color: 'var(--danger)' }}
             onClick={() => {
               if (!confirm(`取消接管「${conversation.display_name}」？取消后将停止自动回复。`)) return;
               onPatch(conversation.id, { takeover: false });
@@ -721,7 +719,7 @@ function ConversationDetail({ conversation, inbox, bridge, messages, personas, o
               }}
               style={{ fontSize: 11 }}
             >
-              <option value="disabled">只接管，不自动回复</option>
+              <option value="disabled">我自己回</option>
               <option value="autoreply">自动回复</option>
             </select>
           </label>
@@ -735,13 +733,16 @@ function ConversationDetail({ conversation, inbox, bridge, messages, personas, o
           </div>
         )}
 
-        <label className="ink-3" style={{ fontSize: 11 }}>关系备注 —— 简单写下你和这个人的关系，回复时会参考它</label>
+        <div style={{ display: 'grid', gap: 2 }}>
+          <label style={{ fontSize: 12, color: 'var(--ink-2)', fontWeight: 500 }}>关系备注</label>
+          <span className="ink-3" style={{ fontSize: 11 }}>简单写下你和这个人的关系，回复时会参考它。</span>
+        </div>
         <textarea
-          className="textarea mono"
+          className="textarea"
           style={{ minHeight: 90, fontSize: 12 }}
           value={draftCard}
           onChange={event => setDraftCard(event.target.value)}
-          placeholder={full ? '例如：北京大学生，喜欢户外，去年送过我一袋茶叶，叫我 alice 姐' : '加载中…'}
+          placeholder={full ? '例如：北京读书，喜欢户外，去年送过我一袋茶叶，平时叫我「姐」' : '加载中…'}
           disabled={!full}
         />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 6 }}>
@@ -762,7 +763,7 @@ function ConversationDetail({ conversation, inbox, bridge, messages, personas, o
               }
             }}
           >
-            {cardJobBusy ? '处理中…' : '✶ 自动整理关系备注'}
+            {cardJobBusy ? '处理中…' : '自动整理关系备注'}
           </button>
           <div style={{ display: 'flex', gap: 6 }}>
             {full && draftCard !== currentCard && (
@@ -845,12 +846,12 @@ function DevicesView({ bridges, inboxes, meUsername, onChanged, setError }: {
 
   return (
     <div>
-      <PageHead title="设备" kicker="Windows / mac 上的接入程序" />
+      <PageHead title="设备" kicker="Windows / macOS 上的接入程序" />
       <div style={{ padding: '0 28px 24px', display: 'grid', gap: 14 }}>
         <BridgeCommandPanel meUsername={meUsername} />
         {bridges.length === 0 ? (
           <Empty>
-            还没有设备。按上面的步骤在主播电脑上接入账号，接好后会自动出现在这里。
+            还没有设备。按上面的步骤在自己电脑上接入账号，接好后会自动出现在这里。
           </Empty>
         ) : (
           <div style={{ display: 'grid', gap: 10 }}>
@@ -1329,7 +1330,7 @@ function Drawer({ title, count, open, onToggle, children }: {
 function FormField({ label, children }: { label: string; children: ReactNode }) {
   return (
     <label style={{ display: 'block', marginBottom: 12 }}>
-      {label && <div className="mono ink-3" style={{ fontSize: 11, marginBottom: 4 }}>{label}</div>}
+      {label && <div className="ink-3" style={{ fontSize: 12, marginBottom: 4 }}>{label}</div>}
       {children}
     </label>
   );
@@ -1364,7 +1365,7 @@ function BridgeCommandPanel({ meUsername }: { meUsername: string }) {
   const steps: { title: string; desc: string }[] = [
     {
       title: '下载并打开 Laborster Bridge',
-      desc: '在主播本人的电脑上下载对应版本：Windows 双击 .exe，mac 双击 App。mac 首次打开若提示「无法验证开发者」，右键图标 → 打开 即可。数据目录已固定，无需设置。',
+      desc: '在自己的电脑上下载对应版本：Windows 双击 .exe，macOS 双击 App。macOS 首次打开若提示「无法验证开发者」，右键图标 → 打开 即可。数据目录已固定，无需设置。',
     },
     {
       title: '在「账号」标签里登录',
@@ -1385,7 +1386,7 @@ function BridgeCommandPanel({ meUsername }: { meUsername: string }) {
       <div>
         <div style={{ fontWeight: 600, fontSize: 14 }}>怎么把账号接进来</div>
         <div className="ink-3" style={{ fontSize: 12, marginTop: 4, lineHeight: 1.6 }}>
-          在主播本人的电脑上安装并打开 Laborster Bridge 桌面程序，按下面四步操作即可，全程在窗口里点选，不用敲命令。
+          在自己的电脑上安装并打开 Laborster Bridge 桌面程序，按下面四步操作即可，全程在窗口里点选，不用敲命令。
         </div>
       </div>
       <div style={{ display: 'grid', gap: 8 }}>

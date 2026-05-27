@@ -38,7 +38,7 @@ export function HomePage() {
   if (account) return <Navigate to="/studio" replace />;
 
   return (
-    <div className="lab-screen lab-tech-grid" style={{ display: 'flex', height: '100dvh' }}>
+    <div className="lab-screen" style={{ display: 'flex', height: '100dvh' }}>
       <div
         style={{
           flex: 1,
@@ -56,8 +56,7 @@ export function HomePage() {
           <span className="chip mono" style={{ marginLeft: 6 }}>Studio</span>
         </div>
 
-        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
-          <span className="eyebrow">Private Relationship Cockpit</span>
+        <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
           <h1
             className="serif"
             style={{
@@ -73,36 +72,22 @@ export function HomePage() {
             <br />
             维持<span style={{ color: 'var(--brass)' }}>一千段关系</span>。
           </h1>
-          <p style={{ margin: 0, maxWidth: 480, lineHeight: 1.7, color: 'var(--ink-3)', fontSize: 14 }}>
-            把人设、记忆、节奏托管给 Studio。设备在你电脑上跑，
-            消息留在本地，回复由你的语料蒸馏出来，不是替你说话，是替你保温。
+          <p style={{ margin: 0, maxWidth: 460, lineHeight: 1.75, color: 'var(--ink-3)', fontSize: 15 }}>
+            你不在的时候，它替你接住每一条粉丝消息，按你的语气回复。
+            <br />
+            聊天记录留在你自己的电脑上，回复方式由你决定。
           </p>
-        </div>
-
-        <div style={{ display: 'flex', gap: 24, marginTop: 38, color: 'var(--ink-4)' }}>
-          {[
-            { n: '聊天账号', s: '微信 · 飞书 等', e: '消息来源' },
-            { n: '设备', s: '主播电脑上运行', e: '在你电脑' },
-            { n: 'Studio', s: '统一管理后台', e: '在云端' },
-          ].map((block, index) => (
-            <div key={index} style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-              <span className="eyebrow text-brass">{block.e}</span>
-              <span className="serif text-lg mt-1" style={{ color: 'var(--ink-2)', fontSize: 16 }}>{block.n}</span>
-              <span className="text-xs mono mt-1">{block.s}</span>
-            </div>
-          ))}
         </div>
       </div>
 
       <div style={{ width: 460, flex: '0 0 460px', padding: '64px 56px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
-        <span className="eyebrow">登录</span>
-        <h2 className="serif mt-2" style={{ fontSize: 28, margin: '6px 0 28px', fontWeight: 400, letterSpacing: '-0.02em' }}>
+        <h2 className="serif" style={{ fontSize: 28, margin: '0 0 28px', fontWeight: 400, letterSpacing: '-0.02em' }}>
           欢迎回来
         </h2>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <span className="text-xs text-ink-3 mono">USERNAME</span>
+            <span className="text-xs text-ink-3">用户名</span>
             <input
               className="input"
               autoFocus
@@ -111,11 +96,10 @@ export function HomePage() {
               onKeyDown={event => {
                 if (event.key === 'Enter') handleLogin();
               }}
-              placeholder="alice"
             />
           </label>
           <label style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <span className="text-xs text-ink-3 mono">PASSWORD</span>
+            <span className="text-xs text-ink-3">密码</span>
             <input
               className="input"
               type="password"
@@ -124,7 +108,6 @@ export function HomePage() {
               onKeyDown={event => {
                 if (event.key === 'Enter') handleLogin();
               }}
-              placeholder="········"
             />
           </label>
           <button
@@ -133,7 +116,7 @@ export function HomePage() {
             className="btn btn-primary"
             style={{ height: 42, fontSize: 14, marginTop: 8 }}
           >
-            {busy ? '登录中…' : '进入 Studio'}
+            {busy ? '登录中…' : '登录'}
           </button>
 
           {error && (
@@ -154,9 +137,8 @@ export function HomePage() {
         </div>
 
         <div className="divider mt-6" style={{ marginTop: 24 }} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 16, fontSize: 11, color: 'var(--ink-4)' }}>
-          <div>没有账号？请联系管理员为你创建。</div>
-          <div>忘记密码请联系管理员，在「设置」里帮你重置。</div>
+        <div style={{ marginTop: 16, fontSize: 12, color: 'var(--ink-4)', lineHeight: 1.6 }}>
+          没有账号或忘记密码，请联系管理员。
         </div>
       </div>
     </div>

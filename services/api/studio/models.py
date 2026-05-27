@@ -400,6 +400,39 @@ class OutboundMessage(Base):
     created_at      = Column(DateTime(timezone=True), nullable=False)
 
 
+class HostedBridge(Base):
+    """Cloud-hosted bridge: a chat-only bridge subprocess spawned by the
+    operator (via admin panel) for dogfood. One row per account.
+
+    Lifecycle is admin-driven; bridge-host service executes the actual
+    subprocess. ``session_id`` is the hash of the AuthSession token
+    admin-api minted for the spawned process so we can revoke exactly
+    that session on stop without touching the user's web sessions.
+
+    machine_id points at a ``studio.bridges.machine_id`` row scoped to
+    the same account; soft reference (no FK) — deleting the Bridge row
+    just means the next start will mint a fresh one.
+    """
+
+    __tablename__ = "hosted_bridges"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('stopped', 'starting', 'running', 'auth_error', 'crashed')",
+            name="ck_hosted_bridge_status",
+        ),
+        {"schema": "studio"},
+    )
+
+    account_id      = Column(String(48), ForeignKey("auth.accounts.id"), primary_key=True)
+    status          = Column(String(16), nullable=False)
+    machine_id      = Column(String(256), nullable=True)
+    session_id      = Column(String(64),  nullable=True)   # hash_token(token) — the row in auth.auth_sessions
+    last_started_at = Column(DateTime(timezone=True), nullable=True)
+    last_error      = Column(Text,        nullable=False)  # "" when none
+    created_at      = Column(DateTime(timezone=True), nullable=False)
+    updated_at      = Column(DateTime(timezone=True), nullable=False)
+
+
 class LlmLog(Base):
     """Audit log of LLM round-trips. Bare string FKs (no cascade) preserve
     history even if personas/inboxes are deleted.

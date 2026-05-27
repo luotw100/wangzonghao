@@ -16,10 +16,17 @@ from __future__ import annotations
 from pathlib import Path
 
 # Single hardcoded endpoint. Chat sandbox shares the same host — its
-# API is mounted at /api/chat/*. Change this string if you need to
-# point Bridge at a non-production environment; there is no runtime
-# override on purpose.
+# API is mounted at /api/chat/*. Runtime override exists only for the
+# headless hosted-bridge path (set_studio_base_url, called from
+# __main__ when --headless --studio-url is passed); GUI/REPL never
+# call the setter so end-user binaries remain hardcoded.
 STUDIO_BASE_URL = "https://studio.laborster.com"
+
+
+def set_studio_base_url(url: str) -> None:
+    """Override the Studio endpoint. Headless mode only."""
+    global STUDIO_BASE_URL
+    STUDIO_BASE_URL = url.rstrip("/")
 
 
 _state_root: Path | None = None

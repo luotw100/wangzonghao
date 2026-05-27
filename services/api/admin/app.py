@@ -3,18 +3,35 @@
 No auth middleware here — auth is delegated to Cloudflare Access, which
 verifies the user's identity at the edge before traffic reaches this service.
 """
+import json
+import os
+import urllib.error
+import urllib.request
 from typing import Annotated
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from studio.auth_utils import hash_password
+from studio.auth_utils import hash_password, hash_token
 from studio.clients import ALLOWED_BASE_URLS
 from studio.db import get_db, utc_now
-from studio.deps import new_id, pick_first_provider
-from studio.enums import AccountStatus
-from studio.models import Account, Conversation, Inbox, Persona, ProviderConfig
+from studio.deps import create_auth_session, new_id, pick_first_provider
+from studio.enums import AccountStatus, HostedBridgeStatus
+from studio.models import (
+    Account,
+    AuthSession,
+    Bridge,
+    Conversation,
+    HostedBridge,
+    Inbox,
+    Persona,
+    ProviderConfig,
+)
+from studio.routers.bridge_protocol import ensure_bridge_row
+
+BRIDGE_HOST_URL = os.environ.get("BRIDGE_HOST_URL", "http://bridge-host:23458")
+BRIDGE_HOST_STUDIO_URL = os.environ.get("BRIDGE_HOST_STUDIO_URL", "http://user-api:23456")
 
 app = FastAPI(
     title="Laborster Admin API",
@@ -337,3 +354,238 @@ def set_conversation_provider(conv_id: str, body: SetConversationProviderIn, db:
     c.provider_id = p.id
     c.updated_at = utc_now()
     db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Hosted bridges (dogfood chat-only)
+# ---------------------------------------------------------------------------
+
+class HostedBridgeOut(BaseModel):
+    account_id: str
+    username: str
+    display_name: str
+    status: str
+    machine_id: str | None
+    last_started_at: str | None
+    last_error: str
+
+
+def _bridge_host_call(method: str, path: str, body: dict | None = None) -> dict:
+    """Talk to the in-cluster bridge-host service. Raises 502 on failure."""
+    url = f"{BRIDGE_HOST_URL.rstrip('/')}{path}"
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(
+        url,
+        data=data,
+        method=method,
+        headers={"Content-Type": "application/json"} if data else {},
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            raw = resp.read()
+            return json.loads(raw) if raw else {}
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode(errors="replace")
+        raise HTTPException(502, f"bridge-host {exc.code}: {detail}")
+    except urllib.error.URLError as exc:
+        raise HTTPException(502, f"bridge-host 不可达: {exc.reason}")
+
+
+# Heartbeat is every 15s; Studio considers a bridge offline at >45s. Same
+# threshold here so the admin panel matches "Studio thinks this bridge is
+# alive". Pure read-side derivation — DB row remains the operator's last
+# *intent*; only the displayed `status` is overwritten when reality
+# disagrees, so a Restart click still makes sense.
+_HOSTED_STALE_S = 45
+
+
+def _hosted_out(
+    account: Account,
+    row: HostedBridge | None,
+    bridge_seen_at,
+    now,
+) -> HostedBridgeOut:
+    if row is None:
+        return HostedBridgeOut(
+            account_id=account.id,
+            username=account.username,
+            display_name=account.display_name,
+            status=HostedBridgeStatus.STOPPED,
+            machine_id=None,
+            last_started_at=None,
+            last_error="",
+        )
+    display_status = row.status
+    last_error = row.last_error
+    if display_status in (HostedBridgeStatus.RUNNING, HostedBridgeStatus.STARTING):
+        stale = (
+            bridge_seen_at is None
+            or (now - bridge_seen_at).total_seconds() > _HOSTED_STALE_S
+        )
+        if stale:
+            display_status = HostedBridgeStatus.CRASHED
+            if not last_error:
+                last_error = "心跳超时（>45s 未收到 heartbeat）"
+    return HostedBridgeOut(
+        account_id=account.id,
+        username=account.username,
+        display_name=account.display_name,
+        status=display_status,
+        machine_id=row.machine_id,
+        last_started_at=row.last_started_at.isoformat() if row.last_started_at else None,
+        last_error=last_error,
+    )
+
+
+@app.get("/api/admin/hosted-bridges", response_model=list[HostedBridgeOut])
+def list_hosted_bridges(db: DbDep):
+    accounts = db.query(Account).order_by(Account.created_at.asc()).all()
+    rows = {r.account_id: r for r in db.query(HostedBridge).all()}
+    # Pull last_seen_at for every (account_id, machine_id) pair we care
+    # about in a single query — Bridge is keyed by both, so a stale
+    # machine_id from a prior incarnation can't accidentally satisfy us.
+    keys = {(r.account_id, r.machine_id) for r in rows.values() if r.machine_id}
+    seen: dict[tuple[str, str], object] = {}
+    if keys:
+        for b in db.query(Bridge.account_id, Bridge.machine_id, Bridge.last_seen_at).all():
+            if (b.account_id, b.machine_id) in keys:
+                seen[(b.account_id, b.machine_id)] = b.last_seen_at
+    now = utc_now()
+    out: list[HostedBridgeOut] = []
+    for a in accounts:
+        row = rows.get(a.id)
+        seen_at = seen.get((a.id, row.machine_id)) if row and row.machine_id else None
+        out.append(_hosted_out(a, row, seen_at, now))
+    return out
+
+
+def _get_or_create_hosted_row(db: Session, account_id: str) -> HostedBridge:
+    row = db.query(HostedBridge).filter(HostedBridge.account_id == account_id).first()
+    if row is not None:
+        return row
+    now = utc_now()
+    row = HostedBridge(
+        account_id=account_id,
+        status=HostedBridgeStatus.STOPPED,
+        machine_id=None,
+        session_id=None,
+        last_started_at=None,
+        last_error="",
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def _revoke_hosted_session(db: Session, row: HostedBridge) -> None:
+    """Delete just the hosted bridge's AuthSession — leaves any web /
+    physical bridge sessions for the same account untouched.
+    """
+    if not row.session_id:
+        return
+    db.query(AuthSession).filter(AuthSession.id == row.session_id).delete(
+        synchronize_session=False
+    )
+    row.session_id = None
+
+
+@app.post("/api/admin/hosted-bridges/{account_id}/start", response_model=HostedBridgeOut)
+def start_hosted_bridge(account_id: str, db: DbDep):
+    account = db.query(Account).filter(Account.id == account_id).first()
+    if not account:
+        raise HTTPException(404, "账号不存在")
+    if account.status != AccountStatus.ACTIVE:
+        raise HTTPException(409, "账号已禁用")
+
+    row = _get_or_create_hosted_row(db, account.id)
+    # Drop any previous session this hosted bridge held — we're about to
+    # mint a fresh one. (Don't touch the user's other sessions.)
+    _revoke_hosted_session(db, row)
+
+    bridge = ensure_bridge_row(db, account.id, row.machine_id)
+    token = create_auth_session(db, account)
+
+    now = utc_now()
+    row.status = HostedBridgeStatus.STARTING
+    row.machine_id = bridge.machine_id
+    row.session_id = hash_token(token)
+    row.last_started_at = now
+    row.last_error = ""
+    row.updated_at = now
+    db.commit()
+
+    try:
+        # Pre-flight: kill any subprocess bridge-host might still be
+        # tracking for this account so /spawn never hits a 409. Makes
+        # Start idempotent (effectively Restart when a stale process is
+        # still alive). bridge-host /stop is a no-op when nothing is
+        # tracked.
+        _bridge_host_call("POST", "/stop", {"account_id": account.id})
+        _bridge_host_call("POST", "/spawn", {
+            "account_id": account.id,
+            "token": token,
+            "machine_id": bridge.machine_id,
+            "studio_url": BRIDGE_HOST_STUDIO_URL,
+            "display_name": account.display_name,
+        })
+    except HTTPException as exc:
+        # bridge-host rejected spawn — roll status back, drop session.
+        row = db.query(HostedBridge).filter(HostedBridge.account_id == account.id).first()
+        if row:
+            _revoke_hosted_session(db, row)
+            row.status = HostedBridgeStatus.CRASHED
+            row.last_error = str(exc.detail)[:500]
+            row.updated_at = utc_now()
+            db.commit()
+        raise
+
+    row = db.query(HostedBridge).filter(HostedBridge.account_id == account.id).first()
+    row.status = HostedBridgeStatus.RUNNING
+    row.updated_at = utc_now()
+    db.commit()
+    db.refresh(row)
+    return _row_to_out(db, account, row)
+
+
+@app.post("/api/admin/hosted-bridges/{account_id}/stop", response_model=HostedBridgeOut)
+def stop_hosted_bridge(account_id: str, db: DbDep):
+    account = db.query(Account).filter(Account.id == account_id).first()
+    if not account:
+        raise HTTPException(404, "账号不存在")
+    row = db.query(HostedBridge).filter(HostedBridge.account_id == account.id).first()
+    if row is None:
+        return _hosted_out(account, None, None, utc_now())
+
+    # Best-effort: tell bridge-host to terminate the subprocess. Even if
+    # bridge-host is down or doesn't know the account, we still revoke
+    # the session and mark stopped so admin isn't stuck.
+    try:
+        _bridge_host_call("POST", "/stop", {"account_id": account.id})
+    except HTTPException as exc:
+        row.last_error = f"stop warning: {exc.detail}"[:500]
+
+    _revoke_hosted_session(db, row)
+    row.status = HostedBridgeStatus.STOPPED
+    row.updated_at = utc_now()
+    db.commit()
+    db.refresh(row)
+    return _row_to_out(db, account, row)
+
+
+def _row_to_out(db: Session, account: Account, row: HostedBridge) -> HostedBridgeOut:
+    """Single-row variant for start/stop responses: look up the live
+    Bridge.last_seen_at on the fly so the returned status reflects
+    current heartbeat health, same as the list endpoint.
+    """
+    seen_at = None
+    if row.machine_id:
+        b = (
+            db.query(Bridge.last_seen_at)
+            .filter(Bridge.account_id == account.id, Bridge.machine_id == row.machine_id)
+            .first()
+        )
+        if b:
+            seen_at = b[0]
+    return _hosted_out(account, row, seen_at, utc_now())

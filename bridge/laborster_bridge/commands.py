@@ -113,7 +113,15 @@ def _stop_daemon(ctx: Context) -> None:
     ctx.runtime = None
 
 
-def _make_runtime(ctx: Context) -> BridgeRuntime:
+def _make_runtime(ctx: Context, extra_on_auth_error=None) -> BridgeRuntime:
+    """Build a BridgeRuntime for the active account.
+
+    ``extra_on_auth_error`` runs *after* the base auth-error handling
+    (clear token + log). REPL and GUI pass None; headless mode passes a
+    callback that signals process exit (code 2). The base behavior is
+    identical across frontends so a token revoked from Studio always
+    causes a re-login prompt — only the *additional* reaction differs.
+    """
     store = ctx.store
     assert store is not None
     account_id = ctx.account_id
@@ -141,6 +149,11 @@ def _make_runtime(ctx: Context) -> BridgeRuntime:
             return
         store.kv_set("studio_token", None)
         ctx.events.log("core", "err", "Studio token 已失效并清除，请重新 /login")
+        if extra_on_auth_error is not None:
+            try:
+                extra_on_auth_error()
+            except Exception as exc:
+                ctx.events.log("core", "warn", f"extra_on_auth_error 抛错: {exc}")
 
     return BridgeRuntime(
         StudioClient(get_token, get_machine_id),
@@ -149,6 +162,70 @@ def _make_runtime(ctx: Context) -> BridgeRuntime:
         base_info,
         on_auth_error,
     )
+
+
+# --- public helpers reused by REPL / GUI / headless ----------------------
+
+def install_studio_token(
+    ctx: Context,
+    account_id: str,
+    token: str,
+    machine_id: str,
+    display_name: str,
+) -> str | None:
+    """Open the given account dir, persist Studio session credentials,
+    and reconcile the daemon. Returns the `_ensure` follow-up message
+    (or None when nothing else needs saying).
+
+    Used by:
+      - ``cmd_login`` after a successful POST /handshake response
+      - ``headless.run`` with the token admin-api minted (no password
+        exchange involved on the bridge side)
+
+    Both paths land in identical store state — the daemon can't tell
+    them apart, which is the whole point.
+    """
+    err = _open_account(ctx, account_id)
+    if err:
+        return f"打开账号失败: {err}"
+    assert ctx.store is not None
+    ctx.store.kv_set("studio_token", token)
+    ctx.store.kv_set("machine_id", machine_id)
+    ctx.store.kv_set("display_name", display_name)
+    return _ensure(ctx)
+
+
+def ensure_chat_channel(ctx: Context) -> bool:
+    """Ensure exactly one ``chat`` channel row exists in the active
+    account's store. Returns True if a row was inserted, False if one
+    already existed.
+
+    Chat-only on purpose (see invariant #15: hosted bridges only ever
+    serve the chat sandbox). The chat adapter's ``LoginFlow`` is
+    degenerate — ``begin_login()`` returns ``Done({})`` — so writing
+    the empty credential directly is byte-for-byte the same as walking
+    the flow to completion; we're not bypassing anything, just skipping
+    the prompt round-trip. Adapters with a non-degenerate flow (QR /
+    OAuth / password) must NOT route through here.
+    """
+    if ctx.store is None:
+        raise RuntimeError("ensure_chat_channel: no active account store")
+    for ch in ctx.store.channels():
+        if ch.platform == "chat":
+            return False
+    ctx.store.add_channel("chat", {})
+    return True
+
+
+def start_daemon(ctx: Context, extra_on_auth_error=None) -> None:
+    """Force-start the runtime under the current account, propagating an
+    optional extra auth-error hook. Headless wants this; REPL/GUI go
+    through ``_ensure`` which is conditional on token + channels being
+    present. Caller must have already populated both.
+    """
+    _stop_daemon(ctx)
+    ctx.runtime = _make_runtime(ctx, extra_on_auth_error)
+    ctx.runtime.start()
 
 
 def autostart(ctx: Context) -> str | None:
@@ -307,24 +384,24 @@ def cmd_login(ctx: Context, args: list[str]) -> dict:
     except HttpError as exc:
         return {"error": f"handshake 失败: {exc}"}
 
-    account_id = r["account_id"]
-    err = _open_account(ctx, account_id)
-    if err:
-        return {"error": err}
-    assert ctx.store is not None
-    ctx.store.kv_set("studio_token", r["token"])
-    ctx.store.kv_set("machine_id", r["machine_id"])
-    ctx.store.kv_set("display_name", username)
+    msg = install_studio_token(
+        ctx,
+        account_id=r["account_id"],
+        token=r["token"],
+        machine_id=r["machine_id"],
+        display_name=username,
+    )
+    if msg and msg.startswith("打开账号失败"):
+        return {"error": msg}
 
     lines = [
         "登录成功",
-        f"  account_id : {account_id}",
+        f"  account_id : {r['account_id']}",
         f"  machine_id : {r['machine_id']}",
     ]
-    msg = _ensure(ctx)
     if msg:
         lines.append(msg)
-    elif not ctx.store.channels():
+    elif ctx.store is not None and not ctx.store.channels():
         lines.append("还没有 channel — 执行 /channel add")
     return {"lines": lines}
 

@@ -98,3 +98,23 @@ export const setConversationProvider = (convId: string, providerId: string) =>
     method: 'PATCH',
     body: JSON.stringify({ provider_id: providerId }),
   });
+
+// ---------- Hosted bridges (dogfood chat-only) ----------
+
+export interface HostedBridge {
+  account_id: string;
+  username: string;
+  display_name: string;
+  status: 'stopped' | 'starting' | 'running' | 'auth_error' | 'crashed';
+  machine_id: string | null;
+  last_started_at: string | null;
+  last_error: string;
+}
+
+export const getHostedBridges = () => req<HostedBridge[]>('/hosted-bridges');
+
+export const startHostedBridge = (accountId: string) =>
+  req<HostedBridge>(`/hosted-bridges/${accountId}/start`, { method: 'POST' });
+
+export const stopHostedBridge = (accountId: string) =>
+  req<HostedBridge>(`/hosted-bridges/${accountId}/stop`, { method: 'POST' });

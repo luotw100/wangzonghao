@@ -2,13 +2,15 @@ import { useState } from 'react';
 import { AccountsPage } from './pages/AccountsPage.tsx';
 import { ProvidersPage } from './pages/ProvidersPage.tsx';
 import { ConversationsPage } from './pages/ConversationsPage.tsx';
+import { HostedBridgesPage } from './pages/HostedBridgesPage.tsx';
 
-type Page = 'accounts' | 'providers' | 'conversations';
+type Page = 'accounts' | 'providers' | 'conversations' | 'hosted-bridges';
 
 const NAV: { id: Page; label: string }[] = [
   { id: 'accounts', label: 'Accounts' },
   { id: 'providers', label: 'Providers' },
   { id: 'conversations', label: 'Conversations' },
+  { id: 'hosted-bridges', label: 'Hosted Bridges' },
 ];
 
 export default function App() {
@@ -75,6 +77,7 @@ export default function App() {
         {page === 'accounts' && <AccountsPage />}
         {page === 'providers' && <ProvidersPage />}
         {page === 'conversations' && <ConversationsPage />}
+        {page === 'hosted-bridges' && <HostedBridgesPage />}
       </main>
     </div>
   );

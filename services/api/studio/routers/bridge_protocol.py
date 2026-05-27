@@ -78,6 +78,47 @@ def _new_machine_id(db: Session, account_id: str) -> str:
     raise HTTPException(status_code=500, detail="machine_id 生成失败")
 
 
+def ensure_bridge_row(
+    db: Session, account_id: str, machine_id: Optional[str] = None
+) -> Bridge:
+    """Find or create a Bridge row for ``(account_id, machine_id)``.
+
+    - ``machine_id=None``: mint a new one and create the row.
+    - ``machine_id`` provided: must already exist or we raise (mirrors
+      handshake semantics — clients with a stale machine_id should drop
+      local state and retry).
+
+    Shared with admin-api's hosted-bridge spawn path so both physical
+    bridges and hosted bridges go through the same machine_id discipline.
+    """
+    now = utc_now()
+    if machine_id:
+        row = (
+            db.query(Bridge)
+            .filter(Bridge.account_id == account_id, Bridge.machine_id == machine_id)
+            .first()
+        )
+        if row is None:
+            raise HTTPException(status_code=400, detail="machine_id_invalid")
+        row.last_seen_at = now
+        row.updated_at = now
+        db.flush()
+        return row
+
+    mid = _new_machine_id(db, account_id)
+    row = Bridge(
+        id=new_id("br"),
+        account_id=account_id,
+        machine_id=mid,
+        last_seen_at=now,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
 # ===========================================================================
 # 1. handshake — password → token
 # ===========================================================================
@@ -103,39 +144,8 @@ def bridge_handshake(payload: BridgeHandshake, db: Annotated[Session, Depends(ge
     ):
         raise HTTPException(status_code=401, detail="Studio 账号或密码错误")
 
-    now = utc_now()
-    bridge: Optional[Bridge] = None
-    if payload.machine_id:
-        bridge = (
-            db.query(Bridge)
-            .filter(
-                Bridge.account_id == account.id,
-                Bridge.machine_id == payload.machine_id,
-            )
-            .first()
-        )
-        if bridge is None:
-            raise HTTPException(
-                status_code=400,
-                detail="machine_id_invalid",
-            )
-
-    if bridge is None:
-        machine_id = _new_machine_id(db, account.id)
-        bridge = Bridge(
-            id=new_id("br"),
-            account_id=account.id,
-            machine_id=machine_id,
-            last_seen_at=now,
-            created_at=now,
-            updated_at=now,
-        )
-        db.add(bridge)
-        db.flush()
-    else:
-        machine_id = bridge.machine_id
-        bridge.last_seen_at = now
-        bridge.updated_at = now
+    bridge = ensure_bridge_row(db, account.id, payload.machine_id)
+    machine_id = bridge.machine_id
 
     raw_token = create_auth_session(db, account)
     db.commit()

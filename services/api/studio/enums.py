@@ -53,3 +53,13 @@ class OutboundMessageType(StrEnum):
 class ReplyPolicy(StrEnum):
     DISABLED = "disabled"
     AUTOREPLY = "autoreply"
+
+
+class HostedBridgeStatus(StrEnum):
+    """Lifecycle of a cloud-hosted bridge subprocess managed by admin."""
+
+    STOPPED = "stopped"
+    STARTING = "starting"
+    RUNNING = "running"
+    AUTH_ERROR = "auth_error"   # Studio token revoked (e.g. password change)
+    CRASHED = "crashed"         # subprocess exited unexpectedly

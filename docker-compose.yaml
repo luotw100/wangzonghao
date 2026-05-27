@@ -93,15 +93,29 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  bridge-host:
+    build:
+      context: .
+      dockerfile: services/bridge_host/Dockerfile
+    environment:
+      BRIDGE_STATE_ROOT: /data
+    volumes:
+      - bridge-host-data:/data
+    restart: unless-stopped
+
   admin-api:
     build:
       context: services/api
     command: ["uv", "run", "uvicorn", "admin.app:app", "--host", "0.0.0.0", "--port", "23457"]
     environment:
       DATABASE_URL: ${DATABASE_URL}
+      BRIDGE_HOST_URL: http://bridge-host:23458
+      BRIDGE_HOST_STUDIO_URL: http://user-api:23456
     depends_on:
       migrate:
         condition: service_completed_successfully
+      bridge-host:
+        condition: service_started
     restart: unless-stopped
 
   # ---------------------------------------------------------------------
@@ -155,3 +169,4 @@ services:
 volumes:
   pgdata:
   minio-data:
+  bridge-host-data:

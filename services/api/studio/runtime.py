@@ -171,6 +171,7 @@ class StudioRuntime:
                 target_persona_id=target_persona_id,
                 provider_config_id=provider_config_id,
                 request_timeout=self.options.request_timeout,
+                distill_job_id=job_id,
                 progress_cb=progress_cb,
             )
         except Exception as exc:

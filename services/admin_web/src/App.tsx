@@ -3,14 +3,24 @@ import { AccountsPage } from './pages/AccountsPage.tsx';
 import { ProvidersPage } from './pages/ProvidersPage.tsx';
 import { ConversationsPage } from './pages/ConversationsPage.tsx';
 import { HostedBridgesPage } from './pages/HostedBridgesPage.tsx';
+import { ChatsPage } from './pages/ChatsPage.tsx';
+import { LlmLogsPage } from './pages/LlmLogsPage.tsx';
+import { DistillJobsPage } from './pages/DistillJobsPage.tsx';
+import { PersonaTimelinePage } from './pages/PersonaTimelinePage.tsx';
 
-type Page = 'accounts' | 'providers' | 'conversations' | 'hosted-bridges';
+type Page =
+  | 'accounts' | 'providers' | 'conversations' | 'hosted-bridges'
+  | 'chats' | 'llm-logs' | 'distill-jobs' | 'persona-timeline';
 
 const NAV: { id: Page; label: string }[] = [
   { id: 'accounts', label: 'Accounts' },
   { id: 'providers', label: 'Providers' },
   { id: 'conversations', label: 'Conversations' },
   { id: 'hosted-bridges', label: 'Hosted Bridges' },
+  { id: 'chats', label: 'Chats' },
+  { id: 'llm-logs', label: 'LLM Logs' },
+  { id: 'distill-jobs', label: 'Distill Jobs' },
+  { id: 'persona-timeline', label: 'Persona Timeline' },
 ];
 
 export default function App() {
@@ -78,6 +88,10 @@ export default function App() {
         {page === 'providers' && <ProvidersPage />}
         {page === 'conversations' && <ConversationsPage />}
         {page === 'hosted-bridges' && <HostedBridgesPage />}
+        {page === 'chats' && <ChatsPage />}
+        {page === 'llm-logs' && <LlmLogsPage />}
+        {page === 'distill-jobs' && <DistillJobsPage />}
+        {page === 'persona-timeline' && <PersonaTimelinePage />}
       </main>
     </div>
   );

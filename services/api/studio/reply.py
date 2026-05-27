@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import List, Optional
@@ -125,6 +126,7 @@ SYSTEM_INSTRUCTION = """\
 class _ReplyCtx:
     conversation_id: str
     conversation_display_name: str
+    persona_id: str
     persona_name: str
     persona_md: str
     card_md: str
@@ -204,6 +206,7 @@ def _decide(db: ORMSession, conversation_id: str) -> _ReplyDecision:
     ctx = _ReplyCtx(
         conversation_id=conv.id,
         conversation_display_name=conv.display_name,
+        persona_id=persona.id,
         persona_name=persona.name,
         persona_md=persona.persona_md or "",
         card_md=conv.card_md or "",
@@ -362,19 +365,34 @@ async def maybe_reply(provider: ProviderClient, conversation_id: str) -> str:
         *_build_history_turns(decision.history, ctx.display_tz),
     ]
 
+    t0 = time.monotonic()
     try:
-        response_text, _usage = await provider.complete_chat(
+        response_text, usage = await provider.complete_chat(
             ctx.base_url, ctx.api_key, ctx.model, request_messages
         )
     except Exception as exc:
+        latency_ms = int((time.monotonic() - t0) * 1000)
         logger.error("Reply LLM call failed for conversation %s: %s", conversation_id, exc)
         db = SessionLocal()
         try:
             db.add(
                 LlmLog(
                     purpose=LlmPurpose.REPLY,
-                    persona_id=None,
+                    persona_id=ctx.persona_id,
                     inbox_id=ctx.inbox_id,
+                    conversation_id=ctx.conversation_id,
+                    distill_job_id=None,
+                    outbound_message_id=None,
+                    window_index=None,
+                    windows_total=None,
+                    latency_ms=latency_ms,
+                    prompt_tokens=None,
+                    completion_tokens=None,
+                    is_error=True,
+                    persona_md_snapshot=ctx.persona_md,
+                    card_md_snapshot=ctx.card_md,
+                    persona_md_after=None,
+                    card_md_after=None,
                     request_messages=json.dumps(request_messages, ensure_ascii=False),
                     response_raw=f"ERROR: {exc}",
                     model=ctx.model,
@@ -387,34 +405,27 @@ async def maybe_reply(provider: ProviderClient, conversation_id: str) -> str:
             db.close()
         return f"llm_error: {exc}"
 
+    latency_ms = int((time.monotonic() - t0) * 1000)
+
     db = SessionLocal()
     try:
-        db.add(
-            LlmLog(
-                purpose=LlmPurpose.REPLY,
-                persona_id=None,
-                inbox_id=ctx.inbox_id,
-                request_messages=json.dumps(request_messages, ensure_ascii=False),
-                response_raw=response_text,
-                model=ctx.model,
-                created_at=utc_now(),
-            )
-        )
+        first_outbound_id: Optional[int] = None
         try:
             chunks = _parse_chunks(response_text)
+            parse_error: Optional[str] = None
         except Exception as exc:
+            chunks = []
+            parse_error = str(exc)
             logger.warning(
                 "Reply parse failed for conversation %s: %s; raw=%s",
                 conversation_id, exc,
                 response_text[:300].replace("\n", "\\n").replace("\r", "\\r"),
             )
-            _mark_round_done(db, conversation_id)
-            db.commit()
-            return f"parse_error: {exc}"
 
         if chunks:
             now_ts = utc_now()
             send_after = now_ts
+            outbound_rows: List[OutboundMessage] = []
             for i, ch in enumerate(chunks):
                 if i > 0:
                     prev_len = len(chunks[i - 1])
@@ -433,12 +444,42 @@ async def maybe_reply(provider: ProviderClient, conversation_id: str) -> str:
                     created_at=now_ts,
                 )
                 db.add(ob)
+                outbound_rows.append(ob)
+            db.flush()
+            first_outbound_id = outbound_rows[0].id
             db.execute(
                 text("SELECT pg_notify(:ch, '')").bindparams(ch=outbound_channel(ctx.inbox_id))
             )
             status = f"queued {len(chunks)} message(s)"
+        elif parse_error:
+            status = f"parse_error: {parse_error}"
         else:
             status = "model returned empty (intentional silence)"
+
+        db.add(
+            LlmLog(
+                purpose=LlmPurpose.REPLY,
+                persona_id=ctx.persona_id,
+                inbox_id=ctx.inbox_id,
+                conversation_id=ctx.conversation_id,
+                distill_job_id=None,
+                outbound_message_id=first_outbound_id,
+                window_index=None,
+                windows_total=None,
+                latency_ms=latency_ms,
+                prompt_tokens=usage.get("prompt_tokens") or None,
+                completion_tokens=usage.get("completion_tokens") or None,
+                is_error=parse_error is not None,
+                persona_md_snapshot=ctx.persona_md,
+                card_md_snapshot=ctx.card_md,
+                persona_md_after=None,
+                card_md_after=None,
+                request_messages=json.dumps(request_messages, ensure_ascii=False),
+                response_raw=response_text,
+                model=ctx.model,
+                created_at=utc_now(),
+            )
+        )
 
         _mark_round_done(db, conversation_id)
         db.commit()

@@ -118,3 +118,148 @@ export const startHostedBridge = (accountId: string) =>
 
 export const stopHostedBridge = (accountId: string) =>
   req<HostedBridge>(`/hosted-bridges/${accountId}/stop`, { method: 'POST' });
+
+// ---------- Audit: chats / llm logs / distill jobs / persona timeline ----------
+
+export interface ChatConversation {
+  id: string;
+  account_id: string;
+  account_username: string;
+  inbox_id: string;
+  inbox_display_name: string;
+  inbox_platform: string;
+  kind: string;
+  peer_display: string;
+  persona_id: string | null;
+  persona_name: string | null;
+  takeover: boolean;
+  reply_policy: string;
+  updated_at: string;
+}
+
+export interface ChatMessage {
+  id: number;
+  ts: string;
+  direction: 'self' | 'peer';
+  sender_display: string;
+  msg_type: string;
+  content: string;
+  llm_log_id: number | null;
+}
+
+export interface LlmLogSummary {
+  id: number;
+  purpose: 'reply' | 'distill';
+  created_at: string;
+  model: string | null;
+  latency_ms: number | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  is_error: boolean | null;
+  account_username: string | null;
+  inbox_display_name: string | null;
+  persona_name: string | null;
+  conversation_peer_display: string | null;
+  conversation_id: string | null;
+  distill_job_id: string | null;
+  window_index: number | null;
+  windows_total: number | null;
+}
+
+export interface LlmLogDetail extends LlmLogSummary {
+  request_messages: Array<{ role: string; content: string }>;
+  response_raw: string;
+  persona_md_snapshot: string | null;
+  card_md_snapshot: string | null;
+  persona_md_after: string | null;
+  card_md_after: string | null;
+  outbound_message_id: number | null;
+}
+
+export interface DistillJobSummary {
+  id: string;
+  account_id: string;
+  account_username: string;
+  persona_id: string | null;
+  persona_name: string | null;
+  provider_name: string;
+  status: string;
+  conversation_count: number;
+  progress: Record<string, number>;
+  error_message: string;
+  created_at: string;
+}
+
+export interface DistillFoldRow {
+  log_id: number;
+  conversation_id: string;
+  conversation_peer_display: string;
+  window_index: number | null;
+  windows_total: number | null;
+  latency_ms: number | null;
+  is_error: boolean | null;
+  persona_changed: boolean;
+  card_changed: boolean;
+  created_at: string;
+}
+
+export interface DistillJobDetail extends DistillJobSummary {
+  folds: DistillFoldRow[];
+}
+
+export interface PersonaListItem {
+  id: string;
+  name: string;
+  account_id: string;
+  account_username: string;
+}
+
+export interface PersonaTimelineEntry {
+  log_id: number;
+  distill_job_id: string | null;
+  conversation_id: string | null;
+  conversation_peer_display: string | null;
+  window_index: number | null;
+  windows_total: number | null;
+  persona_md_before: string | null;
+  persona_md_after: string | null;
+  created_at: string;
+}
+
+export const getChats = (accountId?: string) => {
+  const qs = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
+  return req<ChatConversation[]>(`/chats${qs}`);
+};
+
+export const getChatMessages = (convId: string, opts: { limit?: number; before_id?: number } = {}) => {
+  const params = new URLSearchParams();
+  if (opts.limit) params.set('limit', String(opts.limit));
+  if (opts.before_id) params.set('before_id', String(opts.before_id));
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return req<ChatMessage[]>(`/chats/${convId}/messages${qs}`);
+};
+
+export const getLlmLogs = (filters: {
+  account_id?: string; persona_id?: string; conversation_id?: string; distill_job_id?: string;
+  purpose?: string; is_error?: boolean; limit?: number; before_id?: number;
+} = {}) => {
+  const params = new URLSearchParams();
+  for (const [k, v] of Object.entries(filters)) {
+    if (v !== undefined && v !== null && v !== '') params.set(k, String(v));
+  }
+  const qs = params.toString() ? `?${params.toString()}` : '';
+  return req<LlmLogSummary[]>(`/llm-logs${qs}`);
+};
+
+export const getLlmLog = (id: number) => req<LlmLogDetail>(`/llm-logs/${id}`);
+
+export const getDistillJobs = (accountId?: string) => {
+  const qs = accountId ? `?account_id=${encodeURIComponent(accountId)}` : '';
+  return req<DistillJobSummary[]>(`/distill-jobs${qs}`);
+};
+
+export const getDistillJob = (id: string) => req<DistillJobDetail>(`/distill-jobs/${id}`);
+
+export const getPersonas = () => req<PersonaListItem[]>('/personas');
+export const getPersonaTimeline = (id: string) =>
+  req<PersonaTimelineEntry[]>(`/personas/${id}/timeline`);

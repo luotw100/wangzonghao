@@ -20,6 +20,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
@@ -181,6 +182,18 @@ def _log_llm_call(
     *,
     persona_id: Optional[str],
     inbox_id: str,
+    conversation_id: str,
+    distill_job_id: Optional[str],
+    window_index: int,
+    windows_total: int,
+    latency_ms: int,
+    prompt_tokens: Optional[int],
+    completion_tokens: Optional[int],
+    is_error: bool,
+    persona_md_snapshot: str,
+    card_md_snapshot: str,
+    persona_md_after: Optional[str],
+    card_md_after: Optional[str],
     request_messages: List[Dict[str, str]],
     response_raw: str,
     model: str,
@@ -190,6 +203,19 @@ def _log_llm_call(
             purpose=LlmPurpose.DISTILL,
             persona_id=persona_id,
             inbox_id=inbox_id,
+            conversation_id=conversation_id,
+            distill_job_id=distill_job_id,
+            outbound_message_id=None,
+            window_index=window_index,
+            windows_total=windows_total,
+            latency_ms=latency_ms,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            is_error=is_error,
+            persona_md_snapshot=persona_md_snapshot,
+            card_md_snapshot=card_md_snapshot,
+            persona_md_after=persona_md_after,
+            card_md_after=card_md_after,
             request_messages=json.dumps(request_messages, ensure_ascii=False),
             response_raw=response_raw,
             model=model,
@@ -204,6 +230,7 @@ async def _fold_conversation(
     client: ProviderClient,
     ctx: _DistillCtx,
     conversation_id: str,
+    distill_job_id: Optional[str],
     progress_state: Dict[str, int],
     progress_cb: Optional[ProgressCb],
 ) -> None:
@@ -265,11 +292,13 @@ async def _fold_conversation(
             {"role": "user", "content": user_msg},
         ]
 
+        t0 = time.monotonic()
         try:
-            response_text, _usage = await client.complete_chat(
+            response_text, usage = await client.complete_chat(
                 ctx.base_url, ctx.api_key, ctx.model, request_messages
             )
         except Exception as exc:
+            latency_ms = int((time.monotonic() - t0) * 1000)
             logger.error(
                 "Fold LLM call failed for conversation %s window %d: %s",
                 conversation_id, window.window_id, exc,
@@ -277,7 +306,16 @@ async def _fold_conversation(
             db = SessionLocal()
             try:
                 _log_llm_call(
-                    db, persona_id=ctx.persona_id, inbox_id=inbox_id,
+                    db,
+                    persona_id=ctx.persona_id, inbox_id=inbox_id,
+                    conversation_id=conversation_id,
+                    distill_job_id=distill_job_id,
+                    window_index=window.window_id, windows_total=len(windows),
+                    latency_ms=latency_ms,
+                    prompt_tokens=None, completion_tokens=None,
+                    is_error=True,
+                    persona_md_snapshot=persona_md, card_md_snapshot=card_md,
+                    persona_md_after=None, card_md_after=None,
                     request_messages=request_messages,
                     response_raw=f"ERROR: {exc}", model=ctx.model,
                 )
@@ -285,23 +323,35 @@ async def _fold_conversation(
                 db.close()
             raise
 
-        db = SessionLocal()
-        try:
-            _log_llm_call(
-                db, persona_id=ctx.persona_id, inbox_id=inbox_id,
-                request_messages=request_messages,
-                response_raw=response_text, model=ctx.model,
-            )
-        finally:
-            db.close()
-
+        latency_ms = int((time.monotonic() - t0) * 1000)
         new_persona, new_card = _parse_fold_output(response_text)
         if new_persona is None and new_card is None:
             logger.warning(
                 "Fold output 无法解析，保留原状（conversation=%s window=%d）",
                 conversation_id, window.window_id,
             )
-        else:
+
+        db = SessionLocal()
+        try:
+            _log_llm_call(
+                db,
+                persona_id=ctx.persona_id, inbox_id=inbox_id,
+                conversation_id=conversation_id,
+                distill_job_id=distill_job_id,
+                window_index=window.window_id, windows_total=len(windows),
+                latency_ms=latency_ms,
+                prompt_tokens=usage.get("prompt_tokens") or None,
+                completion_tokens=usage.get("completion_tokens") or None,
+                is_error=(new_persona is None and new_card is None),
+                persona_md_snapshot=persona_md, card_md_snapshot=card_md,
+                persona_md_after=new_persona, card_md_after=new_card,
+                request_messages=request_messages,
+                response_raw=response_text, model=ctx.model,
+            )
+        finally:
+            db.close()
+
+        if new_persona is not None or new_card is not None:
             db = SessionLocal()
             try:
                 conv_row = db.query(Conversation).filter(Conversation.id == conversation_id).first()
@@ -328,6 +378,7 @@ async def run_distill(
     target_persona_id: Optional[str],
     provider_config_id: str,
     request_timeout: float,
+    distill_job_id: Optional[str] = None,
     progress_cb: Optional[ProgressCb] = None,
 ) -> None:
     """蒸馏任务入口，由 DistillScanner 的 asyncio Task 调用。
@@ -387,6 +438,7 @@ async def run_distill(
         for cid in runnable_ids:
             await _fold_conversation(
                 client=client, ctx=ctx, conversation_id=cid,
+                distill_job_id=distill_job_id,
                 progress_state=progress_state, progress_cb=progress_cb,
             )
             progress_state["conversations_done"] += 1
@@ -403,6 +455,7 @@ def main() -> None:
     parser.add_argument("--target-persona-id", default=None)
     parser.add_argument("--provider-config-id", required=True)
     parser.add_argument("--request-timeout", type=float, required=True)
+    parser.add_argument("--distill-job-id", default=None)
     args = parser.parse_args()
 
     def progress_cb(state: Dict[str, int]) -> None:
@@ -414,6 +467,7 @@ def main() -> None:
             target_persona_id=args.target_persona_id,
             provider_config_id=args.provider_config_id,
             request_timeout=args.request_timeout,
+            distill_job_id=args.distill_job_id,
             progress_cb=progress_cb,
         )
     )

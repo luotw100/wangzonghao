@@ -8,7 +8,6 @@ import {
   qk,
   useBridges,
   useConversation,
-  useConversationMessages,
   useConversations,
   useInboxes,
   usePersonas,
@@ -40,7 +39,6 @@ export function TakeoverView({ notify }: { notify: Notify }) {
   const bridges = useBridges().data ?? [];
   const personas = usePersonas().data ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const messages = useConversationMessages(selectedId).data ?? [];
 
   useEffect(() => {
     if (items.length === 0) return;
@@ -62,7 +60,6 @@ export function TakeoverView({ notify }: { notify: Notify }) {
       await studio.updateConversation(id, p);
       invalidateConversations(qc);
       qc.invalidateQueries({ queryKey: qk.conversation(id) });
-      qc.invalidateQueries({ queryKey: qk.messages(id) });
     } catch (e) {
       notify(String(e), "err");
     }
@@ -120,7 +117,7 @@ export function TakeoverView({ notify }: { notify: Notify }) {
             </ConvGroup>
           </div>
 
-          <Card className="min-h-[420px]">
+          <Card className="h-fit">
             {!selected || !selectedInbox ? (
               <Empty>从左侧选择一个会话。</Empty>
             ) : (
@@ -128,7 +125,6 @@ export function TakeoverView({ notify }: { notify: Notify }) {
                 conversation={selected.conversation}
                 inbox={selectedInbox}
                 bridge={selectedBridge}
-                messages={messages}
                 personas={personas}
                 onPatch={patch}
                 notify={notify}
@@ -205,7 +201,6 @@ function ConversationDetail({
   conversation,
   inbox,
   bridge,
-  messages,
   personas,
   onPatch,
   notify,
@@ -213,7 +208,6 @@ function ConversationDetail({
   conversation: studio.ConversationSummary;
   inbox: studio.Inbox;
   bridge: studio.Bridge | null;
-  messages: studio.Message[];
   personas: studio.PersonaSummary[];
   onPatch: (id: string, p: Parameters<typeof studio.updateConversation>[1]) => Promise<void>;
   notify: Notify;
@@ -316,7 +310,7 @@ function ConversationDetail({
             <div className="text-[11px] text-[var(--color-ink-3)]">简单写下你和这个人的关系，回复时会参考。</div>
           </div>
           <textarea
-            className={`${INPUT_CLS} min-h-[90px] font-mono text-[12px]`}
+            className={`${INPUT_CLS} min-h-[140px] font-mono text-[12px]`}
             value={draftCard}
             onChange={(e) => setDraftCard(e.target.value)}
             placeholder={full ? "例如：去年送过我一袋茶叶，平时叫我「姐」" : "加载中…"}
@@ -358,28 +352,6 @@ function ConversationDetail({
         </div>
       )}
 
-      {messages.length === 0 ? (
-        <Empty>暂无消息。</Empty>
-      ) : (
-        <div className="flex max-h-[52vh] flex-col gap-2 overflow-auto pr-1">
-          {messages.map((m) => (
-            <div key={m.id} className={`flex ${m.from_self ? "justify-end" : "justify-start"}`}>
-              <div className="max-w-[76%]">
-                <div className={`mb-1 text-[10px] text-[var(--color-ink-4)] ${m.from_self ? "text-right" : ""}`}>
-                  {m.from_self ? "我" : conversation.display_name} · {studio.formatDateTime(m.timestamp)}
-                </div>
-                <div
-                  className={`whitespace-pre-wrap break-words rounded-xl border border-[var(--color-line-soft)] px-3 py-2 text-[13px] leading-relaxed ${
-                    m.from_self ? "bg-[var(--color-brass)]/10" : "bg-[var(--color-bg-raised)]"
-                  } text-[var(--color-ink-1)]`}
-                >
-                  {m.content}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

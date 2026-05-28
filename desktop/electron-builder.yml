@@ -13,26 +13,23 @@ extraResources:
       - "laborster-sidecar"
       - "laborster-sidecar.exe"
 asar: true
+# Double-click to run, no installer (like the bridge app): mac ships a
+# zipped .app, win ships a single portable .exe.
 mac:
   category: public.app-category.business
   target:
-    - target: dmg
-      arch: [arm64]
     - target: zip
       arch: [arm64]
   hardenedRuntime: false
   gatekeeperAssess: false
 win:
   target:
-    - target: nsis
+    - target: portable
       arch: [x64]
-    - target: zip
-      arch: [x64]
-nsis:
-  oneClick: false
-  perMachine: false
-  allowToChangeInstallationDirectory: true
-linux:
-  target:
-    - AppImage
-  category: Office
+portable:
+  artifactName: ${productName}-${version}-win-x64.exe
+publish:
+  provider: github
+  owner: luotw100
+  repo: wangzonghao
+  releaseType: draft

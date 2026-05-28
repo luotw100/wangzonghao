@@ -2,7 +2,6 @@
   "name": "laborster-desktop",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
   "main": "dist/electron/main.js",
   "scripts": {
     "dev": "npm run build:electron && concurrently -k -n RENDERER,ELECTRON -c blue,magenta \"vite\" \"npm run dev:app\"",

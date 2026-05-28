@@ -14,7 +14,22 @@ permissions:
   contents: write
 
 jobs:
+  # Create the draft release once, up front, so the two build jobs can run
+  # in parallel and just upload assets into it (no race to create it).
+  prepare-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure draft release exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="v$(node -p "require('./package.json').version")"
+          gh release view "$TAG" >/dev/null 2>&1 \
+            || gh release create "$TAG" --draft --title "$TAG" --notes "Automated draft build."
+
   mac-arm64:
+    needs: prepare-release
     runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
@@ -35,9 +50,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   windows-x64:
-    # Serialized after mac so both jobs append to the same draft release
-    # instead of racing to create it.
-    needs: mac-arm64
+    needs: prepare-release
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4

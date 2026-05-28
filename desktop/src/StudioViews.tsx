@@ -1,5 +1,18 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import * as studio from "./studio";
+import {
+  invalidateBridges,
+  invalidateConversations,
+  invalidatePersonas,
+  qk,
+  useBridges,
+  useConversation,
+  useConversationMessages,
+  useConversations,
+  useInboxes,
+  usePersonas,
+} from "./queries";
 import {
   Card,
   DANGER_BTN,
@@ -21,35 +34,13 @@ type Notify = (text: string, kind?: "ok" | "err") => void;
 // =====================================================================
 
 export function TakeoverView({ notify }: { notify: Notify }) {
-  const [items, setItems] = useState<studio.ConversationListItem[]>([]);
-  const [inboxes, setInboxes] = useState<studio.Inbox[]>([]);
-  const [bridges, setBridges] = useState<studio.Bridge[]>([]);
-  const [personas, setPersonas] = useState<studio.PersonaSummary[]>([]);
+  const qc = useQueryClient();
+  const items = useConversations().data ?? [];
+  const inboxes = useInboxes().data ?? [];
+  const bridges = useBridges().data ?? [];
+  const personas = usePersonas().data ?? [];
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [messages, setMessages] = useState<studio.Message[]>([]);
-
-  const reload = useCallback(async () => {
-    try {
-      const [convs, ibs, brs, ps] = await Promise.all([
-        studio.getConversations(),
-        studio.getInboxes(),
-        studio.getBridges(),
-        studio.getPersonas(),
-      ]);
-      setItems(convs);
-      setInboxes(ibs);
-      setBridges(brs);
-      setPersonas(ps);
-    } catch (e) {
-      notify(String(e), "err");
-    }
-  }, [notify]);
-
-  useEffect(() => {
-    reload();
-    const t = setInterval(reload, 3000);
-    return () => clearInterval(t);
-  }, [reload]);
+  const messages = useConversationMessages(selectedId).data ?? [];
 
   useEffect(() => {
     if (items.length === 0) return;
@@ -66,37 +57,19 @@ export function TakeoverView({ notify }: { notify: Notify }) {
     ? bridges.find((b) => b.id === selectedInbox.bridge_id) ?? null
     : null;
 
-  const reloadMessages = useCallback(async () => {
-    if (!selectedId) {
-      setMessages([]);
-      return;
-    }
-    try {
-      setMessages(await studio.getConversationMessages(selectedId));
-    } catch (e) {
-      notify(String(e), "err");
-    }
-  }, [selectedId, notify]);
-
-  useEffect(() => {
-    reloadMessages();
-    const t = setInterval(reloadMessages, 3000);
-    return () => clearInterval(t);
-  }, [reloadMessages]);
-
-  const taken = items.filter((i) => i.conversation.takeover);
-  const available = items.filter((i) => !i.conversation.takeover);
-
   const patch = async (id: string, p: Parameters<typeof studio.updateConversation>[1]) => {
     try {
       await studio.updateConversation(id, p);
-      await reload();
-      await reloadMessages();
+      invalidateConversations(qc);
+      qc.invalidateQueries({ queryKey: qk.conversation(id) });
+      qc.invalidateQueries({ queryKey: qk.messages(id) });
     } catch (e) {
       notify(String(e), "err");
     }
   };
 
+  const taken = items.filter((i) => i.conversation.takeover);
+  const available = items.filter((i) => !i.conversation.takeover);
   const inboxName = (id: string) => inboxes.find((i) => i.id === id)?.display_name ?? "未知账号";
 
   return (
@@ -138,10 +111,7 @@ export function TakeoverView({ notify }: { notify: Notify }) {
                         onSelect={() => setSelectedId(it.conversation.id)}
                       />
                     </div>
-                    <button
-                      className={PRIMARY_BTN}
-                      onClick={() => patch(it.conversation.id, { takeover: true })}
-                    >
+                    <button className={PRIMARY_BTN} onClick={() => patch(it.conversation.id, { takeover: true })}>
                       接管
                     </button>
                   </div>
@@ -248,27 +218,16 @@ function ConversationDetail({
   onPatch: (id: string, p: Parameters<typeof studio.updateConversation>[1]) => Promise<void>;
   notify: Notify;
 }) {
-  const [full, setFull] = useState<studio.Conversation | null>(null);
+  // card_md is per-selection detail with an edit draft, so it stays a plain
+  // fetch (refetched whenever the selection changes), not a polled query.
+  const { data: full } = useConversation(conversation.id);
   const [draftCard, setDraftCard] = useState("");
   const [savingCard, setSavingCard] = useState(false);
   const [cardJobBusy, setCardJobBusy] = useState(false);
 
   useEffect(() => {
-    let alive = true;
-    setFull(null);
-    setDraftCard("");
-    studio
-      .getConversation(conversation.id)
-      .then((c) => {
-        if (!alive) return;
-        setFull(c);
-        setDraftCard(c.card_md ?? "");
-      })
-      .catch(() => {});
-    return () => {
-      alive = false;
-    };
-  }, [conversation.id, conversation.updated_at]);
+    setDraftCard(full?.card_md ?? "");
+  }, [conversation.id, full]);
 
   const currentCard = full?.card_md ?? "";
   const online = Boolean(bridge && bridge.status === "online");
@@ -388,7 +347,6 @@ function ConversationDetail({
                 setSavingCard(true);
                 try {
                   await onPatch(conversation.id, { card_md: draftCard });
-                  setFull((p) => (p ? { ...p, card_md: draftCard } : p));
                 } finally {
                   setSavingCard(false);
                 }
@@ -431,22 +389,12 @@ function ConversationDetail({
 // =====================================================================
 
 export function PersonasView({ notify }: { notify: Notify }) {
-  const [personas, setPersonas] = useState<studio.PersonaSummary[]>([]);
+  const qc = useQueryClient();
+  const personas = usePersonas().data ?? [];
   const [showCreate, setShowCreate] = useState(false);
   const [showAuto, setShowAuto] = useState(false);
   const [editing, setEditing] = useState<studio.PersonaSummary | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      setPersonas(await studio.getPersonas());
-    } catch (e) {
-      notify(String(e), "err");
-    }
-  }, [notify]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  const done = () => invalidatePersonas(qc);
 
   return (
     <>
@@ -487,7 +435,7 @@ export function PersonasView({ notify }: { notify: Notify }) {
                     if (!confirm("删除这个人设？如果还有会话在用，会删除失败。")) return;
                     try {
                       await studio.deletePersona(p.id);
-                      await load();
+                      done();
                     } catch (e) {
                       notify(String(e), "err");
                     }
@@ -508,9 +456,9 @@ export function PersonasView({ notify }: { notify: Notify }) {
             setShowCreate(false);
             setShowAuto(true);
           }}
-          onCreated={async () => {
+          onCreated={() => {
             setShowCreate(false);
-            await load();
+            done();
           }}
           notify={notify}
         />
@@ -518,9 +466,9 @@ export function PersonasView({ notify }: { notify: Notify }) {
       {showAuto && (
         <AutoCreatePersonaModal
           onClose={() => setShowAuto(false)}
-          onSubmitted={async () => {
+          onSubmitted={() => {
             setShowAuto(false);
-            await load();
+            done();
             notify("已开始后台生成人设。", "ok");
           }}
           notify={notify}
@@ -530,9 +478,9 @@ export function PersonasView({ notify }: { notify: Notify }) {
         <EditPersonaModal
           persona={editing}
           onClose={() => setEditing(null)}
-          onSaved={async () => {
+          onSaved={() => {
             setEditing(null);
-            await load();
+            done();
           }}
           notify={notify}
         />
@@ -763,24 +711,9 @@ export function DevicesView({
   localSlot: ReactNode;
   notify: Notify;
 }) {
-  const [bridges, setBridges] = useState<studio.Bridge[]>([]);
-  const [inboxes, setInboxes] = useState<studio.Inbox[]>([]);
-
-  const load = useCallback(async () => {
-    try {
-      const [brs, ibs] = await Promise.all([studio.getBridges(), studio.getInboxes()]);
-      setBridges(brs);
-      setInboxes(ibs);
-    } catch (e) {
-      notify(String(e), "err");
-    }
-  }, [notify]);
-
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 10000);
-    return () => clearInterval(t);
-  }, [load]);
+  const qc = useQueryClient();
+  const bridges = useBridges().data ?? [];
+  const inboxes = useInboxes().data ?? [];
 
   const inboxesOf = (bridgeId: string) => inboxes.filter((i) => i.bridge_id === bridgeId);
   const others = bridges.filter((b) => b.machine_id !== localMachineId);
@@ -815,7 +748,7 @@ export function DevicesView({
                       if (!confirm(`移除设备「${b.machine_id}」？这台机器上的渠道会停止收发，需要重新接入。`)) return;
                       try {
                         await studio.deleteBridge(b.id);
-                        await load();
+                        invalidateBridges(qc);
                       } catch (e) {
                         notify(String(e), "err");
                       }

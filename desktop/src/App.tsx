@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { api, post, bridgeReady } from "./bridge";
 import {
   Card,
@@ -14,46 +15,22 @@ import {
 } from "./ui";
 import { ChangePasswordModal, DevicesView, PersonasView, TakeoverView } from "./StudioViews";
 import { ChatSandbox } from "./ChatSandbox";
+import {
+  invalidateLocal,
+  useLocalAccount,
+  useLocalAccounts,
+  useLocalChannels,
+  useLocalPlatforms,
+  useLocalStatus,
+  type Account,
+  type AccountListItem,
+  type Channel,
+  type Platform,
+  type Status,
+} from "./queries";
 
-// ---- types (/local surface) -----------------------------------------
+// ---- local-only types ------------------------------------------------
 
-type Status = {
-  running: boolean;
-  status: string;
-  in_count_5m: number;
-  outbound_pending: number;
-  last_error: string | null;
-  studio_url?: string;
-};
-
-type Account = {
-  logged_in: boolean;
-  account_id: string | null;
-  display_name: string | null;
-  machine_id: string | null;
-  studio_url?: string;
-};
-
-type AccountListItem = {
-  account_id: string;
-  display_name: string | null;
-  active: boolean;
-  channel_count: number;
-  has_token: boolean;
-};
-
-type Channel = {
-  channel_id: number;
-  platform: string;
-  platform_label: string;
-  self_id: string | null;
-  state: string;
-  online: boolean;
-  conv_count: number;
-  last_error: string | null;
-};
-
-type Platform = { id: string; label: string };
 type LogLine = { t: string; src: string; level: string; msg: string };
 type Result = { lines?: string[]; error?: string };
 
@@ -70,38 +47,19 @@ type Section = "takeover" | "personas" | "devices" | "sandbox" | "logs" | "setti
 
 export function App() {
   const [section, setSection] = useState<Section>("takeover");
-  const [account, setAccount] = useState<Account | null>(null);
-  const [accounts, setAccounts] = useState<AccountListItem[]>([]);
-  const [status, setStatus] = useState<Status | null>(null);
-  const [channels, setChannels] = useState<Channel[]>([]);
-  const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [flow, setFlow] = useState<{ platform: string | null; channelId: number | null } | null>(null);
   const { toast, notify } = useToast();
+  const qc = useQueryClient();
 
-  const refresh = useCallback(async () => {
-    try {
-      const [acc, accs, st, chs] = await Promise.all([
-        api<Account>("/local/account"),
-        api<AccountListItem[]>("/local/accounts"),
-        api<Status>("/local/status"),
-        api<Channel[]>("/local/channels"),
-      ]);
-      setAccount(acc);
-      setAccounts(accs);
-      setStatus(st);
-      setChannels(chs);
-    } catch {
-      /* transient */
-    }
-  }, []);
+  const account = useLocalAccount().data ?? null;
+  const accounts = useLocalAccounts().data ?? [];
+  const status = useLocalStatus().data ?? null;
+  const channels = useLocalChannels().data ?? [];
+  const platforms = useLocalPlatforms().data ?? [];
 
-  useEffect(() => {
-    if (!bridgeReady) return;
-    api<Platform[]>("/local/platforms").then(setPlatforms).catch(() => {});
-    refresh();
-    const t = setInterval(refresh, 3000);
-    return () => clearInterval(t);
-  }, [refresh]);
+  const refresh = useCallback(() => {
+    invalidateLocal(qc);
+  }, [qc]);
 
   if (!bridgeReady) {
     return (

@@ -6,20 +6,24 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import * as chat from "./chat";
-import { authMe } from "./studio";
+import { qk, useChatAccount, useChatConversations } from "./queries";
 import { GHOST_BTN, INPUT_CLS, ModalShell, PRIMARY_BTN, SM_GHOST_BTN } from "./ui";
 
 const INITIAL_LIMIT = 50;
 type Notify = (text: string, kind?: "ok" | "err") => void;
 type Perspective = "self" | "contact";
 
-// Global in-memory cache (NOT disk): switching conversations seeds instantly
-// from here and the long-poll resumes from the cached lastId instead of
-// refetching the whole window. Lives at module scope so it survives the
-// ChatThread unmount/remount that a tab switch causes.
+// Global in-memory caches (NOT disk), at module scope so they survive the
+// ChatSandbox unmount/remount caused by leaving and returning to the tab.
+// Switching conversations seeds messages instantly and the long-poll resumes
+// from the cached lastId instead of refetching the whole window; previews and
+// the primed set persist so the sidebar doesn't reload from blank on return.
 const msgCache = new Map<string, chat.Message[]>();
 const lastIdCache = new Map<string, number>();
+const previewCache = new Map<string, chat.Message | undefined>();
+const primedSet = new Set<string>();
 
 function maxId(items: chat.Message[]): number {
   return items.reduce((m, x) => (x.id > m ? x.id : m), 0);
@@ -114,43 +118,27 @@ function useChatMessages(conversationId: string, onLatest: (convId: string, m: c
 }
 
 export function ChatSandbox({ notify }: { notify: Notify }) {
-  const [account, setAccount] = useState<chat.Account | null>(null);
-  const [conversations, setConversations] = useState<chat.Conversation[]>([]);
+  const qc = useQueryClient();
+  const account = useChatAccount().data ?? null;
+  const conversations = useChatConversations().data ?? [];
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
-  const [previews, setPreviews] = useState<Record<string, chat.Message | undefined>>({});
-  const primed = useRef<Set<string>>(new Set());
+  // Seed from the module cache so a return-to-tab paints previews instantly.
+  const [previews, setPreviews] = useState<Record<string, chat.Message | undefined>>(() =>
+    Object.fromEntries(previewCache),
+  );
 
   const setPreview = useCallback((convId: string, m: chat.Message | undefined) => {
+    previewCache.set(convId, m);
     setPreviews((prev) => (prev[convId] === m ? prev : { ...prev, [convId]: m }));
   }, []);
-
-  useEffect(() => {
-    authMe()
-      .then((a) => setAccount({ id: a.id, username: a.username, nickname: a.display_name || a.username }))
-      .catch((e) => notify(String(e), "err"));
-  }, [notify]);
-
-  const reload = useCallback(async () => {
-    try {
-      setConversations(await chat.listConversations());
-    } catch (e) {
-      notify(String(e), "err");
-    }
-  }, [notify]);
-
-  useEffect(() => {
-    reload();
-    const t = setInterval(reload, 5000);
-    return () => clearInterval(t);
-  }, [reload]);
 
   // Prime each conversation's last-message preview exactly once (cheap 1-row
   // fetch), so the sidebar shows previews without visiting every tab.
   useEffect(() => {
     for (const c of conversations) {
-      if (primed.current.has(c.id)) continue;
-      primed.current.add(c.id);
+      if (primedSet.has(c.id)) continue;
+      primedSet.add(c.id);
       const cached = msgCache.get(c.id);
       if (cached && cached.length) {
         setPreview(c.id, cached[cached.length - 1]);
@@ -232,7 +220,7 @@ export function ChatSandbox({ notify }: { notify: Notify }) {
           onCreated={async (contactId) => {
             setShowNew(false);
             const convs = await chat.listConversations();
-            setConversations(convs);
+            qc.setQueryData(qk.chatConversations, convs);
             const conv = convs.find((c) => c.contact_id === contactId);
             if (conv) setActiveId(conv.id);
           }}

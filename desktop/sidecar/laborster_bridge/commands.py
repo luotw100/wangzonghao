@@ -92,13 +92,15 @@ def _open_account(ctx: Context, account_id: str) -> str | None:
 def _ensure(ctx: Context) -> str | None:
     """Reconcile the daemon with the active account's state.
 
-    The daemon runs whenever the active account has a Studio token AND
-    at least one channel. Called on launch and after every mutation.
+    The daemon runs whenever the active account has a Studio token —
+    it reconciles continuously (heartbeat + actors) from login on, and
+    picks up channels as they appear. Called on launch and after every
+    mutation.
     """
     if ctx.store is None:
         _stop_daemon(ctx)
         return None
-    ready = bool(ctx.store.kv_get("studio_token") and ctx.store.channels())
+    ready = bool(ctx.store.kv_get("studio_token"))
     _stop_daemon(ctx)
     if not ready:
         return None

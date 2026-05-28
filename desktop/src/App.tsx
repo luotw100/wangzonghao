@@ -1,14 +1,20 @@
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, post, bridgeReady } from "./bridge";
+import {
+  Card,
+  DANGER_BTN,
+  Empty,
+  GHOST_BTN,
+  INPUT_CLS,
+  PRIMARY_BTN,
+  SM_GHOST_BTN,
+  SectionHeader,
+  ToastView,
+  useToast,
+} from "./ui";
+import { ChangePasswordModal, DevicesView, PersonasView, TakeoverView } from "./StudioViews";
 
-// ---- types -----------------------------------------------------------
+// ---- types (/local surface) -----------------------------------------
 
 type Status = {
   running: boolean;
@@ -25,7 +31,6 @@ type Account = {
   display_name: string | null;
   machine_id: string | null;
   studio_url?: string;
-  has_channels?: boolean;
 };
 
 type AccountListItem = {
@@ -48,70 +53,29 @@ type Channel = {
 };
 
 type Platform = { id: string; label: string };
-
 type LogLine = { t: string; src: string; level: string; msg: string };
-
 type Result = { lines?: string[]; error?: string };
 
-// Step payloads mirror gui.bridge_api._step_payload.
 type Field = { name: string; label: string; secret: boolean; placeholder: string };
 type Step =
   | { kind: "prompt"; title: string; error: string | null; fields: Field[] }
-  | {
-      kind: "wait";
-      title: string;
-      poll_after_ms: number;
-      qr_png_b64: string | null;
-      open_url: string | null;
-      hint: string | null;
-    }
+  | { kind: "wait"; title: string; poll_after_ms: number; qr_png_b64: string | null; open_url: string | null; hint: string | null }
   | { kind: "done" }
   | { kind: "failed"; reason: string };
 
-type Section = "overview" | "channels" | "logs" | "settings";
-
-type Toast = { text: string; kind: "ok" | "err" } | null;
-
-// ---- toast hook ------------------------------------------------------
-
-function useToast() {
-  const [toast, setToast] = useState<Toast>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const notify = useCallback((text: string, kind: "ok" | "err" = "ok") => {
-    setToast({ text, kind });
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setToast(null), 4000);
-  }, []);
-  // Returns true on success, false on {error}, for chaining.
-  const notifyResult = useCallback(
-    (r: Result | undefined, okFallback = "") => {
-      if (!r) return true;
-      if (r.error) {
-        notify(r.error, "err");
-        return false;
-      }
-      const msg = r.lines?.[0] || okFallback;
-      if (msg) notify(msg, "ok");
-      return true;
-    },
-    [notify],
-  );
-  return { toast, notify, notifyResult };
-}
+type Section = "takeover" | "personas" | "devices" | "logs" | "settings";
 
 // ---- root ------------------------------------------------------------
 
 export function App() {
-  const [section, setSection] = useState<Section>("overview");
+  const [section, setSection] = useState<Section>("takeover");
   const [account, setAccount] = useState<Account | null>(null);
   const [accounts, setAccounts] = useState<AccountListItem[]>([]);
   const [status, setStatus] = useState<Status | null>(null);
   const [channels, setChannels] = useState<Channel[]>([]);
   const [platforms, setPlatforms] = useState<Platform[]>([]);
-  const [flow, setFlow] = useState<{ platform: string | null; channelId: number | null } | null>(
-    null,
-  );
-  const { toast, notify, notifyResult } = useToast();
+  const [flow, setFlow] = useState<{ platform: string | null; channelId: number | null } | null>(null);
+  const { toast, notify } = useToast();
 
   const refresh = useCallback(async () => {
     try {
@@ -126,7 +90,7 @@ export function App() {
       setStatus(st);
       setChannels(chs);
     } catch {
-      /* window closing / transient */
+      /* transient */
     }
   }, []);
 
@@ -140,10 +104,12 @@ export function App() {
 
   if (!bridgeReady) {
     return (
-      <Centered>
-        <div className="text-lg font-medium text-[var(--color-ink-1)]">连接本地 bridge…</div>
-        <div className="mt-2 text-sm text-[var(--color-ink-3)]">preload 注入失败时会卡在这里</div>
-      </Centered>
+      <div className="flex h-screen items-center justify-center bg-[var(--color-bg-deep)] text-center text-[var(--color-ink-2)]">
+        <div>
+          <div className="text-lg font-medium text-[var(--color-ink-1)]">连接本地 bridge…</div>
+          <div className="mt-2 text-sm text-[var(--color-ink-3)]">preload 注入失败时会卡在这里</div>
+        </div>
+      </div>
     );
   }
 
@@ -156,32 +122,35 @@ export function App() {
     );
   }
 
+  const localDeviceCard = (
+    <LocalDeviceCard
+      status={status}
+      channels={channels}
+      onBind={() => setFlow({ platform: null, channelId: null })}
+      onRelogin={(c) => setFlow({ platform: c.platform, channelId: c.channel_id })}
+      onChanged={refresh}
+      notify={notify}
+    />
+  );
+
   return (
-    <div className="grid h-screen grid-cols-[240px_1fr] bg-[var(--color-bg-deep)]">
+    <div className="grid h-screen grid-cols-[220px_1fr] bg-[var(--color-bg-deep)]">
       <Sidebar section={section} onSelect={setSection} status={status} account={account} />
       <main className="overflow-y-auto">
         <div className="mx-auto max-w-5xl px-10 py-9">
-          {status?.last_error && <ErrorBanner message={status.last_error} />}
-          {section === "overview" && <Overview status={status} account={account} channels={channels} />}
-          {section === "channels" && (
-            <ChannelsView
-              channels={channels}
-              onBind={() => setFlow({ platform: null, channelId: null })}
-              onRelogin={(c) => setFlow({ platform: c.platform, channelId: c.channel_id })}
-              onChanged={refresh}
-              notifyResult={notifyResult}
-            />
+          {status?.last_error && (
+            <div className="mb-6 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]">
+              {status.last_error}
+            </div>
+          )}
+          {section === "takeover" && <TakeoverView notify={notify} />}
+          {section === "personas" && <PersonasView notify={notify} />}
+          {section === "devices" && (
+            <DevicesView localMachineId={account?.machine_id ?? null} localSlot={localDeviceCard} notify={notify} />
           )}
           {section === "logs" && <LogsView notify={notify} />}
           {section === "settings" && (
-            <SettingsView
-              account={account}
-              accounts={accounts}
-              onChanged={refresh}
-              onAddAccount={() => setFlow(null)}
-              notify={notify}
-              notifyResult={notifyResult}
-            />
+            <SettingsView account={account} accounts={accounts} onChanged={refresh} notify={notify} />
           )}
         </div>
       </main>
@@ -204,76 +173,6 @@ export function App() {
   );
 }
 
-// ---- shared presentational ------------------------------------------
-
-function Centered({ children }: { children: ReactNode }) {
-  return (
-    <div className="flex h-screen items-center justify-center bg-[var(--color-bg-deep)] text-center text-[var(--color-ink-2)]">
-      <div>{children}</div>
-    </div>
-  );
-}
-
-function SectionHeader({ title, subtitle, action }: { title: string; subtitle?: string; action?: ReactNode }) {
-  return (
-    <header className="mb-7 flex items-end justify-between">
-      <div>
-        <h1 className="text-[22px] font-medium tracking-tight text-[var(--color-ink-1)]">{title}</h1>
-        {subtitle && <p className="mt-1 text-[13px] text-[var(--color-ink-3)]">{subtitle}</p>}
-      </div>
-      {action}
-    </header>
-  );
-}
-
-function Card({ children }: { children: ReactNode }) {
-  return (
-    <div className="rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-bg-base)] p-5">
-      {children}
-    </div>
-  );
-}
-
-function Metric({ label, value, hint }: { label: string; value: string | number; hint?: string }) {
-  return (
-    <Card>
-      <div className="text-[11.5px] uppercase tracking-wider text-[var(--color-ink-4)]">{label}</div>
-      <div className="mt-2 text-[26px] font-medium text-[var(--color-ink-1)]">{value}</div>
-      {hint && <div className="mt-1 text-[12px] text-[var(--color-ink-3)]">{hint}</div>}
-    </Card>
-  );
-}
-
-function ErrorBanner({ message }: { message: string }) {
-  return (
-    <div className="mb-6 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]">
-      {message}
-    </div>
-  );
-}
-
-const PRIMARY_BTN =
-  "rounded-md bg-[var(--color-brass)] px-4 py-2 text-[13px] font-medium text-[#1b1d23] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40";
-const GHOST_BTN =
-  "rounded-md border border-[var(--color-line)] px-4 py-2 text-[13px] text-[var(--color-ink-2)] transition-colors hover:bg-[var(--color-bg-raised)] disabled:opacity-40";
-const INPUT_CLS =
-  "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-bg-raised)] px-3 py-2 text-[14px] text-[var(--color-ink-1)] outline-none focus:border-[var(--color-brass)]";
-
-function ToastView({ toast }: { toast: Toast }) {
-  if (!toast) return null;
-  const tone =
-    toast.kind === "err"
-      ? "border-[var(--color-danger)]/50 text-[var(--color-danger)]"
-      : "border-[var(--color-ok)]/50 text-[var(--color-ok)]";
-  return (
-    <div
-      className={`fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-md border bg-[var(--color-bg-elev)] px-4 py-2.5 text-[13px] shadow-lg ${tone}`}
-    >
-      {toast.text}
-    </div>
-  );
-}
-
 // ---- sidebar ---------------------------------------------------------
 
 const STATUS_LABEL: Record<string, string> = {
@@ -292,8 +191,9 @@ function Sidebar(props: {
   account: Account | null;
 }) {
   const items: { key: Section; label: string }[] = [
-    { key: "overview", label: "总览" },
-    { key: "channels", label: "渠道" },
+    { key: "takeover", label: "接管" },
+    { key: "personas", label: "人设" },
+    { key: "devices", label: "设备" },
     { key: "logs", label: "日志" },
     { key: "settings", label: "设置" },
   ];
@@ -344,41 +244,7 @@ function Sidebar(props: {
   );
 }
 
-// ---- overview --------------------------------------------------------
-
-function Overview(props: { status: Status | null; account: Account | null; channels: Channel[] }) {
-  const onlineCount = props.channels.filter((c) => c.online).length;
-  return (
-    <>
-      <SectionHeader
-        title={props.account?.display_name ? `你好，${props.account.display_name}` : "总览"}
-        subtitle="本地 bridge 的实时状态。"
-      />
-      <div className="grid grid-cols-3 gap-4">
-        <Metric label="守护进程" value={props.status?.running ? "运行中" : "未启动"} hint={props.status?.status ?? "—"} />
-        <Metric label="5 分钟新消息" value={props.status?.in_count_5m ?? 0} hint="入站消息（已入库）" />
-        <Metric label="待发送" value={props.status?.outbound_pending ?? 0} hint="Studio → 渠道" />
-      </div>
-
-      <div className="mt-8">
-        <h2 className="mb-3 text-[14px] font-medium text-[var(--color-ink-2)]">
-          渠道 · 在线 {onlineCount} / {props.channels.length}
-        </h2>
-        <Card>
-          {props.channels.length === 0 ? (
-            <div className="py-4 text-center text-[13px] text-[var(--color-ink-3)]">还没有绑定任何渠道</div>
-          ) : (
-            <ul className="divide-y divide-[var(--color-line-soft)]">
-              {props.channels.map((c) => (
-                <ChannelRow key={c.channel_id} c={c} />
-              ))}
-            </ul>
-          )}
-        </Card>
-      </div>
-    </>
-  );
-}
+// ---- local device card (Devices "本机" slot) -------------------------
 
 const CHAN_STATE: Record<string, { dot: string; label: string }> = {
   online: { dot: "bg-[var(--color-ok)]", label: "online" },
@@ -389,32 +255,13 @@ const CHAN_STATE: Record<string, { dot: string; label: string }> = {
   idle: { dot: "bg-[var(--color-ink-4)]", label: "等待启动" },
 };
 
-function ChannelRow({ c }: { c: Channel }) {
-  const meta = CHAN_STATE[c.state] ?? CHAN_STATE.idle;
-  return (
-    <li className="flex items-center gap-4 py-3 first:pt-1 last:pb-1">
-      <span className={`h-2 w-2 shrink-0 rounded-full ${meta.dot}`} />
-      <div className="min-w-0 flex-1">
-        <div className="text-[14px] text-[var(--color-ink-1)]">
-          {c.self_id ? `${c.platform_label} · ${c.self_id}` : c.platform_label}
-        </div>
-        <div className="truncate text-[12px] text-[var(--color-ink-3)]">
-          {c.state === "online" ? `${c.conv_count} 会话 · ${meta.label}` : meta.label}
-          {c.last_error ? ` · ${c.last_error}` : ""}
-        </div>
-      </div>
-    </li>
-  );
-}
-
-// ---- channels --------------------------------------------------------
-
-function ChannelsView(props: {
+function LocalDeviceCard(props: {
+  status: Status | null;
   channels: Channel[];
   onBind: () => void;
   onRelogin: (c: Channel) => void;
   onChanged: () => void;
-  notifyResult: (r: Result | undefined, okFallback?: string) => boolean;
+  notify: (t: string, k?: "ok" | "err") => void;
 }) {
   const [busyId, setBusyId] = useState<number | null>(null);
 
@@ -424,7 +271,8 @@ function ChannelsView(props: {
     setBusyId(c.channel_id);
     try {
       const r = await post<Result>("/local/channel_rm", { channel_id: c.channel_id });
-      props.notifyResult(r, "已删除");
+      if (r?.error) props.notify(r.error, "err");
+      else props.notify("已删除", "ok");
       props.onChanged();
     } finally {
       setBusyId(null);
@@ -432,53 +280,47 @@ function ChannelsView(props: {
   };
 
   return (
-    <>
-      <SectionHeader
-        title="渠道"
-        subtitle="每条渠道由一个 ChannelWorker 维护，状态来自 sqlite 快照。"
-        action={
-          <button className={PRIMARY_BTN} onClick={props.onBind}>
-            + 绑定渠道
-          </button>
-        }
-      />
+    <div>
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className={`h-2.5 w-2.5 rounded-full ${props.status?.running ? "bg-[var(--color-ok)]" : "bg-[var(--color-ink-4)]"}`} />
+          <span className="text-[14px] font-medium text-[var(--color-ink-1)]">这台电脑</span>
+          <span className="text-[11px] text-[var(--color-ink-4)]">
+            {props.status ? STATUS_LABEL[props.status.status] ?? props.status.status : "—"} · 近 5 分钟入站{" "}
+            {props.status?.in_count_5m ?? 0} · 待发 {props.status?.outbound_pending ?? 0}
+          </span>
+        </div>
+        <button className={PRIMARY_BTN} onClick={props.onBind}>
+          + 绑定渠道
+        </button>
+      </div>
+
       {props.channels.length === 0 ? (
-        <Card>
-          <div className="py-8 text-center">
-            <div className="text-[14px] text-[var(--color-ink-2)]">还没有绑定任何渠道</div>
-            <button className={`${PRIMARY_BTN} mt-4`} onClick={props.onBind}>
-              + 绑定第一个渠道
-            </button>
-          </div>
-        </Card>
+        <div className="rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-bg-base)] px-4 py-6 text-center text-[13px] text-[var(--color-ink-3)]">
+          这台电脑还没绑定渠道。点右上「+ 绑定渠道」接入第一个。
+        </div>
       ) : (
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2">
           {props.channels.map((c) => {
             const meta = CHAN_STATE[c.state] ?? CHAN_STATE.idle;
             const ident = c.self_id ? `${c.platform_label} · ${c.self_id}` : c.platform_label;
             return (
               <div
                 key={c.channel_id}
-                className="flex items-center gap-4 rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-bg-base)] px-5 py-4"
+                className="flex items-center gap-3 rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-bg-base)] px-4 py-3"
               >
-                <span className={`h-2.5 w-2.5 shrink-0 rounded-full ${meta.dot}`} />
+                <span className={`h-2 w-2 shrink-0 rounded-full ${meta.dot}`} />
                 <div className="min-w-0 flex-1">
-                  <div className="text-[14px] text-[var(--color-ink-1)]">{ident}</div>
-                  <div className="truncate text-[12px] text-[var(--color-ink-3)]">
+                  <div className="text-[13.5px] text-[var(--color-ink-1)]">{ident}</div>
+                  <div className="truncate text-[11.5px] text-[var(--color-ink-3)]">
                     {c.state === "online" ? `${c.conv_count} 会话 · ${meta.label}` : meta.label}
-                    {c.last_error ? (
-                      <span className="text-[var(--color-danger)]"> · {c.last_error}</span>
-                    ) : null}
+                    {c.last_error ? <span className="text-[var(--color-danger)]"> · {c.last_error}</span> : null}
                   </div>
                 </div>
-                <button className={GHOST_BTN} onClick={() => props.onRelogin(c)} disabled={busyId === c.channel_id}>
+                <button className={SM_GHOST_BTN} onClick={() => props.onRelogin(c)} disabled={busyId === c.channel_id}>
                   重新登录
                 </button>
-                <button
-                  className="rounded-md border border-[var(--color-danger)]/40 px-3 py-2 text-[13px] text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)]/10 disabled:opacity-40"
-                  onClick={() => remove(c)}
-                  disabled={busyId === c.channel_id}
-                >
+                <button className={DANGER_BTN} onClick={() => remove(c)} disabled={busyId === c.channel_id}>
                   删除
                 </button>
               </div>
@@ -486,7 +328,7 @@ function ChannelsView(props: {
           })}
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -563,17 +405,16 @@ function LogsView({ notify }: { notify: (t: string, k?: "ok" | "err") => void })
   );
 }
 
-// ---- settings: accounts ---------------------------------------------
+// ---- settings --------------------------------------------------------
 
 function SettingsView(props: {
   account: Account | null;
   accounts: AccountListItem[];
   onChanged: () => void;
-  onAddAccount: () => void;
   notify: (t: string, k?: "ok" | "err") => void;
-  notifyResult: (r: Result | undefined, okFallback?: string) => boolean;
 }) {
   const [busy, setBusy] = useState(false);
+  const [showPw, setShowPw] = useState(false);
 
   const wrap = async (fn: () => Promise<void>) => {
     if (busy) return;
@@ -588,22 +429,25 @@ function SettingsView(props: {
   const use = (a: AccountListItem) =>
     wrap(async () => {
       const r = await post<Result>("/local/use_account", { account_id: a.account_id });
-      props.notifyResult(r, `已切换到 ${a.display_name || a.account_id}`);
+      if (r?.error) props.notify(r.error, "err");
+      else props.notify(`已切换到 ${a.display_name || a.account_id}`, "ok");
       props.onChanged();
     });
 
   const removeAcc = (a: AccountListItem) =>
     wrap(async () => {
-      if (!confirm(`删除本机账号 ${a.display_name || a.account_id}？\n会清掉该账号的所有渠道凭据与本地消息。`)) return;
+      if (!confirm(`删除本机账号 ${a.display_name || a.account_id}？会清掉该账号的所有渠道凭据与本地消息。`)) return;
       const r = await post<Result>("/local/remove_account", { account_id: a.account_id });
-      props.notifyResult(r, "已删除");
+      if (r?.error) props.notify(r.error, "err");
+      else props.notify("已删除", "ok");
       props.onChanged();
     });
 
   const logout = () =>
     wrap(async () => {
       const r = await post<Result>("/local/logout");
-      props.notifyResult(r, "已登出");
+      if (r?.error) props.notify(r.error, "err");
+      else props.notify("已登出", "ok");
       props.onChanged();
     });
 
@@ -619,19 +463,15 @@ function SettingsView(props: {
         title="设置"
         subtitle="账号与本地 bridge 的连接信息。"
         action={
-          <button className={GHOST_BTN} onClick={props.onAddAccount}>
-            + 添加 Studio 账号
+          <button className={GHOST_BTN} onClick={() => setShowPw(true)}>
+            修改密码
           </button>
         }
       />
 
-      <h2 className="mb-3 text-[14px] font-medium text-[var(--color-ink-2)]">本机账号</h2>
+      <h2 className="mb-2 text-[13px] font-medium text-[var(--color-ink-2)]">本机账号</h2>
       <div className="mb-8 flex flex-col gap-2">
-        {props.accounts.length === 0 && (
-          <Card>
-            <div className="text-[13px] text-[var(--color-ink-3)]">（暂无本机账号）</div>
-          </Card>
-        )}
+        {props.accounts.length === 0 && <Empty>（暂无本机账号）</Empty>}
         {props.accounts.map((a) => (
           <div
             key={a.account_id}
@@ -645,15 +485,11 @@ function SettingsView(props: {
               </div>
             </div>
             {!a.active && (
-              <button className={GHOST_BTN} onClick={() => use(a)} disabled={busy}>
+              <button className={SM_GHOST_BTN} onClick={() => use(a)} disabled={busy}>
                 切换
               </button>
             )}
-            <button
-              className="rounded-md border border-[var(--color-danger)]/40 px-3 py-2 text-[13px] text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)]/10 disabled:opacity-40"
-              onClick={() => removeAcc(a)}
-              disabled={busy}
-            >
+            <button className={DANGER_BTN} onClick={() => removeAcc(a)} disabled={busy}>
               删除
             </button>
           </div>
@@ -672,27 +508,19 @@ function SettingsView(props: {
       </Card>
 
       {props.account?.logged_in && (
-        <button
-          onClick={logout}
-          disabled={busy}
-          className="mt-5 rounded-md border border-[var(--color-danger)]/40 px-4 py-2 text-[13px] text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)]/10 disabled:opacity-40"
-        >
+        <button onClick={logout} disabled={busy} className={`${DANGER_BTN} mt-5`}>
           登出当前账号
         </button>
       )}
+
+      {showPw && <ChangePasswordModal onClose={() => setShowPw(false)} notify={props.notify} />}
     </>
   );
 }
 
 // ---- first-time login ------------------------------------------------
 
-function LoginView({
-  onDone,
-  notify,
-}: {
-  onDone: () => void;
-  notify: (t: string, k?: "ok" | "err") => void;
-}) {
+function LoginView({ onDone, notify }: { onDone: () => void; notify: (t: string, k?: "ok" | "err") => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -738,12 +566,7 @@ function LoginView({
         <label className="mb-1 block text-[12px] text-[var(--color-ink-3)]">用户名</label>
         <input className={INPUT_CLS} value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
         <label className="mb-1 mt-4 block text-[12px] text-[var(--color-ink-3)]">密码</label>
-        <input
-          className={INPUT_CLS}
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-        />
+        <input className={INPUT_CLS} type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
 
         <button type="submit" disabled={busy || !username || !password} className={`${PRIMARY_BTN} mt-6 w-full py-2.5`}>
           {busy ? "登录中…" : "登录"}
@@ -766,7 +589,6 @@ function FlowModal(props: {
   const { platforms, channelId, notify } = props;
   const isRelogin = channelId != null;
 
-  // pick: choosing a platform (new channel). running: a flow is live.
   const [phase, setPhase] = useState<"pick" | "running">(props.platform ? "running" : "pick");
   const [platform, setPlatform] = useState<string>(props.platform ?? platforms[0]?.id ?? "");
   const [baseUrl, setBaseUrl] = useState("");
@@ -779,7 +601,6 @@ function FlowModal(props: {
   const flowIdRef = useRef<string | null>(null);
 
   const labelOf = (id: string) => platforms.find((p) => p.id === id)?.label ?? id;
-
   const clearPoll = () => {
     if (pollTimer.current) {
       clearTimeout(pollTimer.current);
@@ -795,7 +616,6 @@ function FlowModal(props: {
     props.onClose();
   }, [props]);
 
-  // Drive a step result: terminal states persist or fail; otherwise render.
   const handleStep = useCallback(
     (s: Step, fid: string) => {
       setStepError(null);
@@ -805,10 +625,7 @@ function FlowModal(props: {
         return;
       }
       if (s.kind === "done") {
-        post<Result>("/local/flow_persist", {
-          flow_id: fid,
-          channel_id: channelId,
-        }).then((r) => {
+        post<Result>("/local/flow_persist", { flow_id: fid, channel_id: channelId }).then((r) => {
           flowIdRef.current = null;
           if (r?.error) {
             notify(r.error, "err");
@@ -869,7 +686,6 @@ function FlowModal(props: {
     [channelId, notify, handleStep, props],
   );
 
-  // Relogin starts immediately (platform fixed by caller).
   useEffect(() => {
     if (props.platform) startFlow(props.platform, {});
     return clearPoll;
@@ -881,10 +697,7 @@ function FlowModal(props: {
     setBusy(true);
     setStepError(null);
     try {
-      const r = await post<{ step?: Step; error?: string }>("/local/flow_submit", {
-        flow_id: flowId,
-        answers,
-      });
+      const r = await post<{ step?: Step; error?: string }>("/local/flow_submit", { flow_id: flowId, answers });
       if (r.error) {
         setStepError(r.error);
         return;
@@ -896,9 +709,7 @@ function FlowModal(props: {
   };
 
   const title =
-    phase === "pick"
-      ? "绑定渠道 — 选择平台"
-      : `${isRelogin ? "重新登录" : "绑定渠道"} — ${labelOf(platform)}`;
+    phase === "pick" ? "绑定渠道 — 选择平台" : `${isRelogin ? "重新登录" : "绑定渠道"} — ${labelOf(platform)}`;
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center">
@@ -923,15 +734,8 @@ function FlowModal(props: {
             </select>
             {platform === "chat" && (
               <div className="mt-4">
-                <label className="mb-1 block text-[12px] text-[var(--color-ink-3)]">
-                  base_url（可选 — chat 沙箱开发态用）
-                </label>
-                <input
-                  className={INPUT_CLS}
-                  value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder="留空则用默认地址"
-                />
+                <label className="mb-1 block text-[12px] text-[var(--color-ink-3)]">base_url（可选 — chat 沙箱开发态用）</label>
+                <input className={INPUT_CLS} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="留空则用默认地址" />
               </div>
             )}
             <div className="mt-6 flex justify-end gap-3">
@@ -982,19 +786,10 @@ function FlowModal(props: {
         {phase === "running" && step?.kind === "wait" && (
           <div className="text-center">
             {step.qr_png_b64 && (
-              <img
-                className="mx-auto mb-3 h-48 w-48 rounded-md bg-white p-2"
-                src={`data:image/png;base64,${step.qr_png_b64}`}
-                alt="二维码"
-              />
+              <img className="mx-auto mb-3 h-48 w-48 rounded-md bg-white p-2" src={`data:image/png;base64,${step.qr_png_b64}`} alt="二维码" />
             )}
             {step.open_url && (
-              <a
-                className="block break-all text-[12.5px] text-[var(--color-brass)] underline"
-                href={step.open_url}
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a className="block break-all text-[12.5px] text-[var(--color-brass)] underline" href={step.open_url} target="_blank" rel="noreferrer">
                 {step.open_url}
               </a>
             )}
@@ -1008,9 +803,7 @@ function FlowModal(props: {
           </div>
         )}
 
-        {phase === "running" && !step && (
-          <div className="py-8 text-center text-[13px] text-[var(--color-ink-3)]">启动中…</div>
-        )}
+        {phase === "running" && !step && <div className="py-8 text-center text-[13px] text-[var(--color-ink-3)]">启动中…</div>}
       </div>
     </div>
   );

@@ -63,7 +63,7 @@ scripts/
 4. **Studio S3 是媒体唯一源。** 单 bucket（默认 `media`）；chat keys 以 `media/{account_id}/` 前缀；studio keys 各自约定。
 5. **Studio DB 是 source of truth。** `studio.messages` 表保存全部接管聊天历史，每条消息有 `msg_type`。
 6. **Conversation 是接管单元。** Studio 的 `conversations` 行持有 `kind`（dm/group/unknown）、`persona_id`、`provider_id`、`takeover`、`reply_policy`、`card_md`、`last_reply_round_at`；`conversation_members` 描述群/DM 成员。
-7. **Inbox 是平台身份。** Bridge 握手时通过 `POST /api/bridge/inboxes` 自动注册，没有面向用户的创建 API。
+7. **Inbox 是平台身份。** Bridge 握手时通过 `POST /api/bridge/inboxes` 自动注册，没有面向用户的创建 API。**Per-channel 互斥**：一个 `(account, platform, platform_self_id)` 同一时刻只能被一个**在线**（`last_seen_at` 在 `BRIDGE_OFFLINE_S=45s` 内）Bridge 持有；第二个在线 Bridge 来抢报 409（detail 带占用方 machine_id），离线/stale 的 owner 可被透明接管。Bridge 端把 409 映射成终态 `CONFLICT`（不重试）；headless 在所有 channel 都 CONFLICT 时以退出码 4 退出，让心跳停掉、admin 面板转 stale。
 8. **Bridge 行 = `(account_id, machine_id)`。** `machine_id` 由 Studio 首次握手生成，Bridge 本地持久化，每次请求带 `X-Machine-Id` 头解析。
 9. **Auth 是 account 粒度的单一 token。** 浏览器、Bridge 和 chat adapter 共用同一张 `auth.auth_sessions`。Bridge 启动时用账号密码握换 token，存入本地 SQLite `kv` 表；chat channel 的 credential 直接复用同一个 studio token。token 24h 滑动续期；401 才再输密码。改密码会清空该 account 的所有 session（web、Bridge、hosted bridge 一并下线）。`bridge/laborster_bridge/config.py` 硬编码 `STUDIO_BASE_URL=https://studio.laborster.com`；chat 沙箱同主机，访问路径加 `/api/chat` 前缀。HTTP 请求加自定义 `User-Agent`（Cloudflare 屏蔽默认 `Python-urllib`）。
     **特例：hosted bridge 路径**——admin-api 可以为某 Account 直接 `create_auth_session` 签 token 给 bridge-host 用，无需密码；hosted bridge 的 `STUDIO_BASE_URL` 由 `--studio-url` flag 注入（指向 docker 内网 `http://user-api:23456`），主播端 GUI/REPL 永远走硬编码值不接受 flag。

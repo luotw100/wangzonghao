@@ -32,7 +32,13 @@ from sqlalchemy.orm import Session
 
 from studio.auth_utils import verify_password
 from studio.db import get_db, utc_now
-from studio.deps import BridgeDep, create_auth_session, new_id, pick_first_provider
+from studio.deps import (
+    BRIDGE_OFFLINE_S,
+    BridgeDep,
+    create_auth_session,
+    new_id,
+    pick_first_provider,
+)
 from studio.enums import (
     AccountStatus,
     ConversationKind,
@@ -76,6 +82,16 @@ def _new_machine_id(db: Session, account_id: str) -> str:
         if not exists:
             return candidate
     raise HTTPException(status_code=500, detail="machine_id 生成失败")
+
+
+def _bridge_is_online(bridge: Optional[Bridge], now) -> bool:
+    """A bridge counts as online if it heartbeated within BRIDGE_OFFLINE_S."""
+    if bridge is None or bridge.last_seen_at is None:
+        return False
+    seen = bridge.last_seen_at
+    if seen.tzinfo is None:
+        seen = seen.replace(tzinfo=timezone.utc)
+    return (now - seen).total_seconds() <= BRIDGE_OFFLINE_S
 
 
 def ensure_bridge_row(
@@ -170,8 +186,41 @@ def bridge_register_inboxes(
 ):
     """Upsert the channel set this bridge serves; display_name comes from
     Bridge (it knows the platform-side nickname).
+
+    Per-channel ownership mutex: a platform identity
+    ``(account, platform, platform_self_id)`` can be served by at most one
+    *online* bridge at a time. If another bridge already owns the inbox and
+    is still heartbeating, the claim is rejected with 409 instead of the
+    old silent last-writer-wins takeover. A stale (offline) owner is taken
+    over transparently — this is how a reinstalled machine or a moved
+    daemon reclaims its channels.
     """
     now = utc_now()
+
+    # Pre-check every claim before mutating anything, so a conflict rolls
+    # the whole request back cleanly.
+    for claim in payload.inboxes:
+        existing = (
+            db.query(Inbox)
+            .filter(
+                Inbox.account_id == bridge.account_id,
+                Inbox.platform == claim.platform,
+                Inbox.platform_self_id == claim.platform_self_id,
+            )
+            .first()
+        )
+        if existing and existing.bridge_id and existing.bridge_id != bridge.id:
+            owner = db.query(Bridge).filter(Bridge.id == existing.bridge_id).first()
+            if _bridge_is_online(owner, now):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"该 channel（{claim.platform}）已被你的另一台设备 "
+                        f"{owner.machine_id} 绑定且在线，当前无法在本机绑定。"
+                        f"请先停止那台设备上的 Bridge。"
+                    ),
+                )
+
     served: List[Inbox] = []
     for claim in payload.inboxes:
         inbox = (

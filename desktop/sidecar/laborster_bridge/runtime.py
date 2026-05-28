@@ -37,6 +37,7 @@ Worker state machine::
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from dataclasses import dataclass
@@ -45,6 +46,7 @@ from typing import Callable
 
 from . import adapters
 from .events import Events
+from .http import HttpError
 from .http import Unauthorized as HttpUnauthorized
 from .store import Store
 from .studio_client import StudioClient
@@ -107,6 +109,20 @@ ONLINE = "online"
 NEEDS_LOGIN = "needs_login"
 BACKOFF = "backoff"
 REMOVED = "removed"
+CONFLICT = "conflict"   # channel owned by another online bridge (Studio 409)
+
+
+def _http_detail(exc: HttpError) -> str:
+    """Pull FastAPI's ``{"detail": ...}`` message out of an HttpError body,
+    falling back to the raw body when it isn't the expected shape.
+    """
+    try:
+        parsed = json.loads(exc.body)
+        if isinstance(parsed, dict) and "detail" in parsed:
+            return str(parsed["detail"])
+    except Exception:
+        pass
+    return exc.body
 
 
 @dataclass
@@ -173,13 +189,13 @@ class ChannelWorker:
         """Scheduler 驱动的单步执行，每 PRODUCER_S 秒调用一次。
 
         状态路由：
-          NEEDS_LOGIN / REMOVED → 直接返回，不做任何事
+          NEEDS_LOGIN / REMOVED / CONFLICT → 直接返回，不做任何事
           BACKOFF               → 等退避计时器到期后重置为 CONNECTING
           CONNECTING            → 调 _connect()：构建 Adapter + 注册 Inbox
           ONLINE                → 调 _poll()：拉会话目录 diff + 抓新消息写本地 store
         """
         try:
-            if self.state == NEEDS_LOGIN or self.state == REMOVED:
+            if self.state in (NEEDS_LOGIN, REMOVED, CONFLICT):
                 return
             if self.state == BACKOFF:
                 if time.monotonic() < self._backoff_until:
@@ -199,6 +215,18 @@ class ChannelWorker:
             self._log("warn", f"{exc} — 退避 {BACKOFF_S}s")
             self.last_error = str(exc)
             self._enter_backoff()
+        except HttpError as exc:
+            if exc.status == 409:
+                # Inbox owned by another online bridge — terminal, no retry.
+                detail = _http_detail(exc)
+                self._log("err", f"channel 被占用 — {detail}")
+                self.last_error = detail
+                self.adapter = None
+                self.state = CONFLICT
+            else:
+                self._log("warn", f"{exc} — 退避 {BACKOFF_S}s")
+                self.last_error = str(exc)
+                self._enter_backoff()
         except HttpUnauthorized:
             # Studio side 401. Surfaced by HeartbeatActor as the canonical
             # auth error; per-worker we just back off so this loop doesn't
@@ -339,12 +367,19 @@ class BridgeRuntime:
         events: Events,
         base_info: Callable[[], dict],
         on_auth_error: Callable[[], None],
+        on_fatal: Callable[[], None] | None = None,
     ) -> None:
         self._studio = studio
         self._store = store
         self._events = events
         self._base_info = base_info
         self._on_auth_error = on_auth_error
+        # Fired once when every channel is terminally unusable (all CONFLICT,
+        # none ONLINE). Headless uses it to exit so admin sees the bridge go
+        # stale instead of a zombie "running". REPL/GUI pass None and just
+        # surface the per-channel CONFLICT state in the UI.
+        self._on_fatal = on_fatal
+        self._fatal_fired = False
 
         self._stop = threading.Event()
         self._threads: list[threading.Thread] = []
@@ -496,8 +531,29 @@ class BridgeRuntime:
                     return
                 w.tick()
             self._push_state()
+            self._maybe_fire_fatal()
             if self._sleep(PRODUCER_S):
                 return
+
+    def _maybe_fire_fatal(self) -> None:
+        """Fire on_fatal once when no channel is usable: at least one worker
+        is in CONFLICT and none is ONLINE. Recoverable states (CONNECTING /
+        BACKOFF / NEEDS_LOGIN) don't trip it — only the terminal, can't-win
+        CONFLICT does.
+        """
+        if self._on_fatal is None or self._fatal_fired:
+            return
+        with self._lock:
+            states = [w.state for w in self._workers.values()]
+        if not states:
+            return
+        if any(s == CONFLICT for s in states) and not any(s == ONLINE for s in states):
+            self._fatal_fired = True
+            self._log("core", "err", "所有 channel 均被占用，触发退出")
+            try:
+                self._on_fatal()
+            except Exception as exc:
+                self._log("core", "warn", f"on_fatal 抛错: {exc}")
 
     # ---- upload actor -------------------------------------------------
 

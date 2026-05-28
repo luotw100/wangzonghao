@@ -17,6 +17,9 @@ Exit codes:
   2  Studio token revoked (401 surfaced by HeartbeatActor) — bridge-host
      treats as auth_error and surfaces to admin panel
   3  startup/config error
+  4  channel already bound by another online bridge (Studio 409) — the
+     process exits so its heartbeat stops and admin sees it go stale
+     (CRASHED) instead of a zombie "running".
 """
 
 from __future__ import annotations
@@ -40,6 +43,7 @@ def run(args) -> int:
     events = Events()
     stop_event = threading.Event()
     auth_error_flag = threading.Event()
+    conflict_flag = threading.Event()
 
     def _stub(_prompt: str) -> str:
         # Headless never prompts; if any code path tries, that's a bug.
@@ -64,7 +68,13 @@ def run(args) -> int:
         auth_error_flag.set()
         stop_event.set()
 
-    commands.start_daemon(ctx, extra_on_auth_error=_on_auth_error)
+    def _on_fatal() -> None:
+        conflict_flag.set()
+        stop_event.set()
+
+    commands.start_daemon(
+        ctx, extra_on_auth_error=_on_auth_error, extra_on_fatal=_on_fatal
+    )
 
     # Mirror events.log() output to stdout (→ bridge-host's docker
     # logs). `follow()` blocks on a condvar — no polling, no missed
@@ -99,4 +109,7 @@ def run(args) -> int:
     if auth_error_flag.is_set():
         print("Studio session 已失效 — 退出码 2", flush=True)
         return 2
+    if conflict_flag.is_set():
+        print("channel 已被另一台在线 Bridge 占用 — 退出码 4", flush=True)
+        return 4
     return 0

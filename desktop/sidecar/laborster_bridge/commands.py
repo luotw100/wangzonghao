@@ -115,7 +115,7 @@ def _stop_daemon(ctx: Context) -> None:
     ctx.runtime = None
 
 
-def _make_runtime(ctx: Context, extra_on_auth_error=None) -> BridgeRuntime:
+def _make_runtime(ctx: Context, extra_on_auth_error=None, extra_on_fatal=None) -> BridgeRuntime:
     """Build a BridgeRuntime for the active account.
 
     ``extra_on_auth_error`` runs *after* the base auth-error handling
@@ -163,6 +163,7 @@ def _make_runtime(ctx: Context, extra_on_auth_error=None) -> BridgeRuntime:
         ctx.events,
         base_info,
         on_auth_error,
+        on_fatal=extra_on_fatal,
     )
 
 
@@ -219,14 +220,14 @@ def ensure_chat_channel(ctx: Context) -> bool:
     return True
 
 
-def start_daemon(ctx: Context, extra_on_auth_error=None) -> None:
+def start_daemon(ctx: Context, extra_on_auth_error=None, extra_on_fatal=None) -> None:
     """Force-start the runtime under the current account, propagating an
-    optional extra auth-error hook. Headless wants this; REPL/GUI go
-    through ``_ensure`` which is conditional on token + channels being
-    present. Caller must have already populated both.
+    optional extra auth-error hook and fatal (all-channels-conflict) hook.
+    Headless wants both; REPL/GUI go through ``_ensure`` which is conditional
+    on token + channels being present. Caller must have already populated both.
     """
     _stop_daemon(ctx)
-    ctx.runtime = _make_runtime(ctx, extra_on_auth_error)
+    ctx.runtime = _make_runtime(ctx, extra_on_auth_error, extra_on_fatal)
     ctx.runtime.start()
 
 

@@ -16,7 +16,12 @@ from sqlalchemy.orm import Session
 from studio.auth_utils import hash_password, hash_token
 from studio.clients import ALLOWED_BASE_URLS
 from studio.db import get_db, utc_now
-from studio.deps import create_auth_session, new_id, pick_first_provider
+from studio.deps import (
+    BRIDGE_OFFLINE_S,
+    create_auth_session,
+    new_id,
+    pick_first_provider,
+)
 from studio.enums import AccountStatus, HostedBridgeStatus
 from studio.models import (
     Account,
@@ -396,12 +401,12 @@ def _bridge_host_call(method: str, path: str, body: dict | None = None) -> dict:
         raise HTTPException(502, f"bridge-host 不可达: {exc.reason}")
 
 
-# Heartbeat is every 15s; Studio considers a bridge offline at >45s. Same
-# threshold here so the admin panel matches "Studio thinks this bridge is
+# Heartbeat is every 15s; Studio considers a bridge offline at >45s. Reuse
+# the same threshold so the admin panel matches "Studio thinks this bridge is
 # alive". Pure read-side derivation — DB row remains the operator's last
 # *intent*; only the displayed `status` is overwritten when reality
 # disagrees, so a Restart click still makes sense.
-_HOSTED_STALE_S = 45
+_HOSTED_STALE_S = BRIDGE_OFFLINE_S
 
 
 def _hosted_out(

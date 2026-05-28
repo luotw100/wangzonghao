@@ -17,3 +17,12 @@ export async function api<T = unknown>(path: string, init: RequestInit = {}): Pr
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return (await res.json()) as T;
 }
+
+// POST a /local/<method> call: JSON body becomes the Api method's kwargs.
+export function post<T = unknown>(path: string, body: Record<string, unknown> = {}): Promise<T> {
+  return api<T>(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}

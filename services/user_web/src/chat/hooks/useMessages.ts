@@ -26,9 +26,13 @@ export function useMessages(
   const loadingOlderRef = useRef(false);
   const cancelledRef = useRef(false);
   const conversationIdRef = useRef<string | null>(null);
-  // Capture seed at render time; effect reads it without becoming a dep.
+  // Keep the latest seed in a ref so the load effect can read it without
+  // listing it as a dependency. Updated after commit, before the load effect
+  // below runs (declaration order), so the effect always sees the latest seed.
   const seedRef = useRef(seedMessages);
-  seedRef.current = seedMessages;
+  useEffect(() => {
+    seedRef.current = seedMessages;
+  });
 
   const updateLastId = useCallback((items: Message[]) => {
     if (items.length === 0) return;
@@ -85,6 +89,10 @@ export function useMessages(
     }
   }, []);
 
+  // This effect subscribes to an external system (the messages long-poll API)
+  // and must synchronously reset/seed local state when the conversation
+  // changes — a legitimate subscription effect, not derived-state syncing.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     cancelledRef.current = false;
     conversationIdRef.current = conversationId;
@@ -168,6 +176,7 @@ export function useMessages(
       cancelledRef.current = true;
     };
   }, [conversationId, enabled, updateLastId]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   return { messages, hasMore, loadOlder, reload, reset };
 }

@@ -15,7 +15,7 @@ export function PersonaTimelinePage() {
   }, []);
 
   useEffect(() => {
-    if (!personaId) { setEntries([]); return; }
+    if (!personaId) return;
     api.getPersonaTimeline(personaId).then(setEntries).catch(e => setError(e.message));
   }, [personaId]);
 

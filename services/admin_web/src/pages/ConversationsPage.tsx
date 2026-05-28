@@ -16,17 +16,17 @@ export function ConversationsPage() {
     Promise.all([api.getAccounts(), api.getProviders()])
       .then(([a, p]) => { setAccounts(a); setProviders(p); });
 
-  const loadConvs = (acct: string) => {
-    setLoading(true);
+  const fetchConvs = (acct: string) =>
     api.getConversations(acct || undefined)
       .then(c => { setConversations(c); setError(''); })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  };
+
+  const loadConvs = (acct: string) => { setLoading(true); fetchConvs(acct); };
 
   useEffect(() => {
     loadMeta().catch(e => setError(e.message));
-    loadConvs('');
+    fetchConvs('');
   }, []);
 
   const applyFilter = (v: string) => {

@@ -74,6 +74,7 @@ export default function MessageList({
   const savedScrollHeightRef = useRef(0);
   const pendingPrependRef = useRef(false);
   const loadingOlderRef = useRef(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
   // True between a conversation switch and the first non-empty render of that conversation.
   const justSwitchedRef = useRef(false);
 
@@ -144,12 +145,14 @@ export default function MessageList({
   async function handleLoadOlder() {
     if (loadingOlderRef.current || !hasMore) return;
     loadingOlderRef.current = true;
+    setLoadingOlder(true);
     savedScrollHeightRef.current = containerRef.current?.scrollHeight ?? 0;
     pendingPrependRef.current = true;
     try {
       await loadOlder();
     } finally {
       loadingOlderRef.current = false;
+      setLoadingOlder(false);
     }
   }
 
@@ -182,7 +185,7 @@ export default function MessageList({
               type="button"
               className="messages-load-more-btn"
               onClick={handleLoadOlder}
-              disabled={loadingOlderRef.current}
+              disabled={loadingOlder}
             >
               加载更早的消息
             </button>

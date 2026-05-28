@@ -44,6 +44,7 @@ export function ChatsPage() {
   useEffect(() => {
     // Cold-load case: deep link like /chats/c/<id> with no ?account= in URL.
     // Fetch all chats so we can locate the conv and infer its account below.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset of stale list when no account/conversation is selected
     if (!accountId && !conversationId) { setConvs([]); return; }
     api.getChats(accountId || undefined).then(setConvs).catch(e => setError(e.message));
   }, [accountId, conversationId]);
@@ -60,6 +61,7 @@ export function ChatsPage() {
   }, [accountId, activeConv, setSearchParams]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional reset of stale messages when no conversation is selected
     if (!conversationId) { setMessages([]); return; }
     api.getChatMessages(conversationId, { limit: 300 })
       .then(setMessages)

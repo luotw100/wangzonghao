@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import * as api from '../lib/api';
-import { useAuth } from '../lib/auth';
+import { useAuth } from '../lib/auth-context';
 
 export function HomePage() {
   const navigate = useNavigate();

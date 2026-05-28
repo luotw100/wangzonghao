@@ -27,6 +27,9 @@ export function useWorkspace(enabled: boolean) {
 
   useEffect(() => {
     if (!enabled) {
+      // Clear the workspace when the account goes away (e.g. logout) so a
+      // later sign-in starts from a clean loading state rather than stale data.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setState({ conversations: [], loaded: false });
       return;
     }

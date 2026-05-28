@@ -1,22 +1,8 @@
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Navigate } from 'react-router-dom';
 import * as api from './api';
 import type { Account } from './api';
-
-interface AuthState {
-  account: Account | null;
-  loading: boolean;
-  refresh: () => Promise<Account | null>;
-  logout: () => Promise<void>;
-}
-
-const AuthCtx = createContext<AuthState | null>(null);
-
-export function useAuth(): AuthState {
-  const v = useContext(AuthCtx);
-  if (!v) throw new Error('useAuth must be used within <AuthProvider>');
-  return v;
-}
+import { AuthCtx, useAuth } from './auth-context';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [account, setAccount] = useState<Account | null>(null);
@@ -44,6 +30,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // Bootstrap auth from the stored token on mount; refresh() may clear
+    // account synchronously when no token is present, which is intentional.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh().finally(() => setLoading(false));
   }, [refresh]);
 

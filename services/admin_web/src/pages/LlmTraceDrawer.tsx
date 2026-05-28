@@ -12,8 +12,11 @@ export function LlmTraceDrawer({ logId, onClose }: { logId: number; onClose: () 
   const [tab, setTab] = useState<'request' | 'snapshot' | 'response' | 'meta'>('request');
 
   useEffect(() => {
+    // Reset stale detail while the new logId loads so prior content doesn't flash.
+    /* eslint-disable react-hooks/set-state-in-effect */
     setLog(null);
     setError('');
+    /* eslint-enable react-hooks/set-state-in-effect */
     api.getLlmLog(logId).then(setLog).catch(e => setError(e.message));
   }, [logId]);
 

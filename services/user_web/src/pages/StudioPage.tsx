@@ -10,7 +10,7 @@ import type {
   Persona,
   PersonaSummary,
 } from '../lib/api';
-import { useAuth } from '../lib/auth';
+import { useAuth } from '../lib/auth-context';
 
 type Tab = 'takeover' | 'persona' | 'device';
 type ChangeHandler = () => void | Promise<void>;
@@ -60,6 +60,8 @@ export function StudioPage() {
   }, []);
 
   useEffect(() => {
+    // Initial fetch + 10s polling of bridges/personas/inboxes (external data).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadAll();
     const id = setInterval(loadAll, 10_000);
     return () => clearInterval(id);
@@ -343,6 +345,8 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
   }, [setError]);
 
   useEffect(() => {
+    // Initial fetch + 3s polling of the conversation list (external data).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     reload();
     const id = setInterval(() => reload(false), 3_000);
     return () => clearInterval(id);
@@ -378,6 +382,8 @@ function TakeoverView({ inboxes, bridges, personas, onChanged, setError }: {
   }, [selectedId, setError]);
 
   useEffect(() => {
+    // Initial fetch + 3s polling of the selected conversation's messages.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     reloadMessages();
     const id = setInterval(reloadMessages, 3_000);
     return () => clearInterval(id);
@@ -632,8 +638,11 @@ function ConversationDetail({ conversation, inbox, bridge, messages, personas, o
 
   useEffect(() => {
     let alive = true;
+    // Clear stale card detail while the newly selected conversation loads.
+    /* eslint-disable react-hooks/set-state-in-effect */
     setFull(null);
     setDraftCard('');
+    /* eslint-enable react-hooks/set-state-in-effect */
     api.getConversation(conversation.id).then(c => {
       if (!alive) return;
       setFull(c);
@@ -645,6 +654,7 @@ function ConversationDetail({ conversation, inbox, bridge, messages, personas, o
   // 同样按需拉当前 contact 绑定的 persona 详情（用于自动回复缺料检查）
   const [selectedPersona, setSelectedPersona] = useState<Persona | null>(null);
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale persona detail when the conversation has none bound
     if (!conversation.persona_id) { setSelectedPersona(null); return; }
     let alive = true;
     api.getPersona(conversation.persona_id).then(p => { if (alive) setSelectedPersona(p); }).catch(() => { /* ignore */ });

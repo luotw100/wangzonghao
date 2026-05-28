@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useAuth } from '../lib/auth';
+import { useAuth } from '../lib/auth-context';
 import * as api from './api';
 import type { Account, Message } from './api';
 import Sidebar from './components/Sidebar';
@@ -54,7 +54,10 @@ export default function ChatApp() {
     if (!workspace.loaded) return;
     const stillExists = workspace.conversations.some(c => c.id === activeConversationId);
     if (!stillExists) {
+      // The selected conversation was deleted/filtered out after a workspace
+      // reload — drop the selection and fall back to the list view.
       setActiveConversationId(null, true);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setMobileView('list');
     }
   }, [workspace.conversations, workspace.loaded, activeConversationId, setActiveConversationId]);
@@ -64,9 +67,10 @@ export default function ChatApp() {
     [workspace.conversations, activeConversationId],
   );
 
-  const conversationSeed = activeConversationId
-    ? msgCacheRef.current.get(activeConversationId)
-    : undefined;
+  // Seed useMessages from the per-conversation cache for instant display on
+  // switch; this is initial data only — useMessages refetches the live list.
+  // eslint-disable-next-line react-hooks/refs
+  const conversationSeed = activeConversationId ? msgCacheRef.current.get(activeConversationId) : undefined;
 
   const messagesState = useMessages(activeConversationId, !!account, conversationSeed);
 
@@ -79,6 +83,9 @@ export default function ChatApp() {
     if (messagesState.messages[0].conversation_id !== activeConversationId) return;
     msgCacheRef.current.set(activeConversationId, [...messagesState.messages]);
     const last = messagesState.messages[messagesState.messages.length - 1];
+    // Accumulate the latest message per conversation so sidebar previews stay
+    // populated across all visited conversations, driven by fetched messages.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLastMsgCache((prev) => ({ ...prev, [activeConversationId]: last }));
   }, [activeConversationId, messagesState.messages]);
 
@@ -124,7 +131,7 @@ export default function ChatApp() {
 
   // Nickname is the studio account's display_name; editing happens in
   // studio settings. Chat just renders read-only here.
-  async function handleUpdateNickname(_next: string) {
+  async function handleUpdateNickname() {
     setGlobalError('账号昵称请到 Studio 设置中修改');
   }
 

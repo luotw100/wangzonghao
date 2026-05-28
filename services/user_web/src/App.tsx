@@ -5,7 +5,8 @@ import { StudioPage } from './pages/StudioPage.tsx';
 import ChatApp from './chat/App';
 import './chat/styles.css';
 import { setUnauthorizedHandler } from './lib/api';
-import { AuthProvider, RequireAuth, useAuth } from './lib/auth';
+import { AuthProvider, RequireAuth } from './lib/auth';
+import { useAuth } from './lib/auth-context';
 
 function UnauthorizedRedirect() {
   const navigate = useNavigate();

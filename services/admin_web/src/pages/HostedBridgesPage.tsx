@@ -15,15 +15,15 @@ export function HostedBridgesPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState<Record<string, boolean>>({});
 
-  const load = () => {
-    setLoading(true);
+  const fetchData = () =>
     api.getHostedBridges()
       .then(r => { setRows(r); setError(''); })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  };
 
-  useEffect(load, []);
+  const load = () => { setLoading(true); fetchData(); };
+
+  useEffect(() => { fetchData(); }, []);
 
   const act = async (accountId: string, op: 'start' | 'stop') => {
     setBusy(b => ({ ...b, [accountId]: true }));

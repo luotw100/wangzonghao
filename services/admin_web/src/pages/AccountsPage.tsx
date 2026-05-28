@@ -13,15 +13,15 @@ export function AccountsPage() {
   const [error, setError] = useState('');
   const [modal, setModal] = useState<Modal | null>(null);
 
-  const load = () => {
-    setLoading(true);
+  const fetchData = () =>
     Promise.all([api.getAccounts(), api.getProviders()])
       .then(([a, p]) => { setAccounts(a); setProviders(p); setError(''); })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  };
 
-  useEffect(load, []);
+  const load = () => { setLoading(true); fetchData(); };
+
+  useEffect(() => { fetchData(); }, []);
 
   return (
     <div>

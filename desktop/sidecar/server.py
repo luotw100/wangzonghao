@@ -26,15 +26,49 @@ import json
 import os
 import secrets
 import signal
+import ssl
 import sys
 import threading
+import urllib.error
 import urllib.parse
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from laborster_bridge import config
 from laborster_bridge.gui.bridge_api import Api
 from laborster_bridge.http import HttpError, Unauthorized, request_json
+
+# Same CA story as laborster_bridge.http: pin certifi so frozen builds can
+# verify the Cloudflare-fronted Studio/S3 endpoints.
+try:
+    import certifi
+
+    _SSL_CTX: ssl.SSLContext | None = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    _SSL_CTX = None
+
+
+def _encode_multipart(fields: dict, filename: str, mime: str, file_bytes: bytes) -> tuple[bytes, str]:
+    """Build a multipart/form-data body for an S3 presigned POST.
+
+    The file part must come last (S3 ignores anything after it).
+    """
+    boundary = "----laborster" + secrets.token_hex(16)
+    out = bytearray()
+    for k, v in fields.items():
+        out += (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'
+        ).encode("utf-8")
+    out += (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="file"; filename="{filename}"\r\n'
+        f"Content-Type: {mime}\r\n\r\n"
+    ).encode("utf-8")
+    out += file_bytes
+    out += f"\r\n--{boundary}--\r\n".encode("utf-8")
+    return bytes(out), f"multipart/form-data; boundary={boundary}"
 
 APP_NAME = "LaborsterDesktop"
 TOKEN = secrets.token_urlsafe(24)
@@ -126,6 +160,12 @@ def make_handler(api: Api):
             if parsed.path == "/health":
                 self._send_json(200, {"ok": True})
                 return
+            # Media is loaded via <img>/<audio>/<video> which cannot send an
+            # Authorization header — authenticate via the local token in the
+            # query string instead, then stream bytes from Studio.
+            if parsed.path.startswith("/studio/chat/media/"):
+                self._media_proxy(parsed)
+                return
             if not self._check_auth():
                 return
             if parsed.path == "/local/logs":
@@ -147,6 +187,9 @@ def make_handler(api: Api):
         def do_POST(self) -> None:  # noqa: N802
             parsed = urllib.parse.urlsplit(self.path)
             if not self._check_auth():
+                return
+            if parsed.path == "/local/chat_upload":
+                self._chat_upload(parsed)
                 return
             if parsed.path.startswith("/studio/"):
                 self._proxy_studio("POST", parsed)
@@ -202,6 +245,15 @@ def make_handler(api: Api):
             except json.JSONDecodeError:
                 self._send_json(400, {"error": "invalid_json"})
                 return
+            # Long-poll endpoints carry ?timeout=<secs>; give the upstream
+            # request that much headroom plus slack so we don't cut it short.
+            timeout = 20.0
+            qs = urllib.parse.parse_qs(parsed.query)
+            if "timeout" in qs:
+                try:
+                    timeout = float(qs["timeout"][0]) + 10
+                except ValueError:
+                    pass
             machine_id = _machine_id(api)
             try:
                 result = request_json(
@@ -209,6 +261,7 @@ def make_handler(api: Api):
                     url,
                     token=_studio_token(api),
                     body=body,
+                    timeout=timeout,
                     headers={"X-Machine-Id": machine_id} if machine_id else None,
                 )
             except Unauthorized:
@@ -218,6 +271,74 @@ def make_handler(api: Api):
                 self._send_json(exc.status or 502, {"error": exc.body})
                 return
             self._send_json(200, result)
+
+        # ---- chat media (binary) + upload (multipart) -----------------
+
+        def _media_proxy(self, parsed) -> None:
+            qs = urllib.parse.parse_qs(parsed.query)
+            if (qs.get("token") or [""])[0] != TOKEN:
+                self._send_json(401, {"error": "unauthorized"})
+                return
+            key = parsed.path[len("/studio/chat/media/"):]
+            studio_tok = _studio_token(api) or ""
+            up = (
+                f"{config.STUDIO_BASE_URL}/api/chat/media/{key}"
+                f"?token={urllib.parse.quote(studio_tok)}"
+            )
+            req = urllib.request.Request(up, method="GET")
+            req.add_header("User-Agent", "laborster-bridge/0.1")
+            try:
+                with urllib.request.urlopen(req, timeout=30, context=_SSL_CTX) as resp:
+                    data = resp.read()
+                    ctype = resp.headers.get("Content-Type", "application/octet-stream")
+            except urllib.error.HTTPError as exc:
+                self.send_response(exc.code)
+                self.end_headers()
+                return
+            except Exception:
+                self.send_response(502)
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _chat_upload(self, parsed) -> None:
+            qs = urllib.parse.parse_qs(parsed.query)
+            filename = (qs.get("filename") or ["file"])[0]
+            mime = (qs.get("mime") or ["application/octet-stream"])[0]
+            length = int(self.headers.get("Content-Length") or 0)
+            file_bytes = self.rfile.read(length) if length > 0 else b""
+
+            try:
+                presign = request_json(
+                    "POST",
+                    f"{config.STUDIO_BASE_URL}/api/chat/uploads/presign",
+                    token=_studio_token(api),
+                    body={"filename": filename, "mime_type": mime},
+                )
+            except Unauthorized:
+                self._send_json(401, {"error": "studio_unauthorized"})
+                return
+            except HttpError as exc:
+                self._send_json(exc.status or 502, {"error": exc.body})
+                return
+
+            body, ctype = _encode_multipart(presign["fields"], filename, mime, file_bytes)
+            req = urllib.request.Request(presign["upload_url"], data=body, method="POST")
+            req.add_header("Content-Type", ctype)
+            try:
+                urllib.request.urlopen(req, timeout=60, context=_SSL_CTX).close()
+            except urllib.error.HTTPError as exc:
+                self._send_json(502, {"error": f"上传失败: HTTP {exc.code}"})
+                return
+            except Exception as exc:  # noqa: BLE001
+                self._send_json(502, {"error": f"上传失败: {exc}"})
+                return
+            self._send_json(200, {"storage_key": presign["storage_key"]})
 
     return Handler
 

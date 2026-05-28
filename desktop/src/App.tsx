@@ -13,6 +13,7 @@ import {
   useToast,
 } from "./ui";
 import { ChangePasswordModal, DevicesView, PersonasView, TakeoverView } from "./StudioViews";
+import { ChatSandbox } from "./ChatSandbox";
 
 // ---- types (/local surface) -----------------------------------------
 
@@ -63,7 +64,7 @@ type Step =
   | { kind: "done" }
   | { kind: "failed"; reason: string };
 
-type Section = "takeover" | "personas" | "devices" | "logs" | "settings";
+type Section = "takeover" | "personas" | "devices" | "sandbox" | "logs" | "settings";
 
 // ---- root ------------------------------------------------------------
 
@@ -136,23 +137,29 @@ export function App() {
   return (
     <div className="grid h-screen grid-cols-[220px_1fr] bg-[var(--color-bg-deep)]">
       <Sidebar section={section} onSelect={setSection} status={status} account={account} />
-      <main className="overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-10 py-9">
-          {status?.last_error && (
-            <div className="mb-6 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]">
-              {status.last_error}
+      <main className="overflow-hidden">
+        {section === "sandbox" ? (
+          <ChatSandbox notify={notify} />
+        ) : (
+          <div className="h-full overflow-y-auto">
+            <div className="mx-auto max-w-5xl px-10 py-9">
+              {status?.last_error && (
+                <div className="mb-6 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]">
+                  {status.last_error}
+                </div>
+              )}
+              {section === "takeover" && <TakeoverView notify={notify} />}
+              {section === "personas" && <PersonasView notify={notify} />}
+              {section === "devices" && (
+                <DevicesView localMachineId={account?.machine_id ?? null} localSlot={localDeviceCard} notify={notify} />
+              )}
+              {section === "logs" && <LogsView notify={notify} />}
+              {section === "settings" && (
+                <SettingsView account={account} accounts={accounts} onChanged={refresh} notify={notify} />
+              )}
             </div>
-          )}
-          {section === "takeover" && <TakeoverView notify={notify} />}
-          {section === "personas" && <PersonasView notify={notify} />}
-          {section === "devices" && (
-            <DevicesView localMachineId={account?.machine_id ?? null} localSlot={localDeviceCard} notify={notify} />
-          )}
-          {section === "logs" && <LogsView notify={notify} />}
-          {section === "settings" && (
-            <SettingsView account={account} accounts={accounts} onChanged={refresh} notify={notify} />
-          )}
-        </div>
+          </div>
+        )}
       </main>
 
       {flow && (
@@ -194,6 +201,7 @@ function Sidebar(props: {
     { key: "takeover", label: "接管" },
     { key: "personas", label: "人设" },
     { key: "devices", label: "设备" },
+    { key: "sandbox", label: "沙箱" },
     { key: "logs", label: "日志" },
     { key: "settings", label: "设置" },
   ];

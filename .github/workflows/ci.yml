@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+# 同一分支的新 push 取消仍在跑的旧 run，省 CI 分钟数。
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------------
+  # 后端集成测试：拉起整套 compose 栈（不含 cloudflared / web 前端），
+  # 在 user-api 容器里跑 pytest——和 scripts/test.sh 同一套跑法。
+  # ---------------------------------------------------------------------
+  api-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # .env 被 gitignore，CI 现造一份测试用配置。值随便填，栈是一次性的。
+      - name: Write test .env
+        run: |
+          cat > .env <<'EOF'
+          POSTGRES_USER=ci
+          POSTGRES_PASSWORD=ci
+          POSTGRES_DB=laborster
+          DATABASE_URL=postgresql://ci:ci@db:5432/laborster
+          MINIO_ROOT_USER=ciminio
+          MINIO_ROOT_PASSWORD=ciminio123
+          S3_BUCKET=media
+          S3_PUBLIC_URL=http://minio:9000/media
+          UPLOAD_MAX_SIZE_MB=50
+          CF_TUNNEL_TOKEN=unused-in-ci
+          EOF
+
+      # 只起测试需要的服务，跳过 cloudflared（要真 token）和 user-web/admin-web。
+      - name: Bring up stack
+        run: |
+          docker compose --env-file .env up --build -d \
+            db minio minio-create-buckets migrate \
+            user-api admin-api user-worker bridge-host fake-llm
+
+      - name: Run pytest
+        run: |
+          docker compose --env-file .env exec -T user-api \
+            uv run python -m pytest tests/ -v
+
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose --env-file .env logs --no-color
+
+      - name: Tear down
+        if: always()
+        run: docker compose --env-file .env down -v
+
+  # ---------------------------------------------------------------------
+  # 前端：两个 React 应用各跑 eslint + tsc/vite 构建检查。
+  # ---------------------------------------------------------------------
+  web-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [user_web, admin_web]
+    defaults:
+      run:
+        working-directory: services/${{ matrix.app }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: services/${{ matrix.app }}/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

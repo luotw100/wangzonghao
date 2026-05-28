@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { api, bridgeReady } from "./bridge";
 
 type Status = {
@@ -43,40 +43,35 @@ export function App() {
   const [conversations, setConversations] = useState<ConversationItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  const load = useCallback(async () => {
+    // Local runtime data always resolves (logged-out = empty state).
+    try {
+      const [acc, st, chs] = await Promise.all([
+        api<Account>("/local/account"),
+        api<Status>("/local/status"),
+        api<Channel[]>("/local/channels"),
+      ]);
+      setAccount(acc);
+      setStatus(st);
+      setChannels(chs);
+      setError(null);
+    } catch (e) {
+      setError(String(e));
+    }
+    // Studio data is best-effort: 401 until login, or offline in dev.
+    try {
+      setConversations(await api<ConversationItem[]>("/studio/conversations"));
+    } catch {
+      setConversations([]);
+    }
+  }, []);
+
   useEffect(() => {
     if (!bridgeReady) return;
-    let cancelled = false;
-    const load = async () => {
-      // Local runtime data always resolves (logged-out = empty state).
-      try {
-        const [acc, st, chs] = await Promise.all([
-          api<Account>("/local/account"),
-          api<Status>("/local/status"),
-          api<Channel[]>("/local/channels"),
-        ]);
-        if (cancelled) return;
-        setAccount(acc);
-        setStatus(st);
-        setChannels(chs);
-        setError(null);
-      } catch (e) {
-        if (!cancelled) setError(String(e));
-      }
-      // Studio data is best-effort: 401 until login, or offline in dev.
-      try {
-        const conv = await api<ConversationItem[]>("/studio/conversations");
-        if (!cancelled) setConversations(conv);
-      } catch {
-        if (!cancelled) setConversations([]);
-      }
-    };
     load();
     const t = setInterval(load, 4000);
-    return () => {
-      cancelled = true;
-      clearInterval(t);
-    };
-  }, []);
+    return () => clearInterval(t);
+  }, [load]);
 
   if (!bridgeReady) {
     return (
@@ -87,6 +82,12 @@ export function App() {
         </div>
       </div>
     );
+  }
+
+  // account === null → first load still in flight; don't flash the login
+  // screen before we know the real auth state.
+  if (account && !account.logged_in) {
+    return <LoginView onLoggedIn={load} />;
   }
 
   return (
@@ -100,9 +101,85 @@ export function App() {
           )}
           {section === "channels" && <ChannelsView channels={channels} />}
           {section === "conversations" && <ConversationsView items={conversations} />}
-          {section === "settings" && <SettingsView account={account} />}
+          {section === "settings" && <SettingsView account={account} onLogout={load} />}
         </div>
       </main>
+    </div>
+  );
+}
+
+function LoginView({ onLoggedIn }: { onLoggedIn: () => void }) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api<{ error?: string }>("/local/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+      if (res?.error) {
+        setError(res.error);
+        return;
+      }
+      onLoggedIn();
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const inputCls =
+    "w-full rounded-md border border-[var(--color-line)] bg-[var(--color-bg-raised)] px-3 py-2 text-[14px] text-[var(--color-ink-1)] outline-none focus:border-[var(--color-brass)]";
+
+  return (
+    <div className="flex h-screen items-center justify-center bg-[var(--color-bg-deep)]">
+      <form onSubmit={submit} className="w-[340px]">
+        <div className="mb-7 text-center">
+          <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--color-brass)]/15 font-serif text-2xl text-[var(--color-brass)]">
+            L
+          </div>
+          <h1 className="text-[19px] font-medium text-[var(--color-ink-1)]">登录 Laborster</h1>
+          <p className="mt-1 text-[12.5px] text-[var(--color-ink-3)]">使用你的 Studio 账号</p>
+        </div>
+
+        {error && (
+          <div className="mb-4 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12.5px] text-[var(--color-danger)]">
+            {error}
+          </div>
+        )}
+
+        <label className="mb-1 block text-[12px] text-[var(--color-ink-3)]">用户名</label>
+        <input
+          className={inputCls}
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoFocus
+        />
+        <label className="mb-1 mt-4 block text-[12px] text-[var(--color-ink-3)]">密码</label>
+        <input
+          className={inputCls}
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+        />
+
+        <button
+          type="submit"
+          disabled={busy || !username || !password}
+          className="mt-6 w-full rounded-md bg-[var(--color-brass)] py-2.5 text-[14px] font-medium text-[#1b1d23] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {busy ? "登录中…" : "登录"}
+        </button>
+      </form>
     </div>
   );
 }
@@ -305,13 +382,30 @@ function ConversationsView({ items }: { items: ConversationItem[] }) {
   );
 }
 
-function SettingsView({ account }: { account: Account | null }) {
+function SettingsView({ account, onLogout }: { account: Account | null; onLogout: () => void }) {
+  const [busy, setBusy] = useState(false);
   const rows: [string, string][] = [
     ["账号 ID", account?.account_id ?? "—"],
     ["显示名", account?.display_name ?? "—"],
     ["机器 ID", account?.machine_id ?? "—"],
     ["bridge 端点", window.bridge?.baseUrl ?? "—"],
   ];
+
+  const logout = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api("/local/logout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      onLogout();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <>
       <SectionHeader title="设置" subtitle="账号与本地 bridge 的连接信息。" />
@@ -325,6 +419,13 @@ function SettingsView({ account }: { account: Account | null }) {
           ))}
         </dl>
       </Card>
+      <button
+        onClick={logout}
+        disabled={busy}
+        className="mt-5 rounded-md border border-[var(--color-danger)]/40 px-4 py-2 text-[13px] text-[var(--color-danger)] transition-colors hover:bg-[var(--color-danger)]/10 disabled:opacity-40"
+      >
+        {busy ? "退出中…" : "退出登录"}
+      </button>
     </>
   );
 }

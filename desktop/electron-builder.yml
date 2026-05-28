@@ -12,17 +12,21 @@ extraResources:
     filter:
       - "laborster-sidecar"
       - "laborster-sidecar.exe"
+  - from: build/icon.png
+    to: icon.png
 asar: true
 # Double-click to run, no installer (like the bridge app): mac ships a
 # zipped .app, win ships a single portable .exe.
 mac:
   category: public.app-category.business
+  icon: build/icon.icns
   target:
     - target: zip
       arch: [arm64]
   hardenedRuntime: false
   gatekeeperAssess: false
 win:
+  icon: build/icon.ico
   target:
     - target: portable
       arch: [x64]

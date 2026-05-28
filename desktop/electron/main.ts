@@ -1,6 +1,7 @@
 import { app, BrowserWindow, shell } from "electron";
+import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { startSidecar, stopSidecar, type SidecarHandle } from "./sidecar";
+import { startSidecar, killSidecar, type SidecarHandle } from "./sidecar";
 
 const isDev = !app.isPackaged;
 const WINDOW_TITLE = "Laborster";
@@ -8,6 +9,20 @@ const BG = "#1b1d23";
 
 let mainWindow: BrowserWindow | null = null;
 let sidecar: SidecarHandle | null = null;
+
+function windowIcon(): string | undefined {
+  const candidate = isDev
+    ? join(app.getAppPath(), "build", "icon.png")
+    : join(process.resourcesPath, "icon.png");
+  return existsSync(candidate) ? candidate : undefined;
+}
+
+// Best-effort, synchronous: must finish before the process exits, and must
+// take down the PyInstaller child tree (onefile spawns a bootloader child).
+function teardownSidecar(): void {
+  killSidecar(sidecar);
+  sidecar = null;
+}
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -26,6 +41,7 @@ async function createWindow(): Promise<void> {
 
   mainWindow = new BrowserWindow({
     title: WINDOW_TITLE,
+    icon: windowIcon(),
     width: 1180,
     height: 760,
     minWidth: 880,
@@ -62,13 +78,10 @@ async function createWindow(): Promise<void> {
 
 app.whenReady().then(createWindow);
 
-app.on("window-all-closed", async () => {
-  await stopSidecar(sidecar);
-  sidecar = null;
+app.on("window-all-closed", () => {
+  teardownSidecar();
   app.quit();
 });
 
-app.on("before-quit", async () => {
-  await stopSidecar(sidecar);
-  sidecar = null;
-});
+app.on("before-quit", teardownSidecar);
+app.on("will-quit", teardownSidecar);

@@ -1,7 +1,9 @@
-import { spawn, type ChildProcessByStdio } from "node:child_process";
+import { spawn, spawnSync, type ChildProcessByStdio } from "node:child_process";
 import type { Readable } from "node:stream";
 import { join } from "node:path";
 import { app } from "electron";
+
+const isWin = process.platform === "win32";
 
 type SidecarProc = ChildProcessByStdio<null, Readable, Readable>;
 
@@ -50,6 +52,8 @@ export function startSidecar(opts: StartOpts): Promise<SidecarHandle> {
       cwd,
       stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, PYTHONUNBUFFERED: "1" },
+      // POSIX: own process group so we can signal the whole tree on quit.
+      detached: !isWin,
     });
 
     let settled = false;
@@ -108,26 +112,24 @@ export function startSidecar(opts: StartOpts): Promise<SidecarHandle> {
   });
 }
 
-export async function stopSidecar(handle: SidecarHandle | null): Promise<void> {
-  if (!handle || handle.proc.exitCode !== null) return;
-  await new Promise<void>((resolve) => {
-    const proc = handle.proc;
-    const done = () => resolve();
-    proc.once("exit", done);
-    try {
-      proc.kill("SIGTERM");
-    } catch {
-      resolve();
-      return;
+// Synchronous, force, whole-tree. Called from app quit handlers — must
+// not leave laborster-sidecar(.exe) running after the window closes.
+export function killSidecar(handle: SidecarHandle | null): void {
+  const proc = handle?.proc;
+  if (!proc || proc.exitCode !== null || proc.pid === undefined) return;
+  try {
+    if (isWin) {
+      // PyInstaller onefile = bootloader + child; /T kills the tree.
+      spawnSync("taskkill", ["/pid", String(proc.pid), "/T", "/F"]);
+    } else {
+      // Negative pid → the whole process group (detached spawn above).
+      process.kill(-proc.pid, "SIGKILL");
     }
-    setTimeout(() => {
-      if (proc.exitCode === null) {
-        try {
-          proc.kill("SIGKILL");
-        } catch {
-          /* ignore */
-        }
-      }
-    }, 2000);
-  });
+  } catch {
+    try {
+      proc.kill("SIGKILL");
+    } catch {
+      /* already gone */
+    }
+  }
 }

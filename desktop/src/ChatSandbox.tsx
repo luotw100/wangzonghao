@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import * as chat from "./chat";
 import { authMe } from "./studio";
 import { GHOST_BTN, INPUT_CLS, ModalShell, PRIMARY_BTN, SM_GHOST_BTN } from "./ui";
@@ -7,24 +14,48 @@ const INITIAL_LIMIT = 50;
 type Notify = (text: string, kind?: "ok" | "err") => void;
 type Perspective = "self" | "contact";
 
-// Messages live only in React state — no localStorage / IndexedDB. On every
-// app launch we re-fetch the last INITIAL_LIMIT per conversation; older
-// history is pulled lazily via before_id when the user scrolls up.
-function useChatMessages(conversationId: string | null) {
-  const [messages, setMessages] = useState<chat.Message[]>([]);
+// Global in-memory cache (NOT disk): switching conversations seeds instantly
+// from here and the long-poll resumes from the cached lastId instead of
+// refetching the whole window. Lives at module scope so it survives the
+// ChatThread unmount/remount that a tab switch causes.
+const msgCache = new Map<string, chat.Message[]>();
+const lastIdCache = new Map<string, number>();
+
+function maxId(items: chat.Message[]): number {
+  return items.reduce((m, x) => (x.id > m ? x.id : m), 0);
+}
+
+function previewText(m: chat.Message | undefined): string {
+  if (!m) return "暂无消息";
+  if (m.msg_type === "text") return m.content;
+  return { image: "[图片]", audio: "[语音]", video: "[视频]", file: "[文件]" }[m.msg_type] ?? "";
+}
+
+function useChatMessages(conversationId: string, onLatest: (convId: string, m: chat.Message | undefined) => void) {
+  const [messages, setMessages] = useState<chat.Message[]>(() => msgCache.get(conversationId) ?? []);
   const [hasMore, setHasMore] = useState(false);
-  const lastId = useRef(0);
   const oldestId = useRef<number | null>(null);
 
+  const write = useCallback(
+    (next: chat.Message[]) => {
+      msgCache.set(conversationId, next);
+      lastIdCache.set(conversationId, maxId(next));
+      onLatest(conversationId, next[next.length - 1]);
+    },
+    [conversationId, onLatest],
+  );
+
   const loadOlder = useCallback(async () => {
-    if (!conversationId || oldestId.current == null) return;
+    if (oldestId.current == null) return;
     const older = await chat.getMessagesBefore(conversationId, oldestId.current, INITIAL_LIMIT);
     if (older.length > 0) {
       oldestId.current = older[0].id;
       setMessages((prev) => {
         const seen = new Set(prev.map((m) => m.id));
         const fresh = older.filter((m) => !seen.has(m.id));
-        return fresh.length ? [...fresh, ...prev] : prev;
+        const next = fresh.length ? [...fresh, ...prev] : prev;
+        msgCache.set(conversationId, next);
+        return next;
       });
     }
     setHasMore(older.length === INITIAL_LIMIT);
@@ -32,34 +63,40 @@ function useChatMessages(conversationId: string | null) {
 
   useEffect(() => {
     let cancelled = false;
-    setMessages([]);
-    setHasMore(false);
-    lastId.current = 0;
-    oldestId.current = null;
-    if (!conversationId) return;
+    const ctrl = new AbortController();
+
+    const seed = msgCache.get(conversationId) ?? [];
+    setMessages(seed);
+    oldestId.current = seed.length ? seed[0].id : null;
+    setHasMore(seed.length >= INITIAL_LIMIT);
 
     (async () => {
-      try {
-        const initial = await chat.getMessagesBefore(conversationId, undefined, INITIAL_LIMIT);
-        if (cancelled) return;
-        setMessages(initial);
-        lastId.current = initial.reduce((m, x) => (x.id > m ? x.id : m), 0);
-        oldestId.current = initial.length ? initial[0].id : null;
-        setHasMore(initial.length === INITIAL_LIMIT);
-      } catch {
-        return;
+      if (seed.length === 0) {
+        try {
+          const initial = await chat.getMessagesBefore(conversationId, undefined, INITIAL_LIMIT);
+          if (cancelled) return;
+          setMessages(initial);
+          oldestId.current = initial.length ? initial[0].id : null;
+          setHasMore(initial.length === INITIAL_LIMIT);
+          write(initial);
+        } catch {
+          return;
+        }
       }
       while (!cancelled) {
         try {
-          const incoming = await chat.getMessagesAfter(conversationId, lastId.current);
+          const from = lastIdCache.get(conversationId) ?? 0;
+          const incoming = await chat.getMessagesAfter(conversationId, from, ctrl.signal);
           if (cancelled) return;
           if (incoming.length) {
             setMessages((prev) => {
               const seen = new Set(prev.map((m) => m.id));
               const fresh = incoming.filter((m) => !seen.has(m.id));
-              return fresh.length ? [...prev, ...fresh].sort((a, b) => a.id - b.id) : prev;
+              if (!fresh.length) return prev;
+              const next = [...prev, ...fresh].sort((a, b) => a.id - b.id);
+              write(next);
+              return next;
             });
-            lastId.current = incoming.reduce((m, x) => (x.id > m ? x.id : m), lastId.current);
           }
         } catch {
           await new Promise((r) => setTimeout(r, 1500));
@@ -69,8 +106,9 @@ function useChatMessages(conversationId: string | null) {
 
     return () => {
       cancelled = true;
+      ctrl.abort(); // kill the in-flight long-poll immediately on switch
     };
-  }, [conversationId]);
+  }, [conversationId, write]);
 
   return { messages, hasMore, loadOlder };
 }
@@ -80,6 +118,12 @@ export function ChatSandbox({ notify }: { notify: Notify }) {
   const [conversations, setConversations] = useState<chat.Conversation[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [showNew, setShowNew] = useState(false);
+  const [previews, setPreviews] = useState<Record<string, chat.Message | undefined>>({});
+  const primed = useRef<Set<string>>(new Set());
+
+  const setPreview = useCallback((convId: string, m: chat.Message | undefined) => {
+    setPreviews((prev) => (prev[convId] === m ? prev : { ...prev, [convId]: m }));
+  }, []);
 
   useEffect(() => {
     authMe()
@@ -100,6 +144,24 @@ export function ChatSandbox({ notify }: { notify: Notify }) {
     const t = setInterval(reload, 5000);
     return () => clearInterval(t);
   }, [reload]);
+
+  // Prime each conversation's last-message preview exactly once (cheap 1-row
+  // fetch), so the sidebar shows previews without visiting every tab.
+  useEffect(() => {
+    for (const c of conversations) {
+      if (primed.current.has(c.id)) continue;
+      primed.current.add(c.id);
+      const cached = msgCache.get(c.id);
+      if (cached && cached.length) {
+        setPreview(c.id, cached[cached.length - 1]);
+        continue;
+      }
+      chat
+        .getMessagesBefore(c.id, undefined, 1)
+        .then((ms) => setPreview(c.id, ms[ms.length - 1]))
+        .catch(() => {});
+    }
+  }, [conversations, setPreview]);
 
   useEffect(() => {
     if (!activeId && conversations.length) setActiveId(conversations[0].id);
@@ -127,6 +189,8 @@ export function ChatSandbox({ notify }: { notify: Notify }) {
           ) : (
             conversations.map((c) => {
               const activeRow = c.id === activeId;
+              const remark = c.contact.remark_name;
+              const nickname = c.contact.nickname;
               return (
                 <button
                   key={c.id}
@@ -136,11 +200,16 @@ export function ChatSandbox({ notify }: { notify: Notify }) {
                   }`}
                 >
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--color-brass)]/15 text-[13px] font-medium text-[var(--color-brass)]">
-                    {chat.contactName(c.contact).slice(0, 1)}
+                    {(remark || nickname).slice(0, 1)}
                   </span>
                   <div className="min-w-0 flex-1">
-                    <div className="truncate text-[13.5px] text-[var(--color-ink-1)]">{chat.contactName(c.contact)}</div>
-                    <div className="truncate text-[11.5px] text-[var(--color-ink-4)]">@{c.contact.username}</div>
+                    <div className="flex items-baseline gap-1.5">
+                      <span className="truncate text-[13.5px] text-[var(--color-ink-1)]">{remark || nickname}</span>
+                      {remark && remark !== nickname && (
+                        <span className="shrink-0 text-[11px] text-[var(--color-ink-4)]">（{nickname}）</span>
+                      )}
+                    </div>
+                    <div className="truncate text-[11.5px] text-[var(--color-ink-4)]">{previewText(previews[c.id])}</div>
                   </div>
                 </button>
               );
@@ -150,7 +219,7 @@ export function ChatSandbox({ notify }: { notify: Notify }) {
       </aside>
 
       {active && account ? (
-        <ChatThread account={account} conversation={active} notify={notify} />
+        <ChatThread account={account} conversation={active} notify={notify} onLatest={setPreview} />
       ) : (
         <div className="flex items-center justify-center text-[13px] text-[var(--color-ink-3)]">
           {account ? "从左侧选择一个联系人" : "加载账号中…"}
@@ -162,7 +231,6 @@ export function ChatSandbox({ notify }: { notify: Notify }) {
           onClose={() => setShowNew(false)}
           onCreated={async (contactId) => {
             setShowNew(false);
-            await reload();
             const convs = await chat.listConversations();
             setConversations(convs);
             const conv = convs.find((c) => c.contact_id === contactId);
@@ -179,21 +247,53 @@ function ChatThread({
   account,
   conversation,
   notify,
+  onLatest,
 }: {
   account: chat.Account;
   conversation: chat.Conversation;
   notify: Notify;
+  onLatest: (convId: string, m: chat.Message | undefined) => void;
 }) {
-  const { messages, hasMore, loadOlder } = useChatMessages(conversation.id);
+  const { messages, hasMore, loadOlder } = useChatMessages(conversation.id, onLatest);
   const [perspective, setPerspective] = useState<Perspective>("self");
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
-  const endRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const atBottom = useRef(true);
+  const prevHeight = useRef<number | null>(null); // set right before prepending older
 
+  // Landing on a conversation should sit at the latest message.
   useEffect(() => {
-    endRef.current?.scrollIntoView();
+    atBottom.current = true;
+    prevHeight.current = null;
+  }, [conversation.id]);
+
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+  };
+
+  // After messages change: if we just prepended older history, keep the
+  // viewport anchored (no jump); otherwise only follow to the bottom when the
+  // user was already there.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (prevHeight.current != null) {
+      el.scrollTop += el.scrollHeight - prevHeight.current;
+      prevHeight.current = null;
+    } else if (atBottom.current) {
+      el.scrollTop = el.scrollHeight;
+    }
   }, [messages]);
+
+  const handleLoadOlder = () => {
+    const el = scrollRef.current;
+    prevHeight.current = el ? el.scrollHeight : null;
+    loadOlder();
+  };
 
   const senderId = () => (perspective === "self" ? null : conversation.contact_id);
 
@@ -238,19 +338,22 @@ function ChatThread({
   };
 
   const speakingAs = perspective === "self" ? account.nickname : chat.contactName(conversation.contact);
+  const c = conversation.contact;
 
   return (
     <div className="flex h-screen flex-col">
-      <header className="flex items-center gap-3 border-b border-[var(--color-line-soft)] px-6 py-3.5">
-        <div className="text-[15px] font-medium text-[var(--color-ink-1)]">{chat.contactName(conversation.contact)}</div>
-        <span className="text-[11px] text-[var(--color-ink-4)]">@{conversation.contact.username}</span>
+      <header className="flex items-center gap-2 border-b border-[var(--color-line-soft)] px-6 py-3.5">
+        <span className="text-[15px] font-medium text-[var(--color-ink-1)]">{c.remark_name || c.nickname}</span>
+        {c.remark_name && c.remark_name !== c.nickname && (
+          <span className="text-[12px] text-[var(--color-ink-4)]">网名：{c.nickname}</span>
+        )}
       </header>
 
-      <div className="flex-1 overflow-y-auto px-6 py-4">
+      <div ref={scrollRef} onScroll={onScroll} className="flex-1 overflow-y-auto px-6 py-4">
         {hasMore && (
           <div className="mb-3 text-center">
-            <button className={SM_GHOST_BTN} onClick={loadOlder}>
-              加载更早的消息
+            <button className={SM_GHOST_BTN} onClick={handleLoadOlder}>
+              查看更早消息
             </button>
           </div>
         )}
@@ -269,7 +372,6 @@ function ChatThread({
               </div>
             );
           })}
-          <div ref={endRef} />
         </div>
       </div>
 
@@ -366,7 +468,7 @@ function NewContactModal({
 
   return (
     <ModalShell title="新建联系人" onClose={onClose} width="w-[380px]">
-      <label className="mb-1 block text-[12px] text-[var(--color-ink-3)]">昵称</label>
+      <label className="mb-1 block text-[12px] text-[var(--color-ink-3)]">网名</label>
       <input className={INPUT_CLS} value={nickname} onChange={(e) => setNickname(e.target.value)} autoFocus />
       <label className="mb-1 mt-4 block text-[12px] text-[var(--color-ink-3)]">备注名（可选）</label>
       <input className={INPUT_CLS} value={remark} onChange={(e) => setRemark(e.target.value)} />

@@ -114,12 +114,20 @@ export async function getMessagesBefore(
 
 // Long-poll: blocks server-side up to `serverTimeout`s waiting for messages
 // newer than lastId. The sidecar passes the timeout upstream with slack.
+// `extSignal` lets the caller abort immediately on conversation switch so a
+// stale long-poll never lingers (otherwise it holds the connection ~38s).
 export async function getMessagesAfter(
   conversationId: string,
   lastId: number,
+  extSignal?: AbortSignal,
   serverTimeout = 30,
 ): Promise<Message[]> {
   const controller = new AbortController();
+  const onExt = () => controller.abort();
+  if (extSignal) {
+    if (extSignal.aborted) controller.abort();
+    else extSignal.addEventListener("abort", onExt, { once: true });
+  }
   const id = setTimeout(() => controller.abort(), serverTimeout * 1000 + 8000);
   const q = new URLSearchParams({ last_id: String(lastId), timeout: String(serverTimeout) });
   try {
@@ -127,14 +135,15 @@ export async function getMessagesAfter(
       headers: { Authorization: `Bearer ${token()}` },
       signal: controller.signal,
     });
-    clearTimeout(id);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return data?.messages ?? [];
   } catch (err) {
-    clearTimeout(id);
     if (err instanceof DOMException && err.name === "AbortError") return [];
     throw err;
+  } finally {
+    clearTimeout(id);
+    if (extSignal) extSignal.removeEventListener("abort", onExt);
   }
 }
 

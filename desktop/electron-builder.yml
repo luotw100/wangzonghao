@@ -1,0 +1,38 @@
+appId: com.laborster.desktop
+productName: Laborster
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - package.json
+extraResources:
+  - from: sidecar/dist
+    to: sidecar
+    filter:
+      - "laborster-sidecar"
+      - "laborster-sidecar.exe"
+asar: true
+mac:
+  category: public.app-category.business
+  target:
+    - target: dmg
+      arch: [arm64]
+    - target: zip
+      arch: [arm64]
+  hardenedRuntime: false
+  gatekeeperAssess: false
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: zip
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+linux:
+  target:
+    - AppImage
+  category: Office

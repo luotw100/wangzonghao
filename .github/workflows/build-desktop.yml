@@ -1,0 +1,66 @@
+name: Build Desktop App
+
+# Manual only — never auto-triggers.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version label for artifact names (e.g. 0.1.0)"
+        required: true
+        default: "0.1.0"
+
+defaults:
+  run:
+    working-directory: desktop
+
+jobs:
+  mac-arm64:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm install
+      - run: npm run build
+      - name: Freeze Python sidecar
+        run: ./build_sidecar_mac.sh
+        working-directory: desktop/sidecar
+      - name: electron-builder
+        run: npx electron-builder --mac --arm64 --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Laborster-${{ github.event.inputs.version }}-mac-arm64
+          path: |
+            desktop/release/*.dmg
+            desktop/release/*.zip
+          if-no-files-found: error
+
+  windows-x64:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: npm install
+      - run: npm run build
+      - name: Freeze Python sidecar
+        run: ./build_sidecar_win.ps1
+        working-directory: desktop/sidecar
+        shell: pwsh
+      - name: electron-builder
+        run: npx electron-builder --win --x64 --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Laborster-${{ github.event.inputs.version }}-win-x64
+          path: |
+            desktop/release/*.exe
+            desktop/release/*.zip
+          if-no-files-found: error

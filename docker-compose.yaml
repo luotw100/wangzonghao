@@ -62,7 +62,11 @@ services:
   user-api:
     build:
       context: services/api
-    command: ["uv", "run", "uvicorn", "studio.main:app", "--host", "0.0.0.0", "--port", "23456"]
+    # --timeout-keep-alive 75 (> nginx upstream idle 60s) makes nginx the side
+    #   that closes pooled idle connections, avoiding reuse-after-close 502s.
+    # --workers 4 gives real parallelism (was a single event loop). Safe here:
+    #   the LISTEN/NOTIFY broker is per-worker by design (see studio/notify.py).
+    command: ["uv", "run", "uvicorn", "studio.main:app", "--host", "0.0.0.0", "--port", "23456", "--timeout-keep-alive", "75", "--workers", "4"]
     environment:
       DATABASE_URL: ${DATABASE_URL}
       S3_ENDPOINT: http://minio:9000

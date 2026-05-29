@@ -27,6 +27,16 @@ from studio.models import Account, AuthSession, Bridge, Inbox, Persona, Provider
 BRIDGE_OFFLINE_S = 45
 
 
+# Web session lifetime, refreshed on use (sliding expiry). To avoid a DB
+# write + commit on every authenticated request — which serialized all read
+# traffic on the session row — the expiry is advanced only when it would move
+# forward by at least SESSION_RENEW_INTERVAL, i.e. at most one write per minute
+# per session. Expiry stays accurate to within that interval, so an idle user
+# is logged out at most ~1 min early.
+SESSION_TTL = timedelta(hours=24)
+SESSION_RENEW_INTERVAL = timedelta(minutes=1)
+
+
 def new_id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex}"
 
@@ -87,7 +97,7 @@ def create_auth_session(db: Session, account: Account) -> str:
     now = utc_now()
     db.add(AuthSession(
         id=hash_token(token), account_id=account.id,
-        expires_at=now + timedelta(hours=24), created_at=now,
+        expires_at=now + SESSION_TTL, created_at=now,
     ))
     return token
 
@@ -108,7 +118,10 @@ def revoke_account_sessions(db: Session, account_id: str) -> None:
 # ---------------------------------------------------------------------------
 
 def resolve_account_from_token(db: Session, raw_token: str) -> Account:
-    """Look up the account for a bearer token and slide its TTL by 24h.
+    """Look up the account for a bearer token and slide its 24h TTL on use.
+
+    The renewal write is throttled to at most once per SESSION_RENEW_INTERVAL
+    per session (see the constant) so the common case is a pure read.
 
     Used by both the standard ``get_account`` FastAPI dep and by chat's
     media route, which accepts a fallback ``?token=`` query parameter.
@@ -124,8 +137,12 @@ def resolve_account_from_token(db: Session, raw_token: str) -> Account:
     account = s.account
     if not account or account.status != AccountStatus.ACTIVE:
         raise HTTPException(status_code=401, detail="登录已失效")
-    s.expires_at = now + timedelta(hours=24)
-    db.commit()
+    # new_expires - expires_at == now - last_renewal (expiry == last_renewal +
+    # TTL), so this writes only when the session was last renewed >= 1 min ago.
+    new_expires = now + SESSION_TTL
+    if new_expires - s.expires_at >= SESSION_RENEW_INTERVAL:
+        s.expires_at = new_expires
+        db.commit()
     return account
 
 

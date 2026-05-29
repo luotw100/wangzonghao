@@ -159,14 +159,48 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------
-  # Tunnel
+  # Tunnel: admin plane only (admin-web behind Cloudflare Access).
+  # The user plane (studio + s3) goes through the frp relay below.
   # ---------------------------------------------------------------------
   cloudflared:
     image: cloudflare/cloudflared:latest
     command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
     restart: unless-stopped
 
+  # ---------------------------------------------------------------------
+  # Edge: Caddy terminates TLS for the user plane (studio + s3); frpc
+  # exposes it through the Seoul frp relay via zero-trust TCP passthrough,
+  # so the relay only ever moves ciphertext. See edge/README.md.
+  # ---------------------------------------------------------------------
+  caddy:
+    build:
+      context: edge/caddy
+    environment:
+      CF_API_TOKEN: ${CF_API_TOKEN}
+    volumes:
+      - ./edge/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      user-web:
+        condition: service_started
+    restart: unless-stopped
+
+  frpc:
+    image: snowdreamtech/frpc:0.69.0
+    environment:
+      FRP_SERVER_ADDR: ${FRP_SERVER_ADDR}
+      FRP_TOKEN: ${FRP_TOKEN}
+    volumes:
+      - ./edge/frpc.toml:/etc/frp/frpc.toml:ro
+    depends_on:
+      caddy:
+        condition: service_started
+    restart: unless-stopped
+
 volumes:
   pgdata:
   minio-data:
   bridge-host-data:
+  caddy-data:
+  caddy-config:

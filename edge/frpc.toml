@@ -1,0 +1,21 @@
+# frp client — runs on the origin (this dev machine), dials OUT to the Seoul
+# relay. No inbound ports are opened here. Secrets come from env vars (frp
+# renders {{ .Envs.X }} at startup), so this file is safe to commit.
+#
+# TCP passthrough of 443: the relay forwards raw bytes to the origin Caddy,
+# which holds the only TLS private key. transport.tls.enable wraps the frpc
+# <-> frps channel itself (defense in depth + hides inner SNI from the path).
+serverAddr = "{{ .Envs.FRP_SERVER_ADDR }}"
+serverPort = 7000
+
+auth.method = "token"
+auth.token = "{{ .Envs.FRP_TOKEN }}"
+
+transport.tls.enable = true
+
+[[proxies]]
+name = "user-plane-https"
+type = "tcp"
+localIP = "caddy"
+localPort = 443
+remotePort = 443

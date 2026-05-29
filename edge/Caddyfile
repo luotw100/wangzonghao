@@ -1,0 +1,22 @@
+{
+	# Account email for Let's Encrypt expiry notices.
+	email admin@laborster.com
+	# DNS-01 via Cloudflare. CF_API_TOKEN is injected by compose.
+	acme_dns cloudflare {env.CF_API_TOKEN}
+}
+
+# User plane: SPA (studio + chat) + /api proxied by user-web nginx.
+# TLS terminates HERE (origin), so the frp relay only ever sees ciphertext.
+studio.laborster.com {
+	encode zstd gzip
+	reverse_proxy user-web:80
+}
+
+# s3 is a placeholder for now (studio has no media messages yet), routed for
+# completeness. When media goes live: MinIO presigned URLs validate against
+# the request Host (Caddy preserves it by default); also set MINIO_SERVER_URL
+# = https://s3.laborster.com on the minio service. At scale, move media off
+# the 200 Mbps relay to OSS / R2.
+s3.laborster.com {
+	reverse_proxy minio:9000
+}

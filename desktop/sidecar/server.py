@@ -16,8 +16,9 @@ Contract with Electron main (see electron/sidecar.ts):
     * Require "Authorization: Bearer <T>" on every request but /health.
     * SIGTERM → stop the daemon cleanly, then exit.
 
-The runtime package under laborster_bridge/ is an unmodified copy of the
-bridge — its design (polling actors, no notifies) is preserved verbatim.
+The runtime package under laborster_bridge/ is the canonical Bridge
+daemon — the same package the bridge-host container installs and runs
+headless. Its design (polling actors, no notifies) is intentional.
 """
 
 from __future__ import annotations

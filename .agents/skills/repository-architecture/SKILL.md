@@ -11,7 +11,7 @@ description: Laborster 仓库架构全景 Skill。用于理解当前代码、服
 
 ## 什么时候使用
 
-- 改动 `bridge/` 或 `services/api/{studio,chat,admin}` 中任一模块。
+- 改动 `desktop/sidecar/laborster_bridge/` 或 `services/api/{studio,chat,admin}` 中任一模块。
 - 理解 Studio API、worker、reply brain、distill pipeline、数据库 schema 或 Bridge protocol。
 - 理解 Chat sandbox 联系人/会话/消息/导入/长轮询/connector。
 - 理解 Bridge daemon 的 adapter 生命周期、inbound/outbound、heartbeat、REPL 命令。
@@ -20,11 +20,29 @@ description: Laborster 仓库架构全景 Skill。用于理解当前代码、服
 
 ## 一句话总览
 
-Laborster 是私聊接管系统：`Channel ↔ Bridge ↔ Studio`。仓库由 **两个独立项目**组成——`bridge/`（主播 PC 上的 Python REPL daemon）和 `services/`（云端：API + worker + admin + web）。Chat sandbox 是 dogfood Channel，但**代码上**作为 `services/api/chat/` 的子包与 Studio 同进程跑，业务边界靠 schema 和 Python 包隔离维持，运行边界仍是 Bridge HTTP。
+Laborster 是私聊接管系统：`Channel ↔ Bridge ↔ Studio`。仓库由 **两个独立项目**组成——`desktop/`（主播端 Electron 桌面应用 + Python sidecar daemon）和 `services/`（云端：API + worker + admin + web）。Chat sandbox 是 dogfood Channel，但**代码上**作为 `services/api/chat/` 的子包与 Studio 同进程跑，业务边界靠 schema 和 Python 包隔离维持，运行边界仍是 Bridge HTTP。
 
 ## 仓库布局
 
 ```
+desktop/
+├── sidecar/
+│   ├── laborster_bridge/   # laborster_bridge Python 包（pip install -e 给 bridge-host 容器用；PyInstaller 打包进桌面应用 sidecar）
+│   │   ├── __main__.py     # 入口：--headless → headless.run()，否则 repl.run()
+│   │   ├── headless.py     # hosted-bridge 云端 subprocess 模式（bridge-host 专用）
+│   │   ├── repl.py         # 交互式 CLI（prompt_toolkit，本地调试用）
+│   │   ├── runtime.py      # 5 个 actor（Scheduler/Upload/Takeover/Outbound/Heartbeat）
+│   │   ├── commands.py     # 命令 dispatch + daemon 管理
+│   │   ├── store.py        # SQLite（kv/channels/local_messages/conv_cursors）
+│   │   ├── studio_client.py
+│   │   ├── config.py       # STUDIO_BASE_URL 硬编码；headless 通过 --studio-url 覆盖
+│   │   ├── adapters/chat.py
+│   │   └── gui/bridge_api.py  # HTTP sidecar 的 API 层（被 server.py 调用）
+│   ├── server.py           # Electron sidecar HTTP 服务（反代 Studio、媒体上传）
+│   ├── pyproject.toml      # hatchling，wheel 只打 laborster_bridge 包
+│   └── requirements.txt
+├── electron/               # Electron 主进程 + sidecar 管理
+└── src/                    # React 前端
 services/
 ├── api/
 │   ├── studio/    # Studio 控制台 (auth、人设、卡片、reply、distill、bridge protocol)
@@ -33,9 +51,8 @@ services/
 │   ├── alembic.ini
 │   └── pyproject.toml
 ├── user_web/      # 单个 React SPA：/studio + /chat 都是它的路由（含 nginx.conf）
-└── admin_web/     # 独立 admin React 面板，CF Access 保护（含 nginx.conf）
-services/bridge_host/  # bridge-host service：admin 手动起停的 chat-only Bridge subprocess supervisor
-bridge/        # laborster_bridge Python 包（既被打包成主播本地 GUI/CLI，也被 bridge-host 容器 pip install 后 headless 起进程）
+├── admin_web/     # 独立 admin React 面板，CF Access 保护（含 nginx.conf）
+└── bridge_host/   # bridge-host service：admin 手动起停的 chat-only Bridge subprocess supervisor
 docker-compose.yaml  # 唯一的 compose：minio + db + migrate + user-api + user-worker + admin-api + user-web + admin-web + bridge-host + cloudflared
 .env.example
 scripts/
@@ -66,7 +83,7 @@ scripts/
 7. **Inbox 是平台身份。** Bridge 握手时通过 `POST /api/bridge/inboxes` 自动注册，没有面向用户的创建 API。**Per-channel 互斥**：一个 `(account, platform, platform_self_id)` 同一时刻只能被一个**在线**（`last_seen_at` 在 `BRIDGE_OFFLINE_S=45s` 内）Bridge 持有；第二个在线 Bridge 来抢报 409（detail 带占用方 machine_id），离线/stale 的 owner 可被透明接管。Bridge 端把 409 映射成终态 `CONFLICT`（不重试）；headless 在所有 channel 都 CONFLICT 时以退出码 4 退出，让心跳停掉、admin 面板转 stale。
 8. **Bridge 行 = `(account_id, machine_id)`。** `machine_id` 由 Studio 首次握手生成，Bridge 本地持久化，每次请求带 `X-Machine-Id` 头解析。
 9. **Auth 是 account 粒度的单一 token。** 浏览器、Bridge 和 chat adapter 共用同一张 `auth.auth_sessions`。Bridge 启动时用账号密码握换 token，存入本地 SQLite `kv` 表；chat channel 的 credential 直接复用同一个 studio token。token 24h 滑动续期；401 才再输密码。改密码会清空该 account 的所有 session（web、Bridge、hosted bridge 一并下线）。`bridge/laborster_bridge/config.py` 硬编码 `STUDIO_BASE_URL=https://studio.laborster.com`；chat 沙箱同主机，访问路径加 `/api/chat` 前缀。HTTP 请求加自定义 `User-Agent`（Cloudflare 屏蔽默认 `Python-urllib`）。
-    **特例：hosted bridge 路径**——admin-api 可以为某 Account 直接 `create_auth_session` 签 token 给 bridge-host 用，无需密码；hosted bridge 的 `STUDIO_BASE_URL` 由 `--studio-url` flag 注入（指向 docker 内网 `http://user-api:23456`），主播端 GUI/REPL 永远走硬编码值不接受 flag。
+    **特例：hosted bridge 路径**——admin-api 可以为某 Account 直接 `create_auth_session` 签 token 给 bridge-host 用，无需密码；hosted bridge 的 `STUDIO_BASE_URL` 由 `--studio-url` flag 注入（指向 docker 内网 `http://user-api:23456`），主播端 Electron/REPL 永远走硬编码值不接受 flag。`desktop/sidecar/laborster_bridge/config.py` 中有硬编码的 `STUDIO_BASE_URL`。
 10. **Outbound 队列是数据库表。** `studio.outbound_messages`，Bridge long-poll；`status=pending` 含 `send_after` 控制打字节奏。
 11. **环境变量必须显式提供。** 缺 `DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`、`UPLOAD_MAX_SIZE_MB` 直接报错。
 12. **Models 不用 SQLAlchemy column default。** 每次 INSERT 显式写所有字段。
@@ -136,8 +153,9 @@ DistillJob 路径走 `accounts.distill_provider_id`，由 DistillScanner 异步�
 ## AI / 开发者阅读顺序
 
 1. 先读本 SKILL.md（事实最新）。
-2. 跨服务的改动：再扫 `docs/shared/architecture.md` 和 `docs/bridge/protocol.md`。
-3. 改 API/schema：直接读 `services/api/studio/models.py` 和 `routers/`。
-4. 改 chat：直接读 `services/api/chat/`。
-5. 改 UI：读 `services/user_web/src/`（chat 部分在 `chat/` 子目录）。
-6. 动手前对照不变量。
+2. 跨服务的改动：再扫 `docs/shared/architecture.md` 和 `docs/bridge/protocol.md`（可能落后，以代码为准）。
+3. 改 Bridge daemon：直接读 `desktop/sidecar/laborster_bridge/`。
+4. 改 API/schema：直接读 `services/api/studio/models.py` 和 `routers/`。
+5. 改 chat：直接读 `services/api/chat/`。
+6. 改 UI：读 `services/user_web/src/`（chat 部分在 `chat/` 子目录）。
+7. 动手前对照不变量。

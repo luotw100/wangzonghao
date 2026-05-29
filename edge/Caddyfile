@@ -9,7 +9,7 @@
 # TLS terminates HERE (origin), so the frp relay only ever sees ciphertext.
 studio.laborster.com {
 	encode zstd gzip
-	reverse_proxy user-web:80
+	reverse_proxy user-web:23456
 }
 
 # s3 is a placeholder for now (studio has no media messages yet), routed for

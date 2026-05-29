@@ -12,3 +12,7 @@ RUN npm run build
 
 FROM nginx:alpine
 COPY --from=build /app/dist /usr/share/nginx/html
+
+# nginx.conf listens on 23457 (not the base image's default 80). Declare it so
+# `docker inspect` reflects reality; EXPOSE is documentation only.
+EXPOSE 23457

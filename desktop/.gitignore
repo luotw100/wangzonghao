@@ -6,6 +6,8 @@ release
 .vite
 __pycache__
 *.pyc
+.pytest_cache
+.venv
 sidecar/build
 sidecar/dist
 sidecar/*.spec

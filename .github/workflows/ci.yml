@@ -12,8 +12,9 @@ concurrency:
 
 jobs:
   # ---------------------------------------------------------------------
-  # 后端集成测试：拉起整套 compose 栈（不含 cloudflared / web 前端），
-  # 在 user-api 容器里跑 pytest——和 scripts/test.sh 同一套跑法。
+  # 后端集成测试：拉起整套 compose 栈（不含 cloudflared / web 前端），跑两套：
+  #   1) services/api 的 pytest（在 user-api 容器里，真实 HTTP，无 mock）
+  #   2) sidecar 的 StudioClient 集成测试（在 bridge-host 容器里，打真实 user-api）
   # ---------------------------------------------------------------------
   api-tests:
     runs-on: ubuntu-latest
@@ -44,10 +45,22 @@ jobs:
             db minio minio-create-buckets migrate \
             user-api admin-api user-worker bridge-host fake-llm
 
-      - name: Run pytest
+      - name: Run API pytest (services/api, in user-api)
         run: |
           docker compose --env-file .env exec -T user-api \
             uv run python -m pytest tests/ -v
+
+      # sidecar 自己的客户端代码打真实 user-api：在 bridge-host 容器里跑——
+      # 它已 pip install laborster_bridge 包，且在 compose 内网能解析
+      # user-api / admin-api。tests/ 随 `COPY desktop/sidecar` 进了镜像。
+      - name: Run sidecar integration tests (in bridge-host)
+        run: |
+          docker compose --env-file .env exec -T bridge-host \
+            pip install --no-cache-dir --quiet pytest
+          docker compose --env-file .env exec -T \
+            -e STUDIO_BASE_URL=http://user-api:23456 \
+            -e ADMIN_BASE_URL=http://admin-api:23457 \
+            bridge-host python -m pytest /opt/sidecar/tests/integration -v
 
       - name: Dump logs on failure
         if: failure()

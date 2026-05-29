@@ -13,7 +13,7 @@ from typing import Annotated, Optional
 from uuid import uuid4
 
 from fastapi import Depends, Header, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from studio.auth_utils import hash_password, hash_token, new_session_token, verify_password
 from studio.db import get_db, utc_now
@@ -126,7 +126,14 @@ def resolve_account_from_token(db: Session, raw_token: str) -> Account:
     Used by both the standard ``get_account`` FastAPI dep and by chat's
     media route, which accepts a fallback ``?token=`` query parameter.
     """
-    s = db.query(AuthSession).filter(AuthSession.id == hash_token(raw_token)).first()
+    # joinedload pulls the Account in the same round-trip; without it, reading
+    # s.account below fires a second lazy SELECT on every authenticated request.
+    s = (
+        db.query(AuthSession)
+        .options(joinedload(AuthSession.account))
+        .filter(AuthSession.id == hash_token(raw_token))
+        .first()
+    )
     if not s:
         raise HTTPException(status_code=401, detail="登录已失效")
     now = utc_now()

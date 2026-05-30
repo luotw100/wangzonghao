@@ -200,8 +200,15 @@ def get_authed_bridge(
     )
     if not bridge:
         raise HTTPException(status_code=401, detail="bridge 已被撤销")
-    s.expires_at = now + timedelta(hours=24)
-    db.commit()
+    # Throttle the sliding-renewal write the same way the web path does (see
+    # resolve_account_from_token): the bridge daemon hits heartbeat/takeovers/
+    # outbound at a fixed cadence, so an unconditional commit here made every
+    # one of those a WAL fsync. Advance expiry only when it would move forward
+    # by >= SESSION_RENEW_INTERVAL, turning the common case into a pure read.
+    new_expires = now + SESSION_TTL
+    if new_expires - s.expires_at >= SESSION_RENEW_INTERVAL:
+        s.expires_at = new_expires
+        db.commit()
     return bridge
 
 

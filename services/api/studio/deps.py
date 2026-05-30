@@ -180,7 +180,15 @@ def get_authed_bridge(
     authenticated account's Bridge row.
     """
     token = extract_bearer(authorization)
-    s = db.query(AuthSession).filter(AuthSession.id == hash_token(token)).first()
+    # joinedload pulls the Account in the same round-trip; without it, reading
+    # s.account below fires a second lazy SELECT on every bridge request (same
+    # fix as resolve_account_from_token).
+    s = (
+        db.query(AuthSession)
+        .options(joinedload(AuthSession.account))
+        .filter(AuthSession.id == hash_token(token))
+        .first()
+    )
     if not s:
         raise HTTPException(status_code=401, detail="登录已失效")
     now = utc_now()

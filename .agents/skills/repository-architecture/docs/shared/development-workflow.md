@@ -14,12 +14,17 @@ services/
 
 ## 启动整套云端
 
-唯一的 `docker-compose.yaml` 在仓库根目录，由 `scripts/up-all.sh <config.json>` 拉起一个 instance（`db`、`minio`、`migrate`、`user-api`、`user-worker`、`admin-api`、`user-web`、`admin-web`、`cloudflared`）。`.env` 提供 db/MinIO 凭据与 bucket 名；`<config.json>` 提供 instance-specific 值（`COMPOSE_PROJECT_NAME`、`CF_TUNNEL_TOKEN`、`S3_PUBLIC_URL`）。
+唯一的 `docker-compose.yaml` 在仓库根目录。服务用 `profiles` 分三层：`storage`（`db`、`minio`、`minio-create-buckets`）、`app`（`migrate`、`user-api`、`user-worker`、`admin-api`、`bridge-host`、`user-web`、`admin-web`、`fake-llm`）、`edge`（`caddy`、`frpc`、`cloudflared`）。
+
+每个 instance 对应一个自包含的 env 文件（`.env.release`、`.env.debug`，从 `.env.example` 复制），里面带 `COMPOSE_PROJECT_NAME`（隔离容器/volume/网络，无需 `-p`）、`COMPOSE_PROFILES`（该 instance 默认起哪些层）、db/MinIO 凭据、`S3_PUBLIC_URL` 及 edge token。没有共享的 `.env` 底座。
 
 ```bash
-scripts/up-all.sh scripts/.env.debug.json   # 拉起一个 instance
-scripts/down-all.sh scripts/.env.debug.json # 停（保留 volume；加 -v 删 volume）
+docker compose --env-file .env.debug up -d                 # 按文件里的 COMPOSE_PROFILES 起
+docker compose --env-file .env.debug --profile storage up -d   # 只起存储层
+docker compose --env-file .env.debug down                  # 停（保留 volume；加 -v 删 volume）
 ```
+
+命令行 `--profile` 会覆盖（非叠加）文件里的 `COMPOSE_PROFILES`。`S3_PUBLIC_URL` 由 app 层（API）在启动时强制要求；不起 edge 时填本地 minio 地址或 `http://unused.local` 之类的占位值即可骗过启动检查（只要不真的走文件上传）。
 
 启动后：
 
@@ -50,13 +55,13 @@ curl -X POST https://admin.<your-domain>/api/admin/providers \
 `scripts/seed_dev.py <config.json>` 一次性建一批账号 + Provider。`config.json` 的 `seed` 块定义 `studio_url`、`users[]`、`providers[]`（参考 `scripts/.env.example.json`）。账号 + provider 通过 admin-api 写入。重复执行幂等：账号存在会告警跳过；Provider 同名也会跳过。
 
 ```bash
-scripts/up-all.sh scripts/.env.debug.json   # 起来
+docker compose --env-file .env.debug up -d   # 起来
 python3 scripts/seed_dev.py scripts/.env.debug.json
 ```
 
 ## 推荐配置顺序
 
-1. `up-all.sh` 起服务，`seed_dev.py` 创建账号 + 默认 Provider。
+1. `docker compose --env-file .env.<instance> up -d` 起服务，`seed_dev.py` 创建账号 + 默认 Provider。
 2. 用该账号登录 user-web，创建至少一个 Persona。
 3. 启动 Bridge（user-web 的"设备" tab 有「快速生成命令」面板可一键复制）。
 4. Bridge handshake 自动创建 Bridge 行、`POST /api/bridge/inboxes` 注册 Inbox。
@@ -97,7 +102,7 @@ Studio 地址硬编码在 `laborster_bridge/config.py`（`STUDIO_BASE_URL = http
 
 后端 / schema / protocol 改动：
 
-1. `scripts/up-all.sh <config.json>` 重建 stack（或 `docker compose build && docker compose up -d`）。
+1. `docker compose --env-file .env.<instance> up -d --build` 重建 stack。
 2. 通过 admin-api 创建或重置账号 / Provider（或跑 `seed_dev.py`）。
 3. 启动 Bridge daemon。
 4. 验证 Bridge handshake 创建 Bridge 行、`/api/bridge/inboxes` 注册 Inbox。

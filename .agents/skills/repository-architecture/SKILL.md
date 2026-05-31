@@ -53,10 +53,10 @@ services/
 ├── user_web/      # 单个 React SPA：/studio + /chat 都是它的路由（含 nginx.conf）
 ├── admin_web/     # 独立 admin React 面板，CF Access 保护（含 nginx.conf）
 └── bridge_host/   # bridge-host service：admin 手动起停的 chat-only Bridge subprocess supervisor
-docker-compose.yaml  # 唯一的 compose：minio + db + migrate + user-api + user-worker + admin-api + user-web + admin-web + bridge-host + cloudflared
-.env.example
+docker-compose.yaml  # 唯一的 compose，服务按 profiles 分层：storage / app / edge
+.env.example         # 每 instance 复制为 .env.release / .env.debug（自包含，含 COMPOSE_PROJECT_NAME + COMPOSE_PROFILES）
 scripts/
-├── up-all.sh / down-all.sh / backup.sh
+├── backup.sh
 └── seed_dev.py
 ```
 

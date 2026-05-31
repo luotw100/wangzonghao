@@ -3,6 +3,7 @@ services:
   # Storage
   # ---------------------------------------------------------------------
   minio:
+    profiles: ["storage"]
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: server /data --console-address ":9001"
     environment:
@@ -19,6 +20,7 @@ services:
     restart: unless-stopped
 
   minio-create-buckets:
+    profiles: ["storage"]
     image: minio/mc:RELEASE.2025-08-13T08-35-41Z
     depends_on:
       minio:
@@ -31,6 +33,7 @@ services:
     restart: "no"
 
   db:
+    profiles: ["storage"]
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
@@ -49,6 +52,7 @@ services:
   # API + worker + admin (single image, three entrypoints)
   # ---------------------------------------------------------------------
   migrate:
+    profiles: ["app"]
     build:
       context: services/api
     command: ["uv", "run", "python", "-m", "studio.migrate"]
@@ -60,6 +64,7 @@ services:
     restart: "no"
 
   user-api:
+    profiles: ["app"]
     build:
       context: services/api
     # --timeout-keep-alive 75 (> nginx upstream idle 60s) makes nginx the side
@@ -81,6 +86,7 @@ services:
     restart: unless-stopped
 
   user-worker:
+    profiles: ["app"]
     build:
       context: services/api
     command: ["uv", "run", "python", "-m", "studio.worker", "--request-timeout", "120"]
@@ -98,6 +104,7 @@ services:
     restart: unless-stopped
 
   bridge-host:
+    profiles: ["app"]
     build:
       context: .
       dockerfile: services/bridge_host/Dockerfile
@@ -108,6 +115,7 @@ services:
     restart: unless-stopped
 
   admin-api:
+    profiles: ["app"]
     build:
       context: services/api
     command: ["uv", "run", "uvicorn", "admin.app:app", "--host", "0.0.0.0", "--port", "23457"]
@@ -126,6 +134,7 @@ services:
   # Web (single React app at user_web; admin is a separate panel)
   # ---------------------------------------------------------------------
   user-web:
+    profiles: ["app"]
     build:
       context: services/user_web
     volumes:
@@ -136,6 +145,7 @@ services:
     restart: unless-stopped
 
   admin-web:
+    profiles: ["app"]
     build:
       context: services/admin_web
     volumes:
@@ -151,6 +161,7 @@ services:
   # test suite. Whitelisted in studio.clients.ALLOWED_BASE_URLS.
   # ---------------------------------------------------------------------
   fake-llm:
+    profiles: ["app"]
     build:
       context: services/api
     working_dir: /app
@@ -167,6 +178,7 @@ services:
   # The user plane (studio + s3) goes through the frp relay below.
   # ---------------------------------------------------------------------
   cloudflared:
+    profiles: ["edge"]
     image: cloudflare/cloudflared:latest
     command: tunnel --no-autoupdate run --token ${CF_TUNNEL_TOKEN}
     restart: unless-stopped
@@ -177,6 +189,7 @@ services:
   # so the relay only ever moves ciphertext. See edge/README.md.
   # ---------------------------------------------------------------------
   caddy:
+    profiles: ["edge"]
     build:
       context: edge/caddy
     environment:
@@ -191,6 +204,7 @@ services:
     restart: unless-stopped
 
   frpc:
+    profiles: ["edge"]
     image: snowdreamtech/frpc:0.69.0
     environment:
       FRP_SERVER_ADDR: ${FRP_SERVER_ADDR}

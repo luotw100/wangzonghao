@@ -52,16 +52,16 @@ curl -X POST https://admin.<your-domain>/api/admin/providers \
 
 ## Dev seed
 
-`scripts/seed_dev.py <config.json>` 一次性建一批账号 + Provider。`config.json` 的 `seed` 块定义 `studio_url`、`users[]`、`providers[]`（参考 `scripts/.env.example.json`）。账号 + provider 通过 admin-api 写入。重复执行幂等：账号存在会告警跳过；Provider 同名也会跳过。
+`scripts/seed.py -p <project> <seed.json>` 一次性建一批账号 + Provider。`seed.json` 只含 `users[]` + `providers[]`（参考 `scripts/seed.example.json`，每实例复制为 `scripts/seed.debug.json` 等，gitignored 因含 API key）。脚本是宿主机进程，纯 HTTP：按 compose label 找到该 project 的 admin-api 容器、动态取其桥接网 IP（Linux 宿主可直接路由到容器，无需发布端口），POST `/api/admin/providers` + `/api/admin/accounts`。不经 `docker exec`、不经公网/edge。重复执行幂等：账号存在会告警跳过；Provider 同名也会跳过。
 
 ```bash
-docker compose --env-file .env.debug up -d   # 起来
-python3 scripts/seed_dev.py scripts/.env.debug.json
+docker compose --env-file .env.debug up -d   # 起来（至少 storage+app）
+python3 scripts/seed.py -p debug scripts/seed.debug.json
 ```
 
 ## 推荐配置顺序
 
-1. `docker compose --env-file .env.<instance> up -d` 起服务，`seed_dev.py` 创建账号 + 默认 Provider。
+1. `docker compose --env-file .env.<instance> up -d` 起服务，`seed.py` 创建账号 + 默认 Provider。
 2. 用该账号登录 user-web，创建至少一个 Persona。
 3. 启动 Bridge（user-web 的"设备" tab 有「快速生成命令」面板可一键复制）。
 4. Bridge handshake 自动创建 Bridge 行、`POST /api/bridge/inboxes` 注册 Inbox。
@@ -103,7 +103,7 @@ Studio 地址硬编码在 `laborster_bridge/config.py`（`STUDIO_BASE_URL = http
 后端 / schema / protocol 改动：
 
 1. `docker compose --env-file .env.<instance> up -d --build` 重建 stack。
-2. 通过 admin-api 创建或重置账号 / Provider（或跑 `seed_dev.py`）。
+2. 通过 admin-api 创建或重置账号 / Provider（或跑 `seed.py`）。
 3. 启动 Bridge daemon。
 4. 验证 Bridge handshake 创建 Bridge 行、`/api/bridge/inboxes` 注册 Inbox。
 5. 在 chat 沙箱以 contact 视角发送消息。

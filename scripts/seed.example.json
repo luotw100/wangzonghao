@@ -1,0 +1,9 @@
+{
+  "users": [
+    {"username": "test1", "password": "Test123!", "display": "测试一"},
+    {"username": "test2", "password": "Test123!", "display": "测试二"}
+  ],
+  "providers": [
+    {"name": "deepseek-v4-flash", "base_url": "https://api.deepseek.com", "model": "deepseek-v4-flash", "api_key": "CHANGE_ME"}
+  ]
+}

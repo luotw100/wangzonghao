@@ -57,7 +57,8 @@ docker-compose.yaml  # 唯一的 compose，服务按 profiles 分层：storage /
 .env.example         # 每 instance 复制为 .env.release / .env.debug（自包含，含 COMPOSE_PROJECT_NAME + COMPOSE_PROFILES）
 scripts/
 ├── backup.sh
-└── seed_dev.py
+├── seed.py            # 宿主机一次性 seed：动态取 admin-api 容器 IP，纯 HTTP 建账号/Provider
+└── seed.example.json  # 复制为 seed.<instance>.json（gitignored，含 API key）
 ```
 
 ## 数据库 schema 布局

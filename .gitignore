@@ -8,6 +8,10 @@ __pycache__/
 !.env.example
 !.env.example.json
 
+# Per-instance seed data (contains provider API keys); template is committed.
+seed.*.json
+!seed.example.json
+
 # Bridge .venv
 bridge/.venv/
 

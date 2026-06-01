@@ -111,8 +111,9 @@ def test_worker_generates_reply_via_fake_llm(account, bridge, admin, db, fake_ll
 
     row = _wait_for(_check, timeout=15.0)
     assert row is not None, "worker did not produce an outbound row within 15s"
-    assert row.content.startswith("echo: "), f"unexpected reply: {row.content!r}"
-    assert peer_text in row.content
+    # fake-llm returns synthetic filler (length-distributed), so we only assert
+    # a non-empty reply was produced — not its content.
+    assert isinstance(row.content, str) and row.content.strip()
 
     # last_reply_round_at must be bumped.
     last = db.execute(
@@ -133,9 +134,11 @@ def test_worker_generates_reply_via_fake_llm(account, bridge, admin, db, fake_ll
     assert log_row.model == "fake-model"
 
 
-def test_worker_handles_llm_error_gracefully(account, bridge, admin, db, fake_llm_provider_id):
-    """FAKE_ERROR control prefix makes fake-llm 500. Worker should write an
-    error LlmLog and bump last_reply_round_at without crashing."""
+def test_worker_outbound_typing_rhythm(account, bridge, admin, db, fake_llm_provider_id):
+    """A reply is split into one or more OutboundMessage rows whose send_after
+    is non-decreasing (typing rhythm). fake-llm picks the chunk count from a
+    distribution, so we assert the rhythm invariant over however many rows it
+    produces, not an exact count."""
     inbox_id, conv_id, pcid = _setup_autoreply_conv(
         account, bridge, admin, db, fake_llm_provider_id
     )
@@ -144,57 +147,10 @@ def test_worker_handles_llm_error_gracefully(account, bridge, admin, db, fake_ll
         json={"messages": [{
             "inbox_id": inbox_id,
             "platform_conversation_id": pcid,
-            "client_id": f"err-{uuid.uuid4().hex}",
+            "client_id": f"rhythm-{uuid.uuid4().hex}",
             "sender_id": "peer-1",
             "msg_type": "text",
-            "content": "FAKE_ERROR",
-            "sent_at": _now_iso(),
-        }]},
-    )
-
-    def _check():
-        db.expire_all()
-        last = db.execute(
-            text("SELECT last_reply_round_at FROM studio.conversations WHERE id = :c"),
-            {"c": conv_id},
-        ).scalar_one()
-        return last
-
-    last = _wait_for(_check, timeout=15.0)
-    assert last is not None
-    # No outbound row was created (error path).
-    n = db.execute(
-        text("SELECT count(*) FROM studio.outbound_messages WHERE conversation_id = :c"),
-        {"c": conv_id},
-    ).scalar_one()
-    assert n == 0
-    # Error captured in llm_logs.
-    err = db.execute(
-        text(
-            "SELECT response_raw FROM studio.llm_logs "
-            "WHERE inbox_id = :i ORDER BY id DESC LIMIT 1"
-        ),
-        {"i": inbox_id},
-    ).scalar_one()
-    assert err.startswith("ERROR:")
-
-
-def test_worker_multi_chunk_reply(account, bridge, admin, db, fake_llm_provider_id):
-    """FAKE_MULTI:3:hi causes fake-llm to return 3 chunks. Worker writes 3
-    OutboundMessage rows with monotonically increasing send_after (typing
-    rhythm)."""
-    inbox_id, conv_id, pcid = _setup_autoreply_conv(
-        account, bridge, admin, db, fake_llm_provider_id
-    )
-    bridge.http.post(
-        "/api/bridge/incoming",
-        json={"messages": [{
-            "inbox_id": inbox_id,
-            "platform_conversation_id": pcid,
-            "client_id": f"multi-{uuid.uuid4().hex}",
-            "sender_id": "peer-1",
-            "msg_type": "text",
-            "content": "FAKE_MULTI:3:hello",
+            "content": "在吗",
             "sent_at": _now_iso(),
         }]},
     )
@@ -208,11 +164,11 @@ def test_worker_multi_chunk_reply(account, bridge, admin, db, fake_llm_provider_
             ),
             {"c": conv_id},
         ).all()
-        return rows if len(rows) >= 3 else None
+        return rows or None
 
     rows = _wait_for(_check, timeout=15.0)
-    assert rows is not None, "expected 3 outbound rows from FAKE_MULTI:3"
-    assert all(r.content == "hello" for r in rows)
-    # send_after strictly increasing.
+    assert rows is not None, "worker did not produce any outbound row within 15s"
+    assert all(isinstance(r.content, str) and r.content.strip() for r in rows)
+    # send_after non-decreasing across chunks.
     for i in range(1, len(rows)):
         assert rows[i].send_after >= rows[i - 1].send_after

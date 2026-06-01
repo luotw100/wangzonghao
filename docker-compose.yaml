@@ -165,7 +165,7 @@ services:
     build:
       context: services/api
     working_dir: /app
-    command: ["python", "/app/tests/fake_llm/server.py"]
+    command: ["uv", "run", "python", "/app/tests/fake_llm/server.py"]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8080/health',timeout=1).status==200 else 1)"]
       interval: 2s

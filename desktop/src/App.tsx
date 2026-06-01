@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api, post, bridgeReady } from "./bridge";
 import {
@@ -7,7 +7,9 @@ import {
   Empty,
   GHOST_BTN,
   INPUT_CLS,
+  ModalShell,
   PRIMARY_BTN,
+  SM_DANGER_BTN,
   SM_GHOST_BTN,
   SectionHeader,
   ToastView,
@@ -48,7 +50,7 @@ type Section = "takeover" | "personas" | "devices" | "sandbox" | "logs" | "setti
 export function App() {
   const [section, setSection] = useState<Section>("takeover");
   const [flow, setFlow] = useState<{ platform: string | null; channelId: number | null } | null>(null);
-  const { toast, notify } = useToast();
+  const { toast, notify, dismiss } = useToast();
   const qc = useQueryClient();
 
   const account = useLocalAccount().data ?? null;
@@ -76,7 +78,7 @@ export function App() {
     return (
       <>
         <LoginView onDone={refresh} notify={notify} />
-        <ToastView toast={toast} />
+        <ToastView toast={toast} onClose={dismiss} />
       </>
     );
   }
@@ -101,12 +103,8 @@ export function App() {
         ) : (
           <div className="h-full overflow-y-auto">
             <div className="mx-auto max-w-5xl px-10 py-9">
-              {status?.last_error && (
-                <div className="mb-6 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]">
-                  {status.last_error}
-                </div>
-              )}
-              {section === "takeover" && <TakeoverView notify={notify} />}
+              <StatusBanner status={status} onNavigate={setSection} onChanged={refresh} notify={notify} />
+              {section === "takeover" && <TakeoverView notify={notify} onNavigate={setSection} />}
               {section === "personas" && <PersonasView notify={notify} />}
               {section === "devices" && (
                 <DevicesView localMachineId={account?.machine_id ?? null} localSlot={localDeviceCard} notify={notify} />
@@ -133,7 +131,7 @@ export function App() {
           notify={notify}
         />
       )}
-      <ToastView toast={toast} />
+      <ToastView toast={toast} onClose={dismiss} />
     </div>
   );
 }
@@ -155,15 +153,36 @@ function Sidebar(props: {
   status: Status | null;
   account: Account | null;
 }) {
-  const items: { key: Section; label: string }[] = [
+  const primary: { key: Section; label: string }[] = [
     { key: "takeover", label: "接管" },
     { key: "personas", label: "人设" },
-    { key: "devices", label: "设备" },
     { key: "sandbox", label: "沙箱" },
-    { key: "logs", label: "日志" },
     { key: "settings", label: "设置" },
   ];
+  const advanced: { key: Section; label: string }[] = [
+    { key: "devices", label: "设备" },
+    { key: "logs", label: "日志" },
+  ];
   const dot = props.status?.running ? "bg-[var(--color-ok)]" : "bg-[var(--color-ink-4)]";
+
+  const navButton = (it: { key: Section; label: string }) => {
+    const active = it.key === props.section;
+    return (
+      <button
+        key={it.key}
+        onClick={() => props.onSelect(it.key)}
+        aria-current={active ? "page" : undefined}
+        className={`rounded-md px-3 py-2 text-left text-sm transition-colors ${
+          active
+            ? "bg-[var(--color-bg-elev)] text-[var(--color-ink-1)]"
+            : "text-[var(--color-ink-2)] hover:bg-[var(--color-bg-raised)] hover:text-[var(--color-ink-1)]"
+        }`}
+      >
+        {it.label}
+      </button>
+    );
+  };
+
   return (
     <aside className="flex flex-col border-r border-[var(--color-line-soft)] bg-[var(--color-bg-base)] px-5 py-6">
       <div className="mb-8 flex items-center gap-3">
@@ -171,42 +190,94 @@ function Sidebar(props: {
           L
         </div>
         <div>
-          <div className="text-[15px] font-medium tracking-wide text-[var(--color-ink-1)]">Laborster</div>
-          <div className="text-[11px] uppercase tracking-widest text-[var(--color-ink-4)]">Desktop</div>
+          <div className="text-lg font-medium tracking-wide text-[var(--color-ink-1)]">Laborster</div>
+          <div className="text-2xs uppercase tracking-widest text-[var(--color-ink-4)]">Desktop</div>
         </div>
       </div>
 
-      <nav className="flex flex-col gap-1">
-        {items.map((it) => {
-          const active = it.key === props.section;
-          return (
-            <button
-              key={it.key}
-              onClick={() => props.onSelect(it.key)}
-              className={`rounded-md px-3 py-2 text-left text-[13.5px] transition-colors ${
-                active
-                  ? "bg-[var(--color-bg-elev)] text-[var(--color-ink-1)]"
-                  : "text-[var(--color-ink-2)] hover:bg-[var(--color-bg-raised)] hover:text-[var(--color-ink-1)]"
-              }`}
-            >
-              {it.label}
-            </button>
-          );
-        })}
-      </nav>
+      <nav className="flex flex-col gap-1">{primary.map(navButton)}</nav>
+
+      <div className="mt-6">
+        <div className="px-3 pb-1 text-2xs uppercase tracking-widest text-[var(--color-ink-4)]">高级</div>
+        <nav className="flex flex-col gap-1">{advanced.map(navButton)}</nav>
+      </div>
 
       <div className="mt-auto rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-bg-raised)] px-3 py-3">
         <div className="flex items-center gap-2">
           <span className={`h-2 w-2 rounded-full ${dot}`} />
-          <span className="text-[12.5px] text-[var(--color-ink-2)]">
+          <span className="text-xs text-[var(--color-ink-2)]">
             {props.status ? STATUS_LABEL[props.status.status] ?? props.status.status : "—"}
           </span>
         </div>
-        <div className="mt-1 truncate text-[11.5px] text-[var(--color-ink-3)]">
+        <div className="mt-1 truncate text-2xs text-[var(--color-ink-3)]">
           {props.account?.display_name ?? "未登录"}
         </div>
       </div>
     </aside>
+  );
+}
+
+// ---- status banner (recoverable daemon problems) --------------------
+
+function StatusBanner(props: {
+  status: Status | null;
+  onNavigate: (s: Section) => void;
+  onChanged: () => void;
+  notify: (t: string, k?: "ok" | "err") => void;
+}) {
+  const { status } = props;
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const s = status?.status ?? "";
+  const recoverable = s === "error401" || s === "needs_login" || s === "degraded";
+  const message = status?.last_error || (recoverable ? STATUS_LABEL[s] ?? s : null);
+  // Key the dismissal to the message so a *new* problem re-surfaces the banner.
+  const key = `${s}::${message ?? ""}`;
+  if (!message || dismissed === key) return null;
+
+  const relogin = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await post<Result>("/local/logout");
+      props.notify("已登出，请重新登录。", "ok");
+      props.onChanged();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  let cta: ReactNode = null;
+  if (s === "error401") {
+    cta = (
+      <button className={SM_DANGER_BTN} onClick={relogin} disabled={busy}>
+        {busy ? "处理中…" : "重新登录"}
+      </button>
+    );
+  } else if (s === "needs_login" || s === "degraded") {
+    cta = (
+      <button className={SM_DANGER_BTN} onClick={() => props.onNavigate("devices")}>
+        前往设备处理
+      </button>
+    );
+  }
+
+  return (
+    <div
+      role="alert"
+      className="mb-6 flex items-center gap-3 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-4 py-3 text-sm text-[var(--color-danger)]"
+    >
+      <span className="flex-1">{message}</span>
+      {cta}
+      <button
+        aria-label="关闭提示"
+        className="shrink-0 text-[var(--color-danger)]/70 hover:text-[var(--color-danger)]"
+        onClick={() => setDismissed(key)}
+      >
+        ✕
+      </button>
+    </div>
   );
 }
 
@@ -250,8 +321,8 @@ function LocalDeviceCard(props: {
       <div className="mb-4 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className={`h-2.5 w-2.5 rounded-full ${props.status?.running ? "bg-[var(--color-ok)]" : "bg-[var(--color-ink-4)]"}`} />
-          <span className="text-[14px] font-medium text-[var(--color-ink-1)]">这台电脑</span>
-          <span className="text-[11px] text-[var(--color-ink-4)]">
+          <span className="text-base font-medium text-[var(--color-ink-1)]">这台电脑</span>
+          <span className="text-2xs text-[var(--color-ink-4)]">
             {props.status ? STATUS_LABEL[props.status.status] ?? props.status.status : "—"} · 近 5 分钟入站{" "}
             {props.status?.in_count_5m ?? 0} · 待发 {props.status?.outbound_pending ?? 0}
           </span>
@@ -262,7 +333,7 @@ function LocalDeviceCard(props: {
       </div>
 
       {props.channels.length === 0 ? (
-        <div className="rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-bg-base)] px-4 py-6 text-center text-[13px] text-[var(--color-ink-3)]">
+        <div className="rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-bg-base)] px-4 py-6 text-center text-sm text-[var(--color-ink-3)]">
           这台电脑还没绑定渠道。点右上「+ 绑定渠道」接入第一个。
         </div>
       ) : (
@@ -277,8 +348,8 @@ function LocalDeviceCard(props: {
               >
                 <span className={`h-2 w-2 shrink-0 rounded-full ${meta.dot}`} />
                 <div className="min-w-0 flex-1">
-                  <div className="text-[13.5px] text-[var(--color-ink-1)]">{ident}</div>
-                  <div className="truncate text-[11.5px] text-[var(--color-ink-3)]">
+                  <div className="text-sm text-[var(--color-ink-1)]">{ident}</div>
+                  <div className="truncate text-2xs text-[var(--color-ink-3)]">
                     {c.state === "online" ? `${c.conv_count} 会话 · ${meta.label}` : meta.label}
                     {c.last_error ? <span className="text-[var(--color-danger)]"> · {c.last_error}</span> : null}
                   </div>
@@ -352,7 +423,7 @@ function LogsView({ notify }: { notify: (t: string, k?: "ok" | "err") => void })
       />
       <div
         ref={boxRef}
-        className="h-[calc(100vh-220px)] overflow-y-auto rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-bg-deep)] p-4 font-mono text-[12px] leading-relaxed"
+        className="h-[calc(100vh-220px)] overflow-y-auto rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-bg-deep)] p-4 font-mono text-xs leading-relaxed"
       >
         {logs.length === 0 ? (
           <div className="text-[var(--color-ink-4)]">暂无日志</div>
@@ -435,7 +506,7 @@ function SettingsView(props: {
         }
       />
 
-      <h2 className="mb-2 text-[13px] font-medium text-[var(--color-ink-2)]">本机账号</h2>
+      <h2 className="mb-2 text-sm font-medium text-[var(--color-ink-2)]">本机账号</h2>
       <div className="mb-8 flex flex-col gap-2">
         {props.accounts.length === 0 && <Empty>（暂无本机账号）</Empty>}
         {props.accounts.map((a) => (
@@ -445,8 +516,8 @@ function SettingsView(props: {
           >
             <span className="w-4 text-[var(--color-ok)]">{a.active ? "✓" : ""}</span>
             <div className="min-w-0 flex-1">
-              <div className="text-[14px] text-[var(--color-ink-1)]">{a.display_name || a.account_id}</div>
-              <div className="truncate text-[12px] text-[var(--color-ink-3)]">
+              <div className="text-base text-[var(--color-ink-1)]">{a.display_name || a.account_id}</div>
+              <div className="truncate text-xs text-[var(--color-ink-3)]">
                 {a.account_id} · 渠道 {a.channel_count} · {a.has_token ? "已登录" : "未登录"}
               </div>
             </div>
@@ -463,11 +534,11 @@ function SettingsView(props: {
       </div>
 
       <Card>
-        <dl className="grid grid-cols-[120px_1fr] gap-y-3 text-[13.5px]">
+        <dl className="grid grid-cols-[120px_1fr] gap-y-3 text-sm">
           {rows.map(([k, v]) => (
             <div key={k} className="contents">
               <dt className="text-[var(--color-ink-3)]">{k}</dt>
-              <dd className="truncate font-mono text-[12.5px] text-[var(--color-ink-1)]">{v}</dd>
+              <dd className="truncate font-mono text-xs text-[var(--color-ink-1)]">{v}</dd>
             </div>
           ))}
         </dl>
@@ -519,19 +590,19 @@ function LoginView({ onDone, notify }: { onDone: () => void; notify: (t: string,
           <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-[var(--color-brass)]/15 font-serif text-2xl text-[var(--color-brass)]">
             L
           </div>
-          <h1 className="text-[19px] font-medium text-[var(--color-ink-1)]">登录 Laborster</h1>
-          <p className="mt-1 text-[12.5px] text-[var(--color-ink-3)]">使用你的 Studio 账号</p>
+          <h1 className="text-xl font-medium text-[var(--color-ink-1)]">登录 Laborster</h1>
+          <p className="mt-1 text-xs text-[var(--color-ink-3)]">使用你的 Studio 账号</p>
         </div>
 
         {error && (
-          <div className="mb-4 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12.5px] text-[var(--color-danger)]">
+          <div className="mb-4 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-xs text-[var(--color-danger)]">
             {error}
           </div>
         )}
 
-        <label className="mb-1 block text-[12px] text-[var(--color-ink-3)]">用户名</label>
+        <label className="mb-1 block text-xs text-[var(--color-ink-3)]">用户名</label>
         <input className={INPUT_CLS} value={username} onChange={(e) => setUsername(e.target.value)} autoFocus />
-        <label className="mb-1 mt-4 block text-[12px] text-[var(--color-ink-3)]">密码</label>
+        <label className="mb-1 mt-4 block text-xs text-[var(--color-ink-3)]">密码</label>
         <input className={INPUT_CLS} type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
 
         <button type="submit" disabled={busy || !username || !password} className={`${PRIMARY_BTN} mt-6 w-full py-2.5`}>
@@ -678,19 +749,10 @@ function FlowModal(props: {
     phase === "pick" ? "绑定渠道 — 选择平台" : `${isRelogin ? "重新登录" : "绑定渠道"} — ${labelOf(platform)}`;
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center">
-      <div className="absolute inset-0 bg-black/55" onClick={close} />
-      <div className="relative w-[420px] rounded-xl border border-[var(--color-line)] bg-[var(--color-bg-base)] p-6 shadow-2xl">
-        <div className="mb-4 flex items-center justify-between">
-          <h3 className="text-[16px] font-medium text-[var(--color-ink-1)]">{title}</h3>
-          <button className="text-[var(--color-ink-4)] hover:text-[var(--color-ink-1)]" onClick={close}>
-            ✕
-          </button>
-        </div>
-
+    <ModalShell title={title} onClose={close} width="w-[420px]">
         {phase === "pick" && (
           <>
-            <label className="mb-1 block text-[12px] text-[var(--color-ink-3)]">平台</label>
+            <label className="mb-1 block text-xs text-[var(--color-ink-3)]">平台</label>
             <select className={INPUT_CLS} value={platform} onChange={(e) => setPlatform(e.target.value)}>
               {platforms.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -700,7 +762,7 @@ function FlowModal(props: {
             </select>
             {platform === "chat" && (
               <div className="mt-4">
-                <label className="mb-1 block text-[12px] text-[var(--color-ink-3)]">base_url（可选 — chat 沙箱开发态用）</label>
+                <label className="mb-1 block text-xs text-[var(--color-ink-3)]">base_url（可选 — chat 沙箱开发态用）</label>
                 <input className={INPUT_CLS} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="留空则用默认地址" />
               </div>
             )}
@@ -722,13 +784,13 @@ function FlowModal(props: {
         {phase === "running" && step?.kind === "prompt" && (
           <>
             {stepError && (
-              <div className="mb-3 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-[12.5px] text-[var(--color-danger)]">
+              <div className="mb-3 rounded-md border border-[var(--color-danger)]/40 bg-[var(--color-danger)]/10 px-3 py-2 text-xs text-[var(--color-danger)]">
                 {stepError}
               </div>
             )}
             {step.fields.map((f) => (
               <div key={f.name} className="mb-3">
-                <label className="mb-1 block text-[12px] text-[var(--color-ink-3)]">{f.label}</label>
+                <label className="mb-1 block text-xs text-[var(--color-ink-3)]">{f.label}</label>
                 <input
                   className={INPUT_CLS}
                   type={f.secret ? "password" : "text"}
@@ -755,12 +817,12 @@ function FlowModal(props: {
               <img className="mx-auto mb-3 h-48 w-48 rounded-md bg-white p-2" src={`data:image/png;base64,${step.qr_png_b64}`} alt="二维码" />
             )}
             {step.open_url && (
-              <a className="block break-all text-[12.5px] text-[var(--color-brass)] underline" href={step.open_url} target="_blank" rel="noreferrer">
+              <a className="block break-all text-xs text-[var(--color-brass)] underline" href={step.open_url} target="_blank" rel="noreferrer">
                 {step.open_url}
               </a>
             )}
-            {step.hint && <p className="mt-2 text-[12.5px] text-[var(--color-ink-3)]">{step.hint}</p>}
-            <p className="mt-4 text-[12.5px] text-[var(--color-ink-3)]">等待确认…</p>
+            {step.hint && <p className="mt-2 text-xs text-[var(--color-ink-3)]">{step.hint}</p>}
+            <p className="mt-4 text-xs text-[var(--color-ink-3)]">等待确认…</p>
             <div className="mt-6 flex justify-center">
               <button className={GHOST_BTN} onClick={close}>
                 取消
@@ -769,8 +831,7 @@ function FlowModal(props: {
           </div>
         )}
 
-        {phase === "running" && !step && <div className="py-8 text-center text-[13px] text-[var(--color-ink-3)]">启动中…</div>}
-      </div>
-    </div>
+        {phase === "running" && !step && <div className="py-8 text-center text-sm text-[var(--color-ink-3)]">启动中…</div>}
+    </ModalShell>
   );
 }

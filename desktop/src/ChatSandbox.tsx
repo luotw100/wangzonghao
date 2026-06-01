@@ -9,7 +9,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 import * as chat from "./chat";
 import { qk, useChatAccount, useChatConversations } from "./queries";
-import { GHOST_BTN, INPUT_CLS, ModalShell, PRIMARY_BTN, SM_GHOST_BTN } from "./ui";
+import { GHOST_BTN, INPUT_CLS, ModalActions, ModalShell, PRIMARY_BTN, SM_GHOST_BTN } from "./ui";
 
 const INITIAL_LIMIT = 50;
 type Notify = (text: string, kind?: "ok" | "err") => void;
@@ -162,8 +162,8 @@ export function ChatSandbox({ notify }: { notify: Notify }) {
       <aside className="flex flex-col border-r border-[var(--color-line-soft)] bg-[var(--color-bg-base)]">
         <div className="flex items-center justify-between border-b border-[var(--color-line-soft)] px-4 py-3.5">
           <div>
-            <div className="text-[14px] font-medium text-[var(--color-ink-1)]">聊天沙箱</div>
-            <div className="text-[11px] text-[var(--color-ink-4)]">内存态 · 重启后重新拉取</div>
+            <div className="text-base font-medium text-[var(--color-ink-1)]">聊天沙箱</div>
+            <div className="text-2xs text-[var(--color-ink-4)]">内存态 · 重启后重新拉取</div>
           </div>
           <button className={SM_GHOST_BTN} onClick={() => setShowNew(true)}>
             + 联系人
@@ -171,7 +171,7 @@ export function ChatSandbox({ notify }: { notify: Notify }) {
         </div>
         <div className="flex-1 overflow-y-auto">
           {conversations.length === 0 ? (
-            <div className="px-4 py-6 text-center text-[12.5px] text-[var(--color-ink-3)]">
+            <div className="px-4 py-6 text-center text-xs text-[var(--color-ink-3)]">
               还没有联系人，点右上「+ 联系人」新建。
             </div>
           ) : (
@@ -187,17 +187,17 @@ export function ChatSandbox({ notify }: { notify: Notify }) {
                     activeRow ? "bg-[var(--color-bg-elev)]" : "hover:bg-[var(--color-bg-raised)]"
                   }`}
                 >
-                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--color-brass)]/15 text-[13px] font-medium text-[var(--color-brass)]">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[var(--color-brass)]/15 text-sm font-medium text-[var(--color-brass)]">
                     {(remark || nickname).slice(0, 1)}
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-baseline gap-1.5">
-                      <span className="truncate text-[13.5px] text-[var(--color-ink-1)]">{remark || nickname}</span>
+                      <span className="truncate text-sm text-[var(--color-ink-1)]">{remark || nickname}</span>
                       {remark && remark !== nickname && (
-                        <span className="shrink-0 text-[11px] text-[var(--color-ink-4)]">（{nickname}）</span>
+                        <span className="shrink-0 text-2xs text-[var(--color-ink-4)]">（{nickname}）</span>
                       )}
                     </div>
-                    <div className="truncate text-[11.5px] text-[var(--color-ink-4)]">{previewText(previews[c.id])}</div>
+                    <div className="truncate text-2xs text-[var(--color-ink-4)]">{previewText(previews[c.id])}</div>
                   </div>
                 </button>
               );
@@ -209,7 +209,7 @@ export function ChatSandbox({ notify }: { notify: Notify }) {
       {active && account ? (
         <ChatThread account={account} conversation={active} notify={notify} onLatest={setPreview} />
       ) : (
-        <div className="flex items-center justify-center text-[13px] text-[var(--color-ink-3)]">
+        <div className="flex items-center justify-center text-sm text-[var(--color-ink-3)]">
           {account ? "从左侧选择一个联系人" : "加载账号中…"}
         </div>
       )}
@@ -331,9 +331,9 @@ function ChatThread({
   return (
     <div className="flex h-screen flex-col">
       <header className="flex items-center gap-2 border-b border-[var(--color-line-soft)] px-6 py-3.5">
-        <span className="text-[15px] font-medium text-[var(--color-ink-1)]">{c.remark_name || c.nickname}</span>
+        <span className="text-lg font-medium text-[var(--color-ink-1)]">{c.remark_name || c.nickname}</span>
         {c.remark_name && c.remark_name !== c.nickname && (
-          <span className="text-[12px] text-[var(--color-ink-4)]">网名：{c.nickname}</span>
+          <span className="text-xs text-[var(--color-ink-4)]">网名：{c.nickname}</span>
         )}
       </header>
 
@@ -352,7 +352,7 @@ function ChatThread({
             return (
               <div key={m.id} className={`flex ${onRight ? "justify-end" : "justify-start"}`}>
                 <div className="max-w-[70%]">
-                  <div className={`mb-1 text-[10px] text-[var(--color-ink-4)] ${onRight ? "text-right" : ""}`}>
+                  <div className={`mb-1 text-2xs text-[var(--color-ink-4)] ${onRight ? "text-right" : ""}`}>
                     {isSelf ? account.nickname : chat.contactName(conversation.contact)}
                   </div>
                   <MessageBody message={m} onRight={onRight} />
@@ -365,26 +365,32 @@ function ChatThread({
 
       <footer className="border-t border-[var(--color-line-soft)] px-6 py-3">
         <div className="mb-2 flex items-center gap-2">
-          <span className="text-[11px] text-[var(--color-ink-4)]">以</span>
+          <span className="text-2xs text-[var(--color-ink-4)]">以</span>
           <div className="flex overflow-hidden rounded-md border border-[var(--color-line)]">
             <button
-              className={`px-3 py-1 text-[12px] ${perspective === "self" ? "bg-[var(--color-brass)] text-[#1b1d23]" : "text-[var(--color-ink-2)]"}`}
+              className={`px-3 py-1 text-xs ${perspective === "self" ? "bg-[var(--color-brass)] text-[#1b1d23]" : "text-[var(--color-ink-2)]"}`}
               onClick={() => setPerspective("self")}
             >
               我（{account.nickname}）
             </button>
             <button
-              className={`px-3 py-1 text-[12px] ${perspective === "contact" ? "bg-[var(--color-brass)] text-[#1b1d23]" : "text-[var(--color-ink-2)]"}`}
+              className={`px-3 py-1 text-xs ${perspective === "contact" ? "bg-[var(--color-brass)] text-[#1b1d23]" : "text-[var(--color-ink-2)]"}`}
               onClick={() => setPerspective("contact")}
             >
               对方（{chat.contactName(conversation.contact)}）
             </button>
           </div>
-          <span className="text-[11px] text-[var(--color-ink-4)]">身份发送 · Enter 发送</span>
+          <span className="text-2xs text-[var(--color-ink-4)]">身份发送 · Enter 发送</span>
         </div>
         <div className="flex items-end gap-2">
           <input ref={fileRef} type="file" className="hidden" onChange={onFile} disabled={sending} />
-          <button className={GHOST_BTN} onClick={() => fileRef.current?.click()} disabled={sending} title="发送媒体">
+          <button
+            className={GHOST_BTN}
+            onClick={() => fileRef.current?.click()}
+            disabled={sending}
+            title="发送媒体"
+            aria-label="发送媒体"
+          >
             📎
           </button>
           <textarea
@@ -406,7 +412,7 @@ function ChatThread({
 }
 
 function MessageBody({ message: m, onRight }: { message: chat.Message; onRight: boolean }) {
-  const bubble = `rounded-xl border border-[var(--color-line-soft)] px-3 py-2 text-[13px] leading-relaxed ${
+  const bubble = `rounded-xl border border-[var(--color-line-soft)] px-3 py-2 text-sm leading-relaxed ${
     onRight ? "bg-[var(--color-brass)]/15" : "bg-[var(--color-bg-raised)]"
   } text-[var(--color-ink-1)]`;
   if (m.msg_type === "text") {
@@ -456,18 +462,16 @@ function NewContactModal({
 
   return (
     <ModalShell title="新建联系人" onClose={onClose} width="w-[380px]">
-      <label className="mb-1 block text-[12px] text-[var(--color-ink-3)]">网名</label>
+      <label className="mb-1 block text-xs text-[var(--color-ink-3)]">网名</label>
       <input className={INPUT_CLS} value={nickname} onChange={(e) => setNickname(e.target.value)} autoFocus />
-      <label className="mb-1 mt-4 block text-[12px] text-[var(--color-ink-3)]">备注名（可选）</label>
+      <label className="mb-1 mt-4 block text-xs text-[var(--color-ink-3)]">备注名（可选）</label>
       <input className={INPUT_CLS} value={remark} onChange={(e) => setRemark(e.target.value)} />
-      <div className="mt-5 flex justify-end gap-3">
-        <button className={GHOST_BTN} onClick={onClose}>
-          取消
-        </button>
-        <button className={PRIMARY_BTN} onClick={submit} disabled={busy || !nickname.trim()}>
-          {busy ? "创建中…" : "创建"}
-        </button>
-      </div>
+      <ModalActions
+        onCancel={onClose}
+        onConfirm={submit}
+        confirmLabel={busy ? "创建中…" : "创建"}
+        disabled={busy || !nickname.trim()}
+      />
     </ModalShell>
   );
 }

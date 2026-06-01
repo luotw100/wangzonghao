@@ -32,9 +32,16 @@ type Notify = (text: string, kind?: "ok" | "err") => void;
 // Takeover (home)
 // =====================================================================
 
-export function TakeoverView({ notify }: { notify: Notify }) {
+export function TakeoverView({
+  notify,
+  onNavigate,
+}: {
+  notify: Notify;
+  onNavigate: (s: "sandbox" | "devices") => void;
+}) {
   const qc = useQueryClient();
-  const items = useConversations().data ?? [];
+  const convQuery = useConversations();
+  const items = convQuery.data ?? [];
   const inboxes = useInboxes().data ?? [];
   const bridges = useBridges().data ?? [];
   const personas = usePersonas().data ?? [];
@@ -73,13 +80,42 @@ export function TakeoverView({ notify }: { notify: Notify }) {
     <>
       <SectionHeader title="接管" subtitle={`已接管 ${taken.length} · 未接管 ${available.length}`} />
       {items.length === 0 ? (
-        <Empty>还没有任何会话。先在「设备」页把渠道接进来，收到消息后这里会自动出现。</Empty>
+        convQuery.isPending ? (
+          <Empty>正在加载会话…</Empty>
+        ) : (
+          <div className="rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-bg-base)] px-6 py-7">
+            <div className="text-lg font-medium text-[var(--color-ink-1)]">还没有任何会话</div>
+            <p className="mt-1 text-sm text-[var(--color-ink-3)]">
+              接管需要先接入一个渠道。现在可以用「沙箱」模拟一个联系人来收发消息，走通整条流程：
+            </p>
+            <ol className="mt-4 flex flex-col gap-3">
+              <li className="flex items-center gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-bg-elev)] text-xs text-[var(--color-ink-2)]">1</span>
+                <span className="flex-1 text-sm text-[var(--color-ink-2)]">在「高级 › 设备」绑定一个「沙箱（chat）」渠道</span>
+                <button className={SM_GHOST_BTN} onClick={() => onNavigate("devices")}>
+                  去设备
+                </button>
+              </li>
+              <li className="flex items-center gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-bg-elev)] text-xs text-[var(--color-ink-2)]">2</span>
+                <span className="flex-1 text-sm text-[var(--color-ink-2)]">打开「沙箱」，新建联系人，以对方身份发条消息</span>
+                <button className={SM_GHOST_BTN} onClick={() => onNavigate("sandbox")}>
+                  去沙箱
+                </button>
+              </li>
+              <li className="flex items-center gap-3">
+                <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-bg-elev)] text-xs text-[var(--color-ink-2)]">3</span>
+                <span className="flex-1 text-sm text-[var(--color-ink-2)]">回到这里接管会话，选好人设后开启自动回复</span>
+              </li>
+            </ol>
+          </div>
+        )
       ) : (
         <div className="grid grid-cols-[minmax(0,360px)_1fr] gap-4">
           <div className="flex flex-col gap-4">
             <ConvGroup title="已接管" count={taken.length}>
               {taken.length === 0 ? (
-                <div className="px-1 py-1 text-[12px] text-[var(--color-ink-3)]">
+                <div className="px-1 py-1 text-xs text-[var(--color-ink-3)]">
                   还没接管任何会话，去下面「未接管」点接管。
                 </div>
               ) : (
@@ -96,7 +132,7 @@ export function TakeoverView({ notify }: { notify: Notify }) {
             </ConvGroup>
             <ConvGroup title="未接管" count={available.length}>
               {available.length === 0 ? (
-                <div className="px-1 py-1 text-[12px] text-[var(--color-ink-3)]">暂无未接管会话。</div>
+                <div className="px-1 py-1 text-xs text-[var(--color-ink-3)]">暂无未接管会话。</div>
               ) : (
                 available.map((it) => (
                   <div key={it.conversation.id} className="flex items-center gap-2">
@@ -145,9 +181,9 @@ function ConvGroup({ title, count, children }: { title: string; count: number; c
         onClick={() => setOpen((v) => !v)}
         className="flex w-full items-center gap-2 rounded-md border border-[var(--color-line-soft)] bg-[var(--color-bg-raised)] px-3 py-2 text-left"
       >
-        <span className={`text-[11px] text-[var(--color-ink-3)] transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
-        <span className="text-[13px] font-medium text-[var(--color-ink-1)]">{title}</span>
-        <span className="ml-auto rounded-full bg-[var(--color-bg-elev)] px-2 py-0.5 text-[11px] text-[var(--color-ink-3)]">
+        <span className={`text-2xs text-[var(--color-ink-3)] transition-transform ${open ? "rotate-90" : ""}`}>▶</span>
+        <span className="text-sm font-medium text-[var(--color-ink-1)]">{title}</span>
+        <span className="ml-auto rounded-full bg-[var(--color-bg-elev)] px-2 py-0.5 text-2xs text-[var(--color-ink-3)]">
           {count}
         </span>
       </button>
@@ -178,22 +214,32 @@ function ConvRow({
       }`}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-[13.5px] text-[var(--color-ink-1)]">{c.display_name}</span>
+        <span className="truncate text-sm text-[var(--color-ink-1)]">{c.display_name}</span>
         {c.reply_policy === "autoreply" ? (
-          <span className="shrink-0 rounded-full bg-[var(--color-ok)]/20 px-2 py-0.5 text-[10.5px] text-[var(--color-ok)]">
+          <span className="shrink-0 rounded-full bg-[var(--color-ok)]/20 px-2 py-0.5 text-2xs text-[var(--color-ok)]">
             自动回复
           </span>
         ) : (
-          <span className="shrink-0 text-[11px] text-[var(--color-ink-4)]">{item.message_count}</span>
+          <span className="shrink-0 text-2xs text-[var(--color-ink-4)]">{item.message_count}</span>
         )}
       </div>
-      <div className="mt-1 truncate text-[12px] text-[var(--color-ink-3)]">
+      <div className="mt-1 truncate text-xs text-[var(--color-ink-3)]">
         {item.latest_message
           ? `${item.latest_message.from_self ? "我" : "对方"}：${item.latest_message.content}`
           : "暂无消息"}
       </div>
-      <div className="mt-1 text-[10.5px] text-[var(--color-ink-4)]">{inboxName}</div>
+      <div className="mt-1 text-2xs text-[var(--color-ink-4)]">{inboxName}</div>
     </button>
+  );
+}
+
+function GateRow({ ok, label, hint }: { ok: boolean; label: string; hint?: string | null }) {
+  return (
+    <li className="flex items-start gap-2 text-xs">
+      <span className={ok ? "text-[var(--color-ok)]" : "text-[var(--color-ink-4)]"}>{ok ? "✓" : "○"}</span>
+      <span className={ok ? "text-[var(--color-ink-2)]" : "text-[var(--color-ink-3)]"}>{label}</span>
+      {!ok && hint && <span className="text-[var(--color-ink-4)]">— {hint}</span>}
+    </li>
   );
 }
 
@@ -225,14 +271,17 @@ function ConversationDetail({
 
   const currentCard = full?.card_md ?? "";
   const online = Boolean(bridge && bridge.status === "online");
-  const canAutoreply = online && Boolean(conversation.persona_id);
+  const hasPersona = Boolean(conversation.persona_id);
+  const hasCard = Boolean(currentCard.trim());
+  const isAutoreply = conversation.reply_policy === "autoreply";
+  const ready = online && hasPersona && hasCard;
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3 border-b border-[var(--color-line-soft)] pb-3">
         <div className="min-w-0 flex-1">
-          <div className="text-[16px] font-medium text-[var(--color-ink-1)]">{conversation.display_name}</div>
-          <div className="mt-1 text-[11px] text-[var(--color-ink-3)]">
+          <div className="text-lg font-medium text-[var(--color-ink-1)]">{conversation.display_name}</div>
+          <div className="mt-1 text-2xs text-[var(--color-ink-3)]">
             来自 {inbox.display_name}（{inbox.platform}）
           </div>
         </div>
@@ -255,62 +304,73 @@ function ConversationDetail({
 
       {conversation.takeover && (
         <div className="flex flex-col gap-3 rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-bg-raised)] p-3">
-          <div className="flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2 text-[12px] text-[var(--color-ink-3)]">
-              人设
-              <select
-                className={`${INPUT_CLS} w-auto py-1`}
-                value={conversation.persona_id ?? ""}
-                onChange={(e) => e.target.value && onPatch(conversation.id, { persona_id: e.target.value })}
-              >
-                <option value="">（未选）</option>
-                {personas.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex items-center gap-2 text-[12px] text-[var(--color-ink-3)]">
-              回复方式
-              <select
-                className={`${INPUT_CLS} w-auto py-1`}
-                value={conversation.reply_policy}
-                disabled={!canAutoreply && conversation.reply_policy !== "autoreply"}
-                onChange={(e) => {
-                  const next = e.target.value as "disabled" | "autoreply";
-                  if (next === "autoreply") {
-                    const hasCard = Boolean(currentCard.trim());
-                    if (!conversation.persona_id || !hasCard) {
-                      const missing = [conversation.persona_id ? null : "人设", hasCard ? null : "关系备注"]
-                        .filter(Boolean)
-                        .join(" 和 ");
-                      if (!confirm(`还缺${missing}（两样都要才能自动回复）。仍开启吗？`)) return;
-                    }
-                  }
-                  onPatch(conversation.id, { reply_policy: next });
-                }}
-              >
-                <option value="disabled">我自己回</option>
-                <option value="autoreply">自动回复</option>
-              </select>
-            </label>
-          </div>
-          {!canAutoreply && (
-            <div className="text-[11px] text-[var(--color-warn)]">
-              {!bridge && "— 该账号没有在线设备；"}
-              {bridge && bridge.status !== "online" && `— 设备「${bridge.machine_id}」离线；`}
-              {!conversation.persona_id && "— 还没选人设；"}
-              当前无法自动回复。
+          <div className="rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-bg-base)] p-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <span className={`h-2 w-2 rounded-full ${isAutoreply ? "bg-[var(--color-ok)]" : "bg-[var(--color-ink-4)]"}`} />
+                <span className="text-sm font-medium text-[var(--color-ink-1)]">
+                  自动回复 · {isAutoreply ? "已开启" : "未开通"}
+                </span>
+              </div>
+              {isAutoreply ? (
+                <button className={SM_GHOST_BTN} onClick={() => onPatch(conversation.id, { reply_policy: "disabled" })}>
+                  关闭
+                </button>
+              ) : (
+                <button
+                  className={PRIMARY_BTN}
+                  disabled={!ready}
+                  onClick={() => onPatch(conversation.id, { reply_policy: "autoreply" })}
+                >
+                  开启自动回复
+                </button>
+              )}
             </div>
-          )}
+            {!isAutoreply && (
+              <ul className="flex flex-col gap-1">
+                <GateRow ok label="已接管" />
+                <GateRow
+                  ok={online}
+                  label="设备在线"
+                  hint={bridge ? `设备「${bridge.machine_id}」离线` : "该账号暂无在线设备"}
+                />
+                <GateRow ok={hasPersona} label="已选择人设" hint="在下方选择一个人设" />
+                <GateRow ok={hasCard} label="已填写关系备注" hint="在下方填写并保存关系备注" />
+              </ul>
+            )}
+            {isAutoreply && !ready && (
+              <div className="text-2xs text-[var(--color-warn)]">
+                已开启，但当前缺少
+                {[online ? null : "设备在线", hasPersona ? null : "人设", hasCard ? null : "关系备注"]
+                  .filter(Boolean)
+                  .join("、")}
+                ，暂时不会自动回复。
+              </div>
+            )}
+          </div>
+
+          <label className="flex items-center gap-2 text-xs text-[var(--color-ink-3)]">
+            人设
+            <select
+              className={`${INPUT_CLS} w-auto py-1`}
+              value={conversation.persona_id ?? ""}
+              onChange={(e) => e.target.value && onPatch(conversation.id, { persona_id: e.target.value })}
+            >
+              <option value="">（未选）</option>
+              {personas.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
 
           <div>
-            <div className="text-[12px] font-medium text-[var(--color-ink-2)]">关系备注</div>
-            <div className="text-[11px] text-[var(--color-ink-3)]">简单写下你和这个人的关系，回复时会参考。</div>
+            <div className="text-xs font-medium text-[var(--color-ink-2)]">关系备注</div>
+            <div className="text-2xs text-[var(--color-ink-3)]">简单写下你和这个人的关系，回复时会参考。</div>
           </div>
           <textarea
-            className={`${INPUT_CLS} min-h-[140px] font-mono text-[12px]`}
+            className={`${INPUT_CLS} min-h-[140px] font-mono text-xs`}
             value={draftCard}
             onChange={(e) => setDraftCard(e.target.value)}
             placeholder={full ? "例如：去年送过我一袋茶叶，平时叫我「姐」" : "加载中…"}
@@ -394,8 +454,8 @@ export function PersonasView({ notify }: { notify: Notify }) {
               className="flex items-center justify-between gap-3 rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-bg-base)] px-5 py-3.5"
             >
               <div>
-                <div className="text-[14px] font-medium text-[var(--color-ink-1)]">{p.name}</div>
-                <div className="mt-1 text-[11px] text-[var(--color-ink-3)]">{p.timezone}</div>
+                <div className="text-base font-medium text-[var(--color-ink-1)]">{p.name}</div>
+                <div className="mt-1 text-2xs text-[var(--color-ink-3)]">{p.timezone}</div>
               </div>
               <div className="flex gap-2">
                 <button className={SM_GHOST_BTN} onClick={() => setEditing(p)}>
@@ -493,7 +553,7 @@ function CreatePersonaModal({
   return (
     <ModalShell title="新建人设" onClose={onClose}>
       <div className="mb-4 rounded-lg border border-[var(--color-brass)]/40 bg-[var(--color-brass)]/10 p-3">
-        <div className="text-[13px] font-medium text-[var(--color-ink-1)]">不想自己写？可以从聊天记录自动创建</div>
+        <div className="text-sm font-medium text-[var(--color-ink-1)]">不想自己写？可以从聊天记录自动创建</div>
         <button className={`${PRIMARY_BTN} mt-2`} onClick={onSwitchToAuto}>
           ✶ 用聊天记录自动创建
         </button>
@@ -564,7 +624,7 @@ function AutoCreatePersonaModal({
 
   return (
     <ModalShell title="✶ 自动创建人设" onClose={onClose}>
-      <div className="mb-3 text-[12px] text-[var(--color-ink-3)]">
+      <div className="mb-3 text-xs text-[var(--color-ink-3)]">
         起个名字，选几段真实对话。AI 在后台读完后自动写出人设，并顺手生成每个被选中会话的关系备注。关掉窗口也没关系。
       </div>
       <FormField label="人设名称">
@@ -573,7 +633,7 @@ function AutoCreatePersonaModal({
       <FormField label="时区">
         <input className={INPUT_CLS} value={tz} onChange={(e) => setTz(e.target.value)} />
       </FormField>
-      <div className="mb-1.5 text-[11px] text-[var(--color-ink-3)]">
+      <div className="mb-1.5 text-2xs text-[var(--color-ink-3)]">
         从这些对话里学习（已选 {selected.size} / {items.length}）
       </div>
       {loading ? (
@@ -585,11 +645,11 @@ function AutoCreatePersonaModal({
           {items.map((it) => (
             <label
               key={it.conversation.id}
-              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-[var(--color-bg-raised)]"
+              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-[var(--color-bg-raised)]"
             >
               <input type="checkbox" checked={selected.has(it.conversation.id)} onChange={() => toggle(it.conversation.id)} />
               <span className="flex-1 text-[var(--color-ink-1)]">{it.conversation.display_name}</span>
-              <span className="font-mono text-[11px] text-[var(--color-ink-4)]">{it.message_count} 条</span>
+              <span className="font-mono text-2xs text-[var(--color-ink-4)]">{it.message_count} 条</span>
             </label>
           ))}
         </div>
@@ -694,12 +754,12 @@ export function DevicesView({
     <>
       <SectionHeader title="设备" subtitle="本机置顶，其余设备只读展示。" />
 
-      <h2 className="mb-2 text-[13px] font-medium text-[var(--color-ink-2)]">本机</h2>
+      <h2 className="mb-2 text-sm font-medium text-[var(--color-ink-2)]">本机</h2>
       <div className="mb-8 rounded-xl border border-[var(--color-brass)]/40 bg-[var(--color-brass)]/[0.06] p-5">
         {localSlot}
       </div>
 
-      <h2 className="mb-2 text-[13px] font-medium text-[var(--color-ink-2)]">其他设备</h2>
+      <h2 className="mb-2 text-sm font-medium text-[var(--color-ink-2)]">其他设备</h2>
       {others.length === 0 ? (
         <Empty>账号下没有其他设备。</Empty>
       ) : (
@@ -711,8 +771,8 @@ export function DevicesView({
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
                     <span className={`h-2 w-2 rounded-full ${online ? "bg-[var(--color-ok)]" : "bg-[var(--color-ink-4)]"}`} />
-                    <span className="text-[14px] font-medium text-[var(--color-ink-1)]">{b.machine_id}</span>
-                    <span className="text-[11px] text-[var(--color-ink-4)]">{online ? "在线" : "离线"}</span>
+                    <span className="text-base font-medium text-[var(--color-ink-1)]">{b.machine_id}</span>
+                    <span className="text-2xs text-[var(--color-ink-4)]">{online ? "在线" : "离线"}</span>
                   </div>
                   <button
                     className={DANGER_BTN}
@@ -729,13 +789,13 @@ export function DevicesView({
                     移除
                   </button>
                 </div>
-                <div className="mt-1 text-[11px] text-[var(--color-ink-3)]">
+                <div className="mt-1 text-2xs text-[var(--color-ink-3)]">
                   最后在线 {studio.formatDateTime(b.last_seen_at)} · 接入 {inboxesOf(b.id).length} 个账号
                 </div>
                 {inboxesOf(b.id).length > 0 && (
                   <div className="mt-2.5 flex flex-col gap-1 border-t border-[var(--color-line-soft)] pt-2.5">
                     {inboxesOf(b.id).map((i) => (
-                      <div key={i.id} className="text-[11px] text-[var(--color-ink-2)]">
+                      <div key={i.id} className="text-2xs text-[var(--color-ink-2)]">
                         {i.display_name}（{i.platform}）
                       </div>
                     ))}
@@ -787,7 +847,7 @@ export function ChangePasswordModal({ onClose, notify }: { onClose: () => void; 
       <FormField label="再输一次新密码">
         <input className={INPUT_CLS} type="password" value={confirm2} onChange={(e) => setConfirm2(e.target.value)} />
       </FormField>
-      {mismatch && <div className="mb-2 text-[11px] text-[var(--color-danger)]">两次输入的新密码不一致</div>}
+      {mismatch && <div className="mb-2 text-2xs text-[var(--color-danger)]">两次输入的新密码不一致</div>}
       <ModalActions onCancel={onClose} onConfirm={submit} confirmLabel={busy ? "保存中…" : "修改密码"} disabled={busy || !canSubmit} />
     </ModalShell>
   );

@@ -25,7 +25,7 @@ function SyncIndicator() {
   const fetching = useIsFetching();
   if (!fetching) return null;
   return (
-    <div className="pointer-events-none fixed right-4 top-3 z-[60] flex items-center gap-2 rounded-full border border-[var(--color-line)] bg-[var(--color-bg-elev)]/90 px-3 py-1 text-[11.5px] text-[var(--color-ink-3)] shadow">
+    <div className="pointer-events-none fixed right-4 top-3 z-[60] flex items-center gap-2 rounded-full border border-[var(--color-line)] bg-[var(--color-bg-elev)]/90 px-3 py-1 text-2xs text-[var(--color-ink-3)] shadow">
       <span className="h-2.5 w-2.5 animate-spin rounded-full border border-[var(--color-ink-4)] border-t-[var(--color-brass)]" />
       同步中…
     </div>

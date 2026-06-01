@@ -216,9 +216,25 @@ services:
         condition: service_started
     restart: unless-stopped
 
+# Declared `external` so `docker compose down -v` CANNOT delete them — the
+# stateful data survives any accidental teardown. The names interpolate
+# COMPOSE_PROJECT_NAME so each instance still gets its own isolated volume
+# (release_pgdata, debug_pgdata, ...), matching compose's default naming.
+# Trade-off: these are not auto-created; a new instance needs them made once:
+#   docker volume create <project>_pgdata  (and the other four)
 volumes:
   pgdata:
+    external: true
+    name: ${COMPOSE_PROJECT_NAME}_pgdata
   minio-data:
+    external: true
+    name: ${COMPOSE_PROJECT_NAME}_minio-data
   bridge-host-data:
+    external: true
+    name: ${COMPOSE_PROJECT_NAME}_bridge-host-data
   caddy-data:
+    external: true
+    name: ${COMPOSE_PROJECT_NAME}_caddy-data
   caddy-config:
+    external: true
+    name: ${COMPOSE_PROJECT_NAME}_caddy-config

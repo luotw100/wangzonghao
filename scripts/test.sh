@@ -1,34 +1,35 @@
 #!/usr/bin/env bash
 # Run the API test suite inside the already-running user-api container.
 #
-#   scripts/test.sh <config.json> [pytest args...]
+#   scripts/test.sh .env.debug [pytest args...]
 #
-# Tests are baked into the api image (Dockerfile COPY tests). fake-llm
-# is a regular long-running service on the same network. To pick up
-# test/source changes, re-run scripts/up-all.sh — that's the only
-# build step in the loop.
+# Only COMPOSE_PROJECT_NAME is read from the env file — the container is
+# located by project, so no -f / profiles needed. Tests are baked into the
+# api image (Dockerfile COPY tests); fake-llm is a long-running service on
+# the same network. To pick up test/source changes, rebuild the app:
+#   docker compose --env-file .env.debug up -d --build
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-INST="${1:-}"
-if [[ -z "$INST" ]]; then
-  echo "usage: scripts/test.sh <config.json> [pytest args...]" >&2
+ENVF="${1:-}"
+if [[ -z "$ENVF" ]]; then
+  echo "usage: scripts/test.sh <env-file> [pytest args...]   (e.g. scripts/test.sh .env.debug)" >&2
   exit 1
 fi
 shift
-[[ "$INST" = /* ]] || INST="$ROOT/$INST"
-if [[ ! -f "$INST" ]]; then
-  echo "config not found: $INST" >&2
+[[ "$ENVF" = /* ]] || ENVF="$ROOT/$ENVF"
+if [[ ! -f "$ENVF" ]]; then
+  echo "env file not found: $ENVF" >&2
   exit 1
 fi
 
-P=$(jq -r '.compose.COMPOSE_PROJECT_NAME' "$INST")
-: "${P:?config.compose.COMPOSE_PROJECT_NAME missing}"
+set -a; . "$ENVF"; set +a
+: "${COMPOSE_PROJECT_NAME:?env file must set COMPOSE_PROJECT_NAME}"
 
 if [[ "$#" -eq 0 ]]; then
   set -- tests/ -x -v
 fi
 
-exec docker compose -p "$P" exec user-api uv run python -m pytest "$@"
+exec docker compose -p "$COMPOSE_PROJECT_NAME" exec user-api uv run python -m pytest "$@"

@@ -3,9 +3,15 @@
 # run while services are up (pg_dump is transaction-consistent; mc mirror
 # is object-level).
 #
-#   scripts/backup.sh scripts/.env.release.json
-#   BACKUP_DIR=/mnt/backups scripts/backup.sh scripts/.env.release.json
-#   LABEL=before-seed-reset scripts/backup.sh scripts/.env.release.json
+#   scripts/backup.sh .env.release
+#   BACKUP_DIR=/mnt/backups scripts/backup.sh .env.release
+#   LABEL=before-seed-reset scripts/backup.sh .env.release
+#
+# Reads creds + COMPOSE_PROJECT_NAME from the per-instance env file. The db
+# and minio containers are located by project name, so no -f / profiles
+# needed. NOTE: assumes storage runs as local containers (exec into `db`,
+# mc against the `minio` container). Moving storage to managed RDS/S3 will
+# need a separate code path (pg_dump -h <host>, mc against the real endpoint).
 #
 # This script NEVER deletes a backup. Pruning is manual. At the end it
 # LOCKS the new backup with `chattr +i` (needs sudo) so it can't be
@@ -16,22 +22,23 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-INST="${1:-}"
-if [ -z "$INST" ]; then
-  echo "usage: scripts/backup.sh <config.json>   (e.g. scripts/.env.release.json)" >&2
+ENVF="${1:-}"
+if [ -z "$ENVF" ]; then
+  echo "usage: scripts/backup.sh <env-file>   (e.g. .env.release)" >&2
   exit 1
 fi
-case "$INST" in /*) :;; *) INST="$REPO_DIR/$INST";; esac
-[ -f "$INST" ] || { echo "ERROR: config not found: $INST" >&2; exit 1; }
-[ -f "$REPO_DIR/.env" ] || { echo "ERROR: $REPO_DIR/.env not found" >&2; exit 1; }
-jq empty "$INST" 2>/dev/null || { echo "ERROR: invalid JSON: $INST" >&2; exit 1; }
+case "$ENVF" in /*) :;; *) ENVF="$REPO_DIR/$ENVF";; esac
+[ -f "$ENVF" ] || { echo "ERROR: env file not found: $ENVF" >&2; exit 1; }
 
-TMP_ENV=$(mktemp); trap "rm -f $TMP_ENV" EXIT
-jq -r '.compose | to_entries[] | "\(.key)=\(.value)"' "$INST" > "$TMP_ENV"
-set -a; . "$REPO_DIR/.env"; . "$TMP_ENV"; set +a
-: "${COMPOSE_PROJECT_NAME:?config.compose must set COMPOSE_PROJECT_NAME}"
+set -a; . "$ENVF"; set +a
+: "${COMPOSE_PROJECT_NAME:?env file must set COMPOSE_PROJECT_NAME}"
+: "${POSTGRES_USER:?env file must set POSTGRES_USER}"
+: "${POSTGRES_DB:?env file must set POSTGRES_DB}"
+: "${MINIO_ROOT_USER:?env file must set MINIO_ROOT_USER}"
+: "${MINIO_ROOT_PASSWORD:?env file must set MINIO_ROOT_PASSWORD}"
+: "${S3_BUCKET:?env file must set S3_BUCKET}"
 
-COMPOSE=(docker compose -f "$REPO_DIR/docker-compose.yaml" -p "$COMPOSE_PROJECT_NAME" --env-file "$REPO_DIR/.env")
+COMPOSE=(docker compose -p "$COMPOSE_PROJECT_NAME")
 BACKUP_DIR="${BACKUP_DIR:-$HOME/laborster-backups}"
 HOST_UGID="$(id -u):$(id -g)"
 

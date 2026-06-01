@@ -6,7 +6,6 @@ __pycache__/
 
 .env*
 !.env.example
-!.env.example.json
 
 # Per-instance seed data (contains provider API keys); template is committed.
 seed.*.json

@@ -23,9 +23,11 @@ jobs:
       - uses: actions/checkout@v4
 
       # .env 被 gitignore，CI 现造一份测试用配置。值随便填，栈是一次性的。
+      # COMPOSE_PROJECT_NAME 固定成 ci，让下面创建的 external 卷名可预测。
       - name: Write test .env
         run: |
           cat > .env <<'EOF'
+          COMPOSE_PROJECT_NAME=ci
           POSTGRES_USER=ci
           POSTGRES_PASSWORD=ci
           POSTGRES_DB=laborster
@@ -37,6 +39,14 @@ jobs:
           UPLOAD_MAX_SIZE_MB=50
           CF_TUNNEL_TOKEN=unused-in-ci
           EOF
+
+      # 有状态卷在 docker-compose.yaml 里声明成 external，compose 不会自动建。
+      # 一次性 CI runner 上手动建出这五个 ${COMPOSE_PROJECT_NAME}_* 卷。
+      - name: Create external stateful volumes
+        run: |
+          for v in pgdata minio-data bridge-host-data caddy-data caddy-config; do
+            docker volume create "ci_$v"
+          done
 
       # 只起测试需要的服务，跳过 cloudflared（要真 token）和 user-web/admin-web。
       - name: Bring up stack

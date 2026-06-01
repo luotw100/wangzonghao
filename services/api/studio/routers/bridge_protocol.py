@@ -27,7 +27,7 @@ import time
 from datetime import timezone
 from typing import Annotated, Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from studio.auth_utils import verify_password
@@ -35,6 +35,7 @@ from studio.db import get_db, utc_now
 from studio.deps import (
     BRIDGE_OFFLINE_S,
     BridgeDep,
+    authenticate_bridge,
     create_auth_session,
     new_id,
     pick_first_provider,
@@ -442,7 +443,8 @@ def bridge_incoming(
 
 @router.get("/api/bridge/outbound")
 async def bridge_outbound(
-    bridge: BridgeDep,
+    authorization: Annotated[Optional[str], Header()] = None,
+    x_machine_id: Annotated[Optional[str], Header()] = None,
     timeout: int = Query(0, ge=0, le=60),
 ):
     """长轮询待发消息队列，每次最多返回 50 条 OutboundForBridge。
@@ -454,9 +456,25 @@ async def bridge_outbound(
     - 无游标：Bridge 每次拉取的都是当前全量 PENDING 集合（id asc）。
     - 无租约：Bridge 本地 _inflight 做去重。
     - 状态回写：PENDING → DELIVERED 由 /incoming 的 from_self 消息自动 ack。
+
+    连接占用：鉴权走短命 session（用完即还），**不**用 ``BridgeDep`` 注入的
+    请求级 ``get_db`` —— 否则这条连接会被 hold 满整个 30s 长轮询，使并发在线
+    Bridge 数被 PG max_connections 卡住。idle 长轮询因此占 0 个池连接。
     """
     from studio.db import SessionLocal
     from studio.notify import get_broker, outbound_channel
+
+    def _auth_bridge() -> Bridge:
+        db = SessionLocal()
+        db.expire_on_commit = False  # keep bridge.id readable after close
+        try:
+            bridge = authenticate_bridge(db, authorization, x_machine_id)
+            db.expunge(bridge)
+            return bridge
+        finally:
+            db.close()
+
+    bridge = await asyncio.to_thread(_auth_bridge)
 
     def _query_pending(inbox_ids: List[str]) -> List[Dict[str, Any]]:
         if not inbox_ids:

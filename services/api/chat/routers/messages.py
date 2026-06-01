@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 import anyio
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Header, HTTPException, Query
 from sqlalchemy import text
 
 from chat.db import SessionLocal, utc_now
@@ -13,6 +13,8 @@ from chat.enums import CommandStatus, MessageType
 from chat.models import Message
 from chat.schemas import ConversationMessages, MessageSendRequest, StatusResponse
 from chat.scoping import scoped
+from studio.deps import extract_bearer, resolve_account_from_token
+from studio.models import Account
 from studio.notify import chat_message_channel, get_broker
 
 
@@ -101,7 +103,7 @@ def get_messages_before(
 @router.get("/{conversation_id}/messages/after", response_model=ConversationMessages)
 async def get_messages_after(
     conversation_id: str,
-    account: CurrentAccountDep,
+    authorization: Annotated[str | None, Header()] = None,
     last_id: Annotated[int, Query(ge=0)] = 0,
     limit: Annotated[int, Query(ge=0, le=500)] = 0,
     timeout: Annotated[int, Query(ge=0)] = 0,
@@ -115,8 +117,23 @@ async def get_messages_after(
     - `limit`：最多返回条数，0 表示不限制。
     - `timeout`：长轮询等待秒数；超时仍无新消息则返回空列表。
     - 返回按 ID 升序。
+
+    连接占用：鉴权走短命 session（用完即还），**不**用 ``CurrentAccountDep``
+    注入的请求级 ``get_db`` —— 否则这条连接会被 hold 满整个长轮询等待期，使并发
+    长轮询数被 PG max_connections 卡住。返回的是 detached account（仅读 .id），
+    下面 ``_query_messages`` 每轮自开短命 session。
     """
-    account_id = account.id
+    def _auth_account() -> Account:
+        db = SessionLocal()
+        db.expire_on_commit = False  # keep account.id readable after close
+        try:
+            account = resolve_account_from_token(db, extract_bearer(authorization))
+            db.expunge(account)
+            return account
+        finally:
+            db.close()
+
+    account = await anyio.to_thread.run_sync(_auth_account)
 
     def _query_messages() -> tuple[object, list[object]] | None:
         db = SessionLocal()

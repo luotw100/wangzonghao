@@ -167,17 +167,17 @@ CurrentAccountDep = Annotated[Account, Depends(get_account)]
 # FastAPI dependency: authenticated bridge daemon
 # ---------------------------------------------------------------------------
 
-def get_authed_bridge(
-    db: Annotated[Session, Depends(get_db)],
-    authorization: Annotated[Optional[str], Header()] = None,
-    x_machine_id: Annotated[Optional[str], Header()] = None,
+def authenticate_bridge(
+    db: Session,
+    authorization: Optional[str],
+    x_machine_id: Optional[str],
 ) -> Bridge:
-    """Authenticate a /api/bridge/* call.
+    """Resolve + auth a bridge daemon on a caller-supplied session.
 
-    Same session token table as the web console (account-scoped). The
-    bridge identity is not in the token: it comes from the X-Machine-Id
-    the daemon persists and sends on every request, resolved against the
-    authenticated account's Bridge row.
+    Split out of ``get_authed_bridge`` so long-poll endpoints can run it on a
+    short-lived session that is released *before* the idle wait — otherwise the
+    ``get_db`` dependency pins one pool connection for the whole 30s poll, and
+    concurrent online bridges hit the PG connection ceiling. See [studio.db].
     """
     token = extract_bearer(authorization)
     # joinedload pulls the Account in the same round-trip; without it, reading
@@ -218,6 +218,17 @@ def get_authed_bridge(
         s.expires_at = new_expires
         db.commit()
     return bridge
+
+
+def get_authed_bridge(
+    db: Annotated[Session, Depends(get_db)],
+    authorization: Annotated[Optional[str], Header()] = None,
+    x_machine_id: Annotated[Optional[str], Header()] = None,
+) -> Bridge:
+    """FastAPI dependency for non-long-poll /api/bridge/* calls (request-scoped
+    session). Long-poll endpoints call ``authenticate_bridge`` directly on a
+    short-lived session instead — see that function's docstring."""
+    return authenticate_bridge(db, authorization, x_machine_id)
 
 
 BridgeDep = Annotated[Bridge, Depends(get_authed_bridge)]

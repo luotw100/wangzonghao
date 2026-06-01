@@ -6,12 +6,12 @@ resolving the container's IP (Linux routes to it directly — no published
 port needed) and POSTing to /api/admin. No `docker exec`, no public URL,
 no edge dependency.
 
-Usage:
-    python scripts/seed.py -p debug scripts/seed.debug.json
-    COMPOSE_PROJECT_NAME=debug python scripts/seed.py scripts/seed.debug.json
+Usage (same shape as backup.sh / test.sh: env file first, then config):
+    python scripts/seed.py .env.debug scripts/seed.debug.json
 
-The instance must already be up with the `storage` + `app` profiles
-(admin-api running). Config schema (see scripts/seed.example.json):
+The project name is read from the env file's COMPOSE_PROJECT_NAME. The
+instance must already be up with the `storage` + `app` profiles (admin-api
+running). Config schema (see scripts/seed.example.json):
 
     {
       "users":     [{username, password, display}, ...],
@@ -234,19 +234,36 @@ def _run(base: str, label: str, path: str, body: dict) -> bool:
     return False
 
 
+# ---------- env file ----------
+
+def project_from_env_file(path: Path) -> str:
+    """Read COMPOSE_PROJECT_NAME from a docker env file (KEY=VALUE lines)."""
+    if not path.is_file():
+        path = REPO_ROOT / path
+    if not path.is_file():
+        die(f"env file not found: {path}")
+    project = ""
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, val = line.partition("=")
+        if key.strip() == "COMPOSE_PROJECT_NAME":
+            project = val.strip().strip('"').strip("'")
+    if not project:
+        die(f"{path}: COMPOSE_PROJECT_NAME not set")
+    return project
+
+
 # ---------- main ----------
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="One-shot dev seed via admin-api.")
+    ap.add_argument("env_file", help="per-instance env file (e.g. .env.debug)")
     ap.add_argument("config", help="path to seed JSON (e.g. scripts/seed.debug.json)")
-    ap.add_argument(
-        "-p", "--project", default=os.environ.get("COMPOSE_PROJECT_NAME"),
-        help="compose project name (or set COMPOSE_PROJECT_NAME)",
-    )
     args = ap.parse_args()
 
-    if not args.project:
-        die("project name required: pass -p NAME or set COMPOSE_PROJECT_NAME")
+    project = project_from_env_file(Path(args.env_file))
 
     cfg_path = Path(args.config)
     if not cfg_path.is_file():
@@ -255,11 +272,11 @@ def main() -> None:
         die(f"config not found: {args.config}")
 
     cfg = load_seed_config(cfg_path)
-    log(f"project   : {args.project}")
+    log(f"project   : {project}")
     log(f"users     : {', '.join(u.username for u in cfg.users)}")
     log(f"providers : {', '.join(p.name for p in cfg.providers)}  (first is default)")
 
-    base = resolve_admin_base(args.project)
+    base = resolve_admin_base(project)
     wait_ready(base)
 
     failed = False
@@ -303,7 +320,7 @@ def main() -> None:
 
     print()
     print("---")
-    print(f"seed done for project {args.project!r}:")
+    print(f"seed done for project {project!r}:")
     for u in cfg.users:
         print(f"  {u.username} / {u.password}")
 

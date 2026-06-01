@@ -52,11 +52,11 @@ curl -X POST https://admin.<your-domain>/api/admin/providers \
 
 ## Dev seed
 
-`scripts/seed.py -p <project> <seed.json>` 一次性建一批账号 + Provider。`seed.json` 只含 `users[]` + `providers[]`（参考 `scripts/seed.example.json`，每实例复制为 `scripts/seed.debug.json` 等，gitignored 因含 API key）。脚本是宿主机进程，纯 HTTP：按 compose label 找到该 project 的 admin-api 容器、动态取其桥接网 IP（Linux 宿主可直接路由到容器，无需发布端口），POST `/api/admin/providers` + `/api/admin/accounts`。不经 `docker exec`、不经公网/edge。重复执行幂等：账号存在会告警跳过；Provider 同名也会跳过。
+`scripts/seed.py <env-file> <seed.json>` 一次性建一批账号 + Provider（入参与 `backup.sh`/`test.sh` 一致：env 文件在前，project 名从其 `COMPOSE_PROJECT_NAME` 读）。`seed.json` 只含 `users[]` + `providers[]`（参考 `scripts/seed.example.json`，每实例复制为 `scripts/seed.debug.json` 等，gitignored 因含 API key）。脚本是宿主机进程，纯 HTTP：按 compose label 找到该 project 的 admin-api 容器、动态取其桥接网 IP（Linux 宿主可直接路由到容器，无需发布端口），POST `/api/admin/providers` + `/api/admin/accounts`。不经 `docker exec`、不经公网/edge。重复执行幂等：账号存在会告警跳过；Provider 同名也会跳过。
 
 ```bash
 docker compose --env-file .env.debug up -d   # 起来（至少 storage+app）
-python3 scripts/seed.py -p debug scripts/seed.debug.json
+python3 scripts/seed.py .env.debug scripts/seed.debug.json
 ```
 
 ## 推荐配置顺序

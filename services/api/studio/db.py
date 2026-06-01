@@ -8,7 +8,18 @@ database_url = os.environ.get("DATABASE_URL")
 if not database_url:
     raise RuntimeError("DATABASE_URL is required")
 
-engine = create_engine(database_url, pool_size=10, max_overflow=20)
+# Connection budget — shared by every process that imports this engine
+# (user-api ×4 uvicorn workers, admin-api ×1, user-worker ×1). Each process
+# gets its own pool, so the fleet total must fit Postgres' max_connections=100:
+#
+#     (4 + 1 + 1) × (pool_size + max_overflow)  +  4 (asyncpg NOTIFY brokers, 1/user-api worker)
+#       = 6 × 14 + 4 = 88  ≤  ~90  (100 − ~10 reserved for psql/migrate/superuser)
+#
+# To scale: raise max_connections AND pool_size/max_overflow together, keeping
+# the fleet total under the new ceiling. Once a single Postgres can't grow
+# max_connections further, front it with PgBouncer (transaction pooling) — the
+# long-poll endpoint releases its connection between queries, so it pools well.
+engine = create_engine(database_url, pool_size=6, max_overflow=8)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 

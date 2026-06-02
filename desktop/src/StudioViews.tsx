@@ -78,7 +78,7 @@ export function TakeoverView({
 
   return (
     <>
-      <SectionHeader title="接管" subtitle={`已接管 ${taken.length} · 未接管 ${available.length}`} />
+      <SectionHeader title="托管" subtitle={`已托管 ${taken.length} · 未托管 ${available.length}`} />
       {items.length === 0 ? (
         convQuery.isPending ? (
           <Empty>正在加载会话…</Empty>
@@ -86,26 +86,26 @@ export function TakeoverView({
           <div className="rounded-xl border border-[var(--color-line-soft)] bg-[var(--color-bg-base)] px-6 py-7">
             <div className="text-lg font-medium text-[var(--color-ink-1)]">还没有任何会话</div>
             <p className="mt-1 text-sm text-[var(--color-ink-3)]">
-              接管需要先接入一个渠道。现在可以用「沙箱」模拟一个联系人来收发消息，走通整条流程：
+              托管需要先接入一个社交账号。现在可以用「模拟对话」造一个虚拟联系人来收发消息，先把整条流程走通：
             </p>
             <ol className="mt-4 flex flex-col gap-3">
               <li className="flex items-center gap-3">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-bg-elev)] text-xs text-[var(--color-ink-2)]">1</span>
-                <span className="flex-1 text-sm text-[var(--color-ink-2)]">在「高级 › 设备」绑定一个「沙箱（chat）」渠道</span>
+                <span className="flex-1 text-sm text-[var(--color-ink-2)]">在「高级 › 设备」添加一个社交账号（可先选「模拟对话」练手）</span>
                 <button className={SM_GHOST_BTN} onClick={() => onNavigate("devices")}>
-                  去设备
+                  去添加
                 </button>
               </li>
               <li className="flex items-center gap-3">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-bg-elev)] text-xs text-[var(--color-ink-2)]">2</span>
-                <span className="flex-1 text-sm text-[var(--color-ink-2)]">打开「沙箱」，新建联系人，以对方身份发条消息</span>
+                <span className="flex-1 text-sm text-[var(--color-ink-2)]">打开「模拟对话」，新建联系人，以对方身份发条消息</span>
                 <button className={SM_GHOST_BTN} onClick={() => onNavigate("sandbox")}>
-                  去沙箱
+                  去模拟对话
                 </button>
               </li>
               <li className="flex items-center gap-3">
                 <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[var(--color-bg-elev)] text-xs text-[var(--color-ink-2)]">3</span>
-                <span className="flex-1 text-sm text-[var(--color-ink-2)]">回到这里接管会话，选好人设后开启自动回复</span>
+                <span className="flex-1 text-sm text-[var(--color-ink-2)]">回到这里托管会话，选好分身后开启自动回复</span>
               </li>
             </ol>
           </div>
@@ -113,10 +113,10 @@ export function TakeoverView({
       ) : (
         <div className="grid grid-cols-[minmax(0,360px)_1fr] gap-4">
           <div className="flex flex-col gap-4">
-            <ConvGroup title="已接管" count={taken.length}>
+            <ConvGroup title="已托管" count={taken.length}>
               {taken.length === 0 ? (
                 <div className="px-1 py-1 text-xs text-[var(--color-ink-3)]">
-                  还没接管任何会话，去下面「未接管」点接管。
+                  还没托管任何会话，去下面「未托管」点托管。
                 </div>
               ) : (
                 taken.map((it) => (
@@ -130,9 +130,9 @@ export function TakeoverView({
                 ))
               )}
             </ConvGroup>
-            <ConvGroup title="未接管" count={available.length}>
+            <ConvGroup title="未托管" count={available.length}>
               {available.length === 0 ? (
-                <div className="px-1 py-1 text-xs text-[var(--color-ink-3)]">暂无未接管会话。</div>
+                <div className="px-1 py-1 text-xs text-[var(--color-ink-3)]">暂无未托管会话。</div>
               ) : (
                 available.map((it) => (
                   <div key={it.conversation.id} className="flex items-center gap-2">
@@ -145,7 +145,7 @@ export function TakeoverView({
                       />
                     </div>
                     <button className={PRIMARY_BTN} onClick={() => patch(it.conversation.id, { takeover: true })}>
-                      接管
+                      托管
                     </button>
                   </div>
                 ))
@@ -289,15 +289,15 @@ function ConversationDetail({
           <button
             className={SM_GHOST_BTN}
             onClick={() => {
-              if (!confirm(`取消接管「${conversation.display_name}」？取消后停止自动回复。`)) return;
+              if (!confirm(`取消托管「${conversation.display_name}」？取消后停止自动回复。`)) return;
               onPatch(conversation.id, { takeover: false });
             }}
           >
-            取消接管
+            取消托管
           </button>
         ) : (
           <button className={PRIMARY_BTN} onClick={() => onPatch(conversation.id, { takeover: true })}>
-            接管
+            托管
           </button>
         )}
       </div>
@@ -328,20 +328,20 @@ function ConversationDetail({
             </div>
             {!isAutoreply && (
               <ul className="flex flex-col gap-1">
-                <GateRow ok label="已接管" />
+                <GateRow ok label="已托管" />
                 <GateRow
                   ok={online}
                   label="设备在线"
                   hint={bridge ? `设备「${bridge.machine_id}」离线` : "该账号暂无在线设备"}
                 />
-                <GateRow ok={hasPersona} label="已选择人设" hint="在下方选择一个人设" />
+                <GateRow ok={hasPersona} label="已选择分身" hint="在下方选择一个分身" />
                 <GateRow ok={hasCard} label="已填写关系备注" hint="在下方填写并保存关系备注" />
               </ul>
             )}
             {isAutoreply && !ready && (
               <div className="text-2xs text-[var(--color-warn)]">
                 已开启，但当前缺少
-                {[online ? null : "设备在线", hasPersona ? null : "人设", hasCard ? null : "关系备注"]
+                {[online ? null : "设备在线", hasPersona ? null : "分身", hasCard ? null : "关系备注"]
                   .filter(Boolean)
                   .join("、")}
                 ，暂时不会自动回复。
@@ -350,7 +350,7 @@ function ConversationDetail({
           </div>
 
           <label className="flex items-center gap-2 text-xs text-[var(--color-ink-3)]">
-            人设
+            分身
             <select
               className={`${INPUT_CLS} w-auto py-1`}
               value={conversation.persona_id ?? ""}
@@ -431,8 +431,8 @@ export function PersonasView({ notify }: { notify: Notify }) {
   return (
     <>
       <SectionHeader
-        title="人设"
-        subtitle="你可以扮演的人设"
+        title="分身"
+        subtitle="你可以扮演的分身"
         action={
           <div className="flex gap-2">
             <button className={PRIMARY_BTN} onClick={() => setShowAuto(true)}>
@@ -445,7 +445,7 @@ export function PersonasView({ notify }: { notify: Notify }) {
         }
       />
       {personas.length === 0 ? (
-        <Empty>还没有人设。</Empty>
+        <Empty>还没有分身。</Empty>
       ) : (
         <div className="flex flex-col gap-2.5">
           {personas.map((p) => (
@@ -464,7 +464,7 @@ export function PersonasView({ notify }: { notify: Notify }) {
                 <button
                   className={DANGER_BTN}
                   onClick={async () => {
-                    if (!confirm("删除这个人设？如果还有会话在用，会删除失败。")) return;
+                    if (!confirm("删除这个分身？如果还有会话在用，会删除失败。")) return;
                     try {
                       await studio.deletePersona(p.id);
                       done();
@@ -501,7 +501,7 @@ export function PersonasView({ notify }: { notify: Notify }) {
           onSubmitted={() => {
             setShowAuto(false);
             done();
-            notify("已开始后台生成人设。", "ok");
+            notify("已开始后台生成分身。", "ok");
           }}
           notify={notify}
         />
@@ -551,7 +551,7 @@ function CreatePersonaModal({
   };
 
   return (
-    <ModalShell title="新建人设" onClose={onClose}>
+    <ModalShell title="新建分身" onClose={onClose}>
       <div className="mb-4 rounded-lg border border-[var(--color-brass)]/40 bg-[var(--color-brass)]/10 p-3">
         <div className="text-sm font-medium text-[var(--color-ink-1)]">不想自己写？可以从聊天记录自动创建</div>
         <button className={`${PRIMARY_BTN} mt-2`} onClick={onSwitchToAuto}>
@@ -564,7 +564,7 @@ function CreatePersonaModal({
       <FormField label="时区">
         <input className={INPUT_CLS} value={tz} onChange={(e) => setTz(e.target.value)} placeholder="Asia/Shanghai" />
       </FormField>
-      <FormField label="人设描述（可不填）">
+      <FormField label="分身描述（可不填）">
         <textarea className={`${INPUT_CLS} min-h-[200px] font-mono`} value={md} onChange={(e) => setMd(e.target.value)} />
       </FormField>
       <ModalActions onCancel={onClose} onConfirm={submit} confirmLabel={busy ? "创建中…" : "创建"} disabled={busy || !name.trim()} />
@@ -623,11 +623,11 @@ function AutoCreatePersonaModal({
   };
 
   return (
-    <ModalShell title="✶ 自动创建人设" onClose={onClose}>
+    <ModalShell title="✶ 自动创建分身" onClose={onClose}>
       <div className="mb-3 text-xs text-[var(--color-ink-3)]">
-        起个名字，选几段真实对话。AI 在后台读完后自动写出人设，并顺手生成每个被选中会话的关系备注。关掉窗口也没关系。
+        起个名字，选几段真实对话。AI 在后台读完后自动写出分身，并顺手生成每个被选中会话的关系备注。关掉窗口也没关系。
       </div>
-      <FormField label="人设名称">
+      <FormField label="分身名称">
         <input className={INPUT_CLS} value={name} onChange={(e) => setName(e.target.value)} autoFocus placeholder="例如：阿言" />
       </FormField>
       <FormField label="时区">
@@ -637,9 +637,9 @@ function AutoCreatePersonaModal({
         从这些对话里学习（已选 {selected.size} / {items.length}）
       </div>
       {loading ? (
-        <Empty>正在加载已接管的会话…</Empty>
+        <Empty>正在加载已托管的会话…</Empty>
       ) : items.length === 0 ? (
-        <Empty>还没有接管任何会话。先去「接管」页接管一些。</Empty>
+        <Empty>还没有托管任何会话。先去「托管」页托管一些。</Empty>
       ) : (
         <div className="mb-2 flex max-h-[40vh] flex-col gap-1.5 overflow-auto">
           {items.map((it) => (
@@ -709,14 +709,14 @@ function EditPersonaModal({
   };
 
   return (
-    <ModalShell title={`编辑人设 · ${persona.name}`} onClose={onClose}>
+    <ModalShell title={`编辑分身 · ${persona.name}`} onClose={onClose}>
       <FormField label="名称">
         <input className={INPUT_CLS} value={name} onChange={(e) => setName(e.target.value)} />
       </FormField>
       <FormField label="时区">
         <input className={INPUT_CLS} value={tz} onChange={(e) => setTz(e.target.value)} />
       </FormField>
-      <FormField label="人设描述">
+      <FormField label="分身描述">
         <textarea
           className={`${INPUT_CLS} min-h-[320px] font-mono`}
           value={md}
@@ -752,9 +752,9 @@ export function DevicesView({
 
   return (
     <>
-      <SectionHeader title="设备" subtitle="本机置顶，其余设备只读展示。" />
+      <SectionHeader title="设备" subtitle="这台电脑置顶，其它设备只读展示。" />
 
-      <h2 className="mb-2 text-sm font-medium text-[var(--color-ink-2)]">本机</h2>
+      <h2 className="mb-2 text-sm font-medium text-[var(--color-ink-2)]">这台电脑</h2>
       <div className="mb-8 rounded-xl border border-[var(--color-brass)]/40 bg-[var(--color-brass)]/[0.06] p-5">
         {localSlot}
       </div>
@@ -777,7 +777,7 @@ export function DevicesView({
                   <button
                     className={DANGER_BTN}
                     onClick={async () => {
-                      if (!confirm(`移除设备「${b.machine_id}」？这台机器上的渠道会停止收发，需要重新接入。`)) return;
+                      if (!confirm(`移除设备「${b.machine_id}」？这台设备上的社交账号会停止收发，需要重新接入。`)) return;
                       try {
                         await studio.deleteBridge(b.id);
                         invalidateBridges(qc);

@@ -45,6 +45,10 @@ type Step =
 
 type Section = "takeover" | "personas" | "devices" | "sandbox" | "logs" | "settings";
 
+// Hover hint shown wherever "社交账号" appears, so users know it means their
+// chat platforms (WeChat / Feishu / …) rather than the Laborster login.
+const SOCIAL_HINT = "如微信、飞书等聊天平台账号";
+
 // ---- root ------------------------------------------------------------
 
 export function App() {
@@ -67,8 +71,8 @@ export function App() {
     return (
       <div className="flex h-screen items-center justify-center bg-[var(--color-bg-deep)] text-center text-[var(--color-ink-2)]">
         <div>
-          <div className="text-lg font-medium text-[var(--color-ink-1)]">连接本地 bridge…</div>
-          <div className="mt-2 text-sm text-[var(--color-ink-3)]">preload 注入失败时会卡在这里</div>
+          <div className="text-lg font-medium text-[var(--color-ink-1)]">正在连接…</div>
+          <div className="mt-2 text-sm text-[var(--color-ink-3)]">若长时间停在这里，请重启应用</div>
         </div>
       </div>
     );
@@ -141,10 +145,10 @@ export function App() {
 const STATUS_LABEL: Record<string, string> = {
   idle: "空闲",
   connecting: "连接中…",
-  online: "桥接运行中",
-  degraded: "部分渠道离线",
-  needs_login: "渠道凭据失效",
-  error401: "Studio 会话失效",
+  online: "运行中",
+  degraded: "部分社交账号离线",
+  needs_login: "社交账号登录已过期",
+  error401: "登录已失效，请重新登录",
 };
 
 function Sidebar(props: {
@@ -154,9 +158,9 @@ function Sidebar(props: {
   account: Account | null;
 }) {
   const primary: { key: Section; label: string }[] = [
-    { key: "takeover", label: "接管" },
-    { key: "personas", label: "人设" },
-    { key: "sandbox", label: "沙箱" },
+    { key: "takeover", label: "托管" },
+    { key: "personas", label: "分身" },
+    { key: "sandbox", label: "模拟对话" },
     { key: "settings", label: "设置" },
   ];
   const advanced: { key: Section; label: string }[] = [
@@ -191,7 +195,6 @@ function Sidebar(props: {
         </div>
         <div>
           <div className="text-lg font-medium tracking-wide text-[var(--color-ink-1)]">Laborster</div>
-          <div className="text-2xs uppercase tracking-widest text-[var(--color-ink-4)]">Desktop</div>
         </div>
       </div>
 
@@ -284,10 +287,10 @@ function StatusBanner(props: {
 // ---- local device card (Devices "本机" slot) -------------------------
 
 const CHAN_STATE: Record<string, { dot: string; label: string }> = {
-  online: { dot: "bg-[var(--color-ok)]", label: "online" },
+  online: { dot: "bg-[var(--color-ok)]", label: "在线" },
   connecting: { dot: "bg-[var(--color-warn)]", label: "连接中…" },
-  backoff: { dot: "bg-[var(--color-warn)]", label: "退避重试中" },
-  needs_login: { dot: "bg-[var(--color-danger)]", label: "凭据失效" },
+  backoff: { dot: "bg-[var(--color-warn)]", label: "重连中…" },
+  needs_login: { dot: "bg-[var(--color-danger)]", label: "登录已过期" },
   removed: { dot: "bg-[var(--color-ink-4)]", label: "已移除" },
   idle: { dot: "bg-[var(--color-ink-4)]", label: "等待启动" },
 };
@@ -304,7 +307,7 @@ function LocalDeviceCard(props: {
 
   const remove = async (c: Channel) => {
     const ident = c.self_id ? `${c.platform_label} · ${c.self_id}` : c.platform_label;
-    if (!confirm(`删除渠道：${ident}？`)) return;
+    if (!confirm(`删除社交账号：${ident}？`)) return;
     setBusyId(c.channel_id);
     try {
       const r = await post<Result>("/local/channel_rm", { channel_id: c.channel_id });
@@ -323,18 +326,18 @@ function LocalDeviceCard(props: {
           <span className={`h-2.5 w-2.5 rounded-full ${props.status?.running ? "bg-[var(--color-ok)]" : "bg-[var(--color-ink-4)]"}`} />
           <span className="text-base font-medium text-[var(--color-ink-1)]">这台电脑</span>
           <span className="text-2xs text-[var(--color-ink-4)]">
-            {props.status ? STATUS_LABEL[props.status.status] ?? props.status.status : "—"} · 近 5 分钟入站{" "}
-            {props.status?.in_count_5m ?? 0} · 待发 {props.status?.outbound_pending ?? 0}
+            {props.status ? STATUS_LABEL[props.status.status] ?? props.status.status : "—"} · 近 5 分钟收到{" "}
+            {props.status?.in_count_5m ?? 0} · 待发送 {props.status?.outbound_pending ?? 0}
           </span>
         </div>
-        <button className={PRIMARY_BTN} onClick={props.onBind}>
-          + 绑定渠道
+        <button className={PRIMARY_BTN} onClick={props.onBind} title={SOCIAL_HINT}>
+          + 绑定社交账号
         </button>
       </div>
 
       {props.channels.length === 0 ? (
         <div className="rounded-lg border border-[var(--color-line-soft)] bg-[var(--color-bg-base)] px-4 py-6 text-center text-sm text-[var(--color-ink-3)]">
-          这台电脑还没绑定渠道。点右上「+ 绑定渠道」接入第一个。
+          这台电脑还没绑定社交账号。点右上「+ 绑定社交账号」接入第一个。
         </div>
       ) : (
         <div className="flex flex-col gap-2">
@@ -350,7 +353,7 @@ function LocalDeviceCard(props: {
                 <div className="min-w-0 flex-1">
                   <div className="text-sm text-[var(--color-ink-1)]">{ident}</div>
                   <div className="truncate text-2xs text-[var(--color-ink-3)]">
-                    {c.state === "online" ? `${c.conv_count} 会话 · ${meta.label}` : meta.label}
+                    {c.state === "online" ? `${c.conv_count} 个会话 · ${meta.label}` : meta.label}
                     {c.last_error ? <span className="text-[var(--color-danger)]"> · {c.last_error}</span> : null}
                   </div>
                 </div>
@@ -414,7 +417,7 @@ function LogsView({ notify }: { notify: (t: string, k?: "ok" | "err") => void })
     <>
       <SectionHeader
         title="日志"
-        subtitle="守护进程事件流（每 2 秒拉取最近 400 行）。"
+        subtitle="运行日志（每 2 秒刷新最近 400 行）。"
         action={
           <button className={GHOST_BTN} onClick={openDir}>
             打开数据目录
@@ -473,7 +476,7 @@ function SettingsView(props: {
 
   const removeAcc = (a: AccountListItem) =>
     wrap(async () => {
-      if (!confirm(`删除本机账号 ${a.display_name || a.account_id}？会清掉该账号的所有渠道凭据与本地消息。`)) return;
+      if (!confirm(`删除本地账号 ${a.display_name || a.account_id}？会清掉该账号下所有社交账号的登录与本地消息。`)) return;
       const r = await post<Result>("/local/remove_account", { account_id: a.account_id });
       if (r?.error) props.notify(r.error, "err");
       else props.notify("已删除", "ok");
@@ -489,16 +492,15 @@ function SettingsView(props: {
     });
 
   const rows: [string, string][] = [
-    ["Studio", props.account?.studio_url ?? "—"],
-    ["机器 ID", props.account?.machine_id ?? "—"],
-    ["bridge 端点", window.bridge?.baseUrl ?? "—"],
+    ["服务地址", props.account?.studio_url ?? "—"],
+    ["设备标识", props.account?.machine_id ?? "—"],
   ];
 
   return (
     <>
       <SectionHeader
         title="设置"
-        subtitle="账号与本地 bridge 的连接信息。"
+        subtitle="账号与连接信息。"
         action={
           <button className={GHOST_BTN} onClick={() => setShowPw(true)}>
             修改密码
@@ -506,9 +508,9 @@ function SettingsView(props: {
         }
       />
 
-      <h2 className="mb-2 text-sm font-medium text-[var(--color-ink-2)]">本机账号</h2>
+      <h2 className="mb-2 text-sm font-medium text-[var(--color-ink-2)]">本地账号</h2>
       <div className="mb-8 flex flex-col gap-2">
-        {props.accounts.length === 0 && <Empty>（暂无本机账号）</Empty>}
+        {props.accounts.length === 0 && <Empty>（暂无本地账号）</Empty>}
         {props.accounts.map((a) => (
           <div
             key={a.account_id}
@@ -518,7 +520,8 @@ function SettingsView(props: {
             <div className="min-w-0 flex-1">
               <div className="text-base text-[var(--color-ink-1)]">{a.display_name || a.account_id}</div>
               <div className="truncate text-xs text-[var(--color-ink-3)]">
-                {a.account_id} · 渠道 {a.channel_count} · {a.has_token ? "已登录" : "未登录"}
+                {a.account_id} · <span title={SOCIAL_HINT}>社交账号 {a.channel_count}</span> ·{" "}
+                {a.has_token ? "已登录" : "未登录"}
               </div>
             </div>
             {!a.active && (
@@ -591,7 +594,7 @@ function LoginView({ onDone, notify }: { onDone: () => void; notify: (t: string,
             L
           </div>
           <h1 className="text-xl font-medium text-[var(--color-ink-1)]">登录 Laborster</h1>
-          <p className="mt-1 text-xs text-[var(--color-ink-3)]">使用你的 Studio 账号</p>
+          <p className="mt-1 text-xs text-[var(--color-ink-3)]">使用你的账号登录</p>
         </div>
 
         {error && (
@@ -669,7 +672,7 @@ function FlowModal(props: {
             props.onClose();
             return;
           }
-          notify(r?.lines?.[0] || (isRelogin ? "已更新凭据" : "已绑定"), "ok");
+          notify(r?.lines?.[0] || (isRelogin ? "已重新登录" : "已绑定"), "ok");
           props.onDone();
         });
         return;
@@ -746,7 +749,7 @@ function FlowModal(props: {
   };
 
   const title =
-    phase === "pick" ? "绑定渠道 — 选择平台" : `${isRelogin ? "重新登录" : "绑定渠道"} — ${labelOf(platform)}`;
+    phase === "pick" ? "绑定社交账号 — 选择平台" : `${isRelogin ? "重新登录" : "绑定社交账号"} — ${labelOf(platform)}`;
 
   return (
     <ModalShell title={title} onClose={close} width="w-[420px]">
@@ -762,7 +765,7 @@ function FlowModal(props: {
             </select>
             {platform === "chat" && (
               <div className="mt-4">
-                <label className="mb-1 block text-xs text-[var(--color-ink-3)]">base_url（可选 — chat 沙箱开发态用）</label>
+                <label className="mb-1 block text-xs text-[var(--color-ink-3)]">服务地址（可选，留空用默认）</label>
                 <input className={INPUT_CLS} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="留空则用默认地址" />
               </div>
             )}

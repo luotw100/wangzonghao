@@ -162,8 +162,8 @@ export function ChatSandbox({ notify }: { notify: Notify }) {
       <aside className="flex flex-col border-r border-[var(--color-line-soft)] bg-[var(--color-bg-base)]">
         <div className="flex items-center justify-between border-b border-[var(--color-line-soft)] px-4 py-3.5">
           <div>
-            <div className="text-base font-medium text-[var(--color-ink-1)]">聊天沙箱</div>
-            <div className="text-2xs text-[var(--color-ink-4)]">内存态 · 重启后重新拉取</div>
+            <div className="text-base font-medium text-[var(--color-ink-1)]">模拟对话</div>
+            <div className="text-2xs text-[var(--color-ink-4)]">仅用于试效果 · 重启后清空</div>
           </div>
           <button className={SM_GHOST_BTN} onClick={() => setShowNew(true)}>
             + 联系人

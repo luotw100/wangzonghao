@@ -47,7 +47,7 @@ class OwnPasswordChange(StrictModel):
 
 class DownloadInfo(BaseModel):
     version: str = Field(description="版本号，如 0.1.0")
-    platform: str = Field(description="win / mac / linux")
+    platform: str = Field(description="win / mac")
     url: str = Field(description="短时有效的 S3 预签名下载直链")
     filename: str = Field(description="安装包文件名")
     sha256: str = Field(description="安装包 SHA-256，供客户端校验")

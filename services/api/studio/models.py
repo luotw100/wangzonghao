@@ -485,7 +485,7 @@ class Release(Base):
 
     __tablename__ = "releases"
     __table_args__ = (
-        CheckConstraint("platform IN ('win', 'mac', 'linux')", name="ck_release_platform"),
+        CheckConstraint("platform IN ('win', 'mac')", name="ck_release_platform"),
         UniqueConstraint("version", "platform", name="uq_release_version_platform"),
         Index(
             "ix_releases_latest_per_platform", "platform",

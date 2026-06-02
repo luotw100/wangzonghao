@@ -24,7 +24,7 @@ from studio.schemas import DownloadInfo
 
 router = APIRouter()
 
-ALLOWED_PLATFORMS = ("win", "mac", "linux")
+ALLOWED_PLATFORMS = ("win", "mac")
 
 
 def _client_ip(request: Request, x_forwarded_for: Optional[str]) -> Optional[str]:
@@ -40,7 +40,7 @@ def download_latest(
     account: CurrentAccountDep,
     db: DbDep,
     request: Request,
-    platform: Annotated[str, Query(description="win / mac / linux")],
+    platform: Annotated[str, Query(description="win / mac")],
     user_agent: Annotated[Optional[str], Header()] = None,
     x_forwarded_for: Annotated[Optional[str], Header()] = None,
 ):
@@ -50,7 +50,7 @@ def download_latest(
     download_events 审计。无对应平台的已发布版本时返回 404。
     """
     if platform not in ALLOWED_PLATFORMS:
-        raise HTTPException(status_code=400, detail="platform 必须是 win / mac / linux")
+        raise HTTPException(status_code=400, detail="platform 必须是 win / mac")
 
     rel = (
         db.query(Release)

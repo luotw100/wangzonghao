@@ -5,9 +5,8 @@
 	acme_dns cloudflare {env.CF_API_TOKEN}
 }
 
-# Portal: the public-facing site. Static landing + download CTA, plus the
-# discovery anchor at /.well-known/laborster-api.json that desktop clients
-# read to learn the live API host. Served straight from disk — no app.
+# Portal: the public-facing site. Static landing + download CTA, served
+# straight from disk — no app.
 laborster.com {
 	encode zstd gzip
 	root * /srv/portal

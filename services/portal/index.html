@@ -113,13 +113,7 @@
   </div>
 
   <script>
-    // API host comes from the same discovery anchor desktop clients read, so
-    // moving the backend updates the portal too — single source of truth.
-    let API_BASE = "https://api.laborster.com";
-    fetch("/.well-known/laborster-api.json")
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d && d.api_base) API_BASE = d.api_base.replace(/\/$/, ""); })
-      .catch(() => {});
+    const API_BASE = "https://api.laborster.com";
 
     function detectPlatform() {
       const ua = (navigator.userAgent || "").toLowerCase();

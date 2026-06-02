@@ -13,73 +13,20 @@ default (see ``gui/app.py``) without breaking this invariant.
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-# The Studio API endpoint is resolved at startup, not hardcoded. The only
-# baked-in constants are a discovery anchor (a static JSON on the brand
-# domain, which outlives any backend topology) and a seed fallback used
-# before the first successful discovery. ``resolve_studio_base_url`` (called
-# once from GUI/REPL startup) overwrites ``STUDIO_BASE_URL`` from discovery,
-# caching the last-known-good under the state root. This lets the API host
-# move server-side without ever rebuilding shipped clients.
-#
-# Headless (hosted-bridge) is exempt: it runs inside docker and gets its URL
-# injected by ``--studio-url`` via ``set_studio_base_url``; it must never
-# call discovery. Chat sandbox shares the same host (API at /api/chat/*).
-DISCOVERY_URL = "https://laborster.com/.well-known/laborster-api.json"
-DEFAULT_API_BASE = "https://api.laborster.com"
-STUDIO_BASE_URL = DEFAULT_API_BASE
+# Single hardcoded endpoint. Chat sandbox shares the same host — its API is
+# mounted at /api/chat/*. Runtime override exists only for the headless
+# hosted-bridge path (set_studio_base_url, called from __main__ when
+# --headless --studio-url is passed); GUI/REPL never call the setter, so
+# end-user binaries always talk to this host.
+STUDIO_BASE_URL = "https://api.laborster.com"
 
 
 def set_studio_base_url(url: str) -> None:
     """Override the Studio endpoint. Headless mode only."""
     global STUDIO_BASE_URL
     STUDIO_BASE_URL = url.rstrip("/")
-
-
-def _api_cache_file() -> Path | None:
-    """Where last-known-good api_base is cached. None until a state root is set
-    (discovery then runs without a persistent cache — memory only)."""
-    return (state_root() / "api-config.json") if has_state_root() else None
-
-
-def resolve_studio_base_url() -> str:
-    """Discover and apply the live Studio API base. GUI/REPL startup only.
-
-    Tries the discovery anchor (fast, no retry); on success applies it and
-    caches it. On failure falls back to the last-known-good cache, then to
-    the baked-in seed. Always sets ``STUDIO_BASE_URL`` and returns it.
-    """
-    global STUDIO_BASE_URL
-    from .http import try_get_json  # local import: avoids import cycle at module load
-
-    data = try_get_json(DISCOVERY_URL)
-    base = None
-    if isinstance(data, dict) and isinstance(data.get("api_base"), str):
-        base = data["api_base"].strip().rstrip("/")
-
-    cache = _api_cache_file()
-    if base:
-        STUDIO_BASE_URL = base
-        if cache is not None:
-            try:
-                cache.write_text(json.dumps({"api_base": base}))
-            except OSError:
-                pass
-        return STUDIO_BASE_URL
-
-    if cache is not None and cache.exists():
-        try:
-            cached = json.loads(cache.read_text()).get("api_base")
-            if isinstance(cached, str) and cached.strip():
-                STUDIO_BASE_URL = cached.strip().rstrip("/")
-                return STUDIO_BASE_URL
-        except (OSError, ValueError):
-            pass
-
-    STUDIO_BASE_URL = DEFAULT_API_BASE
-    return STUDIO_BASE_URL
 
 
 _state_root: Path | None = None

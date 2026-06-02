@@ -35,7 +35,7 @@ desktop/
 │   │   ├── commands.py     # 命令 dispatch + daemon 管理
 │   │   ├── store.py        # SQLite（kv/channels/local_messages/conv_cursors）
 │   │   ├── studio_client.py
-│   │   ├── config.py       # STUDIO_BASE_URL 启动时从 discovery 解析；headless 通过 --studio-url 覆盖
+│   │   ├── config.py       # STUDIO_BASE_URL 硬编码 https://api.laborster.com；headless 通过 --studio-url 覆盖
 │   │   ├── adapters/chat.py
 │   │   └── gui/bridge_api.py  # HTTP sidecar 的 API 层（被 server.py 调用）
 │   ├── server.py           # Electron sidecar HTTP 服务（反代 Studio、媒体上传）
@@ -50,7 +50,7 @@ services/
 │   ├── admin/     # 独立 FastAPI app，Cloudflare Access 在边缘鉴权
 │   ├── alembic.ini
 │   └── pyproject.toml
-├── portal/        # 公开站点：静态 index.html（介绍 + 登录下载）+ /.well-known/laborster-api.json discovery 锚点；Caddy file_server 直接 serve，无构建
+├── portal/        # 公开站点：静态 index.html（介绍 + 登录下载，API host 硬编码 api.laborster.com）；Caddy file_server 直接 serve，无构建
 ├── admin_web/     # 独立 admin React 面板，CF Access 保护（含 nginx.conf）
 └── bridge_host/   # bridge-host service：admin 手动起停的 chat-only Bridge subprocess supervisor
 docker-compose.yaml  # 唯一的 compose，服务按 profiles 分层：storage / app / edge
@@ -84,8 +84,8 @@ scripts/
 7. **Inbox 是平台身份。** Bridge 握手时通过 `POST /api/bridge/inboxes` 自动注册，没有面向用户的创建 API。**Per-channel 互斥**：一个 `(account, platform, platform_self_id)` 同一时刻只能被一个**在线**（`last_seen_at` 在 `BRIDGE_OFFLINE_S=45s` 内）Bridge 持有；第二个在线 Bridge 来抢报 409（detail 带占用方 machine_id），离线/stale 的 owner 可被透明接管。Bridge 端把 409 映射成终态 `CONFLICT`（不重试）；headless 在所有 channel 都 CONFLICT 时以退出码 4 退出，让心跳停掉、admin 面板转 stale。
 8. **Bridge 行 = `(account_id, machine_id)`。** `machine_id` 由 Studio 首次握手生成，Bridge 本地持久化，每次请求带 `X-Machine-Id` 头解析。
 9. **Auth 是 account 粒度的单一 token。** 浏览器、Bridge 和 chat adapter 共用同一张 `auth.auth_sessions`。Bridge 启动时用账号密码握换 token，存入本地 SQLite `kv` 表；chat channel 的 credential 直接复用同一个 studio token。token 24h 滑动续期；401 才再输密码。改密码会清空该 account 的所有 session（web、Bridge、hosted bridge 一并下线）。Studio API 对外主机是 `https://api.laborster.com`；chat 沙箱同主机，访问路径加 `/api/chat` 前缀。HTTP 请求加自定义 `User-Agent`（Cloudflare 屏蔽默认 `Python-urllib`）。
-    **API host 不硬编码（discovery）**——`desktop/sidecar/laborster_bridge/config.py` 只烤进一个 discovery 锚点 `https://laborster.com/.well-known/laborster-api.json` 和 seed 兜底 `DEFAULT_API_BASE=https://api.laborster.com`。GUI/REPL 启动时 `resolve_studio_base_url()` 拉 discovery（单次、3s、无重试），成功则覆盖 `STUDIO_BASE_URL` 并把 last-known-good 缓存到 `<state_root>/api-config.json`，失败回退缓存→seed。挂载点：`server.py:main()`（桌面）和 `__main__.py` 非 headless 分支（REPL）各调一次。这样换 API host 只改 discovery 那个静态 JSON，不必重发客户端。
-    **特例：hosted bridge 路径**——admin-api 可以为某 Account 直接 `create_auth_session` 签 token 给 bridge-host 用，无需密码；hosted bridge 的 `STUDIO_BASE_URL` 由 `--studio-url` flag 注入（指向 docker 内网 `http://user-api:23456`），且 **headless 永不调用 discovery**；主播端 Electron/REPL 永远走 discovery 结果、不接受 flag。
+    **API host 硬编码**——`desktop/sidecar/laborster_bridge/config.py` 里 `STUDIO_BASE_URL = "https://api.laborster.com"`，主播端 Electron/REPL 永远走这个值、不接受 flag、不做任何 startup 网络探测（曾试过 .well-known discovery，会卡住 Finder 启动时的 BRIDGE_READY 握手，已删）。
+    **特例：hosted bridge 路径**——admin-api 可以为某 Account 直接 `create_auth_session` 签 token 给 bridge-host 用，无需密码；hosted bridge 的 `STUDIO_BASE_URL` 由 `--studio-url` flag 注入（指向 docker 内网 `http://user-api:23456`）。
 10. **Outbound 队列是数据库表。** `studio.outbound_messages`，Bridge long-poll；`status=pending` 含 `send_after` 控制打字节奏。
 11. **环境变量必须显式提供。** 缺 `DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`、`UPLOAD_MAX_SIZE_MB` 直接报错。
 12. **Models 不用 SQLAlchemy column default。** 每次 INSERT 显式写所有字段。

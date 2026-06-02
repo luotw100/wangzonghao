@@ -101,16 +101,3 @@ def request_json(
             time.sleep(_RETRY_BACKOFF[attempt])
     assert last is not None
     raise last
-
-
-def try_get_json(url: str, timeout: float = 3.0) -> Any | None:
-    """Single-shot GET → parsed JSON, or None on any failure.
-
-    No retry, no raise — for startup endpoint discovery, where a slow or
-    down anchor must not block the app. Reuses the same UA + pinned-CA
-    handling as the rest of the client.
-    """
-    try:
-        return _attempt("GET", url, None, None, timeout, None)
-    except Exception:
-        return None

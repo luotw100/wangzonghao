@@ -66,7 +66,7 @@ Laborster 是一个**通用拟人自动化回复服务**，帮助职业用户在
 | `caddy` + `frpc` | 443 | 用户面边缘：Caddy 终止 TLS 并路由 `laborster.com`（静态 portal）/ `api.laborster.com`（→user-api）/ `s3.laborster.com`（→minio），frpc 经首尔 relay 暴露 |
 | `cloudflared` | — | tunnel，仅 admin 面 |
 
-用户侧没有网页版：界面是桌面应用，公开站点是 `services/portal/` 的静态文件（含 `/.well-known/laborster-api.json` discovery 锚点）。Server 进程不直连 Channel：所有平台 IO 都经过 Bridge HTTP。
+用户侧没有网页版：界面是桌面应用，公开站点是 `services/portal/` 的静态文件。Server 进程不直连 Channel：所有平台 IO 都经过 Bridge HTTP。
 
 ### Bridge 内部组成
 

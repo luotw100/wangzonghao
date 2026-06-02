@@ -1,53 +1,55 @@
 #!/usr/bin/env bash
-# 发版：把本地桌面安装包上传到 release 栈的 S3，并登记到 releases 表、设为该平台 latest。
-# 安装包来自 desktop/ 的构建产物（Win x64 .exe / Mac arm64 .dmg）。表无数据前
-# /api/download/latest 返回 404；publish 后即对外可下。
+# 发版工具的瘦封装。真正的 CLI 在 studio.publish_release（.py，跟镜像走）；本脚本
+# 只负责把它跑在 release 栈的 compose 网络里——db(5432)/minio(9000) 只在内网，宿主机
+# 够不到，所以工具必须在容器内执行。
 #
-# 用法：
-#   scripts/publish-release.sh <version> <win|mac> <安装包路径> [发布说明]
+# 形状同 test.sh / seed.py / backup.sh：env file 在最前，其余参数原样透传给 .py。
+# 子命令（publish / list / promote）、校验、版本规则都在 .py 里，脚本不重复。
+# 唯一的特殊处理：publish 的 --file 会被自动 bind-mount 进容器（容器看不到你硬盘）。
+#
+#   scripts/publish-release.sh <env-file> <publish|list|promote> [args...]
+#
 # 例：
-#   scripts/publish-release.sh 0.1.0 win  ~/builds/Laborster-Setup-0.1.0.exe "首个内测版"
-#   scripts/publish-release.sh 0.1.0 mac  ~/builds/Laborster-0.1.0-arm64.dmg
+#   scripts/publish-release.sh .env.release list
+#   scripts/publish-release.sh .env.release publish \
+#       --version 0.1.0 --platform win \
+#       --file ~/builds/Laborster-Setup-0.1.0.exe --latest --notes "首个内测版"
+#   scripts/publish-release.sh .env.release promote --version 0.0.9 --platform win
 #
-# 查看 / 回滚（不重传，直接切 latest 指针）：
-#   ENV_FILE=.env.release scripts/publish-release.sh --list
-#   ENV_FILE=.env.release scripts/publish-release.sh --promote 0.1.0 win
-#
-# 覆盖实例：ENV_FILE=.env.debug scripts/publish-release.sh ...
+# 改了 publish_release.py 后要 `up --build` 才生效（工具随镜像走）。
 set -euo pipefail
 
-ENV_FILE="${ENV_FILE:-.env.release}"
-cd "$(dirname "$0")/.."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-run() {
-  docker compose --env-file "$ENV_FILE" run --rm --no-deps "$@"
-}
+ENVF="${1:-}"
+if [[ -z "$ENVF" ]]; then
+  echo "usage: scripts/publish-release.sh <env-file> <publish|list|promote> [args...]" >&2
+  echo "       (e.g. scripts/publish-release.sh .env.release list)" >&2
+  exit 1
+fi
+shift
+[[ "$ENVF" = /* ]] || ENVF="$ROOT/$ENVF"
 
-case "${1:-}" in
-  --list)
-    run user-api uv run python -m studio.publish_release list
-    ;;
-  --promote)
-    VERSION="${2:?用法: --promote <version> <win|mac>}"
-    PLATFORM="${3:?platform 必须是 win 或 mac}"
-    run user-api uv run python -m studio.publish_release promote \
-      --version "$VERSION" --platform "$PLATFORM"
-    ;;
-  "" | -h | --help)
-    sed -n '2,17p' "$0"
-    ;;
-  *)
-    VERSION="$1"
-    PLATFORM="${2:?platform 必须是 win 或 mac}"
-    FILE="${3:?需要安装包路径}"
-    NOTES="${4:-}"
-    [[ "$PLATFORM" == "win" || "$PLATFORM" == "mac" ]] || { echo "platform 必须是 win 或 mac" >&2; exit 2; }
-    [[ -f "$FILE" ]] || { echo "文件不存在: $FILE" >&2; exit 2; }
-    ABS="$(realpath "$FILE")"
-    BASE="$(basename "$ABS")"
-    run -v "$ABS":/in/"$BASE":ro \
-      user-api uv run python -m studio.publish_release publish \
-      --version "$VERSION" --platform "$PLATFORM" --file /in/"$BASE" --latest \
-      ${NOTES:+--notes "$NOTES"}
-    ;;
-esac
+# 透传所有参数给 .py；只拦 --file：把本地文件挂进容器，并改写成容器内路径。
+mount_args=()
+fwd=()
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "--file" ]]; then
+    host="${2:?--file 需要一个路径}"
+    [[ -f "$host" ]] || { echo "文件不存在: $host" >&2; exit 2; }
+    abs="$(realpath "$host")"
+    base="$(basename "$abs")"
+    mount_args+=(-v "$abs:/in/$base:ro")
+    fwd+=(--file "/in/$base")
+    shift 2
+  else
+    fwd+=("$1")
+    shift
+  fi
+done
+
+cd "$ROOT"
+exec docker compose --env-file "$ENVF" run --rm --no-deps \
+  ${mount_args[@]+"${mount_args[@]}"} \
+  user-api uv run python -m studio.publish_release "${fwd[@]}"

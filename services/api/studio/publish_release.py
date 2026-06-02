@@ -5,16 +5,13 @@
 （``--latest`` 时把旧的 latest 翻掉、本行置上，同一事务）；回滚 = ``promote`` 把
 旧版本重新置为 latest（无需重传）。
 
-跑在 release 栈所在机器上，安装包挂进容器；建议用 ``scripts/publish-release.sh``
-包装，避免手敲长命令。直接调用：
+不直接调用——用 ``scripts/publish-release.sh <env-file> <subcommand> [args]`` 包装，
+它负责把本命令跑在 compose 网络里并把 ``--file`` 挂进容器：
 
-    docker compose --env-file .env.release run --rm --no-deps \\
-      -v /abs/Laborster-Setup-0.1.0.exe:/in/Laborster-Setup-0.1.0.exe:ro \\
-      user-api uv run python -m studio.publish_release publish \\
-      --version 0.1.0 --platform win --file /in/Laborster-Setup-0.1.0.exe --latest
-
-    ... run --rm --no-deps user-api uv run python -m studio.publish_release list
-    ... run --rm --no-deps user-api uv run python -m studio.publish_release promote --version 0.1.0 --platform win
+    scripts/publish-release.sh .env.release list
+    scripts/publish-release.sh .env.release publish \\
+        --version 0.1.0 --platform win --file ~/builds/Laborster-Setup-0.1.0.exe --latest
+    scripts/publish-release.sh .env.release promote --version 0.0.9 --platform win
 """
 
 import argparse

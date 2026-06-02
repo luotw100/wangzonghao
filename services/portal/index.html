@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Laborster</title>
+  <meta name="description" content="Laborster 桌面应用：私聊接管，专注当下的对话。" />
+  <style>
+    :root {
+      --bg: #0b0d12; --panel: #151922; --line: #232a36;
+      --fg: #e8ecf3; --muted: #8b95a7; --accent: #5b8cff; --accent-press: #4577ef;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      background: var(--bg); color: var(--fg);
+      font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+            "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+      display: flex; flex-direction: column; min-height: 100%;
+    }
+    a { color: var(--accent); text-decoration: none; }
+    .wrap { width: min(920px, 90vw); margin: 0 auto; }
+    header { padding: 28px 0; }
+    .brand { font-weight: 700; letter-spacing: .3px; font-size: 20px; }
+    main { flex: 1; display: flex; align-items: center; padding: 48px 0; }
+    .hero h1 { font-size: clamp(32px, 6vw, 54px); line-height: 1.1; margin: 0 0 18px; }
+    .hero p.lead { font-size: clamp(16px, 2.5vw, 20px); color: var(--muted); margin: 0 0 36px; max-width: 56ch; }
+    .cta { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+    .btn {
+      appearance: none; border: 0; cursor: pointer; border-radius: 12px;
+      padding: 14px 24px; font-size: 16px; font-weight: 600; color: #fff;
+      background: var(--accent); transition: background .15s ease;
+    }
+    .btn:hover { background: var(--accent-press); }
+    .btn.secondary { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+    .btn:disabled { opacity: .55; cursor: default; }
+    .platforms { color: var(--muted); font-size: 14px; }
+    .platforms button {
+      background: none; border: 0; color: var(--accent); cursor: pointer;
+      font-size: 14px; padding: 0 4px;
+    }
+    footer { color: var(--muted); font-size: 13px; padding: 28px 0; border-top: 1px solid var(--line); }
+
+    /* modal */
+    .scrim {
+      position: fixed; inset: 0; background: rgba(0,0,0,.6);
+      display: none; align-items: center; justify-content: center; padding: 20px;
+    }
+    .scrim.open { display: flex; }
+    .modal {
+      background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+      width: min(400px, 100%); padding: 28px;
+    }
+    .modal h2 { margin: 0 0 6px; font-size: 20px; }
+    .modal p.sub { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
+    .field { margin-bottom: 14px; }
+    .field label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 6px; }
+    .field input {
+      width: 100%; padding: 12px 14px; border-radius: 10px; font-size: 15px;
+      background: #0f131b; border: 1px solid var(--line); color: var(--fg);
+    }
+    .field input:focus { outline: none; border-color: var(--accent); }
+    .modal .btn { width: 100%; margin-top: 6px; }
+    .msg { min-height: 20px; font-size: 13px; margin-top: 12px; }
+    .msg.err { color: #ff6b6b; }
+    .msg.ok { color: #4ade80; }
+    .modal .close { float: right; background: none; border: 0; color: var(--muted); font-size: 22px; cursor: pointer; line-height: 1; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header><span class="brand">Laborster</span></header>
+  </div>
+
+  <main>
+    <div class="wrap hero">
+      <h1>把私聊交给 Laborster。</h1>
+      <p class="lead">桌面应用接管你的私聊对话，按你的人设自动回复，让你专注当下，不再被消息牵着走。</p>
+      <div class="cta">
+        <button class="btn" id="download-primary">下载桌面应用</button>
+        <span class="platforms">
+          其他平台：
+          <button data-platform="win">Windows</button>·
+          <button data-platform="mac">macOS</button>·
+          <button data-platform="linux">Linux</button>
+        </span>
+      </div>
+    </div>
+  </main>
+
+  <div class="wrap">
+    <footer>需要账号才能下载与使用。还没有账号？请联系管理员开通。 · © Laborster</footer>
+  </div>
+
+  <!-- login → download modal -->
+  <div class="scrim" id="scrim">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="m-title">
+      <button class="close" id="m-close" aria-label="关闭">×</button>
+      <h2 id="m-title">登录以下载</h2>
+      <p class="sub">使用你的 Laborster 账号登录，下载随后自动开始。</p>
+      <form id="login-form">
+        <div class="field">
+          <label for="u">用户名</label>
+          <input id="u" name="username" autocomplete="username" required />
+        </div>
+        <div class="field">
+          <label for="p">密码</label>
+          <input id="p" name="password" type="password" autocomplete="current-password" required />
+        </div>
+        <button class="btn" type="submit" id="submit-btn">登录并下载</button>
+        <div class="msg" id="msg" role="status"></div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    // API host comes from the same discovery anchor desktop clients read, so
+    // moving the backend updates the portal too — single source of truth.
+    let API_BASE = "https://api.laborster.com";
+    fetch("/.well-known/laborster-api.json")
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d && d.api_base) API_BASE = d.api_base.replace(/\/$/, ""); })
+      .catch(() => {});
+
+    function detectPlatform() {
+      const ua = (navigator.userAgent || "").toLowerCase();
+      if (ua.includes("win")) return "win";
+      if (ua.includes("mac")) return "mac";
+      if (ua.includes("linux") || ua.includes("x11")) return "linux";
+      return "win";
+    }
+
+    const scrim = document.getElementById("scrim");
+    const msg = document.getElementById("msg");
+    const submitBtn = document.getElementById("submit-btn");
+    let wantPlatform = detectPlatform();
+
+    function openModal(platform) {
+      wantPlatform = platform;
+      msg.textContent = ""; msg.className = "msg";
+      scrim.classList.add("open");
+      document.getElementById("u").focus();
+    }
+    function closeModal() { scrim.classList.remove("open"); }
+
+    document.getElementById("download-primary").addEventListener("click", () => openModal(detectPlatform()));
+    document.querySelectorAll(".platforms button").forEach(b =>
+      b.addEventListener("click", () => openModal(b.dataset.platform)));
+    document.getElementById("m-close").addEventListener("click", closeModal);
+    scrim.addEventListener("click", e => { if (e.target === scrim) closeModal(); });
+
+    document.getElementById("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      submitBtn.disabled = true;
+      msg.className = "msg"; msg.textContent = "登录中…";
+      const username = document.getElementById("u").value.trim();
+      const password = document.getElementById("p").value;
+      try {
+        const lr = await fetch(`${API_BASE}/api/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        });
+        if (lr.status === 401) { throw new Error("用户名或密码错误"); }
+        if (!lr.ok) { throw new Error("登录失败，请稍后重试"); }
+        const { token } = await lr.json();
+
+        msg.textContent = "正在准备下载…";
+        const dr = await fetch(`${API_BASE}/api/download/latest?platform=${encodeURIComponent(wantPlatform)}`, {
+          headers: { "Authorization": `Bearer ${token}` },
+        });
+        if (dr.status === 404) { throw new Error("该平台暂无可下载版本"); }
+        if (!dr.ok) { throw new Error("获取下载链接失败"); }
+        const info = await dr.json();
+
+        msg.className = "msg ok"; msg.textContent = `开始下载 ${info.version}…`;
+        window.location.href = info.url;
+      } catch (err) {
+        msg.className = "msg err"; msg.textContent = err.message || "出错了，请重试";
+      } finally {
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>

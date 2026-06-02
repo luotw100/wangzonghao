@@ -352,6 +352,10 @@ def main() -> int:
         sys.stderr.write(f"cannot create data dir {data_dir}: {exc}\n")
         return 2
 
+    # Resolve the live Studio API host from discovery before any Studio call /
+    # the reverse proxy below. Caches last-known-good under the state root.
+    config.resolve_studio_base_url()
+
     api = Api()
     api.autostart()
 

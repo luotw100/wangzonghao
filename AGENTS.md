@@ -47,7 +47,7 @@ Laborster 是一个**通用拟人自动化回复服务**，帮助职业用户在
 
 | 项目 | 路径 | 跑在哪 |
 | --- | --- | --- |
-| Server  | [services/](services/) | 云端 compose；同一 FastAPI 进程里挂 studio + chat 子包，另起 admin-api、worker、user_web、admin_web、cloudflared |
+| Server  | [services/](services/) | 云端 compose；同一 FastAPI 进程里挂 studio + chat 子包，另起 admin-api、worker、admin_web、静态 portal、caddy/frpc/cloudflared |
 | Bridge  | [bridge/](bridge/) | 主播本机的 Python daemon |
 
 详细架构、不变量、schema 布局、Bridge 协议见 `.agents/skills/repository-architecture/SKILL.md`，那是最新事实。
@@ -59,14 +59,14 @@ Laborster 是一个**通用拟人自动化回复服务**，帮助职业用户在
 | `db` | 5432 | 单 PostgreSQL，三 schema（auth / studio / chat） |
 | `minio` + `minio-create-buckets` | 9000 | 单 bucket `${S3_BUCKET}` |
 | `migrate` | — | 一次性，`studio.migrate` 建 schema + alembic upgrade |
-| `user-api` | 23456 | FastAPI `studio.main:app`：挂 studio 路由 + `/api/chat/*` + bridge protocol |
+| `user-api` | 23456 | FastAPI `studio.main:app`：挂 studio 路由 + `/api/chat/*` + bridge protocol + `/api/download/*`；对外是 `api.laborster.com`，除 `/api/health` 外全鉴权 |
 | `user-worker` | — | DistillScanner + ReplyScanner |
 | `admin-api` | 23457 | FastAPI `admin.app:app`；Cloudflare Access 在边缘鉴权 |
-| `user-web` | 23456 | nginx + user_web 构建产物；`/studio` 和 `/chat` 都是它的 SPA 路由 |
 | `admin-web` | 23457 | nginx + admin_web |
-| `cloudflared` | — | tunnel |
+| `caddy` + `frpc` | 443 | 用户面边缘：Caddy 终止 TLS 并路由 `laborster.com`（静态 portal）/ `api.laborster.com`（→user-api）/ `s3.laborster.com`（→minio），frpc 经首尔 relay 暴露 |
+| `cloudflared` | — | tunnel，仅 admin 面 |
 
-Server 进程不直连 Channel：所有平台 IO 都经过 Bridge HTTP。
+用户侧没有网页版：界面是桌面应用，公开站点是 `services/portal/` 的静态文件（含 `/.well-known/laborster-api.json` discovery 锚点）。Server 进程不直连 Channel：所有平台 IO 都经过 Bridge HTTP。
 
 ### Bridge 内部组成
 

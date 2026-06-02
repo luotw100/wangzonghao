@@ -58,6 +58,9 @@ def main() -> int:
         except Exception as exc:
             print(f"--state 无效: {exc}", file=sys.stderr)
             return 2
+    # Non-headless = end-user binary: learn the live API host from discovery
+    # (headless got its URL from --studio-url above and must not do this).
+    config.resolve_studio_base_url()
     return repl.run()
 
 

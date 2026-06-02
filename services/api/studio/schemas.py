@@ -43,6 +43,17 @@ class OwnPasswordChange(StrictModel):
     new_password: str = Field(description="新密码（明文）")
 
 
+# --- Desktop app download ---
+
+class DownloadInfo(BaseModel):
+    version: str = Field(description="版本号，如 0.1.0")
+    platform: str = Field(description="win / mac / linux")
+    url: str = Field(description="短时有效的 S3 预签名下载直链")
+    filename: str = Field(description="安装包文件名")
+    sha256: str = Field(description="安装包 SHA-256，供客户端校验")
+    size_bytes: int = Field(description="安装包字节数")
+
+
 # --- Personas ---
 
 class PersonaCreate(StrictModel):

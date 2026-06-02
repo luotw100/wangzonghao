@@ -12,16 +12,29 @@ pool / Base infra), ``studio.deps`` / ``studio.models.Account`` (auth)
 and ``studio.notify`` (LISTEN/NOTIFY broker).
 """
 
+import os
 from contextlib import asynccontextmanager
 
 import anyio.to_thread
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from studio.notify import init_broker, shutdown_broker
 
 # Threadpool sized for chat's long-poll fan-out (up to a few hundred
 # clients each holding a sync DB session while waiting on the broker).
 LONG_POLL_THREADPOOL_TOKENS = 500
+
+# The portal is a different origin than the API; its login + download fetches
+# are cross-origin and need CORS. Required and explicit (no default): a
+# comma-separated list of allowed portal origin(s).
+PORTAL_ORIGINS = [
+    o.strip() for o in os.environ.get("PORTAL_ORIGINS", "").split(",") if o.strip()
+]
+if not PORTAL_ORIGINS:
+    raise RuntimeError(
+        "PORTAL_ORIGINS is required (comma-separated allowed portal origin(s) for CORS)"
+    )
 
 
 @asynccontextmanager
@@ -42,12 +55,22 @@ app = FastAPI(
     openapi_url="/api/openapi.json",
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=PORTAL_ORIGINS,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+    # Bearer token in a header, not a cookie — no credentialed requests.
+    allow_credentials=False,
+)
+
 from studio.routers import (  # noqa: E402
     auth,
     bridge_protocol,
     bridges,
     conversations,
     distill,
+    download,
     inboxes,
     personas,
 )
@@ -58,6 +81,7 @@ app.include_router(bridges.router)
 app.include_router(inboxes.router)
 app.include_router(conversations.router)
 app.include_router(distill.router)
+app.include_router(download.router)
 app.include_router(bridge_protocol.router)
 
 # --- Chat sandbox: mounted under /api/chat. Routers themselves carry

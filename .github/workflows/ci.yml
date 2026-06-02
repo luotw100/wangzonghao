@@ -48,7 +48,7 @@ jobs:
             docker volume create "ci_$v"
           done
 
-      # 只起测试需要的服务，跳过 cloudflared（要真 token）和 user-web/admin-web。
+      # 只起测试需要的服务，跳过 cloudflared / caddy（要真 token）和 admin-web。
       - name: Bring up stack
         run: |
           docker compose --env-file .env up --build -d \
@@ -81,7 +81,8 @@ jobs:
         run: docker compose --env-file .env down -v
 
   # ---------------------------------------------------------------------
-  # 前端：两个 React 应用各跑 eslint + tsc/vite 构建检查。
+  # 前端：admin React 应用跑 eslint + tsc/vite 构建检查。（用户侧界面已并入
+  # 桌面应用；公开站点是 services/portal 的静态文件，无构建步骤。）
   # ---------------------------------------------------------------------
   web-checks:
     runs-on: ubuntu-latest
@@ -89,7 +90,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        app: [user_web, admin_web]
+        app: [admin_web]
     defaults:
       run:
         working-directory: services/${{ matrix.app }}

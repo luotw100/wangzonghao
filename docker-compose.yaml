@@ -80,6 +80,7 @@ services:
       S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
       S3_BUCKET: ${S3_BUCKET}
       UPLOAD_MAX_SIZE_MB: ${UPLOAD_MAX_SIZE_MB}
+      PORTAL_ORIGINS: ${PORTAL_ORIGINS}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -131,19 +132,10 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------
-  # Web (single React app at user_web; admin is a separate panel)
+  # Web: only the admin panel. The user-facing surface is the desktop app;
+  # the public site is the static portal served by Caddy (see edge below),
+  # and api.laborster.com goes straight to user-api with no web layer.
   # ---------------------------------------------------------------------
-  user-web:
-    profiles: ["app"]
-    build:
-      context: services/user_web
-    volumes:
-      - ./services/user_web/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      user-api:
-        condition: service_started
-    restart: unless-stopped
-
   admin-web:
     profiles: ["app"]
     build:
@@ -184,9 +176,11 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------
-  # Edge: Caddy terminates TLS for the user plane (studio + s3); frpc
-  # exposes it through the Seoul frp relay via zero-trust TCP passthrough,
-  # so the relay only ever moves ciphertext. See edge/README.md.
+  # Edge: Caddy terminates TLS for the user plane — the static portal
+  # (laborster.com), the API (api.laborster.com → user-api) and s3
+  # (s3.laborster.com → minio). frpc exposes it through the Seoul frp relay
+  # via zero-trust TCP passthrough, so the relay only ever moves ciphertext.
+  # See edge/README.md.
   # ---------------------------------------------------------------------
   caddy:
     profiles: ["edge"]
@@ -196,10 +190,11 @@ services:
       CF_API_TOKEN: ${CF_API_TOKEN}
     volumes:
       - ./edge/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./services/portal:/srv/portal:ro
       - caddy-data:/data
       - caddy-config:/config
     depends_on:
-      user-web:
+      user-api:
         condition: service_started
     restart: unless-stopped
 

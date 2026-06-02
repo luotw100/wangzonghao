@@ -465,3 +465,62 @@ class LlmLog(Base):
     response_raw        = Column(Text,       nullable=False)
     model               = Column(String(128), nullable=True)
     created_at          = Column(DateTime(timezone=True), nullable=False)
+
+
+# ---------------------------------------------------------------------------
+# Desktop app distribution
+# ---------------------------------------------------------------------------
+
+class Release(Base):
+    """A published desktop-app installer, one row per (version, platform).
+
+    Catalog + "what's current" pointer in one table: the download endpoint
+    serves the single row with is_latest=True for the requested platform.
+    A partial unique index (ix_releases_latest_per_platform) guarantees at
+    most one latest per platform; publishing a new version flips the old
+    row's is_latest off and the new one's on in a single transaction, which
+    is also the rollback switch. Installer bytes live in S3 under
+    releases/<version>/<filename>; this table never holds the binary.
+    """
+
+    __tablename__ = "releases"
+    __table_args__ = (
+        CheckConstraint("platform IN ('win', 'mac', 'linux')", name="ck_release_platform"),
+        UniqueConstraint("version", "platform", name="uq_release_version_platform"),
+        Index(
+            "ix_releases_latest_per_platform", "platform",
+            unique=True, postgresql_where=Column("is_latest"),
+        ),
+        {"schema": "studio"},
+    )
+
+    id           = Column(String(48),  primary_key=True, index=True)
+    version      = Column(String(32),  nullable=False)
+    platform     = Column(String(16),  nullable=False)
+    s3_key       = Column(String(512), nullable=False)
+    filename     = Column(String(256), nullable=False)
+    sha256       = Column(String(64),  nullable=False)
+    size_bytes   = Column(BigInteger,  nullable=False)
+    notes        = Column(Text,        nullable=True)
+    is_latest    = Column(Boolean,     nullable=False)
+    created_at   = Column(DateTime(timezone=True), nullable=False)
+    published_at = Column(DateTime(timezone=True), nullable=False)
+
+
+class DownloadEvent(Base):
+    """Audit log: one row per successful presigned-download handout.
+
+    Bare string account_id (no FK cascade) so the trail survives account
+    deletion. ip / user_agent come from the edge-forwarded request headers.
+    """
+
+    __tablename__ = "download_events"
+    __table_args__ = ({"schema": "studio"},)
+
+    id          = Column(BigInteger, primary_key=True, autoincrement=True)
+    account_id  = Column(String(48),  nullable=True, index=True)
+    version     = Column(String(32),  nullable=False)
+    platform    = Column(String(16),  nullable=False)
+    ip          = Column(String(64),  nullable=True)
+    user_agent  = Column(Text,        nullable=True)
+    created_at  = Column(DateTime(timezone=True), nullable=False, index=True)

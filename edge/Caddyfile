@@ -5,18 +5,30 @@
 	acme_dns cloudflare {env.CF_API_TOKEN}
 }
 
-# User plane: SPA (studio + chat) + /api proxied by user-web nginx.
-# TLS terminates HERE (origin), so the frp relay only ever sees ciphertext.
-studio.laborster.com {
+# Portal: the public-facing site. Static landing + download CTA, plus the
+# discovery anchor at /.well-known/laborster-api.json that desktop clients
+# read to learn the live API host. Served straight from disk — no app.
+laborster.com {
 	encode zstd gzip
-	reverse_proxy user-web:23456
+	root * /srv/portal
+	file_server
 }
 
-# s3 is a placeholder for now (studio has no media messages yet), routed for
-# completeness. When media goes live: MinIO presigned URLs validate against
-# the request Host (Caddy preserves it by default); also set MINIO_SERVER_URL
-# = https://s3.laborster.com on the minio service. At scale, move media off
-# the 200 Mbps relay to OSS / R2.
+# API plane: machine-facing only (desktop app + bridges). No web UI here —
+# unknown paths 404 (FastAPI), every route but /api/health requires a bearer
+# token. TLS terminates HERE (origin), so the frp relay only sees ciphertext.
+# Caddy preserves the incoming Host upstream by default; long-poll endpoints
+# (chat after-cursor, bridge outbound) hold the response open and Caddy has no
+# upstream response timeout by default, so they work without extra config.
+api.laborster.com {
+	encode zstd gzip
+	reverse_proxy user-api:23456
+}
+
+# Installer + media bytes. MinIO presigned URLs are signed for this host
+# (S3_PUBLIC_URL=https://s3.laborster.com) and validate against the request
+# Host, which Caddy preserves by default. At scale, move bytes off the
+# relay to OSS / R2.
 s3.laborster.com {
 	reverse_proxy minio:9000
 }

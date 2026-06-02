@@ -37,6 +37,7 @@ jobs:
           S3_BUCKET=media
           S3_PUBLIC_URL=http://minio:9000/media
           UPLOAD_MAX_SIZE_MB=50
+          PORTAL_ORIGINS=http://localhost
           CF_TUNNEL_TOKEN=unused-in-ci
           EOF
 

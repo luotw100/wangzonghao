@@ -247,6 +247,7 @@ function ChatThread({
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottom = useRef(true);
   const prevHeight = useRef<number | null>(null); // set right before prepending older
@@ -296,6 +297,9 @@ function ChatThread({
       notify(String(e), "err");
     } finally {
       setSending(false);
+      // Re-enabling the textarea happens on the next render; the disable
+      // toggle dropped focus, so restore it once it's interactable again.
+      requestAnimationFrame(() => textareaRef.current?.focus());
     }
   };
 
@@ -394,6 +398,7 @@ function ChatThread({
             📎
           </button>
           <textarea
+            ref={textareaRef}
             className={`${INPUT_CLS} max-h-32 min-h-[44px] flex-1 resize-none`}
             rows={1}
             value={text}

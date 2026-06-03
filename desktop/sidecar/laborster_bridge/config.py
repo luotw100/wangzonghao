@@ -17,9 +17,9 @@ from pathlib import Path
 
 # Single hardcoded endpoint. Chat sandbox shares the same host — its API is
 # mounted at /api/chat/*. Runtime override exists only for the headless
-# hosted-bridge path (set_studio_base_url, called from __main__ when
-# --headless --studio-url is passed); GUI/REPL never call the setter, so
-# end-user binaries always talk to this host.
+# path (set_studio_base_url, called from __main__ when --headless
+# --studio-url is passed); GUI/REPL never call the setter, so end-user
+# binaries always talk to this host.
 STUDIO_BASE_URL = "https://api.laborster.com"
 
 

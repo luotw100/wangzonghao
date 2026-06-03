@@ -3,8 +3,8 @@
 No mocks: these drive laborster_bridge.studio_client.StudioClient against a
 real, running Studio (user-api) + admin-api. They run only when both
 STUDIO_BASE_URL and ADMIN_BASE_URL are set — CI sets them when it runs this
-package inside the bridge-host container, which already sits on the compose
-network with the sidecar package installed.
+package in a throwaway container attached to the compose network, with the
+sidecar package installed.
 """
 
 from __future__ import annotations

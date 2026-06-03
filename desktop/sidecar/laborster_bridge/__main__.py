@@ -4,13 +4,13 @@ Two modes:
 
   * Interactive (default): REPL on stdin. The packaged GUI binary and
     operator CLI use this path — see :mod:`laborster_bridge.repl`.
-  * Headless (``--headless``): hosted-bridge subprocess spawned by the
-    cloud-side ``bridge-host`` service. No REPL, no password prompts;
-    token + machine_id are passed in by admin-api. See
-    :mod:`laborster_bridge.headless`.
+  * Headless (``--headless``): non-interactive subprocess driven by
+    flags (token + machine_id passed in) rather than a REPL — intended
+    for a supervisor process to spawn. No REPL, no password prompts.
+    See :mod:`laborster_bridge.headless`.
 
 End-user binaries never pass ``--headless`` or ``--studio-url``; those
-flags exist exclusively for the hosted-bridge path.
+flags exist exclusively for the headless path.
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ def main() -> int:
     parser.add_argument("--state", metavar="DIR", help="状态目录（无默认值）")
     parser.add_argument(
         "--headless", action="store_true",
-        help="hosted-bridge 模式：无 REPL，由 bridge-host 启动"
+        help="headless 模式：无 REPL，靠 flag 注入凭据"
     )
     parser.add_argument("--studio-url", help="Studio base URL（仅 headless）")
     parser.add_argument("--account-id", help="Studio account id（仅 headless）")

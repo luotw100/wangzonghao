@@ -1,25 +1,26 @@
-"""Headless hosted-bridge entrypoint.
+"""Headless bridge entrypoint.
 
-Used by the cloud-side ``bridge-host`` service to spawn one subprocess
-per Studio account. Differs from REPL/GUI only in *how credentials
-arrive* (admin-api flags vs. password prompt) and *how lifecycle
+A non-interactive subprocess mode: one process per Studio account, with
+credentials injected via flags instead of a password prompt — intended
+for a supervisor process to spawn. (Retained for a future cloud/host
+supervisor; no in-repo caller today.) Differs from REPL/GUI only in
+*how credentials arrive* (flags vs. password prompt) and *how lifecycle
 signals surface* (SIGTERM + exit codes vs. /quit / window close); all
 daemon reconcile logic lives in :mod:`laborster_bridge.commands`, same
 as the other two frontends.
 
-Only the ``chat`` adapter is registered for hosted bridges (invariant
-#15). The chat ``LoginFlow`` is degenerate so ``commands.ensure_chat_channel``
-writes the empty credential directly — equivalent to driving the flow
-to ``Done({})``.
+Only the ``chat`` adapter is registered in headless mode. The chat
+``LoginFlow`` is degenerate so ``commands.ensure_chat_channel`` writes
+the empty credential directly — equivalent to driving the flow to
+``Done({})``.
 
-Exit codes:
+Exit codes (a supervisor may map these to its own status):
   0  graceful shutdown via SIGTERM/SIGINT
-  2  Studio token revoked (401 surfaced by HeartbeatActor) — bridge-host
-     treats as auth_error and surfaces to admin panel
+  2  Studio token revoked (401 surfaced by HeartbeatActor) — auth_error
   3  startup/config error
   4  channel already bound by another online bridge (Studio 409) — the
-     process exits so its heartbeat stops and admin sees it go stale
-     (CRASHED) instead of a zombie "running".
+     process exits so its heartbeat stops and a supervisor sees it go
+     offline instead of a zombie "running".
 """
 
 from __future__ import annotations
@@ -76,9 +77,9 @@ def run(args) -> int:
         ctx, extra_on_auth_error=_on_auth_error, extra_on_fatal=_on_fatal
     )
 
-    # Mirror events.log() output to stdout (→ bridge-host's docker
-    # logs). `follow()` blocks on a condvar — no polling, no missed
-    # lines under load.
+    # Mirror events.log() output to stdout (→ the supervisor's logs).
+    # `follow()` blocks on a condvar — no polling, no missed lines
+    # under load.
     def _log_pump() -> None:
         for ln in events.follow(stop_event):
             print(
@@ -95,7 +96,7 @@ def run(args) -> int:
     signal.signal(signal.SIGINT, _handle_signal)
 
     print(
-        f"hosted bridge started · account={args.account_id} "
+        f"headless bridge started · account={args.account_id} "
         f"machine_id={args.machine_id} studio={config.STUDIO_BASE_URL}",
         flush=True,
     )

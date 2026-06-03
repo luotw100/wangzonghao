@@ -104,9 +104,6 @@ def ensure_bridge_row(
     - ``machine_id`` provided: must already exist or we raise (mirrors
       handshake semantics — clients with a stale machine_id should drop
       local state and retry).
-
-    Shared with admin-api's hosted-bridge spawn path so both physical
-    bridges and hosted bridges go through the same machine_id discipline.
     """
     now = utc_now()
     if machine_id:

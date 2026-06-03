@@ -17,7 +17,7 @@ Contract with Electron main (see electron/sidecar.ts):
     * SIGTERM → stop the daemon cleanly, then exit.
 
 The runtime package under laborster_bridge/ is the canonical Bridge
-daemon — the same package the bridge-host container installs and runs
+daemon — the same package shipped in the desktop app sidecar and run
 headless. Its design (polling actors, no notifies) is intentional.
 """
 

@@ -14,7 +14,7 @@ services/
 
 ## 启动整套云端
 
-唯一的 `docker-compose.yaml` 在仓库根目录。服务用 `profiles` 分三层：`storage`（`db`、`minio`、`minio-create-buckets`）、`app`（`migrate`、`user-api`、`user-worker`、`admin-api`、`bridge-host`、`user-web`、`admin-web`、`fake-llm`）、`edge`（`caddy`、`frpc`、`cloudflared`）。
+唯一的 `docker-compose.yaml` 在仓库根目录。服务用 `profiles` 分三层：`storage`（`db`、`minio`、`minio-create-buckets`）、`app`（`migrate`、`user-api`、`user-worker`、`admin-api`、`admin-web`、`fake-llm`）、`edge`（`caddy`、`frpc`、`cloudflared`）。
 
 每个 instance 对应一个自包含的 env 文件（`.env.release`、`.env.debug`，从 `.env.example` 复制），里面带 `COMPOSE_PROJECT_NAME`（隔离容器/volume/网络，无需 `-p`）、`COMPOSE_PROFILES`（该 instance 默认起哪些层）、db/MinIO 凭据、`S3_PUBLIC_URL` 及 edge token。没有共享的 `.env` 底座。
 

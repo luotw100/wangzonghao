@@ -203,8 +203,8 @@ def ensure_chat_channel(ctx: Context) -> bool:
     account's store. Returns True if a row was inserted, False if one
     already existed.
 
-    Chat-only on purpose (see invariant #15: hosted bridges only ever
-    serve the chat sandbox). The chat adapter's ``LoginFlow`` is
+    Chat-only on purpose (headless bridges only ever serve the chat
+    sandbox). The chat adapter's ``LoginFlow`` is
     degenerate — ``begin_login()`` returns ``Done({})`` — so writing
     the empty credential directly is byte-for-byte the same as walking
     the flow to completion; we're not bypassing anything, just skipping

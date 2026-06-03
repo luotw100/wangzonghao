@@ -6,9 +6,9 @@ requires-python = ">=3.12"
 dependencies = ["prompt_toolkit>=3.0", "certifi>=2024.0", "urllib3>=2.0"]
 
 [project.optional-dependencies]
-# Local unit tests only (store/events/config). Not installed by the
-# bridge-host container (it runs `pip install` without extras), and the
-# tests/ dir is excluded from the wheel below.
+# Local unit tests only (store/events/config). Not pulled in by a bare
+# `pip install` (no extras), and the tests/ dir is excluded from the
+# wheel below.
 test = ["pytest>=8.3.0"]
 
 [project.scripts]

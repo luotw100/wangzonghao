@@ -14,7 +14,7 @@ jobs:
   # ---------------------------------------------------------------------
   # 后端集成测试：拉起整套 compose 栈（不含 cloudflared / web 前端），跑两套：
   #   1) services/api 的 pytest（在 user-api 容器里，真实 HTTP，无 mock）
-  #   2) sidecar 的 StudioClient 集成测试（在 bridge-host 容器里，打真实 user-api）
+  #   2) sidecar 的 StudioClient 集成测试（一次性 python 容器接入 compose 网络，打真实 user-api）
   # ---------------------------------------------------------------------
   api-tests:
     runs-on: ubuntu-latest
@@ -45,7 +45,7 @@ jobs:
       # 一次性 CI runner 上手动建出这五个 ${COMPOSE_PROJECT_NAME}_* 卷。
       - name: Create external stateful volumes
         run: |
-          for v in pgdata minio-data bridge-host-data caddy-data caddy-config; do
+          for v in pgdata minio-data caddy-data caddy-config; do
             docker volume create "ci_$v"
           done
 
@@ -54,24 +54,29 @@ jobs:
         run: |
           docker compose --env-file .env up --build -d \
             db minio minio-create-buckets migrate \
-            user-api admin-api user-worker bridge-host fake-llm
+            user-api admin-api user-worker fake-llm
 
       - name: Run API pytest (services/api, in user-api)
         run: |
           docker compose --env-file .env exec -T user-api \
             uv run python -m pytest tests/ -v
 
-      # sidecar 自己的客户端代码打真实 user-api：在 bridge-host 容器里跑——
-      # 它已 pip install laborster_bridge 包，且在 compose 内网能解析
-      # user-api / admin-api。tests/ 随 `COPY desktop/sidecar` 进了镜像。
-      - name: Run sidecar integration tests (in bridge-host)
+      # sidecar 自己的客户端代码打真实 user-api：用一次性 python 容器接到 compose
+      # 默认网络（COMPOSE_PROJECT_NAME=ci → ci_default），装上 laborster_bridge
+      # 包 + pytest 后跑集成测试。容器内能解析 user-api / admin-api，跑完即弃，
+      # 不依赖任何常驻服务。
+      - name: Run sidecar integration tests
         run: |
-          docker compose --env-file .env exec -T bridge-host \
-            pip install --no-cache-dir --quiet pytest
-          docker compose --env-file .env exec -T \
+          docker run --rm --network ci_default \
             -e STUDIO_BASE_URL=http://user-api:23456 \
             -e ADMIN_BASE_URL=http://admin-api:23457 \
-            bridge-host python -m pytest /opt/sidecar/tests/integration -v
+            -v "$PWD/desktop/sidecar:/opt/sidecar" \
+            python:3.12-slim \
+            sh -c "pip install --no-cache-dir --quiet \
+                     -i http://mirrors.aliyun.com/pypi/simple \
+                     --trusted-host mirrors.aliyun.com \
+                     /opt/sidecar pytest \
+                   && python -m pytest /opt/sidecar/tests/integration -v"
 
       - name: Dump logs on failure
         if: failure()

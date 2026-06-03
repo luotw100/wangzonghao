@@ -22,8 +22,8 @@ from studio.models import Account, AuthSession, Bridge, Inbox, Persona, Provider
 
 
 # A bridge is "online" if its last_seen_at was refreshed within this many
-# seconds. Heartbeat cadence is 15s, so 45s = 3 missed beats. Shared by the
-# inbox-ownership mutex (bridge_protocol) and the admin hosted-bridge view.
+# seconds. Heartbeat cadence is 15s, so 45s = 3 missed beats. Used by the
+# inbox-ownership mutex (bridge_protocol).
 BRIDGE_OFFLINE_S = 45
 
 

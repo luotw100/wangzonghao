@@ -2,21 +2,19 @@ import { NavLink, Navigate, Route, Routes } from 'react-router-dom';
 import { AccountsPage } from './pages/AccountsPage.tsx';
 import { ProvidersPage } from './pages/ProvidersPage.tsx';
 import { ConversationsPage } from './pages/ConversationsPage.tsx';
-import { HostedBridgesPage } from './pages/HostedBridgesPage.tsx';
 import { ChatsPage } from './pages/ChatsPage.tsx';
 import { LlmLogsPage } from './pages/LlmLogsPage.tsx';
 import { DistillJobsPage } from './pages/DistillJobsPage.tsx';
 import { PersonaTimelinePage } from './pages/PersonaTimelinePage.tsx';
 
 type Page =
-  | 'accounts' | 'providers' | 'conversations' | 'hosted-bridges'
+  | 'accounts' | 'providers' | 'conversations'
   | 'chats' | 'llm-logs' | 'distill-jobs' | 'persona-timeline';
 
 const NAV: { id: Page; label: string }[] = [
   { id: 'accounts', label: 'Accounts' },
   { id: 'providers', label: 'Providers' },
   { id: 'conversations', label: 'Conversations' },
-  { id: 'hosted-bridges', label: 'Hosted Bridges' },
   { id: 'chats', label: 'Chats' },
   { id: 'llm-logs', label: 'LLM Logs' },
   { id: 'distill-jobs', label: 'Distill Jobs' },
@@ -88,7 +86,6 @@ export default function App() {
           <Route path="/accounts" element={<AccountsPage />} />
           <Route path="/providers" element={<ProvidersPage />} />
           <Route path="/conversations" element={<ConversationsPage />} />
-          <Route path="/hosted-bridges" element={<HostedBridgesPage />} />
           <Route path="/chats" element={<ChatsPage />} />
           <Route path="/chats/c/:conversationId" element={<ChatsPage />} />
           <Route path="/llm-logs" element={<LlmLogsPage />} />

@@ -19,7 +19,7 @@ from __future__ import annotations
 from typing import Callable
 
 from . import config
-from .http import request_json
+from .http import HttpError, request_json
 
 
 class StudioClient:
@@ -47,15 +47,25 @@ class StudioClient:
     def handshake(
         self, username: str, password: str, machine_id: str | None
     ) -> dict:
-        r = request_json(
-            "POST",
-            f"{config.STUDIO_BASE_URL}/api/bridge/handshake",
-            body={
-                "username": username,
-                "password": password,
-                "machine_id": machine_id,
-            },
-        )
+        body = {
+            "username": username,
+            "password": password,
+            "machine_id": machine_id,
+        }
+        url = f"{config.STUDIO_BASE_URL}/api/bridge/handshake"
+        try:
+            r = request_json("POST", url, body=body)
+        except HttpError as exc:
+            # A stale machine_id — e.g. this device was revoked from another
+            # machine, so Studio no longer has its (account, machine_id) row —
+            # returns 400 machine_id_invalid. The protocol contract is to drop
+            # the local machine_id and retry without it; Studio then mints a
+            # fresh one and re-creates the bridge row, so the legitimate owner
+            # re-login self-heals instead of getting stuck on the 400.
+            if not (machine_id and exc.status == 400 and "machine_id_invalid" in exc.body):
+                raise
+            body["machine_id"] = None
+            r = request_json("POST", url, body=body)
         return {
             "token": r["token"],
             "account_id": r["account_id"],

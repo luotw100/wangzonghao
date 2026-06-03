@@ -31,8 +31,10 @@ def delete_bridge(bridge_id: str, db: Annotated[Session, Depends(get_db)], accou
 
     1. 将该 Bridge 下所有 Inbox 的待发消息（status=pending）标记为 canceled；
     2. 解除所有 Inbox 与该 Bridge 的绑定（bridge_id 置为 null）；
-    3. 删除 Bridge 行——下次握手会按 (account, machine_id) 找不到，
-       自动重新签发一个新的 machine_id。
+    3. 删除 Bridge 行——被撤销的设备下次握手会按 (account, machine_id)
+       找不到，服务端返回 400 machine_id_invalid。按协议契约，客户端应
+       丢弃本地 machine_id 后不带它重试，服务端届时才会签发新的 machine_id
+       并重建 Bridge 行（见 StudioClient.handshake 的自愈逻辑）。
     """
     b = get_account_bridge(db, account, bridge_id)
     inbox_ids = [r[0] for r in db.query(Inbox.id).filter(Inbox.bridge_id == b.id).all()]

@@ -90,11 +90,11 @@ Studio 地址硬编码在 `laborster_bridge/config.py`（`STUDIO_BASE_URL = http
 | 进程 | env |
 | --- | --- |
 | user-api / user-worker / admin-api / migrate | `DATABASE_URL`、`S3_ENDPOINT`、`S3_PUBLIC_URL`、`S3_ACCESS_KEY`、`S3_SECRET_KEY`、`S3_BUCKET`、`UPLOAD_MAX_SIZE_MB` |
-| Bridge | 无；地址硬编码在 `bridge/laborster_bridge/config.py` |
+| Bridge | 无；地址硬编码在 `desktop/sidecar/laborster_bridge/config.py` |
 
 ## 构建命令
 
-- Bridge：无构建步骤；`cd bridge && python3 -m compileall -q laborster_bridge` 做语法自检，`uv run laborster-bridge` 运行。GUI 打包脚本在 `bridge/scripts/`。
+- Sidecar（`desktop/sidecar`）：依赖用 uv 管（pyproject + uv.lock 单一真源，无 requirements.txt）。开发跑 `uv run laborster-bridge`、语法自检 `uv run python -m compileall -q laborster_bridge`。发布二进制由 `build_sidecar_mac.sh` / `build_sidecar_win.ps1` 跑 `uv sync --frozen --group build` + PyInstaller 冻结成单文件，GitHub `build-desktop.yml`（手动触发）调这俩脚本。
 - user_web / admin_web：各自目录下 `npm ci && npm run build`；需要 lint 时 `npm run lint`。
 - API：Dockerfile 内用 `uv sync --frozen` 构建。
 

@@ -61,22 +61,20 @@ jobs:
           docker compose --env-file .env exec -T user-api \
             uv run python -m pytest tests/ -v
 
-      # sidecar 自己的客户端代码打真实 user-api：用一次性 python 容器接到 compose
-      # 默认网络（COMPOSE_PROJECT_NAME=ci → ci_default），装上 laborster_bridge
-      # 包 + pytest 后跑集成测试。容器内能解析 user-api / admin-api，跑完即弃，
-      # 不依赖任何常驻服务。
+      # sidecar 客户端代码打真实 user-api：用一次性 uv 官方镜像接到 compose
+      # 默认网络（COMPOSE_PROJECT_NAME=ci → ci_default）。`uv sync --frozen`
+      # 从 uv.lock 装锁定依赖 + test 组（顺带在 CI 验证锁能解析），venv 落在
+      # /tmp 不污染挂载源；容器内能解析 user-api / admin-api，跑完即弃。
       - name: Run sidecar integration tests
         run: |
           docker run --rm --network ci_default \
             -e STUDIO_BASE_URL=http://user-api:23456 \
             -e ADMIN_BASE_URL=http://admin-api:23457 \
-            -v "$PWD/desktop/sidecar:/opt/sidecar" \
-            python:3.12-slim \
-            sh -c "pip install --no-cache-dir --quiet \
-                     -i http://mirrors.aliyun.com/pypi/simple \
-                     --trusted-host mirrors.aliyun.com \
-                     /opt/sidecar pytest \
-                   && python -m pytest /opt/sidecar/tests/integration -v"
+            -e UV_PROJECT_ENVIRONMENT=/tmp/venv \
+            -v "$PWD/desktop/sidecar:/sidecar" \
+            -w /sidecar \
+            ghcr.io/astral-sh/uv:python3.12-bookworm-slim \
+            sh -c "uv sync --frozen --group test && uv run --no-sync pytest tests/integration -v"
 
       - name: Dump logs on failure
         if: failure()

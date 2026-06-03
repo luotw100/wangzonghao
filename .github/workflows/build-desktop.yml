@@ -36,9 +36,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      # setup-python only provides a PATH `python` for node-gyp/electron-builder.
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # uv drives the sidecar freeze (uv.lock = single source of truth); it
+      # resolves the locked CPython itself. enable-cache keys on uv.lock.
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
       - run: npm install
       - run: npm run build
       - name: Freeze Python sidecar
@@ -57,9 +63,15 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
+      # setup-python only provides a PATH `python` for node-gyp/electron-builder.
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # uv drives the sidecar freeze (uv.lock = single source of truth); it
+      # resolves the locked CPython itself. enable-cache keys on uv.lock.
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
       - run: npm install
       - run: npm run build
       - name: Freeze Python sidecar

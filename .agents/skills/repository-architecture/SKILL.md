@@ -39,8 +39,9 @@ desktop/
 │   │   ├── adapters/chat.py
 │   │   └── gui/bridge_api.py  # HTTP sidecar 的 API 层（被 server.py 调用）
 │   ├── server.py           # Electron sidecar HTTP 服务（反代 Studio、媒体上传）
-│   ├── pyproject.toml      # hatchling，wheel 只打 laborster_bridge 包
-│   └── requirements.txt
+│   ├── pyproject.toml      # hatchling 包定义 + 依赖；dev 工具在 [dependency-groups]（test/build）
+│   ├── uv.lock             # 锁定依赖（单一真源，已弃 requirements.txt）；build 脚本 + CI 用 `uv sync --frozen`
+│   └── build_sidecar_mac.sh / build_sidecar_win.ps1  # `uv sync --group build` + PyInstaller 冻结成单文件 sidecar
 ├── electron/               # Electron 主进程 + sidecar 管理
 └── src/                    # React 前端
 services/

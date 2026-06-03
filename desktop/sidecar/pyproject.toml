@@ -5,11 +5,12 @@ description = "Laborster local relay CLI — logs into chat platforms and bridge
 requires-python = ">=3.12"
 dependencies = ["prompt_toolkit>=3.0", "certifi>=2024.0", "urllib3>=2.0"]
 
-[project.optional-dependencies]
-# Local unit tests only (store/events/config). Not pulled in by a bare
-# `pip install` (no extras), and the tests/ dir is excluded from the
-# wheel below.
+# Dev-only tool deps: locked in uv.lock for reproducible builds/tests, but
+# never shipped in the wheel (not [project.dependencies]). `test` — unit +
+# integration tests; `build` — the PyInstaller freeze toolchain.
+[dependency-groups]
 test = ["pytest>=8.3.0"]
+build = ["pyinstaller>=6.0"]
 
 [project.scripts]
 laborster-bridge = "laborster_bridge.__main__:main"

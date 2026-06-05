@@ -1,5 +1,6 @@
 [project]
 name = "laborster-bridge"
+# 非发布版本：sidecar 打包进桌面端一起分发，客户端版本以 desktop/package.json 为准，此处不随版本 bump。
 version = "0.1.0"
 description = "Laborster local relay CLI — logs into chat platforms and bridges private chats to Studio."
 requires-python = ">=3.12"

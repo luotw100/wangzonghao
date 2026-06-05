@@ -1,6 +1,7 @@
 {
   "name": "laborster-admin-web",
   "private": true,
+  "//version": "非发布版本：admin 面板跟随服务端部署，不独立 bump；服务端版本以 services/api/pyproject.toml 为准。",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
